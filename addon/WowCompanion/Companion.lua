@@ -681,6 +681,11 @@ end
 -- retail keeps documentation in a load-on-demand Blizzard addon, and this build has
 -- APIDocumentation_LoadUI -- so the table may only be absent because nothing has
 -- loaded it yet. Kept separate from dumpApi so a failure here costs nothing.
+-- the fields every function entry has; anything else is a flag worth keeping, and
+-- the flags are where the documentation says what is restricted
+local SHAPE = { Name = true, Type = true, Arguments = true, Returns = true,
+	Documentation = true, System = true }
+
 local function describe(fields)
 	local parts = {}
 	for _, field in ipairs(fields or {}) do
@@ -715,12 +720,42 @@ local function dumpDocs()
 		local prefix = system.Namespace and (system.Namespace .. ".") or ""
 		for _, fn in ipairs(system.Functions or {}) do
 			local returns = describe(fn.Returns)
-			lines[#lines + 1] = ("%s%s(%s)%s"):format(prefix, tostring(fn.Name),
-				describe(fn.Arguments), returns ~= "" and (" -> " .. returns) or "")
+			local flags = {}
+			for key, value in pairs(fn) do
+				if not SHAPE[key] and type(value) ~= "table" and type(value) ~= "function" then
+					flags[#flags + 1] = ("%s=%s"):format(tostring(key), tostring(value))
+				end
+			end
+			table.sort(flags)
+			lines[#lines + 1] = ("%s%s(%s)%s%s"):format(prefix, tostring(fn.Name),
+				describe(fn.Arguments), returns ~= "" and (" -> " .. returns) or "",
+				#flags > 0 and (" [" .. table.concat(flags, " ") .. "]") or "")
 		end
 		for _, event in ipairs(system.Events or {}) do
 			lines[#lines + 1] = ("event %s(%s)"):format(
 				tostring(event.LiteralName or event.Name), describe(event.Payload))
+		end
+		-- the signatures are only half an answer without these: a function that
+		-- returns SpellBookItemInfo tells you nothing about what to read off it,
+		-- and an argument typed SpellBookSpellBank tells you nothing about what to
+		-- pass. Enumerations carry their values, so this is also where the magic
+		-- numbers stop being magic.
+		for _, entry in ipairs(system.Tables or {}) do
+			local kind = tostring(entry.Type)
+			if kind == "Enumeration" or kind == "Constants" then
+				local values = {}
+				for _, value in ipairs(entry.Values or entry.Fields or {}) do
+					values[#values + 1] = ("%s = %s"):format(
+						tostring(value.Name),
+						tostring(value.EnumValue ~= nil and value.EnumValue or value.Value))
+				end
+				lines[#lines + 1] = ("%s %s { %s }"):format(
+					kind == "Enumeration" and "enum" or "constants",
+					tostring(entry.Name), table.concat(values, ", "))
+			else
+				lines[#lines + 1] = ("struct %s { %s }"):format(
+					tostring(entry.Name), describe(entry.Fields))
+			end
 		end
 	end
 	table.sort(lines)
@@ -931,6 +966,10 @@ local function exportContext()
 
 	section("spellbook")
 	line("-- also the vocabulary the transcriber needs: these are the words you will say")
+	-- the name index says this build has no GetNumSpellTabs, GetSpellBookItemInfo or
+	-- GetSpellInfo at all: it is a retail-11.x-era API behind a 1.60.1 version
+	-- string. The classic branch stays only so a differently-built client says so
+	-- out loud instead of exporting an empty spellbook.
 	local walked = pcall(function()
 		if GetNumSpellTabs and GetSpellTabInfo and GetSpellBookItemInfo then
 			for tab = 1, GetNumSpellTabs() do
@@ -952,8 +991,11 @@ local function exportContext()
 				local info = C_SpellBook.GetSpellBookSkillLineInfo(tab)
 				local offset = info and info.itemIndexOffset or 0
 				line(("-- %s"):format(tostring(info and info.name)))
+				-- GetSpellBookItemInfo's second argument is typed SpellBookSpellBank,
+				-- so name it rather than passing the 0 I would otherwise have assumed
+				local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
 				for at = offset + 1, offset + (info and info.numSpellBookItems or 0) do
-					local item = C_SpellBook.GetSpellBookItemInfo(at, 0)
+					local item = C_SpellBook.GetSpellBookItemInfo(at, bank)
 					if item and item.name then
 						line(("%s %s (%s)"):format(
 							tostring(item.itemType), item.name, tostring(item.spellID)))
@@ -969,8 +1011,7 @@ local function exportContext()
 	end
 
 	WowCompanionDB.context = table.concat(out, newline) .. newline
-	say(("context: %d lines; /reload to write it to disk"):format(#out))
-	record("context lines", #out)
+	return #out
 end
 
 local function probeChat()
@@ -1291,6 +1332,9 @@ end
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
+-- fires on /reload as well as logout, just before SavedVariables is written: the
+-- one moment worth exporting at, since nothing reaches disk any other time
+frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("ADDON_ACTION_BLOCKED")
 frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
 frame:SetScript("OnEvent", function(_, event, ...)
@@ -1308,6 +1352,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		replayLog()
 		probeSound()
 		ticker = C_Timer.NewTicker(0.5, poll)
+	elseif event == "PLAYER_LOGOUT" then
+		-- a failed export must not cost the rest of the save
+		pcall(exportContext)
 	elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
 		-- taint cascades, and the first block names the real culprit, so number them
 		-- rather than letting each one overwrite the last
@@ -1334,7 +1381,7 @@ SlashCmdList.WOWCOMPANION = function(command)
 	elseif command == "docs" then
 		dumpDocs()
 	elseif command == "context" then
-		exportContext()
+		say(("context: %d lines; /reload to write it to disk"):format(exportContext()))
 	elseif command:match("^place") then
 		local variant = command:match("^place%s+(%S+)") or ""
 		-- deferred a tick, like chat: the Enter that submitted this is still unwinding

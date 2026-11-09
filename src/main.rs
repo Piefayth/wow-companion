@@ -192,9 +192,13 @@ fn send(addons: &Path, args: &[String]) -> io::Result<()> {
             lua_string(text)
         ),
         [kind] if kind == "reload" => "{ kind = \"reload\" }".to_string(),
+        // the PlaceAction taint test, delivered the way real bar edits would be
+        [kind, variant] if kind == "place" => {
+            format!("{{ kind = \"place\", variant = {} }}", lua_string(variant))
+        }
         _ => {
             return Err(io::Error::other(
-                "usage: send chat <text> | send macro <name> <body> | send reload",
+                "usage: send chat <text> | send macro <name> <body> | send reload | send place <variant>",
             ));
         }
     };

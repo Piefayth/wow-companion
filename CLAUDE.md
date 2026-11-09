@@ -76,12 +76,9 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
   The continuous bell poll is **not** a taint source: `/wc quiet` stops it, and a fresh
   session with it running interacts cleanly. Worth stating because it was the obvious
   suspect, being the only thing the addon does nonstop, and it was wrong twice over.
-  So chat delivery needs to stop touching the edit box. Write the line into a **macro
-  body** instead and let the player press it: macro writing is the one path that has
-  never tainted anything, it needs no new binding if a macro slot is kept for it, and
-  it is "configuration only, never act for the player" taken literally — we write, the
-  player executes. A `SecureActionButtonTemplate` with `macrotext` is the other
-  taint-free option, but it costs a gamepad binding, and those are scarce.
+  So chat delivery no longer opens anything: it writes only into a box **the player
+  opened**, and refuses with a hint when none is open. A box opened by real input
+  keeps the secure focus path intact; we only set its text.
 - **Register a secure button for `"AnyDown"`.** Measured one variable at a time:
   `"AnyUp"` alone runs the wrapper — `PreClick` and `PostClick` both fire — while the
   macro does not, which reads exactly like a permissions refusal and is not one. Both
@@ -131,8 +128,9 @@ version encoded, so 1.60.1 → 16001). Measured 2026-11-09:
   loop in `write_reporting` clears it in 100–205 ms over 3–5 tries. So the open Windows
   question — can the helper overwrite a sound the game has open — is answered yes, with
   a retry, and the loop's 2 s ceiling has never been approached.
-- **Chat and macros work.** `ChatFrame_OpenChat` puts text in the box; `CreateMacro`,
-  `EditMacro` and `PlaceAction` all succeed out of combat.
+- **Chat and macros work.** `CreateMacro` and `EditMacro` succeed out of combat, and
+  `SetText` on a player-opened chat box works. `ChatFrame_OpenChat` also works, but it
+  is the call that broke A and B (see Decisions), so nothing uses it now.
 - `FrameXML.log` logs every slot load, including empty ones — a free, precise trace of
   the channel that costs nothing to read.
 
@@ -151,22 +149,44 @@ Three things the real client taught us that a Mac couldn't:
   and both write the same SavedVariables file, so the last to reload wins and the
   measurements quietly lie. Diagnosed the hard way.
 
-**What this client's API actually is.** Asked, not assumed: it ships **no**
-documentation tables — `APIDocumentation`, `C_ApiDocumentation`, `GetAPIDocumentation`,
-`APIDocumentationMixin` and `ApiDocumentation` are all absent — so signatures are not
-available locally and an external reference is written about a different WoW. The
-*names* are available exactly, though: 6,017 global functions, 271 `C_*` namespaces,
-4,940 functions inside them (largest `C_Garrison`, 227). `/wc dump` writes all ~11k to
-SavedVariables and `cargo run -- api <AddOns> <out>` pulls them out. That is the half
-that matters, because the agent's failure mode is not forgetting what a function does,
-it is confidently calling one that exists in retail and not here. `/wc docs` tries the
-documentation tables anyway in case a Blizzard addon loads them on demand.
+**What this client's API actually is.** It is a **retail-11.x-era API behind a 1.60.1
+version string**, which is the single most useful thing in this file: `C_ClassTalents`
+has hero talents, the spellbook is `C_SpellBook`, names come from
+`C_Spell.GetSpellInfo` — and `GetSpellInfo`, `GetSpecialization`, `GetNumSpellTabs` and
+`GetSpellBookItemInfo` do not exist here at all. So reach for the *retail* reference,
+never a Classic one, and expect anything removed in 11.0 to be gone.
 
-Dead ends, so nobody re-walks them: `ADDON_ACTION_BLOCKED` never fires for the taint
-error, `/console taintLog 1` writes no `taint.log` in this build, and `General.log`
-carries nothing either. The taint is also intermittent — three identical repro attempts
-to get one. Attribution isn't reachable from Lua here, and the `ReloadUI()` mitigation
-doesn't need it.
+Two local files say it exactly, both regenerated from the live client:
+
+- `api-1.60.1.txt` — **10,957 names**, every global function plus every member of the
+  271 `C_*` namespaces. `/wc dump`, then `cargo run -- api <AddOns> <out>`. This is the
+  complete truth about what exists; the agent's failure mode is not forgetting what a
+  function does, it is confidently calling one that exists in retail and not here.
+- `apidocs-1.60.1.txt` — **8,437 signatures**: 6,621 functions with argument and return
+  types, 1,816 events with payloads, plus the structures and enumerations those point
+  at (so `SpellBookItemInfo`'s fields and `Enum.SpellBookSpellBank`'s values are stated
+  rather than guessed). `/wc docs`, then `cargo run -- apidocs <AddOns> <out>`.
+
+The probe reported "no API documentation tables" and that was a misreading:
+`APIDocumentation` is nil *at startup* but `APIDocumentation_LoadUI()` loads it, which
+is what `/wc docs` does. The coverage is partial and the gap has a shape — 5,038 of the
+names carry a signature, 5,919 do not, and the undocumented half is the old
+FrameXML-era C globals, which is to say precisely the ones we depend on: `PlaceAction`,
+`HasAction`, `GetActionInfo`, `CreateMacro`, `GetBinding`, `ReloadUI`,
+`EnumerateFrames`. For those, the name index proves existence and the retail wiki
+supplies the signature.
+
+Dead ends, so nobody re-walks them: `ADDON_ACTION_BLOCKED` never fires for the gamepad
+taint (it does fire for a direct protected call such as `ReloadUI()`), `/console
+taintLog 1` writes no `taint.log` in this build, and `General.log` carries nothing
+either. The A/B breakage is intermittent: it took three identical attempts to see it
+once.
+
+What is left is `issecurevariable`. `/wc place <variant>` asks it about every global
+and every field of every global table, before and after the action, and reports what
+turned insecure. Whether that can see the gamepad taint at all is settled by the
+`chatopen` variant, the known-bad control: if it shows nothing, a clean scan
+elsewhere proves nothing.
 
 ## Building
 
@@ -194,16 +214,17 @@ replies and the offered button arriving in one message. `probe` refuses to run u
 
 Open:
 
-- **Give the agent the context.** `/wc context` exports character, the filled action
-  slots, every action-bound frame, all bound keys, macro bodies and the spellbook as
-  one sectioned string; `cargo run -- context <AddOns> <out>` pulls it. The spellbook
-  half is also the vocabulary prompt Whisper needs. Still to decide: at ~11k API names
-  the index is too big to paste into every request, so using it means file access and
-  more than one turn, which costs latency on every request including "say hi to my
-  party". It probably wants to be opt-in per request.
+- **Give the agent the context.** The addon exports character, filled action slots,
+  every action-bound frame, bound keys, macro bodies and the spellbook as one
+  sectioned string on every `/reload` and logout (`PLAYER_LOGOUT` fires just before
+  SavedVariables is written, the only moment that reaches disk). `cargo run --
+  context <AddOns> <out>` pulls it. The spellbook half is also Whisper's vocabulary.
 - **Isolate `PlaceAction`.** Our one test *succeeded* (`action 4 now holds macro`), and
-  the claim that it taints gamepad targeting was a guess made before anything was
-  measured and never isolated. If it is clean, bar rearranging is back on the table.
+  the claim that it taints gamepad targeting was a guess, never isolated. `/wc place`
+  runs the variants one per fresh session: `none`, `chatopen` (control), `pickup`,
+  `hidden`, `visible`, `put` (`C_ActionBar.PutActionInSlot`), `move`, then `clean`.
+  `/wc verdict ok|broken` records the hand check; results live in
+  `WowCompanionDB.placeTests`. If it is clean, bar rearranging is back on the table.
 - **A game → PC channel, maybe.** The `bridge` command probes `LoggingChat`: the game
   writes chat to a log file we can read, which would be a real return path without
   reading pixels. Built, never run.
