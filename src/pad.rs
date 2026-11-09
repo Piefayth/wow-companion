@@ -1,0 +1,223 @@
+//! The controller, read as raw HID.
+//!
+//! Windows.Gaming.Input never enumerated this pad (a Switch controller behind
+//! switch2connect, presenting itself as a DualSense through the Virtual HID
+//! Framework), and WGI omits the PS/Home button from its gamepad button set even for
+//! pads it does see. gilrs on Windows offers only WGI or XInput, so neither reaches
+//! this pad. HID does, and it needs no window focus, which push-to-talk during a game
+//! very much does.
+//!
+//! Measured against this setup: 64-byte reports, id 0x01, standard DualSense layout.
+
+use std::{
+    fmt, io, thread,
+    time::{Duration, Instant},
+};
+
+use hidapi::{HidApi, HidDevice};
+
+// the pad as switch2connect presents it; `pads` lists what is actually attached
+#[cfg_attr(not(feature = "voice"), allow(dead_code))]
+pub const DEFAULT_PAD: (u16, u16) = (0x054c, 0x0ce6);
+
+const REPORT: usize = 128;
+const POLL: Duration = Duration::from_millis(4);
+const CALIBRATE: Duration = Duration::from_secs(3);
+// a byte that moves this often while untouched is an axis, a counter or a timestamp
+const RESTLESS: u32 = 3;
+
+/// One button, as the bit it occupies in the input report.
+#[cfg_attr(not(feature = "voice"), allow(dead_code))]
+pub struct Press {
+    pub byte: usize,
+    pub mask: u8,
+}
+
+impl fmt::Display for Press {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "byte {} mask {:#04x}", self.byte, self.mask)
+    }
+}
+
+// Named for this pad's measured layout. Anything else can be given as byte:mask,
+// since these offsets belong to one adapter's report, not to HID in general.
+#[cfg_attr(not(feature = "voice"), allow(dead_code))]
+pub fn press(name: &str) -> io::Result<Press> {
+    let (byte, mask) = match name.to_ascii_lowercase().as_str() {
+        // the one button WoW ignores, which is the whole reason for this module
+        "home" | "ps" => (10, 0x01),
+        "capture" | "touchpad" => (10, 0x02),
+        "l1" | "lb" => (9, 0x01),
+        "r1" | "rb" => (9, 0x02),
+        other => match other.split_once(':') {
+            Some((byte, mask)) => (
+                byte.parse().map_err(|_| io::Error::other(format!("{byte:?} isn't a byte index")))?,
+                hex8(mask)?,
+            ),
+            None => {
+                return Err(io::Error::other(format!(
+                    "unknown button {name:?}: try home, capture, l1, r1, or byte:mask like 10:0x01"
+                )));
+            }
+        },
+    };
+    Ok(Press { byte, mask })
+}
+
+#[cfg_attr(not(feature = "voice"), allow(dead_code))]
+pub struct Pad {
+    device: HidDevice,
+    latest: Vec<u8>,
+}
+
+#[cfg_attr(not(feature = "voice"), allow(dead_code))]
+impl Pad {
+    pub fn open(vid: u16, pid: u16) -> io::Result<Self> {
+        Ok(Self { device: open(vid, pid)?, latest: Vec::new() })
+    }
+
+    /// Drain every report waiting on the device, keeping the newest. The pad streams
+    /// at a few hundred hertz, so without draining we would read stale state.
+    pub fn refresh(&mut self) -> io::Result<()> {
+        let mut buffer = [0u8; REPORT];
+        loop {
+            let read = self
+                .device
+                .read_timeout(&mut buffer, 0)
+                .map_err(|err| io::Error::other(err.to_string()))?;
+            if read == 0 {
+                return Ok(());
+            }
+            self.latest.clear();
+            self.latest.extend_from_slice(&buffer[..read]);
+        }
+    }
+
+    pub fn held(&self, press: &Press) -> bool {
+        self.latest.get(press.byte).is_some_and(|byte| byte & press.mask != 0)
+    }
+}
+
+pub fn list() -> io::Result<()> {
+    let api = HidApi::new().map_err(|err| io::Error::other(err.to_string()))?;
+    println!("{:>9}  {:>11}  {:<28} {}", "vid:pid", "usage", "product", "path");
+    for device in api.device_list() {
+        println!(
+            "{:04x}:{:04x}  {:#06x}/{:#04x}  {:<28} {}",
+            device.vendor_id(),
+            device.product_id(),
+            device.usage_page(),
+            device.usage(),
+            device.product_string().unwrap_or("?"),
+            device.path().to_string_lossy(),
+        );
+    }
+    println!("\ngame controllers report usage 0x0001/0x04 (joystick) or 0x05 (gamepad)");
+    Ok(())
+}
+
+/// Reports a button as the bit it actually is.
+///
+/// A pad streams whether or not you touch it: a sequence counter, a timestamp and six
+/// axes of IMU, all moving constantly. So spend a moment learning which bytes are
+/// never still and mask those out. Counting changes rather than collecting flipped
+/// bits matters: three seconds only catches some bits of a 16-bit gyro value, and
+/// masking bit by bit lets the rest through forever after.
+pub fn watch(id: &str) -> io::Result<()> {
+    let (vid, pid) = split(id)?;
+    let device = open(vid, pid)?;
+    println!("watching {vid:04x}:{pid:04x}");
+    println!("hands off the pad for {CALIBRATE:?} while I learn what moves on its own");
+
+    let mut churn = [0u32; REPORT];
+    let mut previous: Option<Vec<u8>> = None;
+    let mut buffer = [0u8; REPORT];
+    let mut learning = true;
+    let since = Instant::now();
+    loop {
+        let read = device
+            .read_timeout(&mut buffer, 100)
+            .map_err(|err| io::Error::other(err.to_string()))?;
+        if read == 0 {
+            continue;
+        }
+        let current = &buffer[..read];
+        match &previous {
+            None => println!("report is {read} bytes, id {:#04x}", current[0]),
+            Some(last) => {
+                for (index, (before, after)) in last.iter().zip(current).enumerate() {
+                    let flipped = before ^ after;
+                    if flipped == 0 {
+                        continue;
+                    }
+                    if learning {
+                        churn[index] += 1;
+                        continue;
+                    }
+                    if churn[index] >= RESTLESS {
+                        continue;
+                    }
+                    for bit in 0..8 {
+                        let mask = 1u8 << bit;
+                        if flipped & mask != 0 {
+                            let state = if after & mask != 0 { "down" } else { "up" };
+                            println!("byte {index} bit {bit} {state}  (mask {mask:#04x})");
+                        }
+                    }
+                }
+            }
+        }
+        previous = Some(current.to_vec());
+        if learning && since.elapsed() > CALIBRATE {
+            learning = false;
+            let noisy: Vec<String> = churn
+                .iter()
+                .enumerate()
+                .filter(|(_, seen)| **seen >= RESTLESS)
+                .map(|(index, seen)| format!("{index}({seen})"))
+                .collect();
+            println!("ignoring restless bytes: {}", noisy.join(" "));
+            println!("now press one button at a time");
+        }
+        thread::sleep(POLL);
+    }
+}
+
+fn split(id: &str) -> io::Result<(u16, u16)> {
+    let (vid, pid) = id
+        .split_once(':')
+        .ok_or_else(|| io::Error::other("expected vid:pid, like 054c:0ce6"))?;
+    Ok((hex(vid)?, hex(pid)?))
+}
+
+fn hex(text: &str) -> io::Result<u16> {
+    u16::from_str_radix(text.trim_start_matches("0x"), 16)
+        .map_err(|_| io::Error::other(format!("{text:?} isn't hex")))
+}
+
+#[cfg_attr(not(feature = "voice"), allow(dead_code))]
+fn hex8(text: &str) -> io::Result<u8> {
+    u8::from_str_radix(text.trim_start_matches("0x"), 16)
+        .map_err(|_| io::Error::other(format!("{text:?} isn't a hex byte")))
+}
+
+fn open(vid: u16, pid: u16) -> io::Result<HidDevice> {
+    let api = HidApi::new().map_err(|err| io::Error::other(err.to_string()))?;
+    // by path, not vid/pid: a pad exposes several HID interfaces and more than one
+    // Sony device may be paired, so the first match is not reliably the right one
+    let candidates: Vec<_> = api
+        .device_list()
+        .filter(|device| device.vendor_id() == vid && device.product_id() == pid)
+        .collect();
+    let chosen = candidates
+        .iter()
+        .find(|device| device.usage_page() == 1 && matches!(device.usage(), 4 | 5))
+        .or_else(|| candidates.first())
+        .ok_or_else(|| io::Error::other(format!("no HID device {vid:04x}:{pid:04x}")))?;
+    if candidates.len() > 1 {
+        println!("{} interfaces matched, using {}", candidates.len(), chosen.path().to_string_lossy());
+    }
+    chosen
+        .open_device(&api)
+        .map_err(|err| io::Error::other(format!("{err} (is something holding it exclusively?)")))
+}

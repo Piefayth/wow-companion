@@ -9,6 +9,7 @@ local SIGNALS = "Interface\\AddOns\\WowCompanion\\Signals\\"
 
 local nextSlot = 1
 local blocked = 0
+local ticker
 
 local function say(message)
 	print("|cff66ccffCompanion|r " .. message)
@@ -41,6 +42,53 @@ local function listen(path, heard)
 	end)
 end
 
+-- What the helper is allowed to ask for. A dispatch table rather than loadstring on
+-- whatever arrives: the rule is configuration only, and this is where that rule lives.
+local handlers = {}
+
+-- the player still presses send, every time
+function handlers.chat(inbox)
+	local open = ChatFrame_OpenChat or (ChatFrameUtil and ChatFrameUtil.OpenChat)
+	if not open then
+		return "no chat opener"
+	end
+	-- deferred for the same reason /wc chat defers: whatever keypress got us here
+	-- may still tear the edit box down on its way out
+	C_Timer.After(0.1, function()
+		open(inbox.text or "")
+	end)
+	return ("chat box holds %q"):format(inbox.text or "")
+end
+
+function handlers.macro(inbox)
+	if InCombatLockdown() then
+		return "refused: in combat"
+	end
+	if not inbox.name then
+		return "refused: no macro name"
+	end
+	local index = GetMacroIndexByName(inbox.name)
+	if index and index > 0 then
+		EditMacro(index, inbox.name, inbox.icon, inbox.body)
+		return ("edited macro %s at %d"):format(inbox.name, index)
+	end
+	index = CreateMacro(inbox.name, inbox.icon or "INV_MISC_QUESTIONMARK", inbox.body, false)
+	-- deliberately not placed on a bar: PlaceAction taints the UI, so bar edits are
+	-- their own operation followed by a reload
+	return index and ("created macro %s at %d"):format(inbox.name, index) or "CreateMacro failed"
+end
+
+-- clears taint, flushes SavedVariables and resets the slot cursor, all at once
+function handlers.reload()
+	C_Timer.After(0.1, ReloadUI)
+	return "reloading"
+end
+
+function handlers.probe(inbox)
+	WowCompanionDB.probe.received = (WowCompanionDB.probe.received or 0) + 1
+	return ("message %d, %ds after the helper wrote it"):format(inbox.n, time() - inbox.sent)
+end
+
 local function receive()
 	local slot = nextSlot
 	nextSlot = nextSlot + 1
@@ -51,8 +99,13 @@ local function receive()
 		record("slot " .. slot, "failed: " .. tostring(reason))
 		return
 	end
-	WowCompanionDB.probe.received = (WowCompanionDB.probe.received or 0) + 1
-	record("slot " .. slot, ("message %d, %ds after the helper wrote it"):format(inbox.n, time() - inbox.sent))
+	local handler = handlers[inbox.kind or ""]
+	if not handler then
+		record("slot " .. slot, "unknown kind: " .. tostring(inbox.kind))
+		return
+	end
+	local ok, result = pcall(handler, inbox)
+	record("slot " .. slot, ok and tostring(result) or ("error: " .. tostring(result)))
 end
 
 local function poll()
@@ -156,7 +209,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		local version, build, _, toc = GetBuildInfo()
 		record("client", ("%s.%s, toc %d"):format(version, build, toc))
 		probeSound()
-		C_Timer.NewTicker(0.5, poll)
+		ticker = C_Timer.NewTicker(0.5, poll)
 	elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
 		-- taint cascades, and the first block names the real culprit, so number them
 		-- rather than letting each one overwrite the last
@@ -174,7 +227,20 @@ SlashCmdList.WOWCOMPANION = function(command)
 		probeMacro()
 	elseif command == "sound" then
 		probeSound()
+	-- the bell poll is the only thing this addon does continuously, so silencing it
+	-- is how we find out whether it is what taints the gamepad interact target
+	elseif command == "quiet" then
+		if ticker then
+			ticker:Cancel()
+			ticker = nil
+		end
+		say("bell poll stopped; nothing from the helper will arrive until /wc listen")
+	elseif command == "listen" then
+		if not ticker then
+			ticker = C_Timer.NewTicker(0.5, poll)
+		end
+		say("bell poll running")
 	else
-		say("/wc chat, /wc macro, /wc sound")
+		say("/wc chat, /wc macro, /wc sound, /wc quiet, /wc listen")
 	end
 end

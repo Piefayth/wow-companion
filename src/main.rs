@@ -1,6 +1,10 @@
 //! The PC half of WoW Companion. `install` lays the addon and its slots into the
-//! game's AddOns folder; `probe` sends numbered messages through slots and bells
-//! so we can see the channel work on a real client.
+//! game's AddOns folder, `send` delivers one command through a slot and a bell,
+//! and `probe` sends numbered messages so we can watch the channel work.
+
+mod pad;
+#[cfg(feature = "voice")]
+mod voice;
 
 use std::{
     env, fs, io,
@@ -26,13 +30,38 @@ const SAMPLE_RATE: u32 = 22_050;
 const SLOT_TOC: &str = "## Interface: 16001\n## Title: WoW Companion slot\n## LoadOnDemand: 1\n## Group: WowCompanion\n\nSlot.xml\n";
 const SLOT_XML: &str = "<Ui xmlns=\"http://www.blizzard.com/wow/ui/\">\n\t<Script file=\"Inbox.lua\"></Script>\n</Ui>\n";
 
+// where the helper remembers the addon's slot cursor; inert to the game, which only
+// loads files a toc or xml points at
+const STATE: &str = "helper-state.txt";
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let result = match args.as_slice() {
         [command, addons] if command == "install" => install(Path::new(addons)),
         [command, addons] if command == "probe" => probe(Path::new(addons)),
+        [command, addons, rest @ ..] if command == "send" => send(Path::new(addons), rest),
+        [command] if command == "pads" => pad::list(),
+        [command, id] if command == "pads" => pad::watch(id),
+        #[cfg(feature = "voice")]
+        [command] if command == "mics" => voice::microphones(),
+        #[cfg(feature = "voice")]
+        [command, model, options @ ..] if command == "voice" => {
+            voice::listen(Path::new(model), options)
+        }
+        [command, ..] if command == "voice" => Err(io::Error::other(
+            "built without voice: cargo run --features voice -- voice <model>",
+        )),
         _ => {
-            eprintln!("usage: wow-companion <install|probe> <path to Interface/AddOns>");
+            eprintln!("usage: wow-companion <command> [args]");
+            eprintln!("  install <AddOns>                 lay down the addon and its slots");
+            eprintln!("  probe <AddOns>                   send numbered messages, end to end");
+            eprintln!("  send <AddOns> chat <text>        put text in the chat box");
+            eprintln!("  send <AddOns> macro <name> <body>  create or edit a macro");
+            eprintln!("  send <AddOns> reload             reload the game's UI");
+            eprintln!("  pads                             list HID devices");
+            eprintln!("  pads <vid:pid>                   watch one pad's raw reports");
+            eprintln!("  mics                             list input devices");
+            eprintln!("  voice <model> [button] [mic]     hold the button and speak");
             std::process::exit(2);
         }
     };
@@ -80,20 +109,20 @@ fn probe(addons: &Path) -> io::Result<()> {
         println!("no stdin, starting in {:?}", PROBE_COUNTDOWN);
         thread::sleep(PROBE_COUNTDOWN);
     }
-    let wav = silent_wav();
+    // take slots from the shared cursor, so a second run works without a /reload
+    // instead of rewriting slots the addon has already loaded and cached
+    let mut used = Vec::new();
     for n in 1..=PROBE_MESSAGES {
         let sent = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        let inbox = format!("WowCompanion_Inbox = {{ n = {n}, sent = {sent} }}\n");
-        write_reporting(&addons.join(slot_name(n)).join("Inbox.lua"), inbox.as_bytes())?;
-        write_reporting(&signals.join(bell_name(n)), &wav)?;
-        if n > BELL_LINGER {
-            write_reporting(&signals.join(bell_name(n - BELL_LINGER)), &[])?;
-        }
-        println!("sent message {n}");
+        let slot = next_slot(addons)?;
+        deliver(addons, slot, &format!("{{ kind = \"probe\", n = {n}, sent = {sent} }}"))?;
+        used.push(slot);
+        println!("sent message {n} in slot {slot}");
         thread::sleep(PROBE_SPACING);
     }
-    for n in PROBE_MESSAGES.saturating_sub(BELL_LINGER - 1)..=PROBE_MESSAGES {
-        write_reporting(&signals.join(bell_name(n)), &[])?;
+    // the bells still ringing are the last few; earlier ones were silenced as we went
+    for slot in used.iter().rev().take(BELL_LINGER as usize) {
+        write_reporting(&signals.join(bell_name(*slot)), &[])?;
     }
     if !game_running()? {
         println!("warning: the game closed partway through, so the run is incomplete");
@@ -113,6 +142,110 @@ fn game_running() -> io::Result<bool> {
 #[cfg(not(windows))]
 fn game_running() -> io::Result<bool> {
     Ok(true)
+}
+
+fn send(addons: &Path, args: &[String]) -> io::Result<()> {
+    if !game_running()? {
+        return Err(io::Error::other("Wow.exe isn't running, so nothing would read this"));
+    }
+    let inbox = match args {
+        [kind, text] if kind == "chat" => {
+            format!("{{ kind = \"chat\", text = {} }}", lua_string(text))
+        }
+        [kind, name, body] if kind == "macro" => format!(
+            "{{ kind = \"macro\", name = {}, body = {} }}",
+            lua_string(name),
+            lua_string(body)
+        ),
+        [kind] if kind == "reload" => "{ kind = \"reload\" }".to_string(),
+        _ => {
+            return Err(io::Error::other(
+                "usage: send chat <text> | send macro <name> <body> | send reload",
+            ));
+        }
+    };
+    let slot = next_slot(addons)?;
+    deliver(addons, slot, &inbox)?;
+    println!("sent in slot {slot}: {inbox}");
+    Ok(())
+}
+
+fn deliver(addons: &Path, slot: u32, inbox: &str) -> io::Result<()> {
+    let signals = addons.join(ADDON).join("Signals");
+    let lua = format!("WowCompanion_Inbox = {inbox}\n");
+    // the inbox lands first: the bell is what tells the addon to go read it
+    write_reporting(&addons.join(slot_name(slot)).join("Inbox.lua"), lua.as_bytes())?;
+    write_reporting(&signals.join(bell_name(slot)), &silent_wav())?;
+    // a bell is reused every BELLS sends, so silence it well before then or the
+    // addon hears a stale ring and reads a slot we haven't written yet
+    if slot > BELL_LINGER {
+        write_reporting(&signals.join(bell_name(slot - BELL_LINGER)), &[])?;
+    }
+    Ok(())
+}
+
+// Slots load once per UI session, so the helper has to know where the addon's cursor
+// is. It resets when the UI session does, and the game rewrites SavedVariables at
+// exactly that moment, so that file's timestamp is the reset signal. No game → PC
+// channel needed.
+fn next_slot(addons: &Path) -> io::Result<u32> {
+    let state = addons.join(ADDON).join(STATE);
+    let stamp = saved_variables_stamp(addons).unwrap_or_default();
+    let (mut cursor, seen) = fs::read_to_string(&state)
+        .ok()
+        .and_then(|text| {
+            let mut lines = text.lines();
+            let cursor = lines.next()?.trim().parse().ok()?;
+            Some((cursor, lines.next().unwrap_or_default().trim().to_string()))
+        })
+        .unwrap_or((1, String::new()));
+    if stamp != seen {
+        cursor = 1;
+    }
+    if cursor > SLOTS {
+        return Err(io::Error::other(format!(
+            "all {SLOTS} slots are spent this UI session: `send reload`, or /reload in game"
+        )));
+    }
+    fs::write(&state, format!("{}\n{}\n", cursor + 1, stamp))?;
+    Ok(cursor)
+}
+
+fn saved_variables_stamp(addons: &Path) -> Option<String> {
+    // <client>/Interface/AddOns -> <client>/WTF/Account/<account>/SavedVariables
+    let accounts = addons.parent()?.parent()?.join("WTF").join("Account");
+    let mut newest = None;
+    for account in fs::read_dir(accounts).ok()?.flatten() {
+        let saved = account.path().join("SavedVariables").join(format!("{ADDON}.lua"));
+        let written = fs::metadata(&saved)
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|at| at.duration_since(UNIX_EPOCH).ok());
+        if let Some(written) = written {
+            let millis = written.as_millis();
+            newest = Some(newest.map_or(millis, |best: u128| best.max(millis)));
+        }
+    }
+    newest.map(|millis| millis.to_string())
+}
+
+// an agent will be writing these eventually, so quote defensively rather than trusting
+// the text to be free of quotes, backslashes and newlines
+fn lua_string(text: &str) -> String {
+    let mut quoted = String::with_capacity(text.len() + 2);
+    quoted.push('"');
+    for character in text.chars() {
+        match character {
+            '"' => quoted.push_str("\\\""),
+            '\\' => quoted.push_str("\\\\"),
+            '\n' => quoted.push_str("\\n"),
+            '\r' => quoted.push_str("\\r"),
+            '\0' => quoted.push_str("\\0"),
+            _ => quoted.push(character),
+        }
+    }
+    quoted.push('"');
+    quoted
 }
 
 // the game may hold a bell open while it plays, which Windows can refuse to overwrite;

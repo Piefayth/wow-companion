@@ -45,6 +45,10 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
   keypress. `ReloadUI()` is unprotected, so the addon can call it itself, and it clears
   the taint, flushes SavedVariables and resets the slot cursor in one move. Chat
   insertion on its own never tainted anything, so the frequent path stays clean.
+  The blocked call is `SetPreferredGamepadInteractTarget`, which is the gamepad UI's
+  interact targeting — so this lands squarely on the controller player we are building
+  for, and it fires whenever that targeting next runs rather than at the moment we
+  taint it. That is why it looks intermittent.
 - Voice: push-to-talk, whole clip transcribed after release (more accurate than
   streaming dictation). Pass a vocabulary prompt (spell names etc.).
 - **Not Windows voice typing (Win+H).** It needs "online speech recognition" on, which
@@ -88,6 +92,14 @@ error, `/console taintLog 1` writes no `taint.log` in this build, and `General.l
 carries nothing either. The taint is also intermittent — three identical repro attempts
 to get one. Attribution isn't reachable from Lua here, and the `ReloadUI()` mitigation
 doesn't need it.
+
+## Building
+
+`whisper-rs`'s `cuda` feature compiles ggml's CUDA backend from source: hundreds of
+`.cu` files, each built for every architecture ggml supports. Set `CUDAARCHS=89` (cmake
+3.20+ reads it; 8.9 is the 4090's) to build for this GPU alone and skip most of that.
+`whisper-rs-sys` has no passthrough for it, which is why it goes in the environment and
+not in `Cargo.toml`. Needs libclang for bindgen — `C:\Program Files\LLVM` here.
 
 ## Next
 

@@ -5,3 +5,14 @@ edition = "2024"
 publish = false
 
 [dependencies]
+hidapi = "2.6.7"
+# Behind a feature: the cuda build compiles ggml's CUDA backend from source, and any
+# change to this file invalidates it. Leaving it always-on meant every edit to the
+# channel or the controller paid for a full nvcc rebuild. `--features voice` when
+# working on voice; plain `cargo build` otherwise.
+cpal = { version = "0.18.2", optional = true }
+whisper-rs = { version = "0.16.0", features = ["cuda"], optional = true }
+
+[features]
+default = []
+voice = ["cpal", "whisper-rs"]
