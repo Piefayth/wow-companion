@@ -24,6 +24,9 @@ const PROBE_SPACING: Duration = Duration::from_secs(3);
 const PROBE_COUNTDOWN: Duration = Duration::from_secs(8);
 // long enough for the addon's 0.5 s poll to catch a bell several times over
 const BELL_HEARD: Duration = Duration::from_secs(2);
+// generous: the question is whether the client flushes chat to disk at all, and on
+// what cadence, so give a slow flush room to show itself before calling it dead
+const BRIDGE_PATIENCE: Duration = Duration::from_secs(20);
 
 // bells must exceed the client's sound cache limit (174,762 bytes) so it rereads them every play
 const BELL_SECONDS: u32 = 10;
@@ -49,6 +52,7 @@ fn main() {
         [command, addons, model, options @ ..] if command == "run" => {
             run(Path::new(addons), Path::new(model), options)
         }
+        [command, addons] if command == "bridge" => bridge(Path::new(addons)),
         [command] if command == "pads" => pad::list(),
         [command, id] if command == "pads" => pad::watch(id),
         [command] if command == "mics" => voice::microphones(),
@@ -204,6 +208,48 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
         Some(inbox) => send_inbox(addons, &inbox),
         None => Ok(()),
     }
+}
+
+/// Round-trip probe: PC to game through the slot channel, game back to PC through
+/// the client's own chat log. If this works there is a bidirectional bridge that
+/// does not involve reading pixels off the screen.
+fn bridge(addons: &Path) -> io::Result<()> {
+    let root = addons
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| io::Error::other("cannot find the client folder above AddOns"))?;
+    let chat_log = root.join("Logs").join("WoWChatLog.txt");
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+    // only read what arrives after we ask, so an old marker cannot be mistaken for a new one
+    let already = fs::metadata(&chat_log).map(|meta| meta.len()).unwrap_or(0);
+    println!("chat log: {} ({already} bytes so far)", chat_log.display());
+
+    let sent = Instant::now();
+    send_inbox(addons, &format!("{{ kind = \"bridge\", nonce = {nonce} }}"))?;
+    println!("waiting for {nonce} to reach the log");
+
+    let nonce = nonce.to_string();
+    while sent.elapsed() < BRIDGE_PATIENCE {
+        if let Ok(tail) = fs::read(&chat_log) {
+            if tail.len() as u64 > already {
+                let fresh = String::from_utf8_lossy(&tail[already as usize..]);
+                if let Some(line) = fresh.lines().find(|line| line.contains(&nonce)) {
+                    println!(
+                        "round trip in {:.1}s via: {}",
+                        sent.elapsed().as_secs_f32(),
+                        line.trim()
+                    );
+                    return Ok(());
+                }
+            }
+        }
+        thread::sleep(Duration::from_millis(200));
+    }
+    Err(io::Error::other(format!(
+        "nothing carrying {nonce} reached {} within {BRIDGE_PATIENCE:?}; the log may only \
+         keep server chat events, or may not flush until logout",
+        chat_log.display()
+    )))
 }
 
 /// The whole thing: controller, microphone, Whisper, the channel, and one

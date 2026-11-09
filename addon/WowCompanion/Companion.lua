@@ -15,6 +15,9 @@ local blocked = 0
 local ticker
 local logWindow
 local pendingTicker
+local actionButton
+-- which pad key the offer button binds to; set with /wc key <PADNAME>
+local offerKey
 
 local function say(message)
 	print("|cff66ccffCompanion|r " .. message)
@@ -132,6 +135,24 @@ local function buildLog()
 	end)
 	frame.messages = messages
 
+	-- 1.60.1 added a SmartNavigation API for exactly this: an addon can mark its own
+	-- frames focusable by the gamepad cursor, so the window is reachable on a
+	-- controller instead of needing a mouse.
+	if SmartNavigation_MarkFrameFocusable then
+		pcall(SmartNavigation_MarkFrameFocusable, frame)
+	end
+	-- Marking may not be enough: "focus interface" cycles registered UI panels, and
+	-- a frame the addon merely shows is not one. Registering here is cheap to undo
+	-- if it turns out to be the wrong lever.
+	if UIPanelWindows then
+		UIPanelWindows["WowCompanionLog"] = {
+			area = "center",
+			pushable = 0,
+			whileDead = 1,
+			allowOtherPanels = 1,
+		}
+	end
+
 	frame:SetResizable(true)
 	if frame.SetResizeBounds then
 		frame:SetResizeBounds(320, 180)
@@ -150,6 +171,18 @@ end
 local function logFrame()
 	logWindow = logWindow or buildLog()
 	return logWindow
+end
+
+-- Shown through the panel system when it is available, so the frame is a UI panel
+-- the gamepad's focus cycle can find, rather than just a frame we made visible.
+local function reveal(frame)
+	if ShowUIPanel and UIPanelWindows and UIPanelWindows["WowCompanionLog"] then
+		local shown = pcall(ShowUIPanel, frame)
+		if shown and frame:IsShown() then
+			return
+		end
+	end
+	frame:Show()
 end
 
 local function colouredFor(who)
@@ -193,7 +226,7 @@ local function setPending(text)
 	spin()
 	frame.pending:Show()
 	if not frame:IsShown() and not InCombatLockdown() then
-		frame:Show()
+		reveal(frame)
 	end
 	pendingTicker = C_Timer.NewTicker(0.4, spin)
 end
@@ -213,6 +246,78 @@ local function replayLog()
 	for _, entry in ipairs(WowCompanionDB.log or {}) do
 		showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at)
 	end
+end
+
+-- A button in the Companion window, retargeted on demand.
+--
+-- Protected calls are refused from insecure code, but a hardware button press is
+-- trusted -- so for anything we cannot do ourselves, we put a button in front of the
+-- player and they press it. It lives inside the window rather than on an action bar
+-- so the gamepad cursor has a normal piece of UI to land on, and because it costs no
+-- binding and no bar slot.
+--
+-- SecureActionButtonTemplate for the secure path, UIPanelButtonTemplate so it looks
+-- like the game's own. Macro text is the limit of what it can do, which is also the
+-- limit of what the player could type -- it grants no power they lacked.
+local function offer(label, macro)
+	-- attributes on a secure frame cannot be set in combat, and this is
+	-- configuration anyway
+	if InCombatLockdown() then
+		return "refused: in combat"
+	end
+	local frame = logFrame()
+	if not actionButton then
+		local made, button = pcall(CreateFrame, "Button", "WowCompanionDo", frame,
+			"SecureActionButtonTemplate, UIPanelButtonTemplate")
+		if not made or not button then
+			return "could not build the button: " .. tostring(button)
+		end
+		actionButton = button
+		actionButton:SetSize(150, 24)
+		actionButton:SetPoint("BOTTOMRIGHT", -32, 12)
+		actionButton:RegisterForClicks("AnyUp")
+		actionButton:SetAttribute("type", "macro")
+		-- make the cursor able to land on it, and tell SmartNavigation this frame is
+		-- where the window's focusable button lives
+		if SmartNavigation_MarkFrameFocusable then
+			pcall(SmartNavigation_MarkFrameFocusable, actionButton)
+		end
+		if SmartNavigation_SetButtonFrame then
+			pcall(SmartNavigation_SetButtonFrame, actionButton)
+		end
+		if SmartNavigation_SetReturnFrameFocusButton then
+			pcall(SmartNavigation_SetReturnFrameFocusButton, frame, actionButton)
+		end
+		actionButton:SetScript("PostClick", function(self)
+			if ClearOverrideBindings then
+				ClearOverrideBindings(self)
+			end
+			self:Hide()
+		end)
+	end
+	actionButton:SetAttribute("macrotext", macro)
+	actionButton:SetText(label)
+	actionButton:Show()
+	if not frame:IsShown() then
+		reveal(frame)
+	end
+
+	-- The window is not a frame the gamepad cursor will focus, so instead of making
+	-- it focusable we bind a pad button straight to clicking this one. The binding
+	-- exists only while a button is pending and is cleared the moment it is pressed,
+	-- so it costs nothing the rest of the time.
+	local bound = "nothing"
+	if SetOverrideBindingClick then
+		ClearOverrideBindings(actionButton)
+		for _, key in ipairs({ offerKey, "PADDRIGHT", "PAD3" }) do
+			if key and SetOverrideBindingClick(actionButton, true, key, "WowCompanionDo") ~= false then
+				bound = key
+				break
+			end
+		end
+	end
+	remember("claude", ("press %s, or click %s below"):format(bound, label))
+	return ("offering %q which runs %q, bound to %s"):format(label, macro, bound)
 end
 
 -- What the helper is allowed to ask for. A dispatch table rather than loadstring on
@@ -279,10 +384,48 @@ function handlers.macro(inbox)
 	return index and ("created macro %s at %d"):format(inbox.name, index) or "CreateMacro failed"
 end
 
--- clears taint, flushes SavedVariables and resets the slot cursor, all at once
+-- Probing for a game -> PC channel that is not the pixel strip we ruled out.
+--
+-- `LoggingChat(true)` makes the client write chat to Logs\WoWChatLog.txt, a plain
+-- text file the helper can tail. The open question is what counts as chat: the log
+-- may capture only server CHAT_MSG_* events, in which case an addon's own print
+-- never appears and this whole idea is dead. So emit the marker three ways and let
+-- the helper report which, if any, reached disk.
+function handlers.bridge(inbox)
+	local running, failed = pcall(LoggingChat, true)
+	if not running then
+		return "LoggingChat failed: " .. tostring(failed)
+	end
+	local nonce = tostring(inbox.nonce or "?")
+	print(("WCBRIDGE-print %s"):format(nonce))
+	if DEFAULT_CHAT_FRAME then
+		DEFAULT_CHAT_FRAME:AddMessage(("WCBRIDGE-frame %s"):format(nonce))
+	end
+	-- a real chat event, addressed to nobody: the only kind the log certainly keeps.
+	-- Echoed back to us alone, so it is not a message sent on the player's behalf.
+	if C_ChatInfo and C_ChatInfo.SendAddonMessage then
+		C_ChatInfo.SendAddonMessage("WowCompanion", nonce, "WHISPER", UnitName("player"))
+	end
+	return ("logging on: %s, marked %s"):format(tostring(LoggingChat()), nonce)
+end
+
+-- A reload clears taint, flushes SavedVariables and resets the slot cursor. We
+-- cannot do it ourselves: ReloadUI wraps a protected call, and asking from insecure
+-- code comes back as "WowCompanion called Reload()".
+--
+-- A real button press is a hardware event, and that is the one path the client
+-- trusts. So build a secure button on the fly, point it at a macro, and let the
+-- player press it: the click runs through the secure path, taints nothing, and is
+-- never blocked. Anything expressible as a macro can go through here.
 function handlers.reload()
-	C_Timer.After(0.1, ReloadUI)
-	return "reloading"
+	return offer("Reload UI", "/reload")
+end
+
+-- Whatever the helper asks for, as a button the player presses. The macro text is
+-- the limit of what this can do, which is also the limit of what the player could
+-- type themselves -- so it grants no power they did not already have.
+function handlers.press(inbox)
+	return offer(inbox.label or "Do it", inbox.macro or "")
 end
 
 function handlers.probe(inbox)
@@ -335,6 +478,86 @@ local function probeSound()
 	listen(SIGNALS .. "never.wav", function(playing)
 		record("never.wav plays (want false)", playing)
 	end)
+end
+
+-- What the gamepad UI gives us to work with. Controller focus matters well beyond
+-- one button, and the client's own Lua is not on disk to read, so ask the client.
+local function probeGamepad()
+	for _, name in ipairs({
+		"C_GamePad",
+		"SmartNavigation",
+		"GamePadSmartNavigation",
+		"UIPanelWindows",
+		"SetOverrideBinding",
+		"GetBindingKey",
+		"C_GamePad.GetActiveDeviceID",
+		"C_GamePad.GetDeviceMappedState",
+		"C_GamePad.SetVibration",
+		"SmartNavigationFrameMixin",
+		"GamePadCursorMixin",
+	}) do
+		local holder, member = name:match("^(%w+)%.(%w+)$")
+		local found
+		if holder then
+			local parent = _G[holder]
+			found = type(parent) == "table" and parent[member] ~= nil
+		else
+			found = _G[name] ~= nil
+		end
+		record("has " .. name, found and "yes" or "no")
+	end
+	record("interface style", cvar("InputDeviceInterfaceStyle"))
+
+	-- SmartNavigation exists; find out whether it will let us register a frame
+	if type(SmartNavigation) == "table" then
+		local members = {}
+		for key, value in pairs(SmartNavigation) do
+			members[#members + 1] = ("%s(%s)"):format(tostring(key), type(value))
+		end
+		table.sort(members)
+		record("SmartNavigation members", table.concat(members, " "))
+	end
+
+	-- which pad key names this build will actually accept for an override binding
+	local usable = {}
+	if SetOverrideBindingClick and actionButton then
+		for _, key in ipairs({
+			"PAD1", "PAD2", "PAD3", "PAD4",
+			"PADDUP", "PADDDOWN", "PADDLEFT", "PADDRIGHT",
+			"PADLSHOULDER", "PADRSHOULDER", "PADLSTICK", "PADRSTICK",
+			"PADFORWARD", "PADBACK", "PADSYSTEM", "PADSOCIAL",
+		}) do
+			local ok = pcall(SetOverrideBindingClick, actionButton, true, key, "WowCompanionDo")
+			if ok and GetBindingByKey and GetBindingByKey(key) then
+				usable[#usable + 1] = key
+			elseif ok then
+				usable[#usable + 1] = key .. "?"
+			end
+		end
+		ClearOverrideBindings(actionButton)
+	end
+	record("pad keys accepted", #usable > 0 and table.concat(usable, " ") or "none")
+
+	-- 1.60.1's SmartNavigation_* globals are the documented way in. Mark the window,
+	-- then ask whether it took: the API can answer for itself, so there is no need
+	-- to infer it from whether the cursor happens to land.
+	local frame = logFrame()
+	if SmartNavigation_MarkFrameFocusable then
+		pcall(SmartNavigation_MarkFrameFocusable, frame)
+	end
+	for _, check in ipairs({ "SmartNavigation_IsFrameFocusable", "SmartNavigation_CanFocusFrame" }) do
+		local probe = _G[check]
+		if probe then
+			local ok, answer = pcall(probe, frame)
+			record(check, ok and tostring(answer) or "errored")
+		else
+			record(check, "missing")
+		end
+	end
+	if actionButton and SmartNavigation_IsFrameFocusable then
+		local ok, answer = pcall(SmartNavigation_IsFrameFocusable, actionButton)
+		record("button focusable", ok and tostring(answer) or "errored")
+	end
 end
 
 local function probeChat()
@@ -426,6 +649,13 @@ SlashCmdList.WOWCOMPANION = function(command)
 		probeMacro()
 	elseif command == "sound" then
 		probeSound()
+	elseif command == "gamepad" then
+		probeGamepad()
+	elseif command:match("^key ") then
+		offerKey = command:match("^key (%S+)")
+		say(("offer button will try %s first"):format(tostring(offerKey)))
+	elseif command == "button" then
+		say(offer("Reload UI", "/reload"))
 	-- the bell poll is the only thing this addon does continuously, so silencing it
 	-- is how we find out whether it is what taints the gamepad interact target
 	elseif command == "quiet" then
@@ -442,15 +672,17 @@ SlashCmdList.WOWCOMPANION = function(command)
 	elseif command == "log" then
 		local frame = logFrame()
 		if frame:IsShown() then
+			-- plain Hide, not HideUIPanel: a programmatic HideUIPanel from a click
+			-- handler is the exact path that taints gamepad navigation on this client
 			frame:Hide()
 		else
-			frame:Show()
+			reveal(frame)
 		end
 	elseif command == "clear" then
 		WowCompanionDB.log = {}
 		logFrame().messages:Clear()
 		say("conversation cleared")
 	else
-		say("/wc log, /wc clear, /wc chat, /wc macro, /wc sound, /wc quiet, /wc listen")
+		say("/wc log, /wc clear, /wc button, /wc gamepad, /wc chat, /wc macro, /wc sound, /wc quiet, /wc listen")
 	end
 end

@@ -48,10 +48,13 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
   leaves the gamepad focus restore blocked, and **the A and B buttons stop working**
   until the taint clears. It announces itself as one mild "interface action failed"
   notice, which is why it read as cosmetic at first. It is not.
-  The blocked call for bar placement is `SetPreferredGamepadInteractTarget`, the
-  gamepad UI's interact targeting — so it lands squarely on the controller player we
-  are building for, and it fires whenever that targeting next runs rather than when we
-  taint it, which is why it looks intermittent.
+  The blocked call is `SetPreferredGamepadInteractTarget`, the gamepad UI's interact
+  targeting — so it lands squarely on the controller player we are building for, and
+  it fires whenever that targeting next runs rather than when we taint it, which is
+  why it looks intermittent. Corroborated outside this project: Horizon-Suite #489
+  reports the same function blocking on the same client, and identifies the cause as
+  addon code reparenting, showing or hiding a *Blizzard* frame. That is exactly what
+  opening the chat box was, and it is why the player opens it instead of us.
   The continuous bell poll is **not** a taint source: `/wc quiet` stops it, and a fresh
   session with it running interacts cleanly. Worth stating because it was the obvious
   suspect, being the only thing the addon does nonstop, and it was wrong twice over.
@@ -61,6 +64,21 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
   it is "configuration only, never act for the player" taken literally — we write, the
   player executes. A `SecureActionButtonTemplate` with `macrotext` is the other
   taint-free option, but it costs a gamepad binding, and those are scarce.
+- **For anything protected, offer a button.** Insecure code cannot call protected
+  functions — `ReloadUI()` is one, and asking comes back as "WowCompanion called
+  Reload()". A hardware button press is trusted, so build a
+  `SecureActionButtonTemplate` button, set `macrotext` on it out of combat, and let
+  the player press it. Macro text is the ceiling, which is also the ceiling of what
+  the player could type, so it grants nothing new — and `PlaceAction` is *not*
+  expressible, so bar rearranging stays outside this door.
+- **Addon frames can be gamepad-focusable; it takes three things.**
+  `SmartNavigation_MarkFrameFocusable(frame)` (the `SmartNavigation_*` globals
+  arrived in 1.60.1, this client's exact patch), registration in `UIPanelWindows`,
+  and showing via `ShowUIPanel` — marking alone is not enough, because the focus
+  cycle walks registered panels, not frames an addon merely showed. Hide with a plain
+  `frame:Hide()`: a programmatic `HideUIPanel` from a click handler is a known taint
+  path on this client. Measured working, after three wrong guesses that could have
+  been one search.
 - **Never leave a bell ringing.** `/reload` puts the addon's cursor back at slot 1, so
   a bell still ringing from the last send is heard again and the command runs a second
   time. That is how the chat taint above turned into A and B staying broken across
