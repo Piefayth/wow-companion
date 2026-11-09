@@ -1,0 +1,6 @@
+## Interface: 16001
+## Title: WoW Companion
+## Notes: Takes commands from the companion helper running on your PC.
+## SavedVariables: WowCompanionDB
+
+Companion.lua
