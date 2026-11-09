@@ -275,14 +275,22 @@ local function offer(label, macro)
 		actionButton = button
 		actionButton:SetSize(150, 24)
 		actionButton:SetPoint("BOTTOMRIGHT", -32, 12)
-		-- Order is what matters: a SecureActionButtonTemplate wants its attributes set
-		-- before clicks are registered. With it reversed the wrapper still runs --
-		-- PreClick and PostClick both fire -- while the macro silently does not, which
-		-- looks exactly like a permissions refusal and is not one.
+		-- Measured, one variable at a time. "AnyUp": the wrapper runs -- PreClick and
+		-- PostClick both fire -- and the macro does not, which reads exactly like a
+		-- permissions refusal and is not one. Both edges: runs, but twice, once down
+		-- and once up. "AnyDown" alone: runs once. That is the answer.
 		--
-		-- One edge only. Registering both runs the macro twice, once down and once up.
+		-- Attributes are still set first, which is cheap and conventional, but the
+		-- edge is what decides whether the macro fires at all.
 		actionButton:SetAttribute("type", "macro")
-		actionButton:RegisterForClicks("AnyUp")
+		actionButton:RegisterForClicks("AnyDown")
+
+		-- kept while this is still being pinned down: without it a failure is
+		-- indistinguishable from the click never arriving
+		actionButton:SetScript("PreClick", function(_, button)
+			say(("clicked %s, about to run %q"):format(
+				tostring(button), tostring(actionButton:GetAttribute("macrotext"))))
+		end)
 		-- make the cursor able to land on it, and tell SmartNavigation this frame is
 		-- where the window's focusable button lives
 		if SmartNavigation_MarkFrameFocusable then
