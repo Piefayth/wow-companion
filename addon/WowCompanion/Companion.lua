@@ -677,6 +677,57 @@ local function dumpApi()
 		:format(#lines, namespaces))
 end
 
+-- Signatures, if the client will give them up. The name index came from _G, but
+-- retail keeps documentation in a load-on-demand Blizzard addon, and this build has
+-- APIDocumentation_LoadUI -- so the table may only be absent because nothing has
+-- loaded it yet. Kept separate from dumpApi so a failure here costs nothing.
+local function describe(fields)
+	local parts = {}
+	for _, field in ipairs(fields or {}) do
+		parts[#parts + 1] = ("%s: %s%s"):format(
+			tostring(field.Name), tostring(field.Type), field.Nilable and "?" or "")
+	end
+	return table.concat(parts, ", ")
+end
+
+local function dumpDocs()
+	if not APIDocumentation then
+		for _, loader in ipairs({
+			function() APIDocumentation_LoadUI() end,
+			function() C_AddOns.LoadAddOn("Blizzard_APIDocumentationGenerated") end,
+			function() C_AddOns.LoadAddOn("Blizzard_APIDocumentation") end,
+		}) do
+			pcall(loader)
+			if APIDocumentation then
+				break
+			end
+		end
+	end
+	if type(APIDocumentation) ~= "table" or type(APIDocumentation.systems) ~= "table" then
+		record("api docs", "unavailable: APIDocumentation " .. type(APIDocumentation))
+		return
+	end
+
+	local newline = string.char(10)
+	local lines, systems = {}, 0
+	for _, system in ipairs(APIDocumentation.systems) do
+		systems = systems + 1
+		local prefix = system.Namespace and (system.Namespace .. ".") or ""
+		for _, fn in ipairs(system.Functions or {}) do
+			local returns = describe(fn.Returns)
+			lines[#lines + 1] = ("%s%s(%s)%s"):format(prefix, tostring(fn.Name),
+				describe(fn.Arguments), returns ~= "" and (" -> " .. returns) or "")
+		end
+		for _, event in ipairs(system.Events or {}) do
+			lines[#lines + 1] = ("event %s(%s)"):format(
+				tostring(event.LiteralName or event.Name), describe(event.Payload))
+		end
+	end
+	table.sort(lines)
+	WowCompanionDB.apidocs = table.concat(lines, newline) .. newline
+	record("api docs", ("%d entries from %d systems; /reload to write"):format(#lines, systems))
+end
+
 local function probeChat()
 	local open = ChatFrame_OpenChat or (ChatFrameUtil and ChatFrameUtil.OpenChat)
 	record("chat opener", ChatFrame_OpenChat and "ChatFrame_OpenChat" or open and "ChatFrameUtil.OpenChat" or "none")
@@ -772,6 +823,8 @@ SlashCmdList.WOWCOMPANION = function(command)
 		probeApi()
 	elseif command == "dump" then
 		dumpApi()
+	elseif command == "docs" then
+		dumpDocs()
 	elseif command == "ping" then
 		-- the macro test target: no side effects, and unmistakable when it fires.
 		-- remember() rather than say(), so the answer survives to SavedVariables --

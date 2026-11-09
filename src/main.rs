@@ -53,7 +53,10 @@ fn main() {
             run(Path::new(addons), Path::new(model), options)
         }
         [command, addons] if command == "bridge" => bridge(Path::new(addons)),
-        [command, addons, out] if command == "api" => api(Path::new(addons), Path::new(out)),
+        [command, addons, out] if command == "api" => api(Path::new(addons), "api", Path::new(out)),
+        [command, addons, out] if command == "apidocs" => {
+            api(Path::new(addons), "apidocs", Path::new(out))
+        }
         [command] if command == "pads" => pad::list(),
         [command, id] if command == "pads" => pad::watch(id),
         [command] if command == "mics" => voice::microphones(),
@@ -216,16 +219,17 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
 /// had locally — but the names are exact for 1.60.1, which is the half the agent
 /// cannot get from training data. Knowing a function exists *here* is the question
 /// it otherwise answers from retail and gets wrong.
-fn api(addons: &Path, out: &Path) -> io::Result<()> {
+fn api(addons: &Path, key: &str, out: &Path) -> io::Result<()> {
     let saved = saved_variables(addons)
         .ok_or_else(|| io::Error::other("no SavedVariables yet: /reload in game first"))?;
     let text = fs::read_to_string(&saved)?;
     // the dump is one long Lua string, so find its opening quote and read to the
     // first unescaped closing one rather than trying to parse Lua
+    let marker = format!("[\"{key}\"] = \"");
     let start = text
-        .find("[\"api\"] = \"")
-        .map(|at| at + "[\"api\"] = \"".len())
-        .ok_or_else(|| io::Error::other("no api dump in SavedVariables: run /wc dump, then /reload"))?;
+        .find(&marker)
+        .map(|at| at + marker.len())
+        .ok_or_else(|| io::Error::other(format!("no {key} in SavedVariables: dump it, then /reload")))?;
     let mut body = String::new();
     let mut escaped = false;
     for character in text[start..].chars() {
