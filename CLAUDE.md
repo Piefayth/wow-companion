@@ -6,11 +6,26 @@ game: text in the chat box, macros written, action bars rearranged.
 
 ## Shape
 
-- **Helper (Rust, `src/`)**: runs on the PC. Will read the controller directly
-  (`gilrs`), record the mic (`cpal`), transcribe locally (`whisper-rs`, large-v3-turbo
-  on the 4090), hand commands to an agent, and deliver results to the game.
+A cargo workspace, three crates, split along their build costs:
+
+- **`crates/pad`**: the controller, over raw HID (`hidapi`). Not `gilrs` and not
+  Windows.Gaming.Input: the pad here is a Switch controller through a switch2connect
+  adapter in **DS5 mode**, which WGI does not enumerate at all, so neither does
+  anything built on it. Raw HID sees it fine, needs no focused window, and reads
+  buttons the game has no binding for. Measured on `054c:0ce6`: `home → byte 10 bit
+  0x01`, `capture → 10/0x02`, `l1 → 9/0x01`, `r1 → 9/0x02`, `minus → 9/0x10`,
+  `plus → 9/0x20`. DS5 mode stays — every other game works with it.
+- **`crates/voice`**: mic capture (`cpal`) and local transcription (`whisper-rs`,
+  large-v3-turbo on the 4090). Its own crate purely so the CUDA build cannot be
+  invalidated by edits elsewhere; see "Building".
+- **Helper (`src/`)**: the orchestration — chord to clip to agent to slot write to
+  bell — plus every subcommand.
 - **Addon (Lua, `addon/WowCompanion/`)**: the in-game half. Applies what the helper
   sends.
+
+There is no Lua on this machine, so `python -I tools/luacheck.py addon/WowCompanion/Companion.lua`
+stands in: it catches an unterminated string and an unbalanced block, which are both
+mistakes we have actually shipped into the game and paid a reload to discover.
 
 ## The channel (PC → game)
 
@@ -42,8 +57,11 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
   placed in the box; the player presses send. No automation of play.
 - **Reload after touching the bars.** Placing actions from insecure code taints the UI,
   which later surfaces as "Interface action failed because of an AddOn" on an unrelated
-  keypress. `ReloadUI()` is unprotected, so the addon can call it itself, and it clears
-  the taint, flushes SavedVariables and resets the slot cursor in one move. Chat
+  keypress. A reload clears the taint, flushes SavedVariables and resets the slot
+  cursor in one move — but the addon cannot ask for one: `ReloadUI()` is **protected**,
+  and calling it comes back as `ADDON_ACTION_BLOCKED: WowCompanion called Reload()`.
+  (This file claimed the opposite for a while; it was never tested.) So a reload is
+  offered as a secure button, like everything else protected. Chat
   insertion taints too, and not harmlessly: opening the edit box from insecure code
   leaves the gamepad focus restore blocked, and **the A and B buttons stop working**
   until the taint clears. It announces itself as one mild "interface action failed"
@@ -108,9 +126,11 @@ version encoded, so 1.60.1 → 16001). Measured 2026-11-09:
   floor of the measurement, not the latency: both sides stamp with second-resolution
   clocks, and the real figure is bounded by the 0.5 s poll plus the 0.15 s
   `IsPlaying` check. Sub-second timestamps on both ends if the number ever matters.
-- **Bells behave.** `always.wav` plays, `never.wav` doesn't, and Windows never once
-  refused to overwrite a bell the game had open — zero lock retries across two runs.
-  That was the open Windows question and it's answered.
+- **Bells behave, and the file lock is bounded.** `always.wav` plays, `never.wav`
+  doesn't. The probe runs saw no lock at all; live sending does hit one, and the retry
+  loop in `write_reporting` clears it in 100–205 ms over 3–5 tries. So the open Windows
+  question — can the helper overwrite a sound the game has open — is answered yes, with
+  a retry, and the loop's 2 s ceiling has never been approached.
 - **Chat and macros work.** `ChatFrame_OpenChat` puts text in the box; `CreateMacro`,
   `EditMacro` and `PlaceAction` all succeed out of combat.
 - `FrameXML.log` logs every slot load, including empty ones — a free, precise trace of
@@ -123,10 +143,24 @@ Three things the real client taught us that a Mac couldn't:
   deferred a tick. Bell-triggered delivery isn't affected, but any slash-command path is.
 - **Action slots are a flat 1–120 space**, addressed by number regardless of what's
   drawn. The gamepad UI surfaces a different subset than the classic bars, so
-  "rearrange my bars" has to target the slots the controller UI actually shows. Unmapped.
+  "rearrange my bars" has to target the slots the controller UI actually shows. Rather
+  than guess the classic bar offsets, `/wc context` walks every frame in the UI
+  (`EnumerateFrames`) and reports the ones bound to an action slot, which is the live
+  UI's own answer.
 - **One client per install.** Two running at once both load slots, both consume bells,
   and both write the same SavedVariables file, so the last to reload wins and the
   measurements quietly lie. Diagnosed the hard way.
+
+**What this client's API actually is.** Asked, not assumed: it ships **no**
+documentation tables — `APIDocumentation`, `C_ApiDocumentation`, `GetAPIDocumentation`,
+`APIDocumentationMixin` and `ApiDocumentation` are all absent — so signatures are not
+available locally and an external reference is written about a different WoW. The
+*names* are available exactly, though: 6,017 global functions, 271 `C_*` namespaces,
+4,940 functions inside them (largest `C_Garrison`, 227). `/wc dump` writes all ~11k to
+SavedVariables and `cargo run -- api <AddOns> <out>` pulls them out. That is the half
+that matters, because the agent's failure mode is not forgetting what a function does,
+it is confidently calling one that exists in retail and not here. `/wc docs` tries the
+documentation tables anyway in case a Blizzard addon loads them on demand.
 
 Dead ends, so nobody re-walks them: `ADDON_ACTION_BLOCKED` never fires for the taint
 error, `/console taintLog 1` writes no `taint.log` in this build, and `General.log`
@@ -142,12 +176,34 @@ doesn't need it.
 `whisper-rs-sys` has no passthrough for it, which is why it goes in the environment and
 not in `Cargo.toml`. Needs libclang for bindgen — `C:\Program Files\LLVM` here.
 
+## The agent
+
+`claude -p` headless, not the API: no key to manage, it draws on the signed-in
+subscription, and `--json-schema` constrains it to one of the shapes the addon's
+dispatch table already accepts, so the model never writes Lua. `session_id` from the
+first reply plus `--resume` keeps one thread, which is what makes "put it on the other
+bar instead" mean anything. Startup is seconds per utterance — a deliberate trade, and
+the reason the agent is spawned *before* the in-game "thinking" announcement, so the
+bell wait overlaps the call.
+
 ## Next
 
-The channel is proven, so the remaining work is the helper's real pipeline: controller
-chord (`gilrs`) → mic (`cpal`) → `whisper-rs` → agent → slot write + bell. `probe`
-refuses to run unless `Wow.exe` is up, which is worth keeping for anything that writes
-into a live client.
+The pipeline runs end to end: chord → mic → whisper → agent → slot write + bell, with
+replies and the offered button arriving in one message. `probe` refuses to run unless
+`Wow.exe` is up, which is worth keeping for anything that writes into a live client.
 
-Still unmapped: which action slots the controller UI exposes, and what the agent needs
-out of SavedVariables to reason about current bars and macros.
+Open:
+
+- **Give the agent the context.** `/wc context` exports character, the filled action
+  slots, every action-bound frame, all bound keys, macro bodies and the spellbook as
+  one sectioned string; `cargo run -- context <AddOns> <out>` pulls it. The spellbook
+  half is also the vocabulary prompt Whisper needs. Still to decide: at ~11k API names
+  the index is too big to paste into every request, so using it means file access and
+  more than one turn, which costs latency on every request including "say hi to my
+  party". It probably wants to be opt-in per request.
+- **Isolate `PlaceAction`.** Our one test *succeeded* (`action 4 now holds macro`), and
+  the claim that it taints gamepad targeting was a guess made before anything was
+  measured and never isolated. If it is clean, bar rearranging is back on the table.
+- **A game → PC channel, maybe.** The `bridge` command probes `LoggingChat`: the game
+  writes chat to a log file we can read, which would be a real return path without
+  reading pixels. Built, never run.

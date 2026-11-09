@@ -728,6 +728,251 @@ local function dumpDocs()
 	record("api docs", ("%d entries from %d systems; /reload to write"):format(#lines, systems))
 end
 
+-- Name lookups, asked rather than assumed.
+--
+-- This client is 1.60.1: not retail, and not any Classic we have a reference for.
+-- GetSpellInfo has been removed, restored and reshaped across builds, so which of
+-- these exists -- and whether it returns a string or a table -- is a runtime
+-- question. Each is tried in turn and the first that answers wins.
+local function spellName(id)
+	if C_Spell and C_Spell.GetSpellInfo then
+		local ok, info = pcall(C_Spell.GetSpellInfo, id)
+		if ok and type(info) == "table" and info.name then
+			return info.name
+		end
+	end
+	if GetSpellInfo then
+		local ok, name = pcall(GetSpellInfo, id)
+		if ok then
+			if type(name) == "table" then
+				return name.name
+			elseif type(name) == "string" then
+				return name
+			end
+		end
+	end
+	return nil
+end
+
+-- Written as two ifs rather than a loop over { C_Item and ..., GetItemInfo }:
+-- ipairs stops at the first nil, so if the namespaced form were missing the loop
+-- would never reach the global one. That exact hole cost us an afternoon already.
+local function itemName(id)
+	if C_Item and C_Item.GetItemInfo then
+		local ok, name = pcall(C_Item.GetItemInfo, id)
+		if ok and type(name) == "string" then
+			return name
+		end
+	end
+	if GetItemInfo then
+		local ok, name = pcall(GetItemInfo, id)
+		if ok and type(name) == "string" then
+			return name
+		end
+	end
+	return nil
+end
+
+-- What the agent needs to know about this character, as one string.
+--
+-- The same shape as dumpApi and for the same reason: the helper has no Lua parser,
+-- so one string it can slice out of SavedVariables beats a nested table. Sections
+-- are marked "== name ==" so either side can take just the part it needs -- the
+-- whole thing is too big for every prompt, but "macros" or "action slots" is not.
+--
+-- Two sections answer open questions rather than feed the agent. "action buttons on
+-- screen" walks every frame in the UI looking for one bound to an action slot,
+-- which is how we learn which of the flat 1..120 space the gamepad UI actually
+-- draws -- measured from the live UI instead of guessed from the classic bar
+-- layout. "bindings" is the other half: what the controller can already press, and
+-- therefore what is left for us.
+local function exportContext()
+	local newline = string.char(10)
+	local out = {}
+	local function line(text)
+		out[#out + 1] = text
+	end
+	local function section(name)
+		line("")
+		line("== " .. name .. " ==")
+	end
+
+	local version, build = GetBuildInfo()
+	line(("-- WowCompanion context, %s, client %s build %s")
+		:format(date("%Y-%m-%d %H:%M:%S"), tostring(version), tostring(build)))
+
+	section("character")
+	line(("name: %s"):format(tostring(UnitName("player"))))
+	line(("level: %s"):format(tostring(UnitLevel("player"))))
+	line(("class: %s"):format(tostring(UnitClass("player"))))
+	line(("race: %s"):format(tostring(UnitRace("player"))))
+	line(("faction: %s"):format(tostring(UnitFactionGroup("player"))))
+	if GetSpecialization and GetSpecializationInfo then
+		local index = GetSpecialization()
+		if index then
+			local _, specName = GetSpecializationInfo(index)
+			line(("spec: %s"):format(tostring(specName)))
+		end
+	end
+	if GetMoney then
+		line(("copper: %s"):format(tostring(GetMoney())))
+	end
+
+	section("action slots")
+	line("-- the flat 1..120 space, addressed by number; empty slots omitted")
+	if HasAction and GetActionInfo then
+		local filled = 0
+		for slot = 1, 120 do
+			if HasAction(slot) then
+				filled = filled + 1
+				local kind, id, subType = GetActionInfo(slot)
+				local what
+				if kind == "spell" then
+					what = ("spell %s (%s)"):format(tostring(id), tostring(spellName(id) or "?"))
+				elseif kind == "macro" then
+					local name = GetMacroInfo and GetMacroInfo(id)
+					if not name and GetActionText then
+						name = GetActionText(slot)
+					end
+					what = ("macro %s (%s)"):format(tostring(id), tostring(name or "?"))
+				elseif kind == "item" then
+					what = ("item %s (%s)"):format(tostring(id), tostring(itemName(id) or "?"))
+				else
+					what = ("%s %s"):format(tostring(kind), tostring(id))
+				end
+				if subType and subType ~= "" then
+					what = what .. " [" .. tostring(subType) .. "]"
+				end
+				line(("%3d: %s"):format(slot, what))
+			end
+		end
+		line(("-- %d of 120 filled"):format(filled))
+	else
+		line("-- HasAction/GetActionInfo unavailable")
+	end
+
+	section("action buttons on screen")
+	line("-- every frame bound to an action slot: which of the 120 the UI draws, and where")
+	if EnumerateFrames then
+		local seen, walked = {}, 0
+		local frame = EnumerateFrames()
+		while frame and walked < 50000 do
+			walked = walked + 1
+			local slot
+			if type(frame.action) == "number" then
+				slot = frame.action
+			elseif frame.GetAttribute then
+				local ok, value = pcall(frame.GetAttribute, frame, "action")
+				if ok and type(value) == "number" then
+					slot = value
+				end
+			end
+			if slot then
+				local name = frame.GetName and frame:GetName() or nil
+				local shown = frame.IsVisible and frame:IsVisible()
+				seen[#seen + 1] = ("%3d: %s%s"):format(slot,
+					tostring(name or "(anonymous)"), shown and "" or " (hidden)")
+			end
+			frame = EnumerateFrames(frame)
+		end
+		table.sort(seen)
+		for _, entry in ipairs(seen) do
+			line(entry)
+		end
+		line(("-- %d action-bound frames out of %d walked"):format(#seen, walked))
+	else
+		line("-- EnumerateFrames unavailable")
+	end
+
+	section("bindings")
+	line("-- what is already taken. PAD* are the controller's; those are the scarce ones")
+	if GetNumBindings and GetBinding then
+		local total = GetNumBindings()
+		local bound = 0
+		for index = 1, total do
+			-- GetBinding's return shape differs between builds (some insert a
+			-- category before the keys), so take everything after the command and
+			-- report it rather than indexing positions we have not verified
+			local bits = { GetBinding(index) }
+			if index == 1 then
+				line(("-- GetBinding returns %d values per binding"):format(#bits))
+			end
+			local keys = {}
+			for at = 2, #bits do
+				if type(bits[at]) == "string" and bits[at] ~= "" then
+					keys[#keys + 1] = bits[at]
+				end
+			end
+			if #keys > 0 then
+				bound = bound + 1
+				line(("%s = %s"):format(tostring(bits[1]), table.concat(keys, ", ")))
+			end
+		end
+		line(("-- %d bound of %d bindings"):format(bound, total))
+	else
+		line("-- GetNumBindings/GetBinding unavailable")
+	end
+
+	section("macros")
+	if GetNumMacros and GetMacroInfo then
+		local global, perChar = GetNumMacros()
+		line(("-- %s global, %s character"):format(tostring(global), tostring(perChar)))
+		for index = 1, 200 do
+			local name, _, body = GetMacroInfo(index)
+			if name then
+				line(("%d: %s"):format(index, name))
+				local shown = (tostring(body or "")):gsub(newline, newline .. "    ")
+				line("    " .. shown)
+			end
+		end
+	else
+		line("-- GetNumMacros/GetMacroInfo unavailable")
+	end
+
+	section("spellbook")
+	line("-- also the vocabulary the transcriber needs: these are the words you will say")
+	local walked = pcall(function()
+		if GetNumSpellTabs and GetSpellTabInfo and GetSpellBookItemInfo then
+			for tab = 1, GetNumSpellTabs() do
+				local tabName, _, offset, numSpells = GetSpellTabInfo(tab)
+				line(("-- %s"):format(tostring(tabName)))
+				for at = (offset or 0) + 1, (offset or 0) + (numSpells or 0) do
+					local kind, id = GetSpellBookItemInfo(at, "spell")
+					local name = GetSpellBookItemName and GetSpellBookItemName(at, "spell")
+					if not name and id then
+						name = spellName(id)
+					end
+					if name then
+						line(("%s %s (%s)"):format(tostring(kind), tostring(name), tostring(id)))
+					end
+				end
+			end
+		elseif C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
+			for tab = 1, C_SpellBook.GetNumSpellBookSkillLines() do
+				local info = C_SpellBook.GetSpellBookSkillLineInfo(tab)
+				local offset = info and info.itemIndexOffset or 0
+				line(("-- %s"):format(tostring(info and info.name)))
+				for at = offset + 1, offset + (info and info.numSpellBookItems or 0) do
+					local item = C_SpellBook.GetSpellBookItemInfo(at, 0)
+					if item and item.name then
+						line(("%s %s (%s)"):format(
+							tostring(item.itemType), item.name, tostring(item.spellID)))
+					end
+				end
+			end
+		else
+			line("-- no spellbook API found under either name")
+		end
+	end)
+	if not walked then
+		line("-- the spellbook walk failed partway; the lines above are what it reached")
+	end
+
+	WowCompanionDB.context = table.concat(out, newline) .. newline
+	say(("context: %d lines; /reload to write it to disk"):format(#out))
+	record("context lines", #out)
+end
+
 local function probeChat()
 	local open = ChatFrame_OpenChat or (ChatFrameUtil and ChatFrameUtil.OpenChat)
 	record("chat opener", ChatFrame_OpenChat and "ChatFrame_OpenChat" or open and "ChatFrameUtil.OpenChat" or "none")
@@ -780,6 +1025,269 @@ local function probeMacro()
 	DeleteMacro(index)
 end
 
+-- PlaceAction, tested one variable at a time.
+--
+-- The chat taint taught us that "it seemed fine" means nothing: the damage lands
+-- later, on an unrelated keypress, and only sometimes. So the A/B check by hand is
+-- kept, but it is not the instrument. The instrument is issecurevariable: every
+-- global, and every string-keyed field of every global table, is asked who last
+-- wrote it, before and after the action. Anything that turns insecure in between,
+-- and is not one of our own names, is taint we caused, named by variable.
+--
+-- That is a claim about the scanner, so it gets a positive control: `chatopen`
+-- does the one thing we know broke A and B. If the scan cannot see that, a clean
+-- scan for PlaceAction proves nothing.
+
+local function ours(name)
+	name = tostring(name)
+	return name:find("WowCompanion", 1, true) or name:find("WOWCOMPANION", 1, true)
+end
+
+local function taintScan()
+	local tainted, checked = {}, 0
+	local function check(label, tbl, key)
+		checked = checked + 1
+		local ok, secure, by
+		if tbl then
+			ok, secure, by = pcall(issecurevariable, tbl, key)
+		else
+			ok, secure, by = pcall(issecurevariable, key)
+		end
+		if ok and not secure then
+			tainted[label] = tostring(by)
+		end
+	end
+	for name, value in pairs(_G) do
+		if type(name) == "string" and not ours(name) then
+			check(name, nil, name)
+			-- forbidden frames refuse to be walked; pcall keeps one from ending the scan
+			if type(value) == "table" then
+				pcall(function()
+					for field in pairs(value) do
+						if type(field) == "string" and not ours(field) then
+							check(name .. "." .. field, value, field)
+						end
+					end
+				end)
+			end
+		end
+	end
+	return tainted, checked
+end
+
+-- slot -> { visible = bool } for every action slot some frame is drawn for
+local function actionFrames()
+	local slots = {}
+	if not EnumerateFrames then
+		return slots
+	end
+	local frame, walked = EnumerateFrames(), 0
+	while frame and walked < 50000 do
+		walked = walked + 1
+		local slot = type(frame.action) == "number" and frame.action or nil
+		if not slot and frame.GetAttribute then
+			local ok, value = pcall(frame.GetAttribute, frame, "action")
+			if ok and type(value) == "number" then
+				slot = value
+			end
+		end
+		if slot then
+			local entry = slots[slot] or { visible = false }
+			entry.visible = entry.visible or (frame.IsVisible and frame:IsVisible()) or false
+			slots[slot] = entry
+		end
+		frame = EnumerateFrames(frame)
+	end
+	return slots
+end
+
+local PLACE_MACRO = "WCPLACE"
+
+local function placeMacro()
+	local index = GetMacroIndexByName(PLACE_MACRO)
+	if index and index > 0 then
+		return index
+	end
+	return CreateMacro(PLACE_MACRO, "INV_MISC_QUESTIONMARK", "/wc ping", false)
+end
+
+-- chosen fresh each run, so each variant reports exactly where it acted
+local function pickSlots()
+	local frames = actionFrames()
+	local picked = {}
+	for slot = 1, 120 do
+		local drawn = frames[slot] and frames[slot].visible
+		if not HasAction(slot) then
+			if drawn and not picked.emptyVisible then
+				picked.emptyVisible = slot
+			elseif not frames[slot] and not picked.emptyHidden then
+				picked.emptyHidden = slot
+			end
+		elseif drawn and not picked.filledVisible then
+			picked.filledVisible = slot
+		end
+	end
+	return picked
+end
+
+local placeVariants = {}
+
+placeVariants.none = function()
+	return "did nothing: the scan's own noise floor"
+end
+
+placeVariants.chatopen = function()
+	local open = ChatFrame_OpenChat or (ChatFrameUtil and ChatFrameUtil.OpenChat)
+	if not open then
+		return "no chat opener on this client"
+	end
+	-- deferred a tick, as the slash-command path requires, then closed again so the
+	-- only thing measured is having opened it
+	C_Timer.After(0.1, function()
+		open("")
+		C_Timer.After(0.1, function()
+			local box = activeEditBox()
+			if box and ChatEdit_DeactivateChat then
+				pcall(ChatEdit_DeactivateChat, box)
+			end
+		end)
+	end)
+	return "opened and closed the chat box from addon code (the known-bad control)"
+end
+
+placeVariants.pickup = function()
+	PickupMacro(placeMacro())
+	ClearCursor()
+	return "picked up the test macro and cleared the cursor, placing nothing"
+end
+
+local function placeInto(slot, how)
+	PickupMacro(placeMacro())
+	if how == "put" then
+		C_ActionBar.PutActionInSlot(slot)
+	else
+		PlaceAction(slot)
+	end
+	ClearCursor()
+	local kind, id = GetActionInfo(slot)
+	return ("slot %d now holds %s %s"):format(slot, tostring(kind), tostring(id))
+end
+
+placeVariants.hidden = function(slots)
+	if not slots.emptyHidden then
+		return "no empty undrawn slot"
+	end
+	return "PlaceAction into an undrawn slot: " .. placeInto(slots.emptyHidden, "place")
+end
+
+placeVariants.visible = function(slots)
+	if not slots.emptyVisible then
+		return "no empty drawn slot"
+	end
+	return "PlaceAction into a drawn slot: " .. placeInto(slots.emptyVisible, "place")
+end
+
+placeVariants.put = function(slots)
+	if not (C_ActionBar and C_ActionBar.PutActionInSlot) then
+		return "no C_ActionBar.PutActionInSlot"
+	end
+	if not slots.emptyVisible then
+		return "no empty drawn slot"
+	end
+	return "PutActionInSlot into a drawn slot: " .. placeInto(slots.emptyVisible, "put")
+end
+
+-- A real rearrangement that undoes itself: a filled, drawn slot moves to an empty
+-- undrawn one and back. The bars end where they started, but every call a
+-- rearrangement needs has run, including holding a live action on the cursor.
+placeVariants.move = function(slots)
+	local from, to = slots.filledVisible, slots.emptyHidden
+	if not (from and to) then
+		return "need a filled drawn slot and an empty undrawn one"
+	end
+	local was, wasId = GetActionInfo(from)
+	PickupAction(from)
+	PlaceAction(to)
+	PickupAction(to)
+	PlaceAction(from)
+	ClearCursor()
+	local now, nowId = GetActionInfo(from)
+	return ("moved slot %d to %d and back: holds %s %s, held %s %s"):format(from, to,
+		tostring(now), tostring(nowId), tostring(was), tostring(wasId))
+end
+
+placeVariants.clean = function()
+	local removed = 0
+	local index = GetMacroIndexByName(PLACE_MACRO)
+	if index and index > 0 then
+		for slot = 1, 120 do
+			local kind, id = GetActionInfo(slot)
+			if kind == "macro" and id == index then
+				PickupAction(slot)
+				ClearCursor()
+				removed = removed + 1
+			end
+		end
+		DeleteMacro(index)
+	end
+	return ("removed the test macro from %d slot(s) and deleted it"):format(removed)
+end
+
+local PLACE_ORDER = { "none", "chatopen", "pickup", "hidden", "visible", "put", "move", "clean" }
+
+local function placeTest(variant)
+	local act = placeVariants[variant]
+	if not act then
+		return "variants: " .. table.concat(PLACE_ORDER, ", ")
+	end
+	if InCombatLockdown() then
+		return "refused: in combat"
+	end
+	WowCompanionDB.placeTests = WowCompanionDB.placeTests or {}
+	local before, checked = taintScan()
+	local ok, result = pcall(act, pickSlots())
+	if not ok then
+		result = "error: " .. tostring(result)
+	end
+	local entry = { at = time(), variant = variant, result = result, checked = checked }
+	table.insert(WowCompanionDB.placeTests, entry)
+	remember("probe", ("place %s: %s"):format(variant, tostring(result)))
+	-- long enough for whatever the action set off to have run: events, OnUpdate,
+	-- the deferred chat open
+	C_Timer.After(1.5, function()
+		local after = taintScan()
+		local fresh = {}
+		for label, by in pairs(after) do
+			if before[label] == nil then
+				fresh[#fresh + 1] = ("%s (by %s)"):format(label, by)
+			end
+		end
+		table.sort(fresh)
+		entry.tainted = #fresh
+		entry.taint = #fresh == 0 and "none" or table.concat(fresh, "; ")
+		remember("probe", ("place %s: %d newly tainted of %d checked%s"):format(variant, #fresh,
+			checked, #fresh > 0 and (": " .. table.concat(fresh, "; ", 1, math.min(#fresh, 6))) or ""))
+		remember("probe", "now A on an NPC, B out of a menu; then /wc verdict ok or /wc verdict broken")
+	end)
+	return result
+end
+
+local function placeVerdict(word)
+	local tests = WowCompanionDB.placeTests
+	local last = tests and tests[#tests]
+	if not last then
+		return "no place test to judge"
+	end
+	last.verdict = word
+	remember("probe", ("place %s judged %s"):format(last.variant, word))
+	return word
+end
+
+-- from the helper too, so the bell path is measured and not just the slash command
+function handlers.place(inbox)
+	return placeTest(inbox.variant or "")
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
@@ -825,6 +1333,25 @@ SlashCmdList.WOWCOMPANION = function(command)
 		dumpApi()
 	elseif command == "docs" then
 		dumpDocs()
+	elseif command == "context" then
+		exportContext()
+	elseif command:match("^place") then
+		local variant = command:match("^place%s+(%S+)") or ""
+		-- deferred a tick, like chat: the Enter that submitted this is still unwinding
+		C_Timer.After(0.1, function()
+			say(placeTest(variant))
+		end)
+	elseif command:match("^verdict ") then
+		say(placeVerdict(command:match("^verdict (%S+)")))
+	elseif command == "taint" then
+		local tainted, checked = taintScan()
+		local names = {}
+		for label, by in pairs(tainted) do
+			names[#names + 1] = ("%s (by %s)"):format(label, by)
+		end
+		table.sort(names)
+		WowCompanionDB.taint = table.concat(names, "\n")
+		say(("%d tainted of %d checked; /reload to write the list"):format(#names, checked))
 	elseif command == "ping" then
 		-- the macro test target: no side effects, and unmistakable when it fires.
 		-- remember() rather than say(), so the answer survives to SavedVariables --

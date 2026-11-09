@@ -53,9 +53,12 @@ fn main() {
             run(Path::new(addons), Path::new(model), options)
         }
         [command, addons] if command == "bridge" => bridge(Path::new(addons)),
-        [command, addons, out] if command == "api" => api(Path::new(addons), "api", Path::new(out)),
+        [command, addons, out] if command == "api" => pull(Path::new(addons), "api", Path::new(out)),
         [command, addons, out] if command == "apidocs" => {
-            api(Path::new(addons), "apidocs", Path::new(out))
+            pull(Path::new(addons), "apidocs", Path::new(out))
+        }
+        [command, addons, out] if command == "context" => {
+            pull(Path::new(addons), "context", Path::new(out))
         }
         [command] if command == "pads" => pad::list(),
         [command, id] if command == "pads" => pad::watch(id),
@@ -86,6 +89,9 @@ fn main() {
             eprintln!("  dictate <AddOns> <model> [options]");
             eprintln!("                                   speak into the open chat box");
             eprintln!("  ask <AddOns> <text>              one question, no voice");
+            eprintln!("  api <AddOns> <out>               every callable in this build");
+            eprintln!("  apidocs <AddOns> <out>           signatures, if the client has them");
+            eprintln!("  context <AddOns> <out>           bars, bindings, macros, spellbook");
             eprintln!("    options: chat=home ask=minus mic=<name> cue=<name> volume=<0..1>");
             std::process::exit(2);
         }
@@ -219,7 +225,7 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
 /// had locally — but the names are exact for 1.60.1, which is the half the agent
 /// cannot get from training data. Knowing a function exists *here* is the question
 /// it otherwise answers from retail and gets wrong.
-fn api(addons: &Path, key: &str, out: &Path) -> io::Result<()> {
+fn pull(addons: &Path, key: &str, out: &Path) -> io::Result<()> {
     let saved = saved_variables(addons)
         .ok_or_else(|| io::Error::other("no SavedVariables yet: /reload in game first"))?;
     let text = fs::read_to_string(&saved)?;
@@ -247,9 +253,9 @@ fn api(addons: &Path, key: &str, out: &Path) -> io::Result<()> {
             (false, other) => body.push(other),
         }
     }
-    let names = body.lines().filter(|line| !line.starts_with("--")).count();
+    let kept = body.lines().filter(|line| !line.starts_with("--")).count();
     fs::write(out, &body)?;
-    println!("wrote {names} names to {}", out.display());
+    println!("wrote {kept} lines ({} bytes) to {}", body.len(), out.display());
     Ok(())
 }
 
