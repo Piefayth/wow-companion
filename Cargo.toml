@@ -6,6 +6,8 @@ publish = false
 
 [dependencies]
 hidapi = "2.6.7"
+# the claude CLI's --output-format json envelope; not worth hand-parsing
+serde_json = "1"
 # Behind a feature: the cuda build compiles ggml's CUDA backend from source, and any
 # change to this file invalidates it. Leaving it always-on meant every edit to the
 # channel or the controller paid for a full nvcc rebuild. `--features voice` when

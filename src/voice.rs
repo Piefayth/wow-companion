@@ -38,16 +38,24 @@ const VOCABULARY: &str = "World of Warcraft. Spell and ability names: Fireball, 
     Shadowstep, Hearthstone, Bloodlust, Rejuvenation, Innervate, Starfall, Thunderstorm. \
     Commands: macro, action bar, slot, bind, chat, whisper, party, raid, guild.";
 
-/// Hold the button, speak, release. `heard` gets each finished transcript: printing it
-/// for a dry run, or handing it to the channel for real.
+/// Hold a button, speak, release. `heard` is given which binding fired and what was
+/// said, so one loop can serve dictation on one button and the agent on another.
+///
+/// Both default to buttons WoW ignores — Home and minus. We cannot consume the input,
+/// so anything the game binds would fire twice: once for us, once in game.
 pub fn listen(
     model: &Path,
     options: &[String],
-    mut heard: impl FnMut(&str) -> io::Result<()>,
+    mut heard: impl FnMut(&str, &str) -> io::Result<()>,
 ) -> io::Result<()> {
-    // Home by default: the one button WoW has no use for. We cannot consume the
-    // input, so anything the game binds would fire twice.
-    let button = pad::press(option(options, "button").unwrap_or("home"))?;
+    let bindings = [
+        ("chat", option(options, "chat").or(option(options, "button")).unwrap_or("home")),
+        ("ask", option(options, "ask").unwrap_or("minus")),
+    ];
+    let bindings: Vec<(&str, pad::Press)> = bindings
+        .iter()
+        .map(|(role, name)| pad::press(name).map(|press| (*role, press)))
+        .collect::<io::Result<_>>()?;
     let (vid, pid) = DEFAULT_PAD;
     let mut controller = Pad::open(vid, pid)?;
     let microphone = Microphone::open(option(options, "mic"))?;
@@ -65,37 +73,47 @@ pub fn listen(
     let whisper = WhisperContext::new_with_params(path, WhisperContextParameters::default())
         .map_err(|err| io::Error::other(format!("{err:?}")))?;
 
-    println!("ready: hold {button} and speak");
-    let mut holding = false;
+    for (role, press) in &bindings {
+        println!("ready: hold {press} for {role}");
+    }
+    let mut holding: Option<&str> = None;
     loop {
         controller.refresh()?;
-        let held = controller.held(&button);
+        // first match wins, so holding both does one thing rather than two
+        let held = bindings
+            .iter()
+            .find(|(_, press)| controller.held(press))
+            .map(|(role, _)| *role);
 
-        if held && !holding {
-            microphone.start();
-            cue(cue_device.clone(), cue_volume, &CUE_OPEN);
-            println!("listening");
-        } else if !held && holding {
-            let clip = microphone.stop();
-            // falling fifth on release: rising means live, falling means it has your clip
-            cue(cue_device.clone(), cue_volume, &CUE_SHUT);
-            let seconds = clip.len() as f32 / WHISPER_RATE as f32;
-            if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
-                println!("too short, ignored");
-            } else {
-                match transcribe(&whisper, &clip) {
-                    Ok(text) if text.is_empty() => println!("heard nothing"),
-                    Ok(text) => {
-                        println!("heard ({seconds:.1}s): {text}");
-                        // a failed delivery must not kill the loop: the game may be
-                        // closed, or every slot spent until the next reload
-                        if let Err(err) = heard(&text) {
-                            eprintln!("  not delivered: {err}");
+        match (held, holding) {
+            (Some(role), None) => {
+                microphone.start();
+                cue(cue_device.clone(), cue_volume, &CUE_OPEN);
+                println!("listening for {role}");
+            }
+            (None, Some(role)) => {
+                let clip = microphone.stop();
+                // falling fifth on release: rising means live, falling means it has it
+                cue(cue_device.clone(), cue_volume, &CUE_SHUT);
+                let seconds = clip.len() as f32 / WHISPER_RATE as f32;
+                if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
+                    println!("too short, ignored");
+                } else {
+                    match transcribe(&whisper, &clip) {
+                        Ok(text) if text.is_empty() => println!("heard nothing"),
+                        Ok(text) => {
+                            println!("heard ({seconds:.1}s, {role}): {text}");
+                            // a failed delivery must not kill the loop: the game may
+                            // be closed, or every slot spent until the next reload
+                            if let Err(err) = heard(role, &text) {
+                                eprintln!("  not delivered: {err}");
+                            }
                         }
+                        Err(err) => eprintln!("transcribe failed: {err}"),
                     }
-                    Err(err) => eprintln!("transcribe failed: {err}"),
                 }
             }
+            _ => {}
         }
         holding = held;
         thread::sleep(POLL);

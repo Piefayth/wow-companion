@@ -2,6 +2,7 @@
 //! game's AddOns folder, `send` delivers one command through a slot and a bell,
 //! and `probe` sends numbered messages so we can watch the channel work.
 
+mod agent;
 mod pad;
 #[cfg(feature = "voice")]
 mod voice;
@@ -42,6 +43,13 @@ fn main() {
         [command, addons] if command == "install" => install(Path::new(addons)),
         [command, addons] if command == "probe" => probe(Path::new(addons)),
         [command, addons, rest @ ..] if command == "send" => send(Path::new(addons), rest),
+        [command, addons, spoken] if command == "ask" => {
+            ask(Path::new(addons), &mut agent::Session::default(), spoken)
+        }
+        #[cfg(feature = "voice")]
+        [command, addons, model, options @ ..] if command == "run" => {
+            run(Path::new(addons), Path::new(model), options)
+        }
         [command] if command == "pads" => pad::list(),
         [command, id] if command == "pads" => pad::watch(id),
         #[cfg(feature = "voice")]
@@ -50,12 +58,12 @@ fn main() {
         [command] if command == "speakers" => voice::speakers(),
         #[cfg(feature = "voice")]
         [command, model, options @ ..] if command == "voice" => {
-            voice::listen(Path::new(model), options, |_| Ok(()))
+            voice::listen(Path::new(model), options, |_, _| Ok(()))
         }
         #[cfg(feature = "voice")]
         [command, addons, model, options @ ..] if command == "dictate" => {
             let addons = Path::new(addons);
-            voice::listen(Path::new(model), options, |text| {
+            voice::listen(Path::new(model), options, |_, text| {
                 send_inbox(addons, &chat_inbox(text))
             })
         }
@@ -74,9 +82,11 @@ fn main() {
             eprintln!("  mics                             list input devices");
             eprintln!("  speakers                         list output devices");
             eprintln!("  voice <model> [options]          hold the button and speak");
+            eprintln!("  run <AddOns> <model> [options]   the whole thing");
             eprintln!("  dictate <AddOns> <model> [options]");
             eprintln!("                                   speak into the open chat box");
-            eprintln!("    options: button=home mic=<name> cue=<name>");
+            eprintln!("  ask <AddOns> <text>              one question, no voice");
+            eprintln!("    options: chat=home ask=minus mic=<name> cue=<name> volume=<0..1>");
             std::process::exit(2);
         }
     };
@@ -183,6 +193,49 @@ fn send(addons: &Path, args: &[String]) -> io::Result<()> {
         }
     };
     send_inbox(addons, &inbox)
+}
+
+/// Hand what was said to Claude, show its line in the companion window, and
+/// deliver whatever command it chose. The line goes first, so the player sees the
+/// reasoning before the game changes under them.
+fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<()> {
+    println!("asking: {spoken}");
+    // start the agent before announcing ourselves: the announcement costs a bell
+    // wait, the agent costs several seconds, and they may as well run together
+    let waiting = session.start(spoken)?;
+    send_inbox(addons, &log_inbox("you", spoken, Some("thinking")))?;
+    let answer = session.finish(waiting)?;
+    println!("claude: {}", answer.say);
+    // this one carries no `pending`, which is what stops the spinner
+    send_inbox(addons, &log_inbox("claude", &answer.say, None))?;
+    match answer.inbox {
+        Some(inbox) => send_inbox(addons, &inbox),
+        None => Ok(()),
+    }
+}
+
+/// The whole thing: controller, microphone, Whisper, the channel, and one
+/// continuing conversation with the agent. Hold one button to dictate into the chat
+/// box, the other to ask.
+#[cfg(feature = "voice")]
+fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
+    let mut session = agent::Session::default();
+    voice::listen(model, options, |role, text| match role {
+        "ask" => ask(addons, &mut session, text),
+        _ => send_inbox(addons, &chat_inbox(text)),
+    })
+}
+
+fn log_inbox(who: &str, text: &str, pending: Option<&str>) -> String {
+    let waiting = match pending {
+        Some(label) => format!(", pending = {}", lua_string(label)),
+        None => String::new(),
+    };
+    format!(
+        "{{ kind = \"log\", who = {}, text = {}{waiting} }}",
+        lua_string(who),
+        lua_string(text)
+    )
 }
 
 fn chat_inbox(text: &str) -> String {

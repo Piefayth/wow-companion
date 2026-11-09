@@ -14,6 +14,7 @@ local nextSlot = 1
 local blocked = 0
 local ticker
 local logWindow
+local pendingTicker
 
 local function say(message)
 	print("|cff66ccffCompanion|r " .. message)
@@ -58,8 +59,9 @@ end
 -- Deliberately not registered in UISpecialFrames: Escape handling is where the
 -- gamepad taint lives, and this frame has a close button instead.
 local function buildLog()
-	-- CreateFrame throws on a template this build does not have, and an unreadable
-	-- window is better than an addon that fails to load
+	-- the game's own dialog art, so it sits in the UI rather than on top of it.
+	-- CreateFrame throws on a template this build lacks, and an ugly window beats
+	-- an addon that fails to load.
 	local made, frame = pcall(CreateFrame, "Frame", "WowCompanionLog", UIParent, "BackdropTemplate")
 	if not made or not frame then
 		frame = CreateFrame("Frame", "WowCompanionLog", UIParent)
@@ -67,37 +69,52 @@ local function buildLog()
 	frame:SetSize(560, 340)
 	frame:SetPoint("CENTER")
 	frame:SetFrameStrata("DIALOG")
+	frame:SetClampedToScreen(true)
 	frame:Hide()
 	if frame.SetBackdrop then
 		frame:SetBackdrop({
 			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
 			edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-			edgeSize = 24,
-			insets = { left = 6, right = 6, top = 6, bottom = 6 },
+			edgeSize = 32,
+			insets = { left = 11, right = 12, top = 12, bottom = 11 },
 		})
 	end
-	frame:SetMovable(true)
-	frame:SetResizable(true)
-	frame:EnableMouse(true)
-	frame:RegisterForDrag("LeftButton")
-	frame:SetScript("OnDragStart", frame.StartMoving)
-	frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
 
-	local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	title:SetPoint("TOPLEFT", 16, -14)
+	-- the header strip is the drag handle, so a drag inside the transcript is free
+	-- to select text instead of hauling the window around
+	local header = CreateFrame("Frame", nil, frame)
+	header:SetPoint("TOPLEFT", 12, -12)
+	header:SetPoint("TOPRIGHT", -12, -12)
+	header:SetHeight(26)
+	header:EnableMouse(true)
+	header:RegisterForDrag("LeftButton")
+	frame:SetMovable(true)
+	header:SetScript("OnDragStart", function() frame:StartMoving() end)
+	header:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+
+	local crest = header:CreateTexture(nil, "ARTWORK")
+	crest:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Header")
+	crest:SetPoint("TOP", frame, "TOP", 0, 12)
+	crest:SetSize(230, 64)
+	local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	title:SetPoint("TOP", crest, "TOP", 0, -14)
 	title:SetText("Companion")
 
 	local closed, close = pcall(CreateFrame, "Button", nil, frame, "UIPanelCloseButton")
 	if closed and close then
 		close:SetPoint("TOPRIGHT", -6, -6)
-		close:SetScript("OnClick", function()
-			frame:Hide()
-		end)
+		close:SetScript("OnClick", function() frame:Hide() end)
 	end
+
+	-- the waiting line: the agent takes seconds, and silence reads as broken
+	local pending = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	pending:SetPoint("BOTTOMLEFT", 18, 16)
+	pending:Hide()
+	frame.pending = pending
 
 	local messages = CreateFrame("ScrollingMessageFrame", nil, frame)
 	messages:SetPoint("TOPLEFT", 18, -40)
-	messages:SetPoint("BOTTOMRIGHT", -18, 16)
+	messages:SetPoint("BOTTOMRIGHT", -20, 34)
 	messages:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
 	messages:SetJustifyH("LEFT")
 	messages:SetFading(false)
@@ -114,6 +131,19 @@ local function buildLog()
 		end
 	end)
 	frame.messages = messages
+
+	frame:SetResizable(true)
+	if frame.SetResizeBounds then
+		frame:SetResizeBounds(320, 180)
+	end
+	local grip = CreateFrame("Button", nil, frame)
+	grip:SetSize(16, 16)
+	grip:SetPoint("BOTTOMRIGHT", -8, 8)
+	grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+	grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+	grip:SetScript("OnMouseDown", function() frame:StartSizing("BOTTOMRIGHT") end)
+	grip:SetScript("OnMouseUp", function() frame:StopMovingOrSizing() end)
+
 	return frame
 end
 
@@ -131,24 +161,57 @@ local function colouredFor(who)
 	return "|cffffe08a"
 end
 
-local function showLine(who, text)
-	logFrame().messages:AddMessage(("%s%s|r  %s"):format(colouredFor(who), who, text))
+-- Only the first line of a reply is labelled; the rest line up underneath, or a
+-- nine-line answer says "claude" nine times and reads as nine separate replies.
+local function showLine(who, text, continued, at)
+	local messages = logFrame().messages
+	if continued then
+		messages:AddMessage("              " .. text)
+	else
+		messages:AddMessage(("|cff4a5260%s|r %s%-6s|r %s"):format(
+			date("%H:%M", at or time()), colouredFor(who), who, text))
+	end
+end
+
+-- Spinning while the agent thinks. Several seconds of silence after you speak is
+-- indistinguishable from a broken channel, which is the whole reason this exists.
+local function setPending(text)
+	local frame = logFrame()
+	if pendingTicker then
+		pendingTicker:Cancel()
+		pendingTicker = nil
+	end
+	if not text then
+		frame.pending:Hide()
+		return
+	end
+	local turn = 0
+	local function spin()
+		turn = turn + 1
+		frame.pending:SetText(("%s%s"):format(text, ("."):rep(turn % 4)))
+	end
+	spin()
+	frame.pending:Show()
+	if not frame:IsShown() and not InCombatLockdown() then
+		frame:Show()
+	end
+	pendingTicker = C_Timer.NewTicker(0.4, spin)
 end
 
 -- Kept in SavedVariables, so it is written on /reload or logout like everything else.
-local function remember(who, text)
+local function remember(who, text, continued)
 	WowCompanionDB.log = WowCompanionDB.log or {}
 	local entries = WowCompanionDB.log
-	entries[#entries + 1] = { at = time(), who = who, text = text }
+	entries[#entries + 1] = { at = time(), who = who, text = text, continued = continued or nil }
 	while #entries > LOG_KEEP do
 		table.remove(entries, 1)
 	end
-	showLine(who, text)
+	showLine(who, text, continued, entries[#entries].at)
 end
 
 local function replayLog()
 	for _, entry in ipairs(WowCompanionDB.log or {}) do
-		showLine(entry.who or "claude", entry.text or "")
+		showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at)
 	end
 end
 
@@ -180,10 +243,13 @@ function handlers.log(inbox)
 	local text = inbox.text or ""
 	local who = inbox.who or "claude"
 	local lines = 0
+	-- `pending` starts the waiting line; any message without it clears it, so the
+	-- reply arriving is what stops the spinner
+	setPending(inbox.pending)
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
 	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-		remember(who, line)
+		remember(who, line, lines > 0)
 		lines = lines + 1
 	end
 	if lines == 0 then
@@ -380,7 +446,11 @@ SlashCmdList.WOWCOMPANION = function(command)
 		else
 			frame:Show()
 		end
+	elseif command == "clear" then
+		WowCompanionDB.log = {}
+		logFrame().messages:Clear()
+		say("conversation cleared")
 	else
-		say("/wc log, /wc chat, /wc macro, /wc sound, /wc quiet, /wc listen")
+		say("/wc log, /wc clear, /wc chat, /wc macro, /wc sound, /wc quiet, /wc listen")
 	end
 end
