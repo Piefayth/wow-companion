@@ -48,7 +48,14 @@ fn main() {
         [command] if command == "mics" => voice::microphones(),
         #[cfg(feature = "voice")]
         [command, model, options @ ..] if command == "voice" => {
-            voice::listen(Path::new(model), options)
+            voice::listen(Path::new(model), options, |_| Ok(()))
+        }
+        #[cfg(feature = "voice")]
+        [command, addons, model, options @ ..] if command == "dictate" => {
+            let addons = Path::new(addons);
+            voice::listen(Path::new(model), options, |text| {
+                send_inbox(addons, &chat_inbox(text))
+            })
         }
         [command, ..] if command == "voice" => Err(io::Error::other(
             "built without voice: cargo run --features voice -- voice <model>",
@@ -64,6 +71,8 @@ fn main() {
             eprintln!("  pads <vid:pid>                   watch one pad's raw reports");
             eprintln!("  mics                             list input devices");
             eprintln!("  voice <model> [button] [mic]     hold the button and speak");
+            eprintln!("  dictate <AddOns> <model> [button] [mic]");
+            eprintln!("                                   speak into the WCSay macro");
             std::process::exit(2);
         }
     };
@@ -147,13 +156,8 @@ fn game_running() -> io::Result<bool> {
 }
 
 fn send(addons: &Path, args: &[String]) -> io::Result<()> {
-    if !game_running()? {
-        return Err(io::Error::other("Wow.exe isn't running, so nothing would read this"));
-    }
     let inbox = match args {
-        [kind, text] if kind == "chat" => {
-            format!("{{ kind = \"chat\", text = {} }}", lua_string(text))
-        }
+        [kind, text] if kind == "chat" => chat_inbox(text),
         [kind, name, body] if kind == "macro" => format!(
             "{{ kind = \"macro\", name = {}, body = {} }}",
             lua_string(name),
@@ -166,6 +170,22 @@ fn send(addons: &Path, args: &[String]) -> io::Result<()> {
             ));
         }
     };
+    send_inbox(addons, &inbox)
+}
+
+fn chat_inbox(text: &str) -> String {
+    format!("{{ kind = \"chat\", text = {} }}", lua_string(text))
+}
+
+fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
+    if !game_running()? {
+        return Err(io::Error::other("Wow.exe isn't running, so nothing would read this"));
+    }
+    if addon_is_stale(addons)? {
+        return Err(io::Error::other(
+            "the addon on disk is newer than the running UI session: /reload in game first",
+        ));
+    }
     let slot = next_slot(addons)?;
     // A bell left ringing is a command that fires again on every /reload: the addon's
     // cursor goes back to slot 1, hears the old bell, and redelivers. So ring it only
@@ -174,7 +194,7 @@ fn send(addons: &Path, args: &[String]) -> io::Result<()> {
     for bell in 1..=BELLS {
         write_reporting(&signals.join(bell_name(bell)), &[])?;
     }
-    deliver(addons, slot, &inbox)?;
+    deliver(addons, slot, inbox)?;
     println!("sent in slot {slot}: {inbox}");
     thread::sleep(BELL_HEARD);
     write_reporting(&signals.join(bell_name(slot)), &[])?;
@@ -223,21 +243,49 @@ fn next_slot(addons: &Path) -> io::Result<u32> {
 }
 
 fn saved_variables_stamp(addons: &Path) -> Option<String> {
+    session_began(addons).map(|millis| millis.to_string())
+}
+
+/// When the running UI session started, near enough: a `/reload` writes SavedVariables
+/// and *then* reloads, so that write marks the boundary between sessions.
+fn session_began(addons: &Path) -> Option<u128> {
     // <client>/Interface/AddOns -> <client>/WTF/Account/<account>/SavedVariables
     let accounts = addons.parent()?.parent()?.join("WTF").join("Account");
     let mut newest = None;
     for account in fs::read_dir(accounts).ok()?.flatten() {
         let saved = account.path().join("SavedVariables").join(format!("{ADDON}.lua"));
-        let written = fs::metadata(&saved)
-            .and_then(|meta| meta.modified())
-            .ok()
-            .and_then(|at| at.duration_since(UNIX_EPOCH).ok());
-        if let Some(written) = written {
-            let millis = written.as_millis();
+        if let Some(millis) = modified_millis(&saved) {
             newest = Some(newest.map_or(millis, |best: u128| best.max(millis)));
         }
     }
-    newest.map(|millis| millis.to_string())
+    newest
+}
+
+/// Is the game running code we have already replaced?
+///
+/// A version number in SavedVariables cannot answer this: the game saves before it
+/// reloads, so the recorded version always describes the *previous* session. The
+/// timestamps can, because that same ordering makes the save mark where the current
+/// session began. Addon newer than that means the session predates it.
+///
+/// Worth the check: twice this cost us a stuck chat box and a half-dead controller,
+/// because a retired handler was still live and still opening the chat box.
+fn addon_is_stale(addons: &Path) -> io::Result<bool> {
+    let addon = modified_millis(&addons.join(ADDON).join("Companion.lua"));
+    Ok(match (addon, session_began(addons)) {
+        (Some(addon), Some(began)) => addon > began,
+        // never saved, or no addon: nothing to compare, so do not block
+        _ => false,
+    })
+}
+
+fn modified_millis(path: &Path) -> Option<u128> {
+    fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|since| since.as_millis())
 }
 
 // an agent will be writing these eventually, so quote defensively rather than trusting
@@ -324,7 +372,13 @@ fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
         if entry.file_type()?.is_dir() {
             copy_dir(&entry.path(), &target)?;
         } else {
-            fs::copy(entry.path(), target)?;
+            // write only when the bytes differ: the addon's mtime is how we tell a
+            // stale UI session from a current one, so a pointless copy would lie
+            let source = fs::read(entry.path())?;
+            if fs::read(&target).is_ok_and(|existing| existing == source) {
+                continue;
+            }
+            fs::write(&target, &source)?;
         }
     }
     Ok(())

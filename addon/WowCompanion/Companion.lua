@@ -42,22 +42,30 @@ local function listen(path, heard)
 	end)
 end
 
+local function activeEditBox()
+	local get = ChatEdit_GetActiveWindow or (ChatFrameUtil and ChatFrameUtil.GetActiveWindow)
+	return get and get()
+end
+
 -- What the helper is allowed to ask for. A dispatch table rather than loadstring on
 -- whatever arrives: the rule is configuration only, and this is where that rule lives.
 local handlers = {}
 
--- the player still presses send, every time
+-- Writes into a chat box the player already opened, and never opens one itself.
+-- That distinction is the whole point: when we called ChatFrame_OpenChat, the
+-- gamepad focus restore on close came back blocked and the A and B buttons died.
+-- A box the player opened was activated by real hardware input, so the secure path
+-- stays intact and we only set text on it. Refuses rather than opening one, because
+-- opening one is the thing that broke the controller.
 function handlers.chat(inbox)
-	local open = ChatFrame_OpenChat or (ChatFrameUtil and ChatFrameUtil.OpenChat)
-	if not open then
-		return "no chat opener"
+	local box = activeEditBox()
+	if not box or not box:IsVisible() then
+		say("no chat box open, so nothing was written -- open chat first, then speak")
+		return "refused: no chat box open"
 	end
-	-- deferred for the same reason /wc chat defers: whatever keypress got us here
-	-- may still tear the edit box down on its way out
-	C_Timer.After(0.1, function()
-		open(inbox.text or "")
-	end)
-	return ("chat box holds %q"):format(inbox.text or "")
+	-- append, so speaking twice builds a line instead of replacing it
+	box:SetText((box:GetText() or "") .. (inbox.text or ""))
+	return ("chat box holds %q"):format(box:GetText())
 end
 
 function handlers.macro(inbox)
@@ -134,11 +142,6 @@ local function probeSound()
 	listen(SIGNALS .. "never.wav", function(playing)
 		record("never.wav plays (want false)", playing)
 	end)
-end
-
-local function activeEditBox()
-	local get = ChatEdit_GetActiveWindow or (ChatFrameUtil and ChatFrameUtil.GetActiveWindow)
-	return get and get()
 end
 
 local function probeChat()

@@ -27,7 +27,13 @@ const VOCABULARY: &str = "World of Warcraft. Spell and ability names: Fireball, 
     Shadowstep, Hearthstone, Bloodlust, Rejuvenation, Innervate, Starfall, Thunderstorm. \
     Commands: macro, action bar, slot, bind, chat, whisper, party, raid, guild.";
 
-pub fn listen(model: &Path, options: &[String]) -> io::Result<()> {
+/// Hold the button, speak, release. `heard` gets each finished transcript: printing it
+/// for a dry run, or handing it to the channel for real.
+pub fn listen(
+    model: &Path,
+    options: &[String],
+    mut heard: impl FnMut(&str) -> io::Result<()>,
+) -> io::Result<()> {
     // Home by default: the one button WoW has no use for. We cannot consume the
     // input, so anything the game binds would fire twice.
     let button = pad::press(options.first().map_or("home", |name| name.as_str()))?;
@@ -58,7 +64,14 @@ pub fn listen(model: &Path, options: &[String]) -> io::Result<()> {
             } else {
                 match transcribe(&whisper, &clip) {
                     Ok(text) if text.is_empty() => println!("heard nothing"),
-                    Ok(text) => println!("heard ({seconds:.1}s): {text}"),
+                    Ok(text) => {
+                        println!("heard ({seconds:.1}s): {text}");
+                        // a failed delivery must not kill the loop: the game may be
+                        // closed, or every slot spent until the next reload
+                        if let Err(err) = heard(&text) {
+                            eprintln!("  not delivered: {err}");
+                        }
+                    }
                     Err(err) => eprintln!("transcribe failed: {err}"),
                 }
             }
