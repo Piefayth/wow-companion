@@ -323,7 +323,17 @@ local function offer(label, macro)
 	local bound = "nothing"
 	if SetOverrideBindingClick then
 		ClearOverrideBindings(actionButton)
-		for _, key in ipairs({ offerKey, "PADDRIGHT", "PAD3" }) do
+		-- built without holes: ipairs stops at the first nil, so a nil offerKey at the
+		-- front meant this loop never ran once and every key looked unbindable
+		local candidates = {}
+		if offerKey then
+			candidates[#candidates + 1] = offerKey
+		end
+		-- names taken from the client's own config, not guessed
+		for _, fallback in ipairs({ "PADDRIGHT", "PADDUP", "PADRSHOULDER" }) do
+			candidates[#candidates + 1] = fallback
+		end
+		for _, key in ipairs(candidates) do
 			if key and SetOverrideBindingClick(actionButton, true, key, "WowCompanionDo") ~= false then
 				bound = key
 				break
@@ -630,6 +640,43 @@ local function probeApi()
 	record("largest namespace", ("%s (%d)"):format(biggest, biggestCount))
 end
 
+-- Everything this build can call, as one string.
+--
+-- The client ships no API documentation tables, so signatures are not available
+-- locally -- but the *names* are, exhaustively and exactly for this build. That is
+-- the half that matters: the agent's failure mode is not forgetting what a function
+-- does, it is confidently calling something that exists in retail and not here.
+--
+-- One string rather than a nested table because the helper has to parse this back
+-- out of SavedVariables without a Lua parser.
+local function dumpApi()
+	local lines, namespaces = {}, 0
+	for key, value in pairs(_G) do
+		if type(key) == "string" then
+			if type(value) == "function" then
+				lines[#lines + 1] = key
+			elseif type(value) == "table" and key:match("^C_%w+$") then
+				namespaces = namespaces + 1
+				for name, member in pairs(value) do
+					if type(member) == "function" and type(name) == "string" then
+						lines[#lines + 1] = key .. "." .. name
+					end
+				end
+			end
+		end
+	end
+	table.sort(lines)
+	local version, build = GetBuildInfo()
+	-- built with an explicit newline rather than an escape: the escapes in this file
+	-- have been through a shell and a script, and one of them arrived as a literal
+	-- line break inside a string literal
+	local newline = string.char(10)
+	WowCompanionDB.api = ("-- World of Warcraft %s build %s%s%s%s"):format(
+		tostring(version), tostring(build), newline, table.concat(lines, newline), newline)
+	say(("dumped %d names across %d namespaces; /reload to write it to disk")
+		:format(#lines, namespaces))
+end
+
 local function probeChat()
 	local open = ChatFrame_OpenChat or (ChatFrameUtil and ChatFrameUtil.OpenChat)
 	record("chat opener", ChatFrame_OpenChat and "ChatFrame_OpenChat" or open and "ChatFrameUtil.OpenChat" or "none")
@@ -723,6 +770,8 @@ SlashCmdList.WOWCOMPANION = function(command)
 		probeGamepad()
 	elseif command == "api" then
 		probeApi()
+	elseif command == "dump" then
+		dumpApi()
 	elseif command == "ping" then
 		-- the macro test target: no side effects, and unmistakable when it fires.
 		-- remember() rather than say(), so the answer survives to SavedVariables --
@@ -765,6 +814,6 @@ SlashCmdList.WOWCOMPANION = function(command)
 		logFrame().messages:Clear()
 		say("conversation cleared")
 	else
-		say("/wc log, /wc clear, /wc button, /wc gamepad, /wc api, /wc test, /wc chat, /wc macro, /wc sound, /wc quiet, /wc listen")
+		say("/wc log, /wc clear, /wc button, /wc gamepad, /wc api, /wc dump, /wc test, /wc chat, /wc macro, /wc sound, /wc quiet, /wc listen")
 	end
 end

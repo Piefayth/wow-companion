@@ -53,6 +53,7 @@ fn main() {
             run(Path::new(addons), Path::new(model), options)
         }
         [command, addons] if command == "bridge" => bridge(Path::new(addons)),
+        [command, addons, out] if command == "api" => api(Path::new(addons), Path::new(out)),
         [command] if command == "pads" => pad::list(),
         [command, id] if command == "pads" => pad::watch(id),
         [command] if command == "mics" => voice::microphones(),
@@ -207,6 +208,59 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
     // and being offered the button. This one carries no `pending`, which stops the
     // spinner.
     send_inbox(addons, &log_inbox("claude", &answer.say, None, answer.inbox.as_deref()))
+}
+
+/// Lift the API dump out of SavedVariables into a plain text file.
+///
+/// This build ships no API documentation tables, so there are no signatures to be
+/// had locally — but the names are exact for 1.60.1, which is the half the agent
+/// cannot get from training data. Knowing a function exists *here* is the question
+/// it otherwise answers from retail and gets wrong.
+fn api(addons: &Path, out: &Path) -> io::Result<()> {
+    let saved = saved_variables(addons)
+        .ok_or_else(|| io::Error::other("no SavedVariables yet: /reload in game first"))?;
+    let text = fs::read_to_string(&saved)?;
+    // the dump is one long Lua string, so find its opening quote and read to the
+    // first unescaped closing one rather than trying to parse Lua
+    let start = text
+        .find("[\"api\"] = \"")
+        .map(|at| at + "[\"api\"] = \"".len())
+        .ok_or_else(|| io::Error::other("no api dump in SavedVariables: run /wc dump, then /reload"))?;
+    let mut body = String::new();
+    let mut escaped = false;
+    for character in text[start..].chars() {
+        match (escaped, character) {
+            (true, 'n') => {
+                body.push('\n');
+                escaped = false;
+            }
+            (true, other) => {
+                body.push(other);
+                escaped = false;
+            }
+            (false, '\\') => escaped = true,
+            (false, '"') => break,
+            (false, other) => body.push(other),
+        }
+    }
+    let names = body.lines().filter(|line| !line.starts_with("--")).count();
+    fs::write(out, &body)?;
+    println!("wrote {names} names to {}", out.display());
+    Ok(())
+}
+
+fn saved_variables(addons: &Path) -> Option<PathBuf> {
+    let accounts = addons.parent()?.parent()?.join("WTF").join("Account");
+    let mut newest: Option<(u128, PathBuf)> = None;
+    for account in fs::read_dir(accounts).ok()?.flatten() {
+        let saved = account.path().join("SavedVariables").join(format!("{ADDON}.lua"));
+        if let Some(at) = modified_millis(&saved) {
+            if newest.as_ref().is_none_or(|(best, _)| at > *best) {
+                newest = Some((at, saved));
+            }
+        }
+    }
+    newest.map(|(_, path)| path)
 }
 
 /// Round-trip probe: PC to game through the slot channel, game back to PC through
