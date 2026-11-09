@@ -21,6 +21,8 @@ const BELL_LINGER: u32 = 4;
 const PROBE_MESSAGES: u32 = 10;
 const PROBE_SPACING: Duration = Duration::from_secs(3);
 const PROBE_COUNTDOWN: Duration = Duration::from_secs(8);
+// long enough for the addon's 0.5 s poll to catch a bell several times over
+const BELL_HEARD: Duration = Duration::from_secs(2);
 
 // bells must exceed the client's sound cache limit (174,762 bytes) so it rereads them every play
 const BELL_SECONDS: u32 = 10;
@@ -165,8 +167,17 @@ fn send(addons: &Path, args: &[String]) -> io::Result<()> {
         }
     };
     let slot = next_slot(addons)?;
+    // A bell left ringing is a command that fires again on every /reload: the addon's
+    // cursor goes back to slot 1, hears the old bell, and redelivers. So ring it only
+    // long enough to be heard, then silence it. The addon polls every 0.5 s.
+    let signals = addons.join(ADDON).join("Signals");
+    for bell in 1..=BELLS {
+        write_reporting(&signals.join(bell_name(bell)), &[])?;
+    }
     deliver(addons, slot, &inbox)?;
     println!("sent in slot {slot}: {inbox}");
+    thread::sleep(BELL_HEARD);
+    write_reporting(&signals.join(bell_name(slot)), &[])?;
     Ok(())
 }
 

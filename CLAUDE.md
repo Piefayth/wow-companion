@@ -44,11 +44,28 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
   which later surfaces as "Interface action failed because of an AddOn" on an unrelated
   keypress. `ReloadUI()` is unprotected, so the addon can call it itself, and it clears
   the taint, flushes SavedVariables and resets the slot cursor in one move. Chat
-  insertion on its own never tainted anything, so the frequent path stays clean.
-  The blocked call is `SetPreferredGamepadInteractTarget`, which is the gamepad UI's
-  interact targeting — so this lands squarely on the controller player we are building
-  for, and it fires whenever that targeting next runs rather than at the moment we
-  taint it. That is why it looks intermittent.
+  insertion taints too, and not harmlessly: opening the edit box from insecure code
+  leaves the gamepad focus restore blocked, and **the A and B buttons stop working**
+  until the taint clears. It announces itself as one mild "interface action failed"
+  notice, which is why it read as cosmetic at first. It is not.
+  The blocked call for bar placement is `SetPreferredGamepadInteractTarget`, the
+  gamepad UI's interact targeting — so it lands squarely on the controller player we
+  are building for, and it fires whenever that targeting next runs rather than when we
+  taint it, which is why it looks intermittent.
+  The continuous bell poll is **not** a taint source: `/wc quiet` stops it, and a fresh
+  session with it running interacts cleanly. Worth stating because it was the obvious
+  suspect, being the only thing the addon does nonstop, and it was wrong twice over.
+  So chat delivery needs to stop touching the edit box. Write the line into a **macro
+  body** instead and let the player press it: macro writing is the one path that has
+  never tainted anything, it needs no new binding if a macro slot is kept for it, and
+  it is "configuration only, never act for the player" taken literally — we write, the
+  player executes. A `SecureActionButtonTemplate` with `macrotext` is the other
+  taint-free option, but it costs a gamepad binding, and those are scarce.
+- **Never leave a bell ringing.** `/reload` puts the addon's cursor back at slot 1, so
+  a bell still ringing from the last send is heard again and the command runs a second
+  time. That is how the chat taint above turned into A and B staying broken across
+  reloads: reloading re-triggered it. Ring a bell only until it is heard, then silence
+  it, and clear stale bells before sending.
 - Voice: push-to-talk, whole clip transcribed after release (more accurate than
   streaming dictation). Pass a vocabulary prompt (spell names etc.).
 - **Not Windows voice typing (Win+H).** It needs "online speech recognition" on, which
