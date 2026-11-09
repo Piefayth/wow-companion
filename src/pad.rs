@@ -49,6 +49,10 @@ pub fn press(name: &str) -> io::Result<Press> {
         "capture" | "touchpad" => (10, 0x02),
         "l1" | "lb" => (9, 0x01),
         "r1" | "rb" => (9, 0x02),
+        // measured: Switch minus and plus arrive as the DualSense Create and Options
+        // buttons. WoW binds plus to the game menu, so minus is the free one.
+        "minus" | "create" | "share" => (9, 0x10),
+        "plus" | "options" => (9, 0x20),
         other => match other.split_once(':') {
             Some((byte, mask)) => (
                 byte.parse().map_err(|_| io::Error::other(format!("{byte:?} isn't a byte index")))?,

@@ -20,6 +20,17 @@ const WHISPER_RATE: u32 = 16_000;
 const POLL: Duration = Duration::from_millis(16);
 // below this there is no speech, just the click of the chord being released
 const MINIMUM_CLIP: Duration = Duration::from_millis(250);
+// A sine wave at full scale is far louder than music at the same nominal level, and
+// a headset in hands-free mode has its own gain on top. Start very quiet; `volume=`
+// tunes it without a rebuild.
+const CUE_VOLUME: f32 = 0.015;
+// A rising fifth to open, the same fifth falling to close: two notes carry direction
+// where one pitch only says "something happened".
+const CUE_OPEN: [f32; 2] = [587.33, 880.00];
+const CUE_SHUT: [f32; 2] = [880.00, 587.33];
+const CUE_NOTE: u64 = 85;
+// struck-and-decaying, like a glass or a marimba, rather than a held tone
+const CUE_DECAY: f32 = 20.0;
 
 // Whisper has never heard of Hearthstone or Shadowstep and will cheerfully write
 // "fire ball". Seeding the decoder with the vocabulary fixes most of it.
@@ -36,10 +47,17 @@ pub fn listen(
 ) -> io::Result<()> {
     // Home by default: the one button WoW has no use for. We cannot consume the
     // input, so anything the game binds would fire twice.
-    let button = pad::press(options.first().map_or("home", |name| name.as_str()))?;
+    let button = pad::press(option(options, "button").unwrap_or("home"))?;
     let (vid, pid) = DEFAULT_PAD;
     let mut controller = Pad::open(vid, pid)?;
-    let microphone = Microphone::open(options.get(1).map(|name| name.as_str()))?;
+    let microphone = Microphone::open(option(options, "mic"))?;
+    // A Bluetooth headset holding HFP for the mic has its A2DP render endpoint
+    // switched off, so the cue has to name the hands-free one or it plays into a
+    // dead device. Nothing is audible and nothing errors.
+    let cue_device = option(options, "cue").map(str::to_string);
+    let cue_volume = option(options, "volume")
+        .and_then(|given| given.parse().ok())
+        .unwrap_or(CUE_VOLUME);
 
     // loading the model is the slow part, so do it once and keep it resident
     let path = model.to_str().ok_or_else(|| io::Error::other("model path isn't UTF-8"))?;
@@ -55,9 +73,12 @@ pub fn listen(
 
         if held && !holding {
             microphone.start();
+            cue(cue_device.clone(), cue_volume, &CUE_OPEN);
             println!("listening");
         } else if !held && holding {
             let clip = microphone.stop();
+            // falling fifth on release: rising means live, falling means it has your clip
+            cue(cue_device.clone(), cue_volume, &CUE_SHUT);
             let seconds = clip.len() as f32 / WHISPER_RATE as f32;
             if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
                 println!("too short, ignored");
@@ -206,6 +227,127 @@ fn push(capture: &Arc<Mutex<Capture>>, samples: impl Iterator<Item = f32>) {
     if capture.recording {
         capture.samples.extend(samples);
     }
+}
+
+/// A short tone to the default output, so you can hear that push-to-talk went live
+/// rather than guessing from whether text eventually appears.
+///
+/// Spawned on its own thread: capture has to start now, not after the audio device
+/// has finished opening.
+fn cue(wanted: Option<String>, volume: f32, notes: &'static [f32]) {
+    if volume <= 0.0 {
+        return;
+    }
+    thread::spawn(move || {
+        if let Err(err) = chime(wanted.as_deref(), volume, notes) {
+            eprintln!("cue failed: {err}");
+        }
+    });
+}
+
+fn chime(wanted: Option<&str>, volume: f32, notes: &[f32]) -> io::Result<()> {
+    let host = cpal::default_host();
+    let device = match wanted {
+        Some(fragment) => {
+            let lowered = fragment.to_ascii_lowercase();
+            host.output_devices()
+                .map_err(|err| io::Error::other(err.to_string()))?
+                .find(|device| {
+                    device.description().is_ok_and(|described| {
+                        described.name().to_ascii_lowercase().contains(&lowered)
+                    })
+                })
+                .ok_or_else(|| io::Error::other(format!("no output matching {fragment:?}")))?
+        }
+        None => host
+            .default_output_device()
+            .ok_or_else(|| io::Error::other("no output device"))?,
+    };
+    let config = device
+        .default_output_config()
+        .map_err(|err| io::Error::other(err.to_string()))?;
+    let rate = config.sample_rate() as f32;
+    let channels = config.channels() as usize;
+    let per_note = (rate * CUE_NOTE as f32 / 1000.0) as usize;
+    let length = per_note * notes.len();
+    // a few ms of attack, or the strike itself clicks
+    let attack = (rate * 0.003).max(1.0) as usize;
+    let count = notes.len() as u64;
+    let notes: Vec<f32> = notes.to_vec();
+
+    let mut index = 0usize;
+    let mut next = move || {
+        if index >= length {
+            return 0.0;
+        }
+        let (note, step) = (index / per_note, index % per_note);
+        let seconds = step as f32 / rate;
+        let hz = notes[note];
+        let phase = seconds * hz * std::f32::consts::TAU;
+        // a quiet second harmonic gives it some body; the sine alone sounds like a test
+        let wave = phase.sin() + 0.12 * (phase * 2.0).sin();
+        let envelope = (step as f32 / attack as f32).min(1.0) * (-seconds * CUE_DECAY).exp();
+        index += 1;
+        wave * envelope * volume
+    };
+
+    let fail = |err| eprintln!("cue stream error: {err}");
+    let stream = match config.sample_format() {
+        cpal::SampleFormat::F32 => device.build_output_stream(
+            config.config(),
+            move |buffer: &mut [f32], _: &_| {
+                for frame in buffer.chunks_mut(channels) {
+                    frame.fill(next());
+                }
+            },
+            fail,
+            None,
+        ),
+        cpal::SampleFormat::I16 => device.build_output_stream(
+            config.config(),
+            move |buffer: &mut [i16], _: &_| {
+                for frame in buffer.chunks_mut(channels) {
+                    frame.fill((next() * i16::MAX as f32) as i16);
+                }
+            },
+            fail,
+            None,
+        ),
+        other => return Err(io::Error::other(format!("unsupported output format {other:?}"))),
+    }
+    .map_err(|err| io::Error::other(err.to_string()))?;
+    stream.play().map_err(|err| io::Error::other(err.to_string()))?;
+    // hold the stream open until the notes have actually come out
+    thread::sleep(Duration::from_millis(CUE_NOTE * count + 80));
+    Ok(())
+}
+
+fn option<'a>(options: &'a [String], key: &str) -> Option<&'a str> {
+    options
+        .iter()
+        .filter_map(|option| option.split_once('='))
+        .find(|(name, _)| *name == key)
+        .map(|(_, value)| value)
+}
+
+pub fn speakers() -> io::Result<()> {
+    let host = cpal::default_host();
+    let default = host
+        .default_output_device()
+        .and_then(|device| device.description().ok())
+        .map(|described| described.name().to_string());
+    for device in host
+        .output_devices()
+        .map_err(|err| io::Error::other(err.to_string()))?
+    {
+        let Ok(described) = device.description() else { continue };
+        let name = described.name();
+        let marker = if Some(name.to_string()) == default { "*" } else { " " };
+        println!("{marker} {name}");
+    }
+    println!("\n* is the current default. A Bluetooth headset held in hands-free mode for");
+    println!("  its mic cannot play through its stereo endpoint: name the hands-free one.");
+    Ok(())
 }
 
 pub fn microphones() -> io::Result<()> {

@@ -47,6 +47,8 @@ fn main() {
         #[cfg(feature = "voice")]
         [command] if command == "mics" => voice::microphones(),
         #[cfg(feature = "voice")]
+        [command] if command == "speakers" => voice::speakers(),
+        #[cfg(feature = "voice")]
         [command, model, options @ ..] if command == "voice" => {
             voice::listen(Path::new(model), options, |_| Ok(()))
         }
@@ -70,9 +72,11 @@ fn main() {
             eprintln!("  pads                             list HID devices");
             eprintln!("  pads <vid:pid>                   watch one pad's raw reports");
             eprintln!("  mics                             list input devices");
-            eprintln!("  voice <model> [button] [mic]     hold the button and speak");
-            eprintln!("  dictate <AddOns> <model> [button] [mic]");
-            eprintln!("                                   speak into the WCSay macro");
+            eprintln!("  speakers                         list output devices");
+            eprintln!("  voice <model> [options]          hold the button and speak");
+            eprintln!("  dictate <AddOns> <model> [options]");
+            eprintln!("                                   speak into the open chat box");
+            eprintln!("    options: button=home mic=<name> cue=<name>");
             std::process::exit(2);
         }
     };
@@ -162,6 +166,14 @@ fn send(addons: &Path, args: &[String]) -> io::Result<()> {
             "{{ kind = \"macro\", name = {}, body = {} }}",
             lua_string(name),
             lua_string(body)
+        ),
+        [kind, text] if kind == "log" => {
+            format!("{{ kind = \"log\", text = {} }}", lua_string(text))
+        }
+        [kind, who, text] if kind == "log" => format!(
+            "{{ kind = \"log\", who = {}, text = {} }}",
+            lua_string(who),
+            lua_string(text)
         ),
         [kind] if kind == "reload" => "{ kind = \"reload\" }".to_string(),
         _ => {

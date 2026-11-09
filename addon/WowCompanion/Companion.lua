@@ -7,9 +7,13 @@ local ADDON = "WowCompanion"
 local BELLS = 8
 local SIGNALS = "Interface\\AddOns\\WowCompanion\\Signals\\"
 
+-- how much conversation to keep; it rides in SavedVariables, so not unbounded
+local LOG_KEEP = 300
+
 local nextSlot = 1
 local blocked = 0
 local ticker
+local logWindow
 
 local function say(message)
 	print("|cff66ccffCompanion|r " .. message)
@@ -47,6 +51,107 @@ local function activeEditBox()
 	return get and get()
 end
 
+-- The conversation window. Chat lines scroll away and cannot be scrolled back
+-- through, so replies live in their own frame and in SavedVariables, which is what
+-- makes history survive a /reload.
+--
+-- Deliberately not registered in UISpecialFrames: Escape handling is where the
+-- gamepad taint lives, and this frame has a close button instead.
+local function buildLog()
+	-- CreateFrame throws on a template this build does not have, and an unreadable
+	-- window is better than an addon that fails to load
+	local made, frame = pcall(CreateFrame, "Frame", "WowCompanionLog", UIParent, "BackdropTemplate")
+	if not made or not frame then
+		frame = CreateFrame("Frame", "WowCompanionLog", UIParent)
+	end
+	frame:SetSize(560, 340)
+	frame:SetPoint("CENTER")
+	frame:SetFrameStrata("DIALOG")
+	frame:Hide()
+	if frame.SetBackdrop then
+		frame:SetBackdrop({
+			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+			edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+			edgeSize = 24,
+			insets = { left = 6, right = 6, top = 6, bottom = 6 },
+		})
+	end
+	frame:SetMovable(true)
+	frame:SetResizable(true)
+	frame:EnableMouse(true)
+	frame:RegisterForDrag("LeftButton")
+	frame:SetScript("OnDragStart", frame.StartMoving)
+	frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+
+	local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	title:SetPoint("TOPLEFT", 16, -14)
+	title:SetText("Companion")
+
+	local closed, close = pcall(CreateFrame, "Button", nil, frame, "UIPanelCloseButton")
+	if closed and close then
+		close:SetPoint("TOPRIGHT", -6, -6)
+		close:SetScript("OnClick", function()
+			frame:Hide()
+		end)
+	end
+
+	local messages = CreateFrame("ScrollingMessageFrame", nil, frame)
+	messages:SetPoint("TOPLEFT", 18, -40)
+	messages:SetPoint("BOTTOMRIGHT", -18, 16)
+	messages:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
+	messages:SetJustifyH("LEFT")
+	messages:SetFading(false)
+	messages:SetMaxLines(LOG_KEEP)
+	messages:SetHyperlinksEnabled(true)
+	messages:EnableMouseWheel(true)
+	messages:SetScript("OnMouseWheel", function(self, delta)
+		if IsShiftKeyDown() then
+			if delta > 0 then self:ScrollToTop() else self:ScrollToBottom() end
+		elseif delta > 0 then
+			self:ScrollUp()
+		else
+			self:ScrollDown()
+		end
+	end)
+	frame.messages = messages
+	return frame
+end
+
+local function logFrame()
+	logWindow = logWindow or buildLog()
+	return logWindow
+end
+
+local function colouredFor(who)
+	if who == "you" then
+		return "|cff9ad5ff"
+	elseif who == "error" then
+		return "|cffff7777"
+	end
+	return "|cffffe08a"
+end
+
+local function showLine(who, text)
+	logFrame().messages:AddMessage(("%s%s|r  %s"):format(colouredFor(who), who, text))
+end
+
+-- Kept in SavedVariables, so it is written on /reload or logout like everything else.
+local function remember(who, text)
+	WowCompanionDB.log = WowCompanionDB.log or {}
+	local entries = WowCompanionDB.log
+	entries[#entries + 1] = { at = time(), who = who, text = text }
+	while #entries > LOG_KEEP do
+		table.remove(entries, 1)
+	end
+	showLine(who, text)
+end
+
+local function replayLog()
+	for _, entry in ipairs(WowCompanionDB.log or {}) do
+		showLine(entry.who or "claude", entry.text or "")
+	end
+end
+
 -- What the helper is allowed to ask for. A dispatch table rather than loadstring on
 -- whatever arrives: the rule is configuration only, and this is where that rule lives.
 local handlers = {}
@@ -65,7 +170,29 @@ function handlers.chat(inbox)
 	end
 	-- append, so speaking twice builds a line instead of replacing it
 	box:SetText((box:GetText() or "") .. (inbox.text or ""))
+	remember("you", inbox.text or "")
 	return ("chat box holds %q"):format(box:GetText())
+end
+
+-- A line for the conversation window. Opens it out of combat so a reply is not
+-- missed, but never steals the screen mid-fight.
+function handlers.log(inbox)
+	local text = inbox.text or ""
+	local who = inbox.who or "claude"
+	local lines = 0
+	-- a reply arrives as one message but reads as many lines, and AddMessage takes
+	-- one line at a time; blank lines are kept because they carry the paragraphs
+	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+		remember(who, line)
+		lines = lines + 1
+	end
+	if lines == 0 then
+		remember(who, text)
+	end
+	if not InCombatLockdown() and not logWindow:IsShown() then
+		logWindow:Show()
+	end
+	return ("logged %d line(s)"):format(lines)
 end
 
 function handlers.macro(inbox)
@@ -211,6 +338,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
 	elseif event == "PLAYER_LOGIN" then
 		local version, build, _, toc = GetBuildInfo()
 		record("client", ("%s.%s, toc %d"):format(version, build, toc))
+		-- build the window and refill it before anything can write to it
+		logFrame()
+		replayLog()
 		probeSound()
 		ticker = C_Timer.NewTicker(0.5, poll)
 	elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
@@ -243,7 +373,14 @@ SlashCmdList.WOWCOMPANION = function(command)
 			ticker = C_Timer.NewTicker(0.5, poll)
 		end
 		say("bell poll running")
+	elseif command == "log" then
+		local frame = logFrame()
+		if frame:IsShown() then
+			frame:Hide()
+		else
+			frame:Show()
+		end
 	else
-		say("/wc chat, /wc macro, /wc sound, /wc quiet, /wc listen")
+		say("/wc log, /wc chat, /wc macro, /wc sound, /wc quiet, /wc listen")
 	end
 end
