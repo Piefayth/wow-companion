@@ -17,7 +17,6 @@ use std::{
 use hidapi::{HidApi, HidDevice};
 
 // the pad as switch2connect presents it; `pads` lists what is actually attached
-#[cfg_attr(not(feature = "voice"), allow(dead_code))]
 pub const DEFAULT_PAD: (u16, u16) = (0x054c, 0x0ce6);
 
 const REPORT: usize = 128;
@@ -27,7 +26,6 @@ const CALIBRATE: Duration = Duration::from_secs(3);
 const RESTLESS: u32 = 3;
 
 /// One button, as the bit it occupies in the input report.
-#[cfg_attr(not(feature = "voice"), allow(dead_code))]
 pub struct Press {
     pub byte: usize,
     pub mask: u8,
@@ -41,7 +39,6 @@ impl fmt::Display for Press {
 
 // Named for this pad's measured layout. Anything else can be given as byte:mask,
 // since these offsets belong to one adapter's report, not to HID in general.
-#[cfg_attr(not(feature = "voice"), allow(dead_code))]
 pub fn press(name: &str) -> io::Result<Press> {
     let (byte, mask) = match name.to_ascii_lowercase().as_str() {
         // the one button WoW ignores, which is the whole reason for this module
@@ -68,13 +65,11 @@ pub fn press(name: &str) -> io::Result<Press> {
     Ok(Press { byte, mask })
 }
 
-#[cfg_attr(not(feature = "voice"), allow(dead_code))]
 pub struct Pad {
     device: HidDevice,
     latest: Vec<u8>,
 }
 
-#[cfg_attr(not(feature = "voice"), allow(dead_code))]
 impl Pad {
     pub fn open(vid: u16, pid: u16) -> io::Result<Self> {
         Ok(Self { device: open(vid, pid)?, latest: Vec::new() })
@@ -199,7 +194,6 @@ fn hex(text: &str) -> io::Result<u16> {
         .map_err(|_| io::Error::other(format!("{text:?} isn't hex")))
 }
 
-#[cfg_attr(not(feature = "voice"), allow(dead_code))]
 fn hex8(text: &str) -> io::Result<u8> {
     u8::from_str_radix(text.trim_start_matches("0x"), 16)
         .map_err(|_| io::Error::other(format!("{text:?} isn't a hex byte")))

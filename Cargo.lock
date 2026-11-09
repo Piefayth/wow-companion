@@ -1094,10 +1094,25 @@ dependencies = [
 name = "wow-companion"
 version = "0.1.0"
 dependencies = [
- "cpal",
- "hidapi",
  "serde_json",
+ "wow-companion-pad",
+ "wow-companion-voice",
+]
+
+[[package]]
+name = "wow-companion-pad"
+version = "0.1.0"
+dependencies = [
+ "hidapi",
+]
+
+[[package]]
+name = "wow-companion-voice"
+version = "0.1.0"
+dependencies = [
+ "cpal",
  "whisper-rs",
+ "wow-companion-pad",
 ]
 
 [[package]]

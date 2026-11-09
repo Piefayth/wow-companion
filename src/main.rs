@@ -3,9 +3,9 @@
 //! and `probe` sends numbered messages so we can watch the channel work.
 
 mod agent;
-mod pad;
-#[cfg(feature = "voice")]
-mod voice;
+
+use wow_companion_pad as pad;
+use wow_companion_voice as voice;
 
 use std::{
     env, fs, io,
@@ -46,30 +46,22 @@ fn main() {
         [command, addons, spoken] if command == "ask" => {
             ask(Path::new(addons), &mut agent::Session::default(), spoken)
         }
-        #[cfg(feature = "voice")]
         [command, addons, model, options @ ..] if command == "run" => {
             run(Path::new(addons), Path::new(model), options)
         }
         [command] if command == "pads" => pad::list(),
         [command, id] if command == "pads" => pad::watch(id),
-        #[cfg(feature = "voice")]
         [command] if command == "mics" => voice::microphones(),
-        #[cfg(feature = "voice")]
         [command] if command == "speakers" => voice::speakers(),
-        #[cfg(feature = "voice")]
         [command, model, options @ ..] if command == "voice" => {
             voice::listen(Path::new(model), options, |_, _| Ok(()))
         }
-        #[cfg(feature = "voice")]
         [command, addons, model, options @ ..] if command == "dictate" => {
             let addons = Path::new(addons);
             voice::listen(Path::new(model), options, |_, text| {
                 send_inbox(addons, &chat_inbox(text))
             })
         }
-        [command, ..] if command == "voice" => Err(io::Error::other(
-            "built without voice: cargo run --features voice -- voice <model>",
-        )),
         _ => {
             eprintln!("usage: wow-companion <command> [args]");
             eprintln!("  install <AddOns>                 lay down the addon and its slots");
@@ -217,7 +209,6 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
 /// The whole thing: controller, microphone, Whisper, the channel, and one
 /// continuing conversation with the agent. Hold one button to dictate into the chat
 /// box, the other to ask.
-#[cfg(feature = "voice")]
 fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     let mut session = agent::Session::default();
     voice::listen(model, options, |role, text| match role {

@@ -1,0 +1,13 @@
+[package]
+name = "wow-companion-voice"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+wow-companion-pad = { path = "../pad" }
+cpal = "0.18.2"
+# the cuda feature builds ggml's CUDA backend from source: hundreds of .cu files,
+# each for every architecture ggml supports. Set CUDAARCHS=89 to build for this
+# GPU alone. Nothing outside this crate's manifest can invalidate it now.
+whisper-rs = { version = "0.16.0", features = ["cuda"] }

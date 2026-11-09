@@ -14,7 +14,7 @@ use std::{
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-use crate::pad::{self, Pad, DEFAULT_PAD};
+use wow_companion_pad::{self as pad, Pad, DEFAULT_PAD};
 
 const WHISPER_RATE: u32 = 16_000;
 const POLL: Duration = Duration::from_millis(16);
