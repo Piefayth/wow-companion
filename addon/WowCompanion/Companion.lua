@@ -275,8 +275,14 @@ local function offer(label, macro)
 		actionButton = button
 		actionButton:SetSize(150, 24)
 		actionButton:SetPoint("BOTTOMRIGHT", -32, 12)
-		actionButton:RegisterForClicks("AnyUp")
+		-- Order is what matters: a SecureActionButtonTemplate wants its attributes set
+		-- before clicks are registered. With it reversed the wrapper still runs --
+		-- PreClick and PostClick both fire -- while the macro silently does not, which
+		-- looks exactly like a permissions refusal and is not one.
+		--
+		-- One edge only. Registering both runs the macro twice, once down and once up.
 		actionButton:SetAttribute("type", "macro")
+		actionButton:RegisterForClicks("AnyUp")
 		-- make the cursor able to land on it, and tell SmartNavigation this frame is
 		-- where the window's focusable button lives
 		if SmartNavigation_MarkFrameFocusable then
@@ -316,7 +322,10 @@ local function offer(label, macro)
 			end
 		end
 	end
-	remember("claude", ("press %s, or click %s below"):format(bound, label))
+	-- show the macro, not just the label: the player is the one authorising this, and
+	-- "Do it" tells them nothing about what they would be running
+	remember("claude", ("button |cffffffff%s|r runs |cff9ad5ff%s|r — %s or click it")
+		:format(label, macro, bound ~= "nothing" and ("press " .. bound) or "mouse"))
 	return ("offering %q which runs %q, bound to %s"):format(label, macro, bound)
 end
 
@@ -449,7 +458,20 @@ local function receive()
 		return
 	end
 	local ok, result = pcall(handler, inbox)
-	record("slot " .. slot, ok and tostring(result) or ("error: " .. tostring(result)))
+	-- only probe traffic is worth narrating in chat; the window is where the rest goes
+	if inbox.kind == "probe" or not ok then
+		record("slot " .. slot, ok and tostring(result) or ("error: " .. tostring(result)))
+	end
+	-- A reply and the action it describes are one thought, so they ride in one
+	-- message: two sends would mean two bells and two seconds of waiting between
+	-- reading the answer and being offered the button.
+	local following = inbox.andThen
+	if following and handlers[following.kind or ""] then
+		local done, outcome = pcall(handlers[following.kind], following)
+		if not done then
+			record("slot " .. slot .. " follow-up", "error: " .. tostring(outcome))
+		end
+	end
 end
 
 local function poll()
@@ -560,6 +582,46 @@ local function probeGamepad()
 	end
 end
 
+-- Can the client tell us its own API? That would beat any external reference, which
+-- is written about WoW in general while this is one specific build -- and version
+-- drift is exactly what has caught us out repeatedly.
+local function probeApi()
+	for _, name in ipairs({
+		"APIDocumentation",
+		"C_ApiDocumentation",
+		"GetAPIDocumentation",
+		"APIDocumentationMixin",
+		"ApiDocumentation",
+	}) do
+		record("has " .. name, _G[name] ~= nil and type(_G[name]) or "no")
+	end
+
+	-- failing that, the globals themselves are a complete list of what exists
+	local functions, namespaces, members = 0, 0, 0
+	local biggest, biggestCount = "none", 0
+	for key, value in pairs(_G) do
+		if type(value) == "function" then
+			functions = functions + 1
+		elseif type(value) == "table" and type(key) == "string" and key:match("^C_%w+$") then
+			namespaces = namespaces + 1
+			local count = 0
+			for _, member in pairs(value) do
+				if type(member) == "function" then
+					count = count + 1
+				end
+			end
+			members = members + count
+			if count > biggestCount then
+				biggest, biggestCount = key, count
+			end
+		end
+	end
+	record("global functions", functions)
+	record("C_ namespaces", namespaces)
+	record("C_ functions", members)
+	record("largest namespace", ("%s (%d)"):format(biggest, biggestCount))
+end
+
 local function probeChat()
 	local open = ChatFrame_OpenChat or (ChatFrameUtil and ChatFrameUtil.OpenChat)
 	record("chat opener", ChatFrame_OpenChat and "ChatFrame_OpenChat" or open and "ChatFrameUtil.OpenChat" or "none")
@@ -651,6 +713,18 @@ SlashCmdList.WOWCOMPANION = function(command)
 		probeSound()
 	elseif command == "gamepad" then
 		probeGamepad()
+	elseif command == "api" then
+		probeApi()
+	elseif command == "ping" then
+		-- the macro test target: no side effects, and unmistakable when it fires.
+		-- remember() rather than say(), so the answer survives to SavedVariables --
+		-- a probe whose result only reaches the chat frame cannot be read back.
+		remember("probe", "pong at " .. date("%H:%M:%S") .. " -- the macro ran")
+		record("macrotext runs", "yes, at " .. date("%H:%M:%S"))
+	elseif command == "test" then
+		-- point the button at our own slash command. If pong appears, macrotext works
+		-- and /reload is being refused specifically; if not, macrotext never runs.
+		say(offer("Run /wc ping", "/wc ping"))
 	elseif command:match("^key ") then
 		offerKey = command:match("^key (%S+)")
 		say(("offer button will try %s first"):format(tostring(offerKey)))
@@ -683,6 +757,6 @@ SlashCmdList.WOWCOMPANION = function(command)
 		logFrame().messages:Clear()
 		say("conversation cleared")
 	else
-		say("/wc log, /wc clear, /wc button, /wc gamepad, /wc chat, /wc macro, /wc sound, /wc quiet, /wc listen")
+		say("/wc log, /wc clear, /wc button, /wc gamepad, /wc api, /wc test, /wc chat, /wc macro, /wc sound, /wc quiet, /wc listen")
 	end
 end

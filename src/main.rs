@@ -199,15 +199,14 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
     // start the agent before announcing ourselves: the announcement costs a bell
     // wait, the agent costs several seconds, and they may as well run together
     let waiting = session.start(spoken)?;
-    send_inbox(addons, &log_inbox("you", spoken, Some("thinking")))?;
+    send_inbox(addons, &log_inbox("you", spoken, Some("thinking"), None))?;
     let answer = session.finish(waiting)?;
     println!("claude: {}", answer.say);
-    // this one carries no `pending`, which is what stops the spinner
-    send_inbox(addons, &log_inbox("claude", &answer.say, None))?;
-    match answer.inbox {
-        Some(inbox) => send_inbox(addons, &inbox),
-        None => Ok(()),
-    }
+    // One message, not two: the reply and the action it describes arrive together,
+    // so there is no second bell and no two-second gap between reading the answer
+    // and being offered the button. This one carries no `pending`, which stops the
+    // spinner.
+    send_inbox(addons, &log_inbox("claude", &answer.say, None, answer.inbox.as_deref()))
 }
 
 /// Round-trip probe: PC to game through the slot channel, game back to PC through
@@ -263,16 +262,22 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     })
 }
 
-fn log_inbox(who: &str, text: &str, pending: Option<&str>) -> String {
-    let waiting = match pending {
-        Some(label) => format!(", pending = {}", lua_string(label)),
-        None => String::new(),
-    };
-    format!(
-        "{{ kind = \"log\", who = {}, text = {}{waiting} }}",
-        lua_string(who),
-        lua_string(text)
-    )
+/// Built field by field rather than by patching a finished string: the first attempt
+/// spliced `andThen` onto the end and dropped the comma, which the client reported as
+/// a Lua syntax error from inside a slot.
+fn log_inbox(who: &str, text: &str, pending: Option<&str>, also: Option<&str>) -> String {
+    let mut fields = vec![
+        "kind = \"log\"".to_string(),
+        format!("who = {}", lua_string(who)),
+        format!("text = {}", lua_string(text)),
+    ];
+    if let Some(label) = pending {
+        fields.push(format!("pending = {}", lua_string(label)));
+    }
+    if let Some(inbox) = also {
+        fields.push(format!("andThen = {inbox}"));
+    }
+    format!("{{ {} }}", fields.join(", "))
 }
 
 fn chat_inbox(text: &str) -> String {

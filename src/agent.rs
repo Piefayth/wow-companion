@@ -23,11 +23,13 @@ const TURNS: &str = "1";
 const SCHEMA: &str = r#"{
   "type": "object",
   "properties": {
-    "say":  { "type": "string" },
-    "kind": { "type": "string", "enum": ["chat", "macro", "reload", "none"] },
-    "text": { "type": "string" },
-    "name": { "type": "string" },
-    "body": { "type": "string" }
+    "say":   { "type": "string" },
+    "kind":  { "type": "string", "enum": ["chat", "macro", "press", "reload", "none"] },
+    "text":  { "type": "string" },
+    "name":  { "type": "string" },
+    "body":  { "type": "string" },
+    "label": { "type": "string" },
+    "macro": { "type": "string" }
   },
   "required": ["say", "kind"],
   "additionalProperties": false
@@ -46,8 +48,16 @@ Pick one `kind`:
   channel other than say: /p for party, /r raid, /g guild, /i instance.
 - `macro`: they want a macro. `name` is short; `body` is the macro text, 255 chars
   or fewer, using real WoW macro syntax such as /cast.
-- `reload`: they asked to reload the UI.
+- `press`: they want something an addon may not do for them but a macro can express.
+  `macro` is the macro text, `label` is two or three words for the button. They see
+  both and press it themselves, so write the macro to do exactly what was asked and
+  nothing more. Good for equipping, /console settings, leaving a group.
+- `reload`: they asked to reload the UI. A `press` with /reload, named for convenience.
 - `none`: they asked a question, or nothing needs to change in game. Answer in `say`.
+
+You cannot place abilities on action bars: `PlaceAction` is protected and cannot be
+expressed as a macro, so say so plainly rather than offering a button that will not
+work. Never act for the player in combat. Writing is yours; pressing is theirs.
 
 Never act for the player. You write configuration; they press the button. Do not
 offer to attack, move, target, or take any action in combat.";
@@ -152,6 +162,11 @@ fn read(waiting: Child) -> io::Result<Answer> {
             "{{ kind = \"macro\", name = {}, body = {} }}",
             crate::lua_string(field(&command, "name")?),
             crate::lua_string(field(&command, "body")?)
+        )),
+        "press" => Some(format!(
+            "{{ kind = \"press\", label = {}, macro = {} }}",
+            crate::lua_string(field(&command, "label")?),
+            crate::lua_string(field(&command, "macro")?)
         )),
         "reload" => Some("{ kind = \"reload\" }".to_string()),
         "none" => None,

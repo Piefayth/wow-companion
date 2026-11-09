@@ -64,6 +64,11 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
   it is "configuration only, never act for the player" taken literally — we write, the
   player executes. A `SecureActionButtonTemplate` with `macrotext` is the other
   taint-free option, but it costs a gamepad binding, and those are scarce.
+- **Set a secure button's attributes before registering its clicks.** Reversed, the
+  wrapper still runs -- `PreClick` and `PostClick` both fire -- and the macro silently
+  does not. That looks exactly like a permissions refusal and is not one; it cost a
+  long detour through taint and protected calls before the answer turned out to be
+  ordering. Register one click edge: both runs the macro twice, down and up.
 - **For anything protected, offer a button.** Insecure code cannot call protected
   functions — `ReloadUI()` is one, and asking comes back as "WowCompanion called
   Reload()". A hardware button press is trusted, so build a
