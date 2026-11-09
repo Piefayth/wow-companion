@@ -16,6 +16,7 @@ const BELLS: u32 = 8;
 const BELL_LINGER: u32 = 4;
 const PROBE_MESSAGES: u32 = 10;
 const PROBE_SPACING: Duration = Duration::from_secs(3);
+const PROBE_COUNTDOWN: Duration = Duration::from_secs(8);
 
 // bells must exceed the client's sound cache limit (174,762 bytes) so it rereads them every play
 const BELL_SECONDS: u32 = 10;
@@ -67,8 +68,18 @@ fn install(addons: &Path) -> io::Result<()> {
 
 fn probe(addons: &Path) -> io::Result<()> {
     let signals = addons.join(ADDON).join("Signals");
-    println!("log in to a character with game sound on, then press Enter");
-    io::stdin().read_line(&mut String::new())?;
+    // a closed client swallows a whole run in silence, which looks identical to a broken channel
+    if !game_running()? {
+        return Err(io::Error::other(
+            "Wow.exe isn't running: log in first, or the probe writes into a dead client",
+        ));
+    }
+    println!("log in to a character, game sound on and the window focused, then press Enter");
+    if io::stdin().read_line(&mut String::new())? == 0 {
+        // no console attached, so nobody can press Enter: leave time to focus the game
+        println!("no stdin, starting in {:?}", PROBE_COUNTDOWN);
+        thread::sleep(PROBE_COUNTDOWN);
+    }
     let wav = silent_wav();
     for n in 1..=PROBE_MESSAGES {
         let sent = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -84,8 +95,24 @@ fn probe(addons: &Path) -> io::Result<()> {
     for n in PROBE_MESSAGES.saturating_sub(BELL_LINGER - 1)..=PROBE_MESSAGES {
         write_reporting(&signals.join(bell_name(n)), &[])?;
     }
+    if !game_running()? {
+        println!("warning: the game closed partway through, so the run is incomplete");
+    }
     println!("done: the game should have printed messages 1 to {PROBE_MESSAGES}");
     Ok(())
+}
+
+#[cfg(windows)]
+fn game_running() -> io::Result<bool> {
+    let listed = std::process::Command::new("tasklist")
+        .args(["/FI", "IMAGENAME eq Wow.exe", "/NH"])
+        .output()?;
+    Ok(String::from_utf8_lossy(&listed.stdout).contains("Wow.exe"))
+}
+
+#[cfg(not(windows))]
+fn game_running() -> io::Result<bool> {
+    Ok(true)
 }
 
 // the game may hold a bell open while it plays, which Windows can refuse to overwrite;

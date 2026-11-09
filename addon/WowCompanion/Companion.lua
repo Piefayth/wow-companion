@@ -8,13 +8,16 @@ local BELLS = 8
 local SIGNALS = "Interface\\AddOns\\WowCompanion\\Signals\\"
 
 local nextSlot = 1
+local blocked = 0
 
 local function say(message)
 	print("|cff66ccffCompanion|r " .. message)
 end
 
 local function record(key, value)
-	WowCompanionDB.probe[key] = value
+	-- storing nil would delete the key rather than save it, quietly losing the
+	-- result instead of reporting that we got nothing
+	WowCompanionDB.probe[key] = value == nil and "nil" or value
 	say(key .. ": " .. tostring(value))
 end
 
@@ -49,7 +52,7 @@ local function receive()
 		return
 	end
 	WowCompanionDB.probe.received = (WowCompanionDB.probe.received or 0) + 1
-	say(("slot %d: message %d, %ds after the helper wrote it"):format(slot, inbox.n, time() - inbox.sent))
+	record("slot " .. slot, ("message %d, %ds after the helper wrote it"):format(inbox.n, time() - inbox.sent))
 end
 
 local function poll()
@@ -60,12 +63,46 @@ local function poll()
 	end)
 end
 
+local function cvar(name)
+	local get = C_CVar and C_CVar.GetCVar or GetCVar
+	return get and get(name) or "?"
+end
+
+-- controls: a long silent file should play, an empty one shouldn't.
+-- an unfocused game mutes everything, so both come back false if you alt-tabbed away;
+-- the cvars tell that case apart from a bell that genuinely didn't play
+local function probeSound()
+	record("sound enabled", cvar("Sound_EnableAllSound"))
+	record("background sound", cvar("Sound_EnableSoundWhenGameIsInBG"))
+	record("master volume", cvar("Sound_MasterVolume"))
+	listen(SIGNALS .. "always.wav", function(playing)
+		record("always.wav plays (want true)", playing)
+	end)
+	listen(SIGNALS .. "never.wav", function(playing)
+		record("never.wav plays (want false)", playing)
+	end)
+end
+
+local function activeEditBox()
+	local get = ChatEdit_GetActiveWindow or (ChatFrameUtil and ChatFrameUtil.GetActiveWindow)
+	return get and get()
+end
+
 local function probeChat()
 	local open = ChatFrame_OpenChat or (ChatFrameUtil and ChatFrameUtil.OpenChat)
 	record("chat opener", ChatFrame_OpenChat and "ChatFrame_OpenChat" or open and "ChatFrameUtil.OpenChat" or "none")
-	if open then
-		open("hello from the companion")
+	if not open then
+		return
 	end
+	-- the Enter that submits /wc chat closes the edit box once the command returns,
+	-- so opening it from here only sticks if we let that finish first
+	C_Timer.After(0.1, function()
+		open("hello from the companion")
+		C_Timer.After(0.1, function()
+			local box = activeEditBox()
+			record("chat box", box and box:IsVisible() and ("open, holds %q"):format(box:GetText()) or "not open")
+		end)
+	end)
 end
 
 local function probeMacro()
@@ -111,21 +148,21 @@ frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
 frame:SetScript("OnEvent", function(_, event, ...)
 	if event == "ADDON_LOADED" and ... == ADDON then
 		WowCompanionDB = WowCompanionDB or {}
+		-- the game saves before it reloads, so hold on to the session we just read
+		-- from disk or a second /reload discards the run we were trying to measure
+		WowCompanionDB.previous = WowCompanionDB.probe
 		WowCompanionDB.probe = {}
 	elseif event == "PLAYER_LOGIN" then
 		local version, build, _, toc = GetBuildInfo()
 		record("client", ("%s.%s, toc %d"):format(version, build, toc))
-		-- controls: a long silent file should play, an empty one shouldn't
-		listen(SIGNALS .. "always.wav", function(playing)
-			record("always.wav plays (want true)", playing)
-		end)
-		listen(SIGNALS .. "never.wav", function(playing)
-			record("never.wav plays (want false)", playing)
-		end)
+		probeSound()
 		C_Timer.NewTicker(0.5, poll)
 	elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
-		local _, func = ...
-		record(event, func)
+		-- taint cascades, and the first block names the real culprit, so number them
+		-- rather than letting each one overwrite the last
+		local addon, func = ...
+		blocked = blocked + 1
+		record(("%s %d"):format(event, blocked), ("%s called %s"):format(tostring(addon), tostring(func)))
 	end
 end)
 
@@ -135,7 +172,9 @@ SlashCmdList.WOWCOMPANION = function(command)
 		probeChat()
 	elseif command == "macro" then
 		probeMacro()
+	elseif command == "sound" then
+		probeSound()
 	else
-		say("/wc chat, /wc macro")
+		say("/wc chat, /wc macro, /wc sound")
 	end
 end
