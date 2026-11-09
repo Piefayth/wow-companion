@@ -695,7 +695,7 @@ local function describe(fields)
 	return table.concat(parts, ", ")
 end
 
-local function dumpDocs()
+local function loadDocs()
 	if not APIDocumentation then
 		for _, loader in ipairs({
 			function() APIDocumentation_LoadUI() end,
@@ -710,9 +710,15 @@ local function dumpDocs()
 	end
 	if type(APIDocumentation) ~= "table" or type(APIDocumentation.systems) ~= "table" then
 		record("api docs", "unavailable: APIDocumentation " .. type(APIDocumentation))
+		return false
+	end
+	return true
+end
+
+local function dumpDocs()
+	if not loadDocs() then
 		return
 	end
-
 	local newline = string.char(10)
 	local lines, systems = {}, 0
 	for _, system in ipairs(APIDocumentation.systems) do
@@ -763,6 +769,126 @@ local function dumpDocs()
 	record("api docs", ("%d entries from %d systems; /reload to write"):format(#lines, systems))
 end
 
+-- Which documented functions actually answer on this client.
+--
+-- Documented is not working: Forever carries retail's namespaces, and a function can
+-- exist, be documented, and return nothing. Calling it is the only test, and calling
+-- blind is only safe for one kind -- a read that needs no arguments. So: every
+-- documented function whose name starts Get/Is/Has/Can/Should/Are/Does and whose
+-- arguments are all optional is called once, under pcall, and sorted by what came
+-- back. Anything that changes state is left alone; those need a test of their own.
+--
+-- Batched across frames so a few thousand calls do not hitch the game.
+--
+-- The first version called every such read in the client, and one of them crashed
+-- it outright: ACCESS_VIOLATION reading address 0 inside Wow.exe, from a plain pcall
+-- -- pcall catches Lua errors, not a C null dereference. Seven others were refused
+-- as ADDON_ACTION_FORBIDDEN. The crash report named only "call 58 of a batch". So:
+-- only the namespaces this project would use, nothing the docs flag as restricted,
+-- and the name of each function in a plain local while it runs, because the crash
+-- report prints the locals of the Lua frame that was executing.
+-- "%u" after the verb: "^Can" alone matched CancelEmote, which is not a read
+local READS = { "^Get%u", "^Is%u", "^Has%u", "^Can%u", "^Should%u", "^Are%u", "^Does%u" }
+local SURVEYED = {
+	C_ActionBar = true, C_Macro = true, C_Spell = true, C_SpellBook = true,
+	C_ClassTalents = true, C_Traits = true, C_SpecializationInfo = true,
+	C_EquipmentSet = true, C_CVar = true, C_KeyBindings = true, C_ChatInfo = true,
+	C_GamePad = true, C_Container = true, C_Item = true, C_PlayerInfo = true,
+	C_UnitAuras = true, C_PetInfo = true, C_MountJournal = true, C_ToyBox = true,
+}
+
+local function verdict(ok, ...)
+	if not ok then
+		return "error"
+	end
+	local count = select("#", ...)
+	if count == 0 then
+		return "nothing"
+	end
+	local first = ...
+	if first == nil then
+		return "nil"
+	elseif type(first) == "table" then
+		return next(first) == nil and "empty" or "value"
+	elseif first == 0 or first == false or first == "" then
+		return "zero"
+	end
+	return "value"
+end
+
+local function surveyApi()
+	if InCombatLockdown() then
+		say("leave combat first")
+		return
+	end
+	if not loadDocs() then
+		return
+	end
+	local queue = {}
+	for _, system in ipairs(APIDocumentation.systems) do
+		-- widget methods (frame:Show and friends) need an object; only namespaces
+		-- and plain globals can be called bare
+		local owner = system.Namespace and SURVEYED[system.Namespace] and _G[system.Namespace] or nil
+		for _, fn in ipairs(system.Functions or {}) do
+			local name = tostring(fn.Name)
+			local read = false
+			for _, pattern in ipairs(READS) do
+				read = read or name:find(pattern) ~= nil
+			end
+			local optional = true
+			for _, arg in ipairs(fn.Arguments or {}) do
+				optional = optional and (arg.Nilable or arg.Default ~= nil)
+			end
+			if read and optional and owner and not fn.HasRestrictions then
+				queue[#queue + 1] = {
+					label = (system.Namespace and (system.Namespace .. ".") or "") .. name,
+					owner = owner,
+					name = name,
+				}
+			end
+		end
+	end
+	local results, tally, at = {}, {}, 0
+	local function batch()
+		for _ = 1, 150 do
+			at = at + 1
+			local job = queue[at]
+			if not job then
+				table.sort(results)
+				local summary = {}
+				for kind, count in pairs(tally) do
+					summary[#summary + 1] = ("%s %d"):format(kind, count)
+				end
+				table.sort(summary)
+				local newline = string.char(10)
+				WowCompanionDB.alive = ("-- %d no-argument reads called: %s"):format(#queue,
+					table.concat(summary, ", ")) .. newline .. table.concat(results, newline) .. newline
+				record("api survey", table.concat(summary, ", ") .. "; /reload to write")
+				return
+			end
+			local kind
+			local fn = type(job.owner) == "table" and rawget(job.owner, job.name)
+			-- read by the crash reporter, not by us: see the note above
+			local survey_calling = job.label
+			if type(fn) ~= "function" then
+				kind = "absent"
+			else
+				local refusedBefore = blocked
+				kind = verdict(pcall(fn))
+				if blocked ~= refusedBefore then
+					kind = "forbidden"
+				end
+			end
+			survey_calling = nil
+			tally[kind] = (tally[kind] or 0) + 1
+			results[#results + 1] = ("%s %s"):format(kind, job.label)
+		end
+		C_Timer.After(0, batch)
+	end
+	say(("calling %d documented no-argument reads..."):format(#queue))
+	batch()
+end
+
 -- Name lookups, asked rather than assumed.
 --
 -- This client is 1.60.1: not retail, and not any Classic we have a reference for.
@@ -806,6 +932,55 @@ local function itemName(id)
 		end
 	end
 	return nil
+end
+
+-- The action slot space is not 1..120 on this client. The classic bars use the
+-- low numbers, but the gamepad UI draws 181..272 (top 181-184, left 185-192, right
+-- 193-200, bottom 201-208, stance 265-272) and the extra action button sits at 397.
+-- Measured from the live UI. Scan well past that; an invalid slot just errors.
+local LAST_ACTION_SLOT = 1024
+
+local function slotHas(slot)
+	local ok, has = pcall(HasAction, slot)
+	return ok and has
+end
+
+-- "GamepadMainActionBarFramePageUnitLeftCenteredAnchorLeftBarActionButton3" -> "LeftBar 3"
+local function barLabel(name)
+	return (tostring(name):gsub("^GamepadMainActionBarFramePageUnit", "")
+		:gsub("^%a-CenteredAnchor", ""):gsub("ActionButton(%d+)$", " %1"))
+end
+
+-- slot -> { visible = bool, label = "LeftBar 3" } for every slot some frame draws.
+-- The label is the first visible frame's, since several frames (edit mode, the
+-- hidden classic bars) can point at the same slot.
+local function actionFrames()
+	local slots = {}
+	if not EnumerateFrames then
+		return slots
+	end
+	local frame, walked = EnumerateFrames(), 0
+	while frame and walked < 50000 do
+		walked = walked + 1
+		local slot = type(frame.action) == "number" and frame.action or nil
+		if not slot and frame.GetAttribute then
+			local ok, value = pcall(frame.GetAttribute, frame, "action")
+			if ok and type(value) == "number" then
+				slot = value
+			end
+		end
+		if slot and slot > 0 then
+			local entry = slots[slot] or { visible = false }
+			local shown = frame.IsVisible and frame:IsVisible() or false
+			if shown and not entry.visible then
+				entry.label = barLabel(frame.GetName and frame:GetName())
+			end
+			entry.visible = entry.visible or shown
+			slots[slot] = entry
+		end
+		frame = EnumerateFrames(frame)
+	end
+	return slots
 end
 
 -- What the agent needs to know about this character, as one string.
@@ -854,11 +1029,13 @@ local function exportContext()
 	end
 
 	section("action slots")
-	line("-- the flat 1..120 space, addressed by number; empty slots omitted")
+	line("-- addressed by number; empty slots omitted. 'on screen' names the bar that")
+	line("-- draws it now; anything without it is stored but not shown")
 	if HasAction and GetActionInfo then
+		local frames = actionFrames()
 		local filled = 0
-		for slot = 1, 120 do
-			if HasAction(slot) then
+		for slot = 1, LAST_ACTION_SLOT do
+			if slotHas(slot) then
 				filled = filled + 1
 				local kind, id, subType = GetActionInfo(slot)
 				local what
@@ -878,10 +1055,25 @@ local function exportContext()
 				if subType and subType ~= "" then
 					what = what .. " [" .. tostring(subType) .. "]"
 				end
+				local drawn = frames[slot]
+				if drawn and drawn.visible then
+					what = what .. " -- on screen: " .. tostring(drawn.label)
+				end
 				line(("%3d: %s"):format(slot, what))
 			end
 		end
-		line(("-- %d of 120 filled"):format(filled))
+		line(("-- %d filled"):format(filled))
+
+		section("empty slots on screen")
+		line("-- where a new action can go and be seen")
+		local open = {}
+		for slot = 1, LAST_ACTION_SLOT do
+			local drawn = frames[slot]
+			if drawn and drawn.visible and not slotHas(slot) then
+				open[#open + 1] = ("%d (%s)"):format(slot, tostring(drawn.label))
+			end
+		end
+		line(#open > 0 and table.concat(open, ", ") or "none")
 	else
 		line("-- HasAction/GetActionInfo unavailable")
 	end
@@ -1010,6 +1202,36 @@ local function exportContext()
 		line("-- the spellbook walk failed partway; the lines above are what it reached")
 	end
 
+	section("modules")
+	line("-- Lua the agent stored; each runs at every login")
+	local stored = {}
+	for name in pairs(WowCompanionDB.modules or {}) do
+		stored[#stored + 1] = name
+	end
+	table.sort(stored)
+	for _, name in ipairs(stored) do
+		line(name .. ":")
+		line("    " .. (tostring(WowCompanionDB.modules[name].code):gsub(newline, newline .. "    ")))
+	end
+	if #stored == 0 then
+		line("none")
+	end
+
+	section("code runs")
+	line("-- the last runs of agent code this session and before, oldest first")
+	local runs = WowCompanionDB.runs or {}
+	for at = math.max(1, #runs - 9), #runs do
+		local run = runs[at]
+		line(("%s %s: %s; taint %s"):format(date("%H:%M:%S", run.at or 0), tostring(run.label),
+			tostring(run.outcome), tostring(run.taint or "unchecked")))
+		if run.printed and run.printed ~= "" then
+			line("    " .. (run.printed:gsub(newline, newline .. "    ")))
+		end
+	end
+	if #runs == 0 then
+		line("none")
+	end
+
 	WowCompanionDB.context = table.concat(out, newline) .. newline
 	return #out
 end
@@ -1116,32 +1338,6 @@ local function taintScan()
 	return tainted, checked
 end
 
--- slot -> { visible = bool } for every action slot some frame is drawn for
-local function actionFrames()
-	local slots = {}
-	if not EnumerateFrames then
-		return slots
-	end
-	local frame, walked = EnumerateFrames(), 0
-	while frame and walked < 50000 do
-		walked = walked + 1
-		local slot = type(frame.action) == "number" and frame.action or nil
-		if not slot and frame.GetAttribute then
-			local ok, value = pcall(frame.GetAttribute, frame, "action")
-			if ok and type(value) == "number" then
-				slot = value
-			end
-		end
-		if slot then
-			local entry = slots[slot] or { visible = false }
-			entry.visible = entry.visible or (frame.IsVisible and frame:IsVisible()) or false
-			slots[slot] = entry
-		end
-		frame = EnumerateFrames(frame)
-	end
-	return slots
-end
-
 local PLACE_MACRO = "WCPLACE"
 
 local function placeMacro()
@@ -1156,12 +1352,12 @@ end
 local function pickSlots()
 	local frames = actionFrames()
 	local picked = {}
-	for slot = 1, 120 do
+	for slot = 1, LAST_ACTION_SLOT do
 		local drawn = frames[slot] and frames[slot].visible
-		if not HasAction(slot) then
+		if not slotHas(slot) then
 			if drawn and not picked.emptyVisible then
 				picked.emptyVisible = slot
-			elseif not frames[slot] and not picked.emptyHidden then
+			elseif not frames[slot] and slot <= 120 and not picked.emptyHidden then
 				picked.emptyHidden = slot
 			end
 		elseif drawn and not picked.filledVisible then
@@ -1261,9 +1457,9 @@ placeVariants.clean = function()
 	local removed = 0
 	local index = GetMacroIndexByName(PLACE_MACRO)
 	if index and index > 0 then
-		for slot = 1, 120 do
-			local kind, id = GetActionInfo(slot)
-			if kind == "macro" and id == index then
+		for slot = 1, LAST_ACTION_SLOT do
+			local ok, kind, id = pcall(GetActionInfo, slot)
+			if ok and kind == "macro" and id == index then
 				PickupAction(slot)
 				ClearCursor()
 				removed = removed + 1
@@ -1276,6 +1472,30 @@ end
 
 local PLACE_ORDER = { "none", "chatopen", "pickup", "hidden", "visible", "put", "move", "clean" }
 
+-- One per UI session. Taint lasts until /reload, so a second test inherits the
+-- first one's damage and the hand check cannot tell them apart -- which is how the
+-- first full run was spoiled: chatopen's taint was still live for every test after it.
+local placeRan
+-- the test in flight, so a blocked-action notice can be pinned to it
+local placeEntry
+
+-- "Interface action failed because of an AddOn" is shown by this function, and it
+-- fires even when ADDON_ACTION_BLOCKED does not reach us. hooksecurefunc runs after
+-- the original without tainting it. Every hit is kept with its time, so the hand
+-- check stops being the only witness.
+if hooksecurefunc and DisplayInterfaceActionBlockedMessage then
+	hooksecurefunc("DisplayInterfaceActionBlockedMessage", function()
+		WowCompanionDB.blockedNotices = WowCompanionDB.blockedNotices or {}
+		local stamp = date("%H:%M:%S")
+		table.insert(WowCompanionDB.blockedNotices, stamp)
+		if placeEntry then
+			placeEntry.notices = (placeEntry.notices or 0) + 1
+		end
+		remember("probe", "interface action failed notice at " .. stamp
+			.. (placeEntry and (" during place " .. placeEntry.variant) or ""))
+	end)
+end
+
 local function placeTest(variant)
 	local act = placeVariants[variant]
 	if not act then
@@ -1284,6 +1504,10 @@ local function placeTest(variant)
 	if InCombatLockdown() then
 		return "refused: in combat"
 	end
+	if placeRan and variant ~= "clean" then
+		return ("refused: %s already ran this session; /reload first"):format(placeRan)
+	end
+	placeRan = variant
 	WowCompanionDB.placeTests = WowCompanionDB.placeTests or {}
 	local before, checked = taintScan()
 	local ok, result = pcall(act, pickSlots())
@@ -1291,6 +1515,7 @@ local function placeTest(variant)
 		result = "error: " .. tostring(result)
 	end
 	local entry = { at = time(), variant = variant, result = result, checked = checked }
+	placeEntry = entry
 	table.insert(WowCompanionDB.placeTests, entry)
 	remember("probe", ("place %s: %s"):format(variant, tostring(result)))
 	-- long enough for whatever the action set off to have run: events, OnUpdate,
@@ -1324,9 +1549,271 @@ local function placeVerdict(word)
 	return word
 end
 
+-- Put a spell, macro or item on a bar slot, or empty one.
+--
+-- Cleared by measurement, not assumed: PlaceAction and PutActionInSlot into the
+-- slots the gamepad UI draws (189, 202) newly tainted 0 of ~265,000 variables and
+-- raised no blocked-action notice. Configuration, out of combat, like a macro.
+--
+-- Whatever the slot held comes back on the cursor and is dropped. It leaves the bar
+-- only: spells stay in the spellbook, macros in the macro list. The reply names it,
+-- so "put it back" has something to go on.
+local function describeSlot(slot)
+	local ok, kind, id = pcall(GetActionInfo, slot)
+	if not ok or not kind then
+		return "nothing"
+	end
+	if kind == "spell" then
+		return "spell " .. tostring(spellName(id) or id)
+	elseif kind == "macro" then
+		return "macro " .. tostring(GetMacroInfo(id) or id)
+	elseif kind == "item" then
+		return "item " .. tostring(itemName(id) or id)
+	end
+	return tostring(kind) .. " " .. tostring(id)
+end
+
+function handlers.bar(inbox)
+	if InCombatLockdown() then
+		return "refused: in combat"
+	end
+	local slot = tonumber(inbox.slot)
+	if not slot or slot < 1 or slot > LAST_ACTION_SLOT or slot ~= math.floor(slot) then
+		return "refused: no valid slot"
+	end
+	local before = describeSlot(slot)
+	local what, name = inbox.what, inbox.name
+	ClearCursor()
+	if what == "empty" then
+		PickupAction(slot)
+		ClearCursor()
+		remember("claude", ("slot %d emptied (held %s)"):format(slot, before))
+		return ("slot %d emptied, held %s"):format(slot, before)
+	elseif what == "spell" then
+		C_Spell.PickupSpell(tonumber(name) or name)
+	elseif what == "macro" then
+		local index = GetMacroIndexByName(name or "")
+		if not index or index == 0 then
+			return ("refused: no macro named %q"):format(tostring(name))
+		end
+		PickupMacro(index)
+	elseif what == "item" then
+		C_Item.PickupItem(tonumber(name) or name)
+	else
+		return "refused: what must be spell, macro, item or empty"
+	end
+	-- nothing on the cursor means the name did not resolve: do not place nothing,
+	-- which would just empty the slot
+	if not GetCursorInfo() then
+		return ("refused: could not pick up %s %q"):format(tostring(what), tostring(name))
+	end
+	PlaceAction(slot)
+	ClearCursor()
+	local after = describeSlot(slot)
+	remember("claude", ("slot %d now %s (was %s)"):format(slot, after, before))
+	return ("slot %d: %s, was %s"):format(slot, after, before)
+end
+
 -- from the helper too, so the bell path is measured and not just the slash command
 function handlers.place(inbox)
 	return placeTest(inbox.variant or "")
+end
+
+-- Code the agent writes, run here.
+--
+-- This replaces "the model never writes Lua" with something that holds up better
+-- than a rule: the client's own security. Insecure addon code cannot cast, target,
+-- move or use protected actions at all -- that is what protection is -- so code
+-- from the agent can do no more for the player than any addon they install. What
+-- is left to guard is what the client does *not* protect, and two failure modes we
+-- have actually hit:
+--
+--  * Things an addon may do that are not ours to do: delete items, send chat as the
+--    player, spend gold, leave groups. Those names are refused in the environment
+--    the code runs in. This is a guard against mistakes, not an adversary: Lua has
+--    ways around an environment, and getfenv/loadstring, the obvious ones, are shut.
+--  * Taint and crashes. Every run is followed by the same issecurevariable diff as
+--    /wc place, so code that would break A and B says so by name, and nothing runs
+--    in combat. A C-level crash cannot be caught; see /wc alive.
+--
+-- Code arrives two ways: `lua` runs once and reports what it printed and returned;
+-- `module` is also stored in SavedVariables and run again at every login, which is
+-- as close to the agent writing its own addon as the client allows without a
+-- restart (new addon folders are only seen at launch).
+
+local REFUSED = {
+	DeleteCursorItem = true, SendChatMessage = true, BNSendWhisper = true,
+	BNSendGameData = true, SendMail = true, AcceptTrade = true, InitiateTrade = true,
+	BuyMerchantItem = true, BuybackItem = true, RepairAllItems = true,
+	PlaceAuctionBid = true, Logout = true, Quit = true, ForceQuit = true,
+	LeaveParty = true, GuildLeave = true, GuildDisband = true, GuildUninvite = true,
+	AbandonQuest = true, SetAbandonQuest = true,
+	RunScript = true, loadstring = true, load = true, getfenv = true, setfenv = true,
+	C_AuctionHouse = true, C_TradeInfo = true, C_Mail = true,
+}
+-- inside namespaces we otherwise allow
+local REFUSED_IN = {
+	C_ChatInfo = { SendAddonMessage = true, SendChatMessage = true },
+	C_Container = { UseContainerItem = true },
+	C_PartyInfo = { LeaveParty = true, ConfirmLeaveParty = true },
+	C_Macro = { RunMacroText = true },
+}
+
+-- globals that modules created, so a module may update its own but never replace
+-- one of Blizzard's: overwriting a Blizzard global is a textbook taint source
+local moduleGlobals = {}
+
+local function refuse(name)
+	return function()
+		error(("%s is not available to companion code"):format(name), 2)
+	end
+end
+
+local function sandbox(output)
+	local env = {}
+	local wrapped = {}
+	setmetatable(env, {
+		__index = function(_, key)
+			if key == "_G" then
+				return env
+			elseif key == "print" then
+				return function(...)
+					local parts = {}
+					for i = 1, select("#", ...) do
+						parts[#parts + 1] = tostring((select(i, ...)))
+					end
+					local text = table.concat(parts, " ")
+					-- after the run, from a slash command or an event the code set up:
+					-- nobody is collecting any more, so straight to the window
+					if output.done then
+						remember("probe", text)
+					else
+						output[#output + 1] = text
+					end
+				end
+			end
+			if REFUSED[key] then
+				return refuse(key)
+			end
+			local value = _G[key]
+			local blocked = REFUSED_IN[key]
+			if blocked and type(value) == "table" then
+				wrapped[key] = wrapped[key] or setmetatable({}, {
+					__index = function(_, name)
+						if blocked[name] then
+							return refuse(key .. "." .. name)
+						end
+						return value[name]
+					end,
+				})
+				return wrapped[key]
+			end
+			return value
+		end,
+		__newindex = function(_, key, value)
+			if rawget(_G, key) ~= nil and not moduleGlobals[key] then
+				error(("refusing to replace the global %s"):format(tostring(key)), 2)
+			end
+			moduleGlobals[key] = true
+			rawset(_G, key, value)
+		end,
+	})
+	return env
+end
+
+local function results(...)
+	local parts = {}
+	for i = 1, select("#", ...) do
+		parts[#parts + 1] = tostring((select(i, ...)))
+	end
+	return table.concat(parts, ", ")
+end
+
+-- Run one chunk. Returns the outcome line now and, a moment later, reports any
+-- taint it caused. Everything lands in the window and in WowCompanionDB.runs, which
+-- reaches disk at the next reload -- the agent's way of seeing what happened.
+local function runCode(label, code, quiet)
+	if InCombatLockdown() then
+		return "refused: in combat"
+	end
+	local chunk, syntax = loadstring(code, "=" .. label)
+	if not chunk then
+		remember("probe", ("%s did not compile: %s"):format(label, tostring(syntax)))
+		return "syntax error: " .. tostring(syntax)
+	end
+	local output = {}
+	setfenv(chunk, sandbox(output))
+	-- the scan costs about a second; a module replayed at login was scanned when it
+	-- was first written, so it skips it
+	local before = not quiet and taintScan() or nil
+	local ok, outcome = (function(okay, ...)
+		return okay, okay and results(...) or tostring((...))
+	end)(pcall(chunk))
+	output.done = true
+	local line = ok and ("ran" .. (outcome ~= "" and (", returned " .. outcome) or ""))
+		or ("failed: " .. outcome)
+	for _, printed in ipairs(output) do
+		remember("probe", label .. ": " .. printed)
+	end
+	if not quiet or not ok then
+		remember("probe", ("%s %s"):format(label, line))
+	end
+	WowCompanionDB.runs = WowCompanionDB.runs or {}
+	local run = { at = time(), label = label, outcome = line, printed = table.concat(output, "\n") }
+	table.insert(WowCompanionDB.runs, run)
+	while #WowCompanionDB.runs > 50 do
+		table.remove(WowCompanionDB.runs, 1)
+	end
+	if not before then
+		return line
+	end
+	C_Timer.After(1.5, function()
+		local after = taintScan()
+		local fresh = {}
+		for name, by in pairs(after) do
+			if before[name] == nil and not moduleGlobals[name] then
+				fresh[#fresh + 1] = ("%s (by %s)"):format(name, by)
+			end
+		end
+		table.sort(fresh)
+		run.taint = #fresh == 0 and "none" or table.concat(fresh, "; ")
+		if #fresh > 0 then
+			remember("probe", ("%s tainted %d variable(s): %s -- /reload clears it"):format(
+				label, #fresh, table.concat(fresh, "; ", 1, math.min(#fresh, 4))))
+		end
+	end)
+	return line
+end
+
+function handlers.lua(inbox)
+	return runCode("code", inbox.code or "")
+end
+
+function handlers.module(inbox)
+	local name = tostring(inbox.name or "")
+	if not name:match("^[%w_]+$") then
+		return "refused: a module name is letters, digits and underscores"
+	end
+	WowCompanionDB.modules = WowCompanionDB.modules or {}
+	if inbox.remove then
+		WowCompanionDB.modules[name] = nil
+		remember("claude", ("module %s removed; what it already did stays until /reload"):format(name))
+		return "removed " .. name
+	end
+	WowCompanionDB.modules[name] = { code = inbox.code or "", at = time() }
+	return runCode("module " .. name, inbox.code or "")
+end
+
+-- at login: every stored module, in name order so the order is stable
+local function loadModules()
+	local names = {}
+	for name in pairs(WowCompanionDB.modules or {}) do
+		names[#names + 1] = name
+	end
+	table.sort(names)
+	for _, name in ipairs(names) do
+		runCode("module " .. name, WowCompanionDB.modules[name].code, true)
+	end
 end
 
 local frame = CreateFrame("Frame")
@@ -1351,6 +1838,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		logFrame()
 		replayLog()
 		probeSound()
+		-- after login settles: modules may build frames on top of Blizzard's
+		C_Timer.After(2, loadModules)
 		ticker = C_Timer.NewTicker(0.5, poll)
 	elseif event == "PLAYER_LOGOUT" then
 		-- a failed export must not cost the rest of the save
@@ -1380,6 +1869,8 @@ SlashCmdList.WOWCOMPANION = function(command)
 		dumpApi()
 	elseif command == "docs" then
 		dumpDocs()
+	elseif command == "alive" then
+		surveyApi()
 	elseif command == "context" then
 		say(("context: %d lines; /reload to write it to disk"):format(exportContext()))
 	elseif command:match("^place") then

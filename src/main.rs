@@ -46,6 +46,9 @@ fn main() {
         [command, addons] if command == "install" => install(Path::new(addons)),
         [command, addons] if command == "probe" => probe(Path::new(addons)),
         [command, addons, rest @ ..] if command == "send" => send(Path::new(addons), rest),
+        // the agent's answer, printed and never delivered: for trying the agent
+        // without a game to send into
+        [command, addons, spoken] if command == "think" => think(Path::new(addons), spoken),
         [command, addons, spoken] if command == "ask" => {
             ask(Path::new(addons), &mut agent::Session::default(), spoken)
         }
@@ -54,22 +57,33 @@ fn main() {
         }
         [command, addons] if command == "bridge" => bridge(Path::new(addons)),
         [command, addons, out] if command == "api" => pull(Path::new(addons), "api", Path::new(out)),
+        [command, addons, out] if command == "alive" => {
+            pull(Path::new(addons), "alive", Path::new(out))
+        }
         [command, addons, out] if command == "apidocs" => {
             pull(Path::new(addons), "apidocs", Path::new(out))
         }
         [command, addons, out] if command == "context" => {
             pull(Path::new(addons), "context", Path::new(out))
         }
+        // what the agent and Whisper would be given, without sending anything
+        [command, addons] if command == "context" => {
+            let addons = Path::new(addons);
+            println!("{}", agent_context(addons).unwrap_or_else(|| "no context yet".into()));
+            println!("
+-- vocabulary: {}", vocabulary(addons).join(", "));
+            Ok(())
+        }
         [command] if command == "pads" => pad::list(),
         [command, id] if command == "pads" => pad::watch(id),
         [command] if command == "mics" => voice::microphones(),
         [command] if command == "speakers" => voice::speakers(),
         [command, model, options @ ..] if command == "voice" => {
-            voice::listen(Path::new(model), options, |_, _| Ok(()))
+            voice::listen(Path::new(model), options, Vec::new, |_, _| Ok(()))
         }
         [command, addons, model, options @ ..] if command == "dictate" => {
             let addons = Path::new(addons);
-            voice::listen(Path::new(model), options, |_, text| {
+            voice::listen(Path::new(model), options, || vocabulary(addons), |_, text| {
                 send_inbox(addons, &chat_inbox(text))
             })
         }
@@ -92,6 +106,8 @@ fn main() {
             eprintln!("  api <AddOns> <out>               every callable in this build");
             eprintln!("  apidocs <AddOns> <out>           signatures, if the client has them");
             eprintln!("  context <AddOns> <out>           bars, bindings, macros, spellbook");
+            eprintln!("  context <AddOns>                 what the agent and Whisper are given");
+            eprintln!("  alive <AddOns> <out>             which documented reads answer (/wc alive)");
             eprintln!("    options: chat=home ask=minus mic=<name> cue=<name> volume=<0..1>");
             std::process::exit(2);
         }
@@ -192,13 +208,21 @@ fn send(addons: &Path, args: &[String]) -> io::Result<()> {
             lua_string(text)
         ),
         [kind] if kind == "reload" => "{ kind = \"reload\" }".to_string(),
+        [kind, code] if kind == "lua" => format!("{{ kind = \"lua\", code = {} }}", lua_string(code)),
+        // spell|macro|item|empty, as the agent would send it
+        [kind, slot, what, name] if kind == "bar" => format!(
+            "{{ kind = \"bar\", slot = {}, what = {}, name = {} }}",
+            slot.parse::<u32>().map_err(|_| io::Error::other("slot must be a number"))?,
+            lua_string(what),
+            lua_string(name)
+        ),
         // the PlaceAction taint test, delivered the way real bar edits would be
         [kind, variant] if kind == "place" => {
             format!("{{ kind = \"place\", variant = {} }}", lua_string(variant))
         }
         _ => {
             return Err(io::Error::other(
-                "usage: send chat <text> | send macro <name> <body> | send reload | send place <variant>",
+                "usage: send chat <text> | send macro <name> <body> | send reload | send bar <slot> <spell|macro|item|empty> <name> | send place <variant>",
             ));
         }
     };
@@ -212,7 +236,7 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
     println!("asking: {spoken}");
     // start the agent before announcing ourselves: the announcement costs a bell
     // wait, the agent costs several seconds, and they may as well run together
-    let waiting = session.start(spoken)?;
+    let waiting = session.start(spoken, agent_context(addons))?;
     send_inbox(addons, &log_inbox("you", spoken, Some("thinking"), None))?;
     let answer = session.finish(waiting)?;
     println!("claude: {}", answer.say);
@@ -223,6 +247,16 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
     send_inbox(addons, &log_inbox("claude", &answer.say, None, answer.inbox.as_deref()))
 }
 
+fn think(addons: &Path, spoken: &str) -> io::Result<()> {
+    let mut session = agent::Session::default();
+    let started = Instant::now();
+    let waiting = session.start(spoken, agent_context(addons))?;
+    let answer = session.finish(waiting)?;
+    println!("({:.1}s) say: {}", started.elapsed().as_secs_f32(), answer.say);
+    println!("would send: {}", answer.inbox.as_deref().unwrap_or("nothing"));
+    Ok(())
+}
+
 /// Lift the API dump out of SavedVariables into a plain text file.
 ///
 /// This build ships no API documentation tables, so there are no signatures to be
@@ -230,6 +264,15 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
 /// cannot get from training data. Knowing a function exists *here* is the question
 /// it otherwise answers from retail and gets wrong.
 fn pull(addons: &Path, key: &str, out: &Path) -> io::Result<()> {
+    let body = saved_string(addons, key)?;
+    let kept = body.lines().filter(|line| !line.starts_with("--")).count();
+    fs::write(out, &body)?;
+    println!("wrote {kept} lines ({} bytes) to {}", body.len(), out.display());
+    Ok(())
+}
+
+/// One string-valued key out of SavedVariables, unescaped.
+fn saved_string(addons: &Path, key: &str) -> io::Result<String> {
     let saved = saved_variables(addons)
         .ok_or_else(|| io::Error::other("no SavedVariables yet: /reload in game first"))?;
     let text = fs::read_to_string(&saved)?;
@@ -257,10 +300,74 @@ fn pull(addons: &Path, key: &str, out: &Path) -> io::Result<()> {
             (false, other) => body.push(other),
         }
     }
-    let kept = body.lines().filter(|line| !line.starts_with("--")).count();
-    fs::write(out, &body)?;
-    println!("wrote {kept} lines ({} bytes) to {}", body.len(), out.display());
-    Ok(())
+    Ok(body)
+}
+
+/// The sections of the exported context the agent reasons with.
+///
+/// The export also carries every action-bound frame and every key binding, which is
+/// 500 lines answering questions we asked while mapping the UI, not ones the agent
+/// asks. Those stay in the file for us and out of the prompt.
+const AGENT_SECTIONS: &[&str] =
+    &["character", "action slots", "empty slots on screen", "macros", "spellbook", "modules", "code runs"];
+
+fn sections<'a>(context: &'a str, wanted: &[&str]) -> Vec<(&'a str, Vec<&'a str>)> {
+    let mut kept: Vec<(&str, Vec<&str>)> = Vec::new();
+    let mut current: Option<&str> = None;
+    for line in context.lines() {
+        if let Some(name) = line.strip_prefix("== ").and_then(|rest| rest.strip_suffix(" ==")) {
+            current = wanted.contains(&name).then_some(name);
+            if let Some(name) = current {
+                kept.push((name, Vec::new()));
+            }
+        } else if current.is_some() && !line.trim().is_empty() {
+            if let Some((_, lines)) = kept.last_mut() {
+                lines.push(line);
+            }
+        }
+    }
+    kept
+}
+
+fn agent_context(addons: &Path) -> Option<String> {
+    let context = saved_string(addons, "context").ok()?;
+    let stamp = context.lines().next().unwrap_or_default();
+    let mut out = vec![stamp.to_string()];
+    for (name, lines) in sections(&context, AGENT_SECTIONS) {
+        out.push(format!("== {name} =="));
+        out.extend(lines.iter().map(|line| line.to_string()));
+    }
+    Some(out.join("
+"))
+}
+
+/// Spell and macro names, for Whisper's prompt: the words this player will say and
+/// a general model will misspell. Unique, in spellbook order.
+fn vocabulary(addons: &Path) -> Vec<String> {
+    let Ok(context) = saved_string(addons, "context") else {
+        return Vec::new();
+    };
+    let mut words: Vec<String> = Vec::new();
+    for (name, lines) in sections(&context, &["spellbook", "macros"]) {
+        for line in lines {
+            if line.starts_with("--") || line.starts_with("    ") {
+                continue;
+            }
+            // spellbook: "1 Healing Touch (5185)"; macros: "1: Ping"
+            let word = match name {
+                "spellbook" => line
+                    .split_once(' ')
+                    .map(|(_, rest)| rest.rsplit_once(" (").map_or(rest, |(word, _)| word)),
+                _ => line.split_once(": ").map(|(_, word)| word),
+            };
+            if let Some(word) = word.map(str::trim).filter(|word| !word.is_empty()) {
+                if !words.iter().any(|seen| seen == word) {
+                    words.push(word.to_string());
+                }
+            }
+        }
+    }
+    words
 }
 
 fn saved_variables(addons: &Path) -> Option<PathBuf> {
@@ -324,10 +431,15 @@ fn bridge(addons: &Path) -> io::Result<()> {
 /// box, the other to ask.
 fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     let mut session = agent::Session::default();
-    voice::listen(model, options, |role, text| match role {
-        "ask" => ask(addons, &mut session, text),
-        _ => send_inbox(addons, &chat_inbox(text)),
-    })
+    voice::listen(
+        model,
+        options,
+        || vocabulary(addons),
+        |role, text| match role {
+            "ask" => ask(addons, &mut session, text),
+            _ => send_inbox(addons, &chat_inbox(text)),
+        },
+    )
 }
 
 /// Built field by field rather than by patching a finished string: the first attempt

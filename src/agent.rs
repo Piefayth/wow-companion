@@ -2,12 +2,18 @@
 //!
 //! Routed through headless `claude -p` rather than the API: no key to manage, it
 //! draws on the signed-in subscription, and its file tools suit a channel that is
-//! already files. The cost is process startup per utterance — seconds, not
-//! milliseconds — so this is a deliberate trade, not an oversight.
+//! already files. The cost is process startup per utterance â€” seconds, not
+//! milliseconds â€” so this is a deliberate trade, not an oversight.
 //!
-//! The model does not get to write Lua. `--output-schema` constrains it to one of
-//! the shapes the addon's dispatch table already accepts, and anything outside that
-//! is rejected here, before it reaches the game.
+//! The answer is constrained by `--json-schema` to one of the shapes the addon's
+//! dispatch table accepts, and anything outside that is rejected here. One of those
+//! shapes is Lua: the agent may write code, which the addon runs in a sandboxed
+//! environment out of combat, with a taint check after. The client's own security
+//! is the real fence there: insecure code cannot cast, target or move.
+//!
+//! The agent can read `docs/` (the API index, the signatures, the shortlist) and
+//! nothing else: `--restricted` confines the file tools to the working directory,
+//! and `--tools` leaves only the read-only ones.
 
 use std::{
     io,
@@ -17,19 +23,25 @@ use std::{
 use serde_json::Value;
 
 const MODEL: &str = "sonnet";
-// a translation, not an investigation: one turn, no tools, nothing to approve
-const TURNS: &str = "1";
+// Most requests are one turn. Writing Lua usually means looking a function up in
+// docs/ first, and each lookup is a turn, so leave room for a few.
+const TURNS: &str = "8";
+const TOOLS: &str = "Read,Grep,Glob";
 
 const SCHEMA: &str = r#"{
   "type": "object",
   "properties": {
     "say":   { "type": "string" },
-    "kind":  { "type": "string", "enum": ["chat", "macro", "press", "reload", "none"] },
+    "kind":  { "type": "string", "enum": ["chat", "macro", "press", "reload", "bar", "lua", "module", "none"] },
     "text":  { "type": "string" },
     "name":  { "type": "string" },
     "body":  { "type": "string" },
     "label": { "type": "string" },
-    "macro": { "type": "string" }
+    "macro": { "type": "string" },
+    "slot":  { "type": "integer" },
+    "what":  { "type": "string", "enum": ["spell", "macro", "item", "empty"] },
+    "code":  { "type": "string" },
+    "remove": { "type": "boolean" }
   },
   "required": ["say", "kind"],
   "additionalProperties": false
@@ -55,9 +67,49 @@ Pick one `kind`:
 - `reload`: they asked to reload the UI. A `press` with /reload, named for convenience.
 - `none`: they asked a question, or nothing needs to change in game. Answer in `say`.
 
-You cannot place abilities on action bars: `PlaceAction` is protected and cannot be
-expressed as a macro, so say so plainly rather than offering a button that will not
-work. Never act for the player in combat. Writing is yours; pressing is theirs.
+A message may open with <character>: their level, class, action slots, macros and
+spellbook as exported at their last UI reload. Later messages without it mean
+nothing changed since. Use it: name their real spells, check a macro exists before
+editing it, and know that anything they did since the last reload is not in it.
+They play on a controller, so the bars they see are the gamepad bars, slots 181
+and up; slots marked on screen are the ones they can see and press.
+
+- `bar`: put something on an action bar slot, or empty one. `slot` is the slot
+  number; `what` is spell, macro, item or empty; `name` is the spell, macro or item
+  name exactly as in <character> (a spell or item ID also works). One slot per
+  request: for a swap, do one and say what comes next. Whatever the slot held
+  leaves the bar but not the spellbook or macro list, so name it in `say`.
+  Prefer slots marked on screen, and empty ones unless they asked to replace.
+  The bars are only re-exported at a reload, so after placing something, trust the
+  conversation over <character> for that slot.
+
+- `lua`: run Lua once in their client. `code` is the chunk. What it prints and
+  returns shows in their window, and is in <character> under 'code runs' after
+  their next reload. Use it to answer questions from live game state or to make a
+  one-off change.
+- `module`: Lua that stays. `name` is letters, digits and underscores; `code` runs
+  now and again at every login. This is how you build them something lasting: a
+  frame, a slash command, an event handler. Same name replaces it; `remove: true`
+  deletes it (what it already built stays until a reload).
+
+Writing Lua. The client is 1.60.1 but its API is retail 11.x: C_Spell.GetSpellInfo,
+C_SpellBook, C_ClassTalents. GetSpellInfo, GetSpecialization, GetNumSpellTabs do
+not exist. Action slots run to 1024; the gamepad bars are 181 and up. Your working
+directory has the truth, so look before you guess:
+  api-useful.md                 what we use, and what has been measured to work
+  api-1.60.1-signatures.txt     every documented function, event and type
+  api-1.60.1.txt                every name that exists, documented or not
+Grep for a name before calling it. Never call functions blind or in bulk: calling
+unknown functions crashed the game outright, which pcall cannot catch.
+The code runs as an addon, Lua 5.1. print() goes to their window. Globals you
+create are allowed; replacing one of Blizzard's is refused, because it taints the
+UI. Never open or show Blizzard frames (the chat box, panels): that broke the
+controller's A and B buttons. Some functions are refused (deleting items, sending
+chat, trading, spending gold, leaving groups); do not try them. Insecure code
+cannot cast, target or move, so do not write code that tries.
+Keep chunks small and say in `say` what the code will do.
+
+Never act for the player in combat. Writing is yours; pressing is theirs.
 
 Never act for the player. You write configuration; they press the button. Do not
 offer to attack, move, target, or take any action in combat.";
@@ -75,20 +127,39 @@ pub struct Spoken {
 /// Without this every utterance starts cold, so "put it on the other bar instead"
 /// has no idea what "it" was. The CLI hands back a `session_id`; replaying it with
 /// `--resume` keeps the thread. `--system-prompt-snapshot` is on by default, so the
-/// rules recorded on the first call are reused verbatim on every resume — they do
+/// rules recorded on the first call are reused verbatim on every resume â€” they do
 /// not need resending, and resending them would not help if they did.
+///
+/// The character's state rides along the same way: sent when it differs from what
+/// this thread last saw, which is once per reload rather than once per utterance.
 #[derive(Default)]
 pub struct Session {
     thread: Option<String>,
+    /// the context this thread has already been given
+    seen: Option<String>,
+    /// the context in the request now in flight, adopted once it succeeds
+    offered: Option<String>,
 }
 
 impl Session {
     /// Start the agent without waiting for it. A request takes seconds, and the
     /// caller has its own seconds of work to do (announcing itself in game), so the
     /// two should overlap rather than queue.
-    pub fn start(&self, transcript: &str) -> io::Result<Child> {
+    pub fn start(&mut self, transcript: &str, context: Option<String>) -> io::Result<Child> {
+        let fresh = context.filter(|context| self.seen.as_ref() != Some(context));
+        let message = match &fresh {
+            Some(context) => format!(
+                "<character>
+{context}
+</character>
+
+The player said: {transcript}"
+            ),
+            None => format!("The player said: {transcript}"),
+        };
+        self.offered = fresh;
         let mut claude = Command::new("claude");
-        claude.arg("--print").arg(transcript);
+        claude.arg("--print").arg(message);
         match &self.thread {
             Some(thread) => {
                 claude.args(["--resume", thread]);
@@ -98,7 +169,13 @@ impl Session {
                 claude.args(["--system-prompt", RULES]);
             }
         }
+        // the docs folder is the agent's whole world: --restricted keeps the file
+        // tools inside it
+        claude.current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/docs"));
         claude
+            .args(["--tools", TOOLS])
+            // dontAsk refuses whatever is not pre-approved, read-only tools included
+            .args(["--allowedTools", TOOLS])
             .args(["--output-format", "json"])
             .args(["--json-schema", SCHEMA])
             .args(["--model", MODEL])
@@ -117,6 +194,9 @@ impl Session {
         // remember the thread even on the first reply, so the next utterance resumes
         if let Some(thread) = answer.thread {
             self.thread = Some(thread);
+        }
+        if let Some(context) = self.offered.take() {
+            self.seen = Some(context);
         }
         Ok(answer.spoken)
     }
@@ -169,6 +249,36 @@ fn read(waiting: Child) -> io::Result<Answer> {
             crate::lua_string(field(&command, "macro")?)
         )),
         "reload" => Some("{ kind = \"reload\" }".to_string()),
+        "lua" => Some(format!(
+            "{{ kind = \"lua\", code = {} }}",
+            crate::lua_string(field(&command, "code")?)
+        )),
+        "module" => {
+            let name = field(&command, "name")?;
+            if command.get("remove").and_then(Value::as_bool) == Some(true) {
+                Some(format!("{{ kind = \"module\", name = {}, remove = true }}", crate::lua_string(name)))
+            } else {
+                Some(format!(
+                    "{{ kind = \"module\", name = {}, code = {} }}",
+                    crate::lua_string(name),
+                    crate::lua_string(field(&command, "code")?)
+                ))
+            }
+        }
+        "bar" => {
+            let slot = command
+                .get("slot")
+                .and_then(Value::as_u64)
+                .filter(|slot| (1..=1024).contains(slot))
+                .ok_or_else(|| io::Error::other(format!("no usable slot in {command}")))?;
+            let what = field(&command, "what")?;
+            let name = if what == "empty" { "" } else { field(&command, "name")? };
+            Some(format!(
+                "{{ kind = \"bar\", slot = {slot}, what = {}, name = {} }}",
+                crate::lua_string(what),
+                crate::lua_string(name)
+            ))
+        }
         "none" => None,
         other => return Err(io::Error::other(format!("unknown kind {other:?}"))),
     };

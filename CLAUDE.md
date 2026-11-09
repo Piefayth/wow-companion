@@ -79,6 +79,22 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
   So chat delivery no longer opens anything: it writes only into a box **the player
   opened**, and refuses with a hint when none is open. A box opened by real input
   keeps the secure focus path intact; we only set its text.
+- **The agent writes Lua; the client is the fence.** This replaced "the model never
+  writes Lua". Insecure code cannot cast, target or move — that is what protection
+  means — so agent code can do no more for the player than any installed addon.
+  `lua` runs a chunk once; `module` also stores it in SavedVariables and reruns it at
+  every login, the nearest thing to the agent writing its own addon (new addon
+  folders need a game restart). Each runs out of combat in its own environment:
+  `print` goes to the window, new globals are allowed, replacing a Blizzard global is
+  refused (taint), and a short list of things that are not ours — deleting items,
+  sending chat, trading, spending gold, leaving groups, `loadstring`/`getfenv` — is
+  refused by name. That list guards against mistakes, not an adversary. Every
+  non-login run is followed by the `issecurevariable` diff, so code that taints says
+  so. Results, stored modules and taint land in the context export, so the agent sees
+  what its code did after the next reload. The agent gets `Read`/`Grep`/`Glob` over
+  `docs/` only (`--restricted`, cwd `docs/`) and 8 turns, to look functions up
+  before calling them. `cargo run -- think <AddOns> <text>` shows its answer without
+  sending anything.
 - **Register a secure button for `"AnyDown"`.** Measured one variable at a time:
   `"AnyUp"` alone runs the wrapper — `PreClick` and `PostClick` both fire — while the
   macro does not, which reads exactly like a permissions refusal and is not one. Both
@@ -139,12 +155,13 @@ Three things the real client taught us that a Mac couldn't:
 - **Opening chat from a slash command defeats itself.** The Enter that submits the
   command tears the edit box down after the handler returns, so the open has to be
   deferred a tick. Bell-triggered delivery isn't affected, but any slash-command path is.
-- **Action slots are a flat 1–120 space**, addressed by number regardless of what's
-  drawn. The gamepad UI surfaces a different subset than the classic bars, so
-  "rearrange my bars" has to target the slots the controller UI actually shows. Rather
-  than guess the classic bar offsets, `/wc context` walks every frame in the UI
-  (`EnumerateFrames`) and reports the ones bound to an action slot, which is the live
-  UI's own answer.
+- **Action slots are not 1–120 here.** They are addressed by number, and the classic
+  bars use the low ones, but the **gamepad UI draws 181–272**: top bar 181–184, left
+  185–192, right 193–200, bottom 201–208, stance 265–272, with the extra action
+  button at 397. The classic bars (1–72) and the multi-bars up to 180 all exist and
+  are all hidden. Anything that loops `1, 120` is looking at the wrong bars. Measured
+  by walking every frame (`EnumerateFrames`) for an `action` field or attribute; the
+  export now labels each filled slot with the bar that draws it.
 - **One client per install.** Two running at once both load slots, both consume bells,
   and both write the same SavedVariables file, so the last to reload wins and the
   measurements quietly lie. Diagnosed the hard way.
@@ -162,7 +179,7 @@ Two local files say it exactly, both regenerated from the live client:
   271 `C_*` namespaces. `/wc dump`, then `cargo run -- api <AddOns> <out>`. This is the
   complete truth about what exists; the agent's failure mode is not forgetting what a
   function does, it is confidently calling one that exists in retail and not here.
-- `apidocs-1.60.1.txt` — **8,437 signatures**: 6,621 functions with argument and return
+- `api-1.60.1-signatures.txt` — **8,437 signatures**: 6,621 functions with argument and return
   types, 1,816 events with payloads, plus the structures and enumerations those point
   at (so `SpellBookItemInfo`'s fields and `Enum.SpellBookSpellBank`'s values are stated
   rather than guessed). `/wc docs`, then `cargo run -- apidocs <AddOns> <out>`.
@@ -176,17 +193,46 @@ FrameXML-era C globals, which is to say precisely the ones we depend on: `PlaceA
 `EnumerateFrames`. For those, the name index proves existence and the retail wiki
 supplies the signature.
 
+The docs also carry flags, which `/wc docs` now keeps: `SecretArguments` on most,
+`HasRestrictions` on 281, `IsProtectedFunction` on 74 — but only frame methods such as
+`Show` and `SetPoint`. Since the globals we lean on are undocumented, the docs cannot
+say whether *they* are protected; only calling them can. And existing is not working:
+`/wc alive` calls every documented read that needs no arguments and sorts each by
+what came back (value / zero / empty / nil / nothing / error / absent), and
+`cargo run -- alive <AddOns> <out>` pulls the list.
+
 Dead ends, so nobody re-walks them: `ADDON_ACTION_BLOCKED` never fires for the gamepad
-taint (it does fire for a direct protected call such as `ReloadUI()`), `/console
-taintLog 1` writes no `taint.log` in this build, and `General.log` carries nothing
-either. The A/B breakage is intermittent: it took three identical attempts to see it
+taint (it does fire for a direct protected call such as `ReloadUI()`), and `General.log`
+carries nothing. `Logs	aint.log` is **not** a dead end, contrary to what this said:
+it appears once something is actually blocked, with full stacks naming our file and
+line. Check it whenever "Interface action failed" shows.
+
+**Never call the API blind.** The first `/wc alive` called every documented
+no-argument read in the client and **crashed it**: an ACCESS_VIOLATION reading
+address 0 inside `Wow.exe`. `pcall` catches Lua errors, not a C null dereference.
+Seven more calls were refused (`ADDON_ACTION_FORBIDDEN … called UNKNOWN()`). The
+survey now covers only the namespaces this project would use and skips anything
+flagged `HasRestrictions`. It keeps the running function's name in a plain local,
+because a crash report prints the executing Lua frame's locals — which is all that
+named "call 58" last time. The A/B breakage is intermittent: it took three identical attempts to see it
 once.
 
-What is left is `issecurevariable`. `/wc place <variant>` asks it about every global
-and every field of every global table, before and after the action, and reports what
-turned insecure. Whether that can see the gamepad taint at all is settled by the
-`chatopen` variant, the known-bad control: if it shows nothing, a clean scan
-elsewhere proves nothing.
+What did work is `issecurevariable`. `/wc place <variant>` asks it about all ~265,000
+globals and global-table fields, before and after the action, and diffs. The
+known-bad control lights up: opening the chat box from addon code newly taints 8
+variables, among them `LAST_ACTIVE_CHAT_EDIT_BOX` and `ChatFrame1EditBox.text`. The
+gamepad UI reading that state is how A and B break. So attribution *is* reachable
+from Lua after all, a variable at a time; it was only the logs that were dead.
+
+Measured: `pickup`; `PlaceAction` into an undrawn slot (4); `PlaceAction` into a
+slot the gamepad UI draws (189, left bar 5); and `C_ActionBar.PutActionInSlot` into
+another (202, bottom bar 2): each taints **nothing** and raises no blocked-action
+notice. So the old claim that placing actions taints the UI was wrong, and bar
+placement is now an agent command (`bar`: slot, spell/macro/item/empty, name). Taint lives until `/reload`, so the harness allows one variant per
+session; the first run did several in one, and every hand check after `chatopen`
+was judging `chatopen`'s taint. `DisplayInterfaceActionBlockedMessage` is hooked
+(`hooksecurefunc`), so each "Interface action failed" is now timestamped and pinned
+to the test in flight.
 
 ## Building
 
@@ -214,11 +260,13 @@ replies and the offered button arriving in one message. `probe` refuses to run u
 
 Open:
 
-- **Give the agent the context.** The addon exports character, filled action slots,
-  every action-bound frame, bound keys, macro bodies and the spellbook as one
-  sectioned string on every `/reload` and logout (`PLAYER_LOGOUT` fires just before
-  SavedVariables is written, the only moment that reaches disk). `cargo run --
-  context <AddOns> <out>` pulls it. The spellbook half is also Whisper's vocabulary.
+- **The agent has the context.** The addon exports character, filled action slots,
+  empty on-screen slots, every action-bound frame, bound keys, macro bodies and the
+  spellbook on every `/reload` and logout (`PLAYER_LOGOUT` fires just before
+  SavedVariables is written, the only moment that reaches disk). The helper sends the
+  agent the five sections it reasons with (~2.5 KB), once per change, and Whisper's
+  prompt is the spellbook and macro names, rebuilt per clip. `cargo run -- context
+  <AddOns>` prints exactly what both receive.
 - **Isolate `PlaceAction`.** Our one test *succeeded* (`action 4 now holds macro`), and
   the claim that it taints gamepad targeting was a guess, never isolated. `/wc place`
   runs the variants one per fresh session: `none`, `chatopen` (control), `pickup`,

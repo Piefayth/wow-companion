@@ -34,18 +34,49 @@ const CUE_DECAY: f32 = 20.0;
 
 // Whisper has never heard of Hearthstone or Shadowstep and will cheerfully write
 // "fire ball". Seeding the decoder with the vocabulary fixes most of it.
-const VOCABULARY: &str = "World of Warcraft. Spell and ability names: Fireball, Frostbolt, \
-    Shadowstep, Hearthstone, Bloodlust, Rejuvenation, Innervate, Starfall, Thunderstorm. \
-    Commands: macro, action bar, slot, bind, chat, whisper, party, raid, guild.";
+const COMMANDS: &str = "Commands: macro, action bar, slot, bind, chat, whisper, party, raid, guild.";
+// used until the game has exported a spellbook to take names from
+const FALLBACK_SPELLS: &[&str] = &["Hearthstone", "Rejuvenation", "Moonfire", "Bear Form"];
+// Whisper keeps only the last ~224 tokens of a prompt; stay well inside that, or
+// the cut falls on the spell names, which are the point
+const PROMPT_CHARS: usize = 700;
+
+fn prompt(spells: &[String]) -> String {
+    let mut prompt = String::from("World of Warcraft. Spells and macros: ");
+    let names: Vec<&str> = if spells.is_empty() {
+        FALLBACK_SPELLS.to_vec()
+    } else {
+        spells.iter().map(String::as_str).collect()
+    };
+    let room = PROMPT_CHARS - COMMANDS.len();
+    let mut first = true;
+    for name in names {
+        if prompt.len() + name.len() + 2 > room {
+            break;
+        }
+        if !first {
+            prompt.push_str(", ");
+        }
+        prompt.push_str(name);
+        first = false;
+    }
+    prompt.push_str(". ");
+    prompt.push_str(COMMANDS);
+    prompt
+}
 
 /// Hold a button, speak, release. `heard` is given which binding fired and what was
 /// said, so one loop can serve dictation on one button and the agent on another.
 ///
 /// Both default to buttons WoW ignores — Home and minus. We cannot consume the input,
 /// so anything the game binds would fire twice: once for us, once in game.
+///
+/// `vocabulary` is asked afresh for every clip, so names learned at the last reload
+/// are in the prompt without restarting.
 pub fn listen(
     model: &Path,
     options: &[String],
+    vocabulary: impl Fn() -> Vec<String>,
     mut heard: impl FnMut(&str, &str) -> io::Result<()>,
 ) -> io::Result<()> {
     let bindings = [
@@ -99,7 +130,7 @@ pub fn listen(
                 if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
                     println!("too short, ignored");
                 } else {
-                    match transcribe(&whisper, &clip) {
+                    match transcribe(&whisper, &clip, &prompt(&vocabulary())) {
                         Ok(text) if text.is_empty() => println!("heard nothing"),
                         Ok(text) => {
                             println!("heard ({seconds:.1}s, {role}): {text}");
@@ -120,13 +151,13 @@ pub fn listen(
     }
 }
 
-fn transcribe(whisper: &WhisperContext, clip: &[f32]) -> io::Result<String> {
+fn transcribe(whisper: &WhisperContext, clip: &[f32], prompt: &str) -> io::Result<String> {
     let mut state = whisper
         .create_state()
         .map_err(|err| io::Error::other(format!("{err:?}")))?;
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_language(Some("en"));
-    params.set_initial_prompt(VOCABULARY);
+    params.set_initial_prompt(prompt);
     params.set_translate(false);
     params.set_print_special(false);
     params.set_print_progress(false);
