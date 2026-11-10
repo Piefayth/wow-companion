@@ -38,6 +38,12 @@ const CUE_SHUT: [f32; 2] = [880.00, 587.33];
 const CUE_NOTE: u64 = 85;
 // struck-and-decaying, like a glass or a marimba, rather than a held tone
 const CUE_DECAY: f32 = 20.0;
+// Silence before the notes. A Bluetooth headset in hands-free mode lets its output
+// sleep when idle and takes about 200 ms to wake, so the opening cue (which comes
+// after silence) was lost whole while the closing one, right after it, was heard.
+// Keeping the output open instead fixed that and hissed constantly; a lead-in
+// wakes it only for the cue.
+const CUE_WAKE: u64 = 250;
 
 // Whisper has never heard of Hearthstone or Shadowstep and will cheerfully write
 // "fire ball". Seeding the decoder with the vocabulary fixes most of it.
@@ -448,7 +454,8 @@ fn chime(wanted: Option<&str>, volume: f32, notes: &[f32]) -> io::Result<()> {
     let rate = config.sample_rate() as f32;
     let channels = config.channels() as usize;
     let per_note = (rate * CUE_NOTE as f32 / 1000.0) as usize;
-    let length = per_note * notes.len();
+    let lead = (rate * CUE_WAKE as f32 / 1000.0) as usize;
+    let length = lead + per_note * notes.len();
     // a few ms of attack, or the strike itself clicks
     let attack = (rate * 0.003).max(1.0) as usize;
     let count = notes.len() as u64;
@@ -456,10 +463,14 @@ fn chime(wanted: Option<&str>, volume: f32, notes: &[f32]) -> io::Result<()> {
 
     let mut index = 0usize;
     let mut next = move || {
+        if index < lead {
+            index += 1;
+            return 0.0;
+        }
         if index >= length {
             return 0.0;
         }
-        let (note, step) = (index / per_note, index % per_note);
+        let (note, step) = ((index - lead) / per_note, (index - lead) % per_note);
         let seconds = step as f32 / rate;
         let hz = notes[note];
         let phase = seconds * hz * std::f32::consts::TAU;
@@ -497,7 +508,7 @@ fn chime(wanted: Option<&str>, volume: f32, notes: &[f32]) -> io::Result<()> {
     .map_err(|err| io::Error::other(err.to_string()))?;
     stream.play().map_err(|err| io::Error::other(err.to_string()))?;
     // hold the stream open until the notes have actually come out
-    thread::sleep(Duration::from_millis(CUE_NOTE * count + 80));
+    thread::sleep(Duration::from_millis(CUE_WAKE + CUE_NOTE * count + 80));
     Ok(())
 }
 
