@@ -394,9 +394,37 @@ local function paintConversations()
 		button:SetText(label)
 		if button.selected then button.selected:SetShown(key == viewSlot) end
 	end
+	-- Stop, for the conversation in view: while it works or has requests queued
+	local stop = frame.stopButton
+	if stop then
+		local queued = queuedSlots()[viewSlot]
+		local count = queued and #queued or 0
+		local entry = working[viewSlot]
+		if entry and entry.text == "stopping" then
+			stop:SetText("Stopping...")
+			stop:Show()
+		elseif entry or count > 0 then
+			stop:SetText(count > 0 and ("Stop  (+%d queued)"):format(count) or "Stop")
+			stop:Show()
+		else
+			stop:Hide()
+		end
+	end
 end
 
 paintHook = paintConversations
+
+-- Asks the companion to stop a conversation (the player, 2026-11-10). The game
+-- cannot write to the PC while it runs, so the request is drawn on the data
+-- strip, which the companion watches (strip.py --serve); it ends the agent,
+-- drops what was queued, and answers with a `stopped` message.
+function WowCompanion_Stop(slot)
+	slot = slot or viewSlot
+	if not (WowCompanion_Strip and WowCompanion_Strip.Send) then return end
+	WowCompanion_Strip.Send(("WCCMD %d%04d stop %s"):format(time(), math.random(0, 9999),
+		slot ~= "" and slot or "main"), 2.5)
+	setPending("stopping", slot)
+end
 
 local function remember(who, text, continued, slot, queued)
 	slot = slot or replySlot or viewSlot
@@ -927,6 +955,14 @@ end
 -- A clip released and handed to Whisper, for the conversation it belongs to
 -- ("" is the main one): shown in the list and on the waiting line until the
 -- words arrive.
+function handlers.stopped(inbox)
+	local slot = inbox.slot or ""
+	unqueue(slot, true)
+	setTranscribing(slot, false)
+	setPending(nil, slot)
+	remember("claude", "Stopped. Anything queued behind it was dropped.", nil, slot)
+	return "stopped"
+end
 function handlers.transcribing(inbox)
 	setTranscribing(inbox.slot or "", true)
 	return "transcribing"

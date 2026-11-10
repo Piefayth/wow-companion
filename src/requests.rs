@@ -138,9 +138,124 @@ pub(crate) fn board_inbox(working: &[(String, String, Instant)]) -> String {
     format!("{{ kind = \"board\", resync = true, working = {{ {} }} }}", entries.join(", "))
 }
 
+/// Stopping a conversation (the player, 2026-11-10: "manage jobs in progress,
+/// queued messages, things I want to cancel"). Stop in the Companion window
+/// draws a command on the data strip, `watch_commands` reads it, and here the
+/// running agent's process tree ends and what was queued behind it is dropped.
+/// Per conversation: the running agent's process id, and (stops so far, stops
+/// when its last request began), so a request queued before a stop is dropped.
+static RUNNING: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
+static STOPS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::new());
+
+fn stops(slot: &str) -> (u64, u64) {
+    let all = STOPS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    all.iter().find(|(at, _, _)| at == slot).map(|(_, count, began)| (*count, *began)).unwrap_or((0, 0))
+}
+
+fn set_stops(slot: &str, count: Option<u64>, began: Option<u64>) {
+    let mut all = STOPS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if !all.iter().any(|(at, _, _)| at == slot) {
+        all.push((slot.to_string(), 0, 0));
+    }
+    if let Some(entry) = all.iter_mut().find(|(at, _, _)| at == slot) {
+        if let Some(count) = count {
+            entry.1 = count;
+        }
+        if let Some(began) = began {
+            entry.2 = began;
+        }
+    }
+}
+
+fn set_running(slot: &str, pid: Option<u32>) {
+    let mut running = RUNNING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    running.retain(|(at, _)| at != slot);
+    if let Some(pid) = pid {
+        running.push((slot.to_string(), pid));
+    }
+}
+
+pub(crate) fn stop(addons: &Path, slot: &str) {
+    let (count, _) = stops(slot);
+    set_stops(slot, Some(count + 1), None);
+    let pid = RUNNING
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .find(|(at, _)| at == slot)
+        .map(|(_, pid)| *pid);
+    println!(
+        "stop [{}]: {}",
+        if slot.is_empty() { "main" } else { slot },
+        pid.map_or("nothing running".to_string(), |pid| format!("ending agent {pid}"))
+    );
+    if let Some(pid) = pid {
+        // the agent's whole tree (its shell commands too), never the companion
+        let mut kill = std::process::Command::new("taskkill");
+        kill.args(["/T", "/F", "/PID", &pid.to_string()]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            kill.creation_flags(0x0800_0000);
+        }
+        let _ = kill.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+    }
+    if let Err(err) = send_inbox(addons, &format!("{{ kind = \"stopped\", slot = {} }}", lua_string(slot))) {
+        eprintln!("  telling the game it stopped failed: {err}");
+    }
+}
+
+/// The game's commands, read off the data strip by `tools/strip.py --serve`, a
+/// child that ends when we do (its stdin is ours). "WCCMD <nonce> stop <slot>".
+pub(crate) fn watch_commands(addons: &Path) {
+    use std::io::BufRead;
+    loop {
+        let script = crate::home().join("tools").join("strip.py");
+        let mut command = std::process::Command::new("python");
+        command
+            .args(["-I", &script.to_string_lossy(), "--serve"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000);
+        }
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(err) => {
+                eprintln!("  command watcher did not start: {err}");
+                thread::sleep(Duration::from_secs(60));
+                continue;
+            }
+        };
+        let _keep = child.stdin.take();
+        if let Some(out) = child.stdout.take() {
+            for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+                let words: Vec<&str> = line.split_whitespace().collect();
+                if let ["WCCMD", _nonce, "stop", slot, ..] = words.as_slice() {
+                    let slot = if *slot == "main" { "" } else { *slot };
+                    stop(addons, slot);
+                }
+            }
+        }
+        let _ = child.wait();
+        thread::sleep(Duration::from_secs(10));
+    }
+}
+
 /// Returns whether the agent wants to look at the results before it is done.
 pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -> io::Result<bool> {
     println!("asking: {spoken}");
+    // a request that waited behind one the player stopped was dropped with it
+    let (stopped_before, began) = stops(&session.slot);
+    if shown && stopped_before > began {
+        println!("  dropped: queued behind a request that was stopped");
+        return Ok(false);
+    }
+    set_stops(&session.slot, None, Some(stopped_before));
+    let was_stopped = |slot: &str| stops(slot).0 != stopped_before;
     let _working = Working(session.slot.clone());
     WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|(at, _, _)| *at != session.slot);
     set_working(&session.slot, "thinking");
@@ -158,6 +273,7 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         }
     }
     let waiting = session.start(spoken, context)?;
+    set_running(&session.slot, Some(waiting.id()));
     // a queued request already showed its words; now it only starts thinking
     if shown {
         // `started` first, so this one is not advisory: it is what ends the queued
@@ -204,7 +320,11 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         let mut waiting = waiting;
         let mut round = 0;
         let answer = loop {
-            let answer = match session.finish(waiting, &mut progress) {
+            let finished = session.finish(waiting, &mut progress);
+            if was_stopped(&slot) {
+                break Err(io::Error::other("stopped"));
+            }
+            let answer = match finished {
                 Ok(answer) => answer,
                 Err(err) => break Err(err),
             };
@@ -224,12 +344,21 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
                 "(The step limit ended your last turn before you answered. Carry on where you left off, then answer as usual.)",
                 None,
             ) {
-                Ok(next) => next,
+                Ok(next) => {
+                    set_running(&slot, Some(next.id()));
+                    next
+                }
                 Err(err) => break Err(err),
             };
         };
+        set_running(&slot, None);
         drop(tell);
         let _ = courier.join();
+        if was_stopped(&slot) {
+            // the game already said so (the `stopped` message)
+            println!("  stopped by the player");
+            return Ok(false);
+        }
         answer?
     };
     voice::mark("agent answered");

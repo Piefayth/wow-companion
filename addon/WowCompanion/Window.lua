@@ -250,6 +250,18 @@ local function buildTabs(frame, messages, pending)
 	end
 	frame.convButtons[""].selected:Show()
 
+	-- Stop (the player, 2026-11-10): ends the viewed conversation's running
+	-- request and drops what is queued behind it. Shown only while there is
+	-- something to stop; Companion.lua paints it with the conversation list.
+	local stop = CreateFrame("Button", nil, well, "UIPanelButtonTemplate")
+	stop:SetSize(WELL - 10, 24)
+	stop:SetPoint("BOTTOM", well, "BOTTOM", 0, 8)
+	stop:SetText(STOP or "Stop")
+	stop:SetScript("OnClick", function() if WowCompanion_Stop then WowCompanion_Stop() end end)
+	if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, stop) end
+	stop:Hide()
+	frame.stopButton = stop
+
 	-- the tabs, hanging under the bottom edge like the character sheet's
 	for i, name in ipairs(TAB_NAMES) do
 		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTabButtonTemplate")

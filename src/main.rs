@@ -230,6 +230,11 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         let (addons, session, looking) = (addons.to_path_buf(), Arc::clone(&session), Arc::clone(&looking));
         thread::spawn(move || watch_for_looks(&addons, &session, &looking));
     }
+    // Stop in the window: the game's commands, read off the data strip
+    {
+        let addons = addons.to_path_buf();
+        thread::spawn(move || watch_commands(&addons));
+    }
     // The voice loop never sends anything itself. A send waits for any other send
     // and then about two seconds for the game to hear it, and the voice loop is
     // what reads the pad: sending from it froze the buttons and the cues whenever

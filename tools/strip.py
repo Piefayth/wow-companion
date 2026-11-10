@@ -149,6 +149,8 @@ def watch(seconds, out, then=None):
         o = (h - 1 - CELL // 2) * w * 4 + (CELL // 2) * 4
         if (px[o + 2], px[o + 1], px[o]) == (0xC0, 0xFF, 0xEE):
             payload, err = decode(*capture())
+            if payload is not None and payload.startswith(b"WCCMD "):
+                payload, err = None, "a command strip, not ours"
             if payload is not None:
                 open(out, "wb").write(payload)
                 if then is not None:
@@ -163,8 +165,48 @@ def watch(seconds, out, then=None):
     return 1
 
 
+def serve():
+    """For the running companion: watch the corner for command strips (a line
+    starting "WCCMD ", drawn when the player presses Stop in the window) and
+    print each new one on stdout. Exits when the companion closes our stdin.
+    A look at the bottom row twice a second; a full read only when the strip's
+    first row changes."""
+    import threading
+
+    def parent_gone():
+        try:
+            sys.stdin.read()
+        finally:
+            os._exit(0)
+
+    threading.Thread(target=parent_gone, daemon=True).start()
+    seen, last_row = None, None
+    while True:
+        try:
+            w, h, px = capture(CELL)
+            o = (h - 1 - CELL // 2) * w * 4 + (CELL // 2) * 4
+            if (px[o + 2], px[o + 1], px[o]) == (0xC0, 0xFF, 0xEE):
+                row = bytes(px[(h - 1 - CELL // 2) * w * 4:(h - CELL // 2) * w * 4])
+                if row != last_row:
+                    payload, _ = decode(*capture())
+                    if payload is not None:
+                        last_row = row
+                        if payload.startswith(b"WCCMD ") and payload != seen:
+                            seen = payload
+                            line = payload.decode("utf-8", "replace").replace("\n", " ")
+                            sys.stdout.write(line + "\n")
+                            sys.stdout.flush()
+            else:
+                last_row = None
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
+    if args[:1] == ["--serve"]:
+        serve()
     if args[:1] == ["--watch"]:
         then = args[args.index("--then") + 1] if "--then" in args else None
         sys.exit(watch(float(args[1]), args[2], then))
