@@ -3,3 +3,4 @@
 
 # Blizzard UI source for this exact client, cloned for the agent to grep (not ours to commit)
 docs/wow-ui-source/
+tools/__pycache__/

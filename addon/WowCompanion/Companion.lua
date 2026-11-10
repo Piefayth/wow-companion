@@ -746,20 +746,33 @@ local toastFrame, toastHeld, toastTimer
 -- title over a thin divider, then one aligned row per conversation with the
 -- ready-check mark for its state. A plain notice is one wrapped string instead.
 -- Bottom left, under the chat box; it cannot take the mouse or gamepad focus.
-local TOAST_W, ROW_H, PAD = 420, 18, 14
--- Above the chat box and its tabs, as wide as it, so a chat box resized to its
--- biggest pushes the board up instead of being covered (the player,
--- 2026-11-10). Only our frame is anchored: nothing of Blizzard's is changed.
+local TOAST_W, ROW_H, PAD = 420, 16, 10
+-- Below the chat box, flush with the bottom of the screen and lined up with
+-- the chat's left edge (the player, 2026-11-10: below, not above). It never
+-- grows past the chat's bottom: toastRoom() is the height up to it, and the
+-- board drops its title, then rows, to stay inside. Only our frame is anchored
+-- and measured: nothing of Blizzard's is changed.
+local function chatEdges()
+	local chat = ChatFrame1
+	local bottom = chat and chat.GetBottom and chat:GetBottom()
+	if not bottom then return nil end
+	local k = chat:GetEffectiveScale() / UIParent:GetEffectiveScale()
+	return chat:GetLeft() * k, bottom * k, chat:GetWidth() * k
+end
 local function placeToast(frame)
 	frame:ClearAllPoints()
-	local chat = ChatFrame1
-	if chat and chat.GetTop and chat:GetTop() then
-		frame:SetPoint("BOTTOMLEFT", chat, "TOPLEFT", -6, 28)
-		frame:SetWidth(math.max(TOAST_W, chat:GetWidth() + 12))
+	local left, _, width = chatEdges()
+	if left then
+		frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", math.max(0, left - 8), 0)
+		frame:SetWidth(math.max(TOAST_W, width + 16))
 	else
-		frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 4, 4)
+		frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
 		frame:SetWidth(TOAST_W)
 	end
+end
+local function toastRoom()
+	local _, bottom = chatEdges()
+	return bottom and math.max(bottom - 2, 2 * PAD + ROW_H) or 1000
 end
 local function buildToast()
 	local made, frame = pcall(CreateFrame, "Frame", nil, UIParent, "BackdropTemplate")
@@ -791,10 +804,10 @@ local function buildToast()
 	frame.text:SetSpacing(3)
 	-- the board: a title, a hint, a divider, then rows made as needed
 	frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	frame.title:SetPoint("TOPLEFT", PAD + 2, -PAD)
+	frame.title:SetPoint("TOPLEFT", PAD + 4, -PAD)
 	frame.title:SetText("Companion")
 	frame.hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	frame.hint:SetPoint("TOPRIGHT", -PAD - 2, -PAD - 1)
+	frame.hint:SetPoint("TOPRIGHT", -PAD - 4, -PAD - 1)
 	frame.hint:SetText("tap minus to read")
 	frame.rule = frame:CreateTexture(nil, "ARTWORK")
 	frame.rule:SetColorTexture(1, 0.82, 0, 0.35)
@@ -838,7 +851,6 @@ local function toastRow(frame, i)
 	row = {}
 	row.mark = frame:CreateTexture(nil, "OVERLAY")
 	row.mark:SetSize(14, 14)
-	row.mark:SetPoint("TOPLEFT", PAD + 2, -PAD - 23 - (i - 1) * ROW_H)
 	row.name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	row.name:SetWidth(40)
 	row.name:SetJustifyH("LEFT")
@@ -913,7 +925,20 @@ local function toastBoard(rows)
 		showRow(row, true)
 	end
 	for i = #rows + 1, #toastFrame.rows do showRow(toastFrame.rows[i], false) end
-	toastFrame:SetHeight(2 * PAD + 21 + #rows * ROW_H)
+	-- fit under the chat: the title only when there is room, then as many
+	-- rows as fit (the newest conversations are last; the first ones stay)
+	local room = toastRoom()
+	local header = (2 * PAD + 20 + #rows * ROW_H <= room) and 20 or 0
+	local fit = math.max(1, math.floor((room - 2 * PAD - header) / ROW_H))
+	toastFrame.title:SetShown(header > 0)
+	toastFrame.hint:SetShown(header > 0)
+	toastFrame.rule:SetShown(header > 0)
+	for i, row in ipairs(toastFrame.rows) do
+		row.mark:ClearAllPoints()
+		row.mark:SetPoint("TOPLEFT", PAD + 4, -PAD - header - 1 - (i - 1) * ROW_H)
+		if i > fit then showRow(row, false) end
+	end
+	toastFrame:SetHeight(2 * PAD + header + math.min(#rows, fit) * ROW_H)
 	if toastTimer then toastTimer:Cancel() end
 	toastTimer = nil
 	toastFrame:Show()

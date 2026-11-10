@@ -118,8 +118,8 @@ open the auction house once. Source: AddOns/Auctionator/Source/API.
 Reading the game live, no reload (the data strip, measured working 2026-11-10:
 7.8 KB in one shot): add a `lua` step that builds a text and calls
 `WowCompanion_Strip.Send(text, 30)` (bottom-right corner, 30 s), and before you
-answer start a detached reader: `powershell -NoProfile -Command "Start-Process
-python -WindowStyle Hidden -ArgumentList '-I','S:/github/wow-companion/tools/strip.py','--watch','240','<out file>'"`.
+answer start a detached reader: tools/strip.py --watch 240 <out file>, launched
+hidden with PowerShell Start-Process (python -I) so it outlives your turn.
 The decoded text lands in the out file once the step runs; read it on the next
 turn. Never send Lua from a second process (it races the channel).
 Other game facts already worked out:
