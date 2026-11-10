@@ -38,7 +38,14 @@ do
 
 	local function db()
 		WowCompanionDB = WowCompanionDB or {}
-		WowCompanionDB.interact = WowCompanionDB.interact or { mode = "hold" }
+		WowCompanionDB.interact = WowCompanionDB.interact or {}
+		-- Measured 2026-11-10: SetTempCVar("SoftTargetInteract") from our code in
+		-- combat is ADDON_ACTION_BLOCKED, so "hold" cannot work there. "clear" (a
+		-- secure /cleartarget on a live hostile target) is the default, and any
+		-- saved "hold" is moved over once.
+		if WowCompanionDB.interact.mode ~= "clear" and not WowCompanionDB.interact.holdTested then
+			WowCompanionDB.interact.mode = "clear"
+		end
 		return WowCompanionDB.interact
 	end
 
@@ -70,14 +77,16 @@ do
 		if InCombatLockdown() then return end
 		if db().mode == "clear" then
 			button:SetAttribute("type", "macro")
-			button:SetAttribute("macrotext", "/cleartarget")
+			-- only a live hostile target blocks soft interact; Blizzard turns it
+			-- back on at PLAYER_TARGET_CHANGED, then interact takes the corpse
+			button:SetAttribute("macrotext", "/cleartarget [harm,nodead]")
 		else
 			button:SetAttribute("type", nil)
 			button:SetAttribute("macrotext", nil)
 		end
 	end
 	button:HookScript("OnClick", function(_, _, down)
-		if db().mode == "clear" then return end
+		if db().mode == "clear" or InCombatLockdown() then return end
 		held = down and true or false
 		if held then setInteract(true) else blizzardRule() end
 	end)
