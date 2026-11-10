@@ -399,21 +399,30 @@ fn resync(addons: &Path) {
                 }
             }
         }
+        // One `board` message, always, even with nothing working: the addon shows
+        // the board it saved at the reload and this is what corrects it, so a
+        // conversation that finished during the loading screen stops spinning.
         let working = WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
-        for (slot, doing, since) in working {
-            // `resync` first: a status line is advisory (dropped when the channel is
-            // busy) only when it opens with its kind, and this one must arrive
-            let inbox = format!(
-                "{{ resync = true, kind = \"progress\", text = {}, slot = {}, since = {} }}",
-                lua_string(&doing),
-                lua_string(&slot),
-                since.elapsed().as_secs()
-            );
-            if let Err(err) = send_inbox(&addons, &inbox) {
-                eprintln!("  resync: {err}");
-            }
+        if let Err(err) = send_inbox(&addons, &board_inbox(&working)) {
+            eprintln!("  resync: {err}");
         }
     });
+}
+
+/// Every conversation still working, for the addon's `board` handler.
+fn board_inbox(working: &[(String, String, Instant)]) -> String {
+    let entries: Vec<String> = working
+        .iter()
+        .map(|(slot, doing, since)| {
+            format!(
+                "{{ slot = {}, text = {}, since = {} }}",
+                lua_string(slot),
+                lua_string(doing),
+                since.elapsed().as_secs()
+            )
+        })
+        .collect();
+    format!("{{ kind = \"board\", resync = true, working = {{ {} }} }}", entries.join(", "))
 }
 
 /// The addon's save file, as text.
@@ -1157,7 +1166,7 @@ fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
         // the last slots are for replies; a skipped progress line is no loss
         return Ok(());
     }
-    let always_readable = ["log", "progress", "reload"]
+    let always_readable = ["log", "progress", "reload", "board"]
         .iter()
         .any(|kind| inbox.starts_with(&format!("{{ kind = \"{kind}\"")));
     if !always_readable && addon_is_stale(addons)? {

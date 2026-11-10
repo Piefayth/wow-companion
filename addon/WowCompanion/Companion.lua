@@ -751,33 +751,37 @@ local toastFrame, toastHeld, toastTimer
 -- ready-check mark for its state. A plain notice is one wrapped string instead.
 -- Bottom left, under the chat box; it cannot take the mouse or gamepad focus.
 local TOAST_W, ROW_H, PAD = 420, 16, 10
--- Below the chat box, flush with the bottom of the screen and lined up with
--- the chat's left edge (the player, 2026-11-10: below, not above). It never
--- grows past the chat's bottom: toastRoom() is the height up to it, and the
--- board drops its title, then rows, to stay inside. Only our frame is anchored
--- and measured: nothing of Blizzard's is changed.
-local function chatEdges()
-	local chat = ChatFrame1
-	local bottom = chat and chat.GetBottom and chat:GetBottom()
-	if not bottom then return nil end
-	local k = chat:GetEffectiveScale() / UIParent:GetEffectiveScale()
-	return chat:GetLeft() * k, bottom * k, chat:GetWidth() * k
-end
+-- Top left, just right of the gamepad's controls legend
+-- (GamepadPersistentInputLegend, Blizzard's, anchored TOPLEFT 5,-5), or in the
+-- top-left corner when the legend is off (the player, 2026-11-10: the bottom
+-- right is where tooltips go). Re-placed at every show, so turning the legend
+-- on or off is followed. Only our frame is anchored: the legend is read, never
+-- changed.
 local function placeToast(frame)
 	frame:ClearAllPoints()
-	local left, _, width = chatEdges()
-	if left then
-		frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", math.max(0, left - 8), 0)
-		frame:SetWidth(math.max(TOAST_W, width + 16))
-	else
-		frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
-		frame:SetWidth(TOAST_W)
+	-- the legend frame itself is 10x10; its size is in its children, one
+	-- background per group of prompts, shown or hidden by Blizzard. The board
+	-- goes right of the widest one showing (seen 2026-11-10: anchoring to the
+	-- 10x10 frame laid the board over the legend).
+	local legend = GamepadPersistentInputLegend
+	local right, top
+	if legend and legend:IsVisible() then
+		local k = legend:GetEffectiveScale() / UIParent:GetEffectiveScale()
+		for _, child in ipairs({ legend:GetChildren() }) do
+			if child:IsVisible() and child:GetRight() and child:GetWidth() > 12 then
+				right = math.max(right or 0, child:GetRight() * k)
+				top = math.max(top or 0, child:GetTop() * k)
+			end
+		end
 	end
+	if right then
+		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", right + 6, top)
+	else
+		frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 4, -4)
+	end
+	frame:SetWidth(TOAST_W)
 end
-local function toastRoom()
-	local _, bottom = chatEdges()
-	return bottom and math.max(bottom - 2, 2 * PAD + ROW_H) or 1000
-end
+local function toastRoom() return 2 * 10 + 20 + 5 * 16 end
 local function buildToast()
 	local made, frame = pcall(CreateFrame, "Frame", nil, UIParent, "BackdropTemplate")
 	frame = made and frame or CreateFrame("Frame", nil, UIParent)
@@ -1886,6 +1890,24 @@ end
 function handlers.progress(inbox)
 	setPending(inbox.text or "thinking", inbox.slot, inbox.since)
 	return "progress"
+end
+
+-- After a reload the companion says which conversations are still working
+-- (`resync` in src/main.rs). It is the whole truth: one restored from the save
+-- but not listed here has finished since, and is cleared.
+function handlers.board(inbox)
+	local listed = {}
+	for _, e in ipairs(inbox.working or {}) do
+		if type(e) == "table" and e.slot then
+			listed[e.slot] = true
+			setPending(e.text or "thinking", e.slot, e.since)
+		end
+	end
+	for slot in pairs(working) do
+		if not listed[slot] then working[slot] = nil end
+	end
+	renderPending()
+	return "board"
 end
 
 -- A clip released and handed to Whisper, for the conversation it belongs to
@@ -3135,6 +3157,107 @@ local function exportContext()
 	if GetMoney then
 		line(("copper: %s"):format(tostring(GetMoney())))
 	end
+	-- The facts advice rests on (the player, 2026-11-10: an off-hand suggested
+	-- beside a two-hander, a pouch already worn, Skinning said to be missing).
+	-- Each part under pcall: one bad read must not lose the whole export.
+	pcall(function()
+		local xp, xpMax = UnitXP("player"), UnitXPMax("player")
+		local rested = GetXPExhaustion and GetXPExhaustion()
+		line(("xp: %s / %s%s"):format(tostring(xp), tostring(xpMax), rested and (", rested " .. rested) or ""))
+		local zone, sub = GetRealZoneText and GetRealZoneText(), GetSubZoneText and GetSubZoneText()
+		line(("zone: %s%s"):format(tostring(zone), (sub and sub ~= "" and sub ~= zone) and (" / " .. sub) or ""))
+	end)
+	pcall(function()
+		-- self-buffs worth noticing when missing (Druid; others add theirs here)
+		local BUFFS = { DRUID = { "Mark of the Wild", "Thorns" } } -- Omen of Clarity is a proc in Forever, not a buff to cast
+		local _, classFile = UnitClass("player")
+		local missing = {}
+		for _, name in ipairs(BUFFS[classFile] or {}) do
+			local info = C_Spell.GetSpellInfo(name)
+			local known = info and info.spellID and IsPlayerSpell(info.spellID)
+			if known and not C_UnitAuras.GetAuraDataBySpellName("player", name, "HELPFUL") then
+				missing[#missing + 1] = name
+			end
+		end
+		line("buffs missing at export: " .. (#missing > 0 and table.concat(missing, ", ") or "none"))
+	end)
+
+	section("equipped")
+	line("-- inventory slot: item. A two-hand weapon in 16 means 17 cannot hold anything")
+	pcall(function()
+		local SLOTS = { [1] = "head", [2] = "neck", [3] = "shoulder", [4] = "shirt", [5] = "chest",
+			[6] = "waist", [7] = "legs", [8] = "feet", [9] = "wrist", [10] = "hands", [11] = "finger1",
+			[12] = "finger2", [13] = "trinket1", [14] = "trinket2", [15] = "back", [16] = "main hand",
+			[17] = "off hand", [18] = "ranged", [19] = "tabard" }
+		for slot = 1, 19 do
+			local link = GetInventoryItemLink("player", slot)
+			local text = "empty"
+			if link then
+				local name, _, quality, ilvl, _, _, _, _, equipLoc = C_Item.GetItemInfo(link)
+				local id = C_Item.GetItemInfoInstant(link)
+				text = ("%s (%s) ilvl %s%s"):format(name or link:match("%[(.-)%]") or "?", tostring(id),
+					tostring(ilvl), equipLoc == "INVTYPE_2HWEAPON" and ", TWO-HAND" or "")
+				local cur, max = GetInventoryItemDurability(slot)
+				if cur and max and max > 0 then text = text .. (", durability %d/%d"):format(cur, max) end
+			end
+			line(("%2d %s: %s"):format(slot, SLOTS[slot], text))
+		end
+	end)
+
+	section("bags")
+	line("-- bag: name, slots, free. Bag 0 is the backpack; a bag item inside a bag is a spare")
+	pcall(function()
+		for bag = 0, 4 do
+			local slots = C_Container.GetContainerNumSlots(bag) or 0
+			local free = C_Container.GetContainerNumFreeSlots(bag) or 0
+			local name = C_Container.GetBagName(bag)
+			line(("%d: %s, %d slots, %d free"):format(bag, slots > 0 and (name or "?") or "EMPTY BAG SLOT", slots, free))
+		end
+	end)
+
+	section("skills")
+	line("-- professions and secondary skills, rank / max")
+	pcall(function()
+		local any = false
+		if GetProfessions and GetProfessionInfo then
+			local profs = { GetProfessions() }
+			for i = 1, 5 do
+				local index = profs[i]
+				if index then
+					local name, _, rank, maxRank = GetProfessionInfo(index)
+					if name then any = true line(("%s %s/%s"):format(name, tostring(rank), tostring(maxRank))) end
+				end
+			end
+		end
+		if not any and C_SkillInfo and C_SkillInfo.GetNumSkillLines and C_SkillInfo.GetSkillLineInfo then
+			for i = 1, C_SkillInfo.GetNumSkillLines() or 0 do
+				local info = C_SkillInfo.GetSkillLineInfo(i)
+				if info and not info.isHeader and info.name then
+					any = true
+					line(("%s %s/%s"):format(info.name, tostring(info.rank), tostring(info.maxRank)))
+				end
+			end
+		end
+		if not any then line("-- none read: ask with a lua step before claiming they lack one") end
+	end)
+
+	section("quest log")
+	line("-- id: title [level] (done), then objectives")
+	pcall(function()
+		for i = 1, C_QuestLog.GetNumQuestLogEntries() or 0 do
+			local info = C_QuestLog.GetInfo(i)
+			if info and not info.isHeader and info.questID then
+				local done = C_QuestLog.IsComplete(info.questID)
+				line(("%d: %s [%s]%s"):format(info.questID, tostring(info.title), tostring(info.level),
+					done and " (done: turn it in)" or ""))
+				if not done then
+					for _, o in ipairs(C_QuestLog.GetQuestObjectives(info.questID) or {}) do
+						if o.text and not o.finished then line("    " .. o.text) end
+					end
+				end
+			end
+		end
+	end)
 
 	section("action slots")
 	line("-- addressed by number; empty slots omitted. 'on screen' names the bar that")
@@ -4163,6 +4286,14 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- from disk or a second /reload discards the run we were trying to measure
 		WowCompanionDB.previous = WowCompanionDB.probe
 		WowCompanionDB.probe = {}
+		-- Messages sent during the loading screen belong to this session: its
+		-- boundary is the save the reload wrote, not when this file ran. A load
+		-- slower than 5 s had a catch-up skip them as an earlier session's
+		-- (seen 2026-11-10: replies written 1 and 4 s after the save).
+		local left = tonumber(WowCompanionDB.leftAt)
+		if left and left <= sessionStart and sessionStart - left < 300 then
+			sessionStart = left
+		end
 	elseif event == "PLAYER_LOGIN" then
 		pcall(bindTap)
 		local version, build, _, toc = GetBuildInfo()
@@ -4170,6 +4301,28 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- build the window and refill it before anything can write to it
 		logFrame()
 		replayLog()
+		-- The board as it stood when the reload saved (the player, 2026-11-10:
+		-- after a reload every agent looked idle until its next update). Shown at
+		-- once; the companion's `board` message corrects it a few seconds later.
+		pcall(function()
+			local board = WowCompanionDB.board
+			WowCompanionDB.board = nil
+			if type(board) ~= "table" then return end
+			local gone = time() - (tonumber(board.at) or 0)
+			if gone < 0 or gone > 300 then return end
+			for slot, e in pairs(board.working or {}) do
+				if type(e) == "table" and e.text then
+					setPending(e.text, slot, (tonumber(e.age) or 0) + gone)
+				end
+			end
+			for slot, e in pairs(board.recent or {}) do
+				local age = type(e) == "table" and (tonumber(e.age) or 0) + gone
+				if age and e.text and age < RECENT_FOR then
+					recent[slot] = { text = e.text, at = GetTime() - age }
+				end
+			end
+			renderPending()
+		end)
 		probeSound()
 		-- after login settles: modules may build frames on top of Blizzard's
 		C_Timer.After(2, loadModules)
@@ -4192,6 +4345,19 @@ frame:SetScript("OnEvent", function(_, event, ...)
 			WowCompanionDB.slotCount = seen
 		end)
 		WowCompanionDB.channel = channel
+		-- the board lives in memory only; keep it for the next session to show
+		pcall(function()
+			local now, clock = time(), GetTime()
+			local board = { at = now, working = {}, recent = {} }
+			for slot, entry in pairs(working) do
+				board.working[slot] = { text = entry.text, age = clock - entry.since }
+			end
+			for slot, done in pairs(recent) do
+				board.recent[slot] = { text = done.text, age = clock - done.at }
+			end
+			WowCompanionDB.board = board
+			WowCompanionDB.leftAt = now
+		end)
 	elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
 		-- taint cascades, and the first block names the real culprit, so number them
 		-- rather than letting each one overwrite the last
