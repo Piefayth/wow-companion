@@ -35,6 +35,7 @@ const SCHEMA: &str = r#"{
   "type": "object",
   "properties": {
     "say":   { "type": "string" },
+    "look":  { "type": "boolean" },
     "steps": {
       "type": "array",
       "items": {
@@ -135,6 +136,14 @@ chat, trading, spending gold, leaving groups); do not try them. Insecure code
 cannot cast, target or move, so do not write code that tries.
 Keep chunks small and say in `say` what the code will do.
 
+Looking. Your steps run blind: what Lua printed, whether a placement landed,
+reaches you only in <character> after a reload. When you need that before you can
+finish (exploring an API, checking code worked, a change that depends on a
+result), set `look`. The player is offered a Reload button; when they press it you
+are called again with the refreshed <character> and carry on, so say in `say` what
+you are about to check. Do not add a reload step yourself when looking. Leave
+`look` off when the answer is already complete.
+
 Never act for the player in combat. Writing is yours; pressing is theirs.
 
 Never act for the player. You write configuration; they press the button. Do not
@@ -146,6 +155,8 @@ pub struct Spoken {
     pub say: String,
     /// the inbox table to deliver, or None when nothing should change in game
     pub inbox: Option<String>,
+    /// the agent wants to see its steps' results: call it again after the reload
+    pub look: bool,
 }
 
 /// One continuing conversation with the agent.
@@ -277,6 +288,12 @@ fn read(waiting: Child) -> io::Result<Answer> {
         return Err(io::Error::other("more than one button in one answer; only one can be offered"));
     }
     let mut built = steps.iter().map(step_inbox).collect::<io::Result<Vec<String>>>()?;
+    let look = command.get("look").and_then(Value::as_bool) == Some(true);
+    // looking needs a reload, and a reload needs the player's press: offer it,
+    // unless the answer already offers its own button
+    if look && buttons == 0 {
+        built.push("{ kind = \"reload\" }".to_string());
+    }
     // several steps still ride in one message: one bell, applied in order
     let inbox = match built.len() {
         0 => None,
@@ -287,7 +304,7 @@ fn read(waiting: Child) -> io::Result<Answer> {
         .get("session_id")
         .and_then(Value::as_str)
         .map(str::to_string);
-    Ok(Answer { spoken: Spoken { say, inbox }, thread })
+    Ok(Answer { spoken: Spoken { say, inbox, look }, thread })
 }
 
 /// One step as the inbox table the addon's dispatch accepts.

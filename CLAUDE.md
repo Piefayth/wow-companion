@@ -316,6 +316,17 @@ Open:
   `mic=` is visible as a name absent from that list. Whisper's silence phantoms
   ("Thank you.") are dropped when the clip's RMS is under 0.01, and every clip prints
   its level so that floor can be tuned from real numbers.
-- **A game → PC channel, maybe.** The `bridge` command probes `LoggingChat`: the game
-  writes chat to a log file we can read, which would be a real return path without
-  reading pixels. Built, never run.
+- **No file is written live; reloads are the return path.** Measured: `LoggingChat`
+  creates `Logs\WoWChatLog.txt` on demand and then writes nothing, not even across
+  two reloads. An addon-registered CVar set to a marker, and our own macro edited
+  to carry one, changed **zero** files under the client in 25 s: settings and
+  macros reach disk at reload or logout, like SavedVariables. (`Screenshot()` does
+  write at once, but reading data out of it is the pixel strip by another name,
+  the ToS-gray thing this project declined; that is the player's call.) So the
+  agent's answer carries `look`: it gets a Reload button offered, and when the save
+  lands the helper calls it again with the refreshed context, so one press is the
+  whole cost of the agent seeing what its code did.
+- **The chat draft survives cancel** because `chatStyle` defaults to "im". The fix
+  is the setting, offered as a button (`/console chatStyle classic`), not code.
+  Sending from Git Bash rewrites a leading `/console` into a Windows path; use
+  `MSYS_NO_PATHCONV=1`, since a macro line without its slash may be sent as chat.

@@ -10,6 +10,7 @@ use wow_companion_voice as voice;
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -50,7 +51,7 @@ fn main() {
         // without a game to send into
         [command, addons, spoken] if command == "think" => think(Path::new(addons), spoken),
         [command, addons, spoken] if command == "ask" => {
-            ask(Path::new(addons), &mut agent::Session::default(), spoken)
+            ask(Path::new(addons), &mut agent::Session::default(), spoken).map(|_| ())
         }
         [command, addons, model, options @ ..] if command == "run" => {
             run(Path::new(addons), Path::new(model), options)
@@ -208,6 +209,12 @@ fn send(addons: &Path, args: &[String]) -> io::Result<()> {
             lua_string(text)
         ),
         [kind] if kind == "reload" => "{ kind = \"reload\" }".to_string(),
+        // offer a secure button: the player presses it, so anything macro text can do
+        [kind, label, text] if kind == "press" => format!(
+            "{{ kind = \"press\", label = {}, macro = {} }}",
+            lua_string(label),
+            lua_string(text)
+        ),
         [kind, code] if kind == "lua" => format!("{{ kind = \"lua\", code = {} }}", lua_string(code)),
         // spell|macro|item|empty, as the agent would send it
         [kind, slot, what, name] if kind == "bar" => format!(
@@ -232,7 +239,33 @@ fn send(addons: &Path, args: &[String]) -> io::Result<()> {
 /// Hand what was said to Claude, show its line in the companion window, and
 /// deliver whatever command it chose. The line goes first, so the player sees the
 /// reasoning before the game changes under them.
-fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<()> {
+/// The other half of looking. The agent ran something and asked to see what it
+/// did; the only way results reach disk is a reload, which the player was offered
+/// as a button. When the save lands, hand the agent the refreshed context and let
+/// it carry on, so one press is all the player does.
+fn watch_for_looks(addons: &Path, session: &Mutex<agent::Session>, looking: &Mutex<Option<Option<u128>>>) {
+    loop {
+        thread::sleep(Duration::from_secs(1));
+        let waiting = *looking.lock().unwrap();
+        let Some(since) = waiting else { continue };
+        if session_began(addons) == since {
+            continue;
+        }
+        *looking.lock().unwrap() = None;
+        // the save lands before the UI is back; give the addon time to listen again
+        thread::sleep(Duration::from_secs(4));
+        let note = "(I reloaded so you can look. Your steps' results are in <character>, \
+                    under code runs and the slots; carry on with what I asked.)";
+        match ask(addons, &mut session.lock().unwrap(), note) {
+            Ok(true) => *looking.lock().unwrap() = Some(session_began(addons)),
+            Ok(false) => {}
+            Err(err) => eprintln!("  looking again failed: {err}"),
+        }
+    }
+}
+
+/// Returns whether the agent wants to look at the results before it is done.
+fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<bool> {
     println!("asking: {spoken}");
     // start the agent before announcing ourselves: the announcement costs a bell
     // wait, the agent costs several seconds, and they may as well run together
@@ -244,7 +277,11 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
     // so there is no second bell and no two-second gap between reading the answer
     // and being offered the button. This one carries no `pending`, which stops the
     // spinner.
-    send_inbox(addons, &log_inbox("claude", &answer.say, None, answer.inbox.as_deref()))
+    send_inbox(addons, &log_inbox("claude", &answer.say, None, answer.inbox.as_deref()))?;
+    if answer.look {
+        println!("  waiting for the reload to look at the results");
+    }
+    Ok(answer.look)
 }
 
 fn think(addons: &Path, spoken: &str) -> io::Result<()> {
@@ -438,12 +475,29 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         "agent: claude -p --model {}",
         if session.model.is_empty() { agent::DEFAULT_MODEL } else { &session.model }
     );
+    // one conversation, reached from the voice loop and from the reload watcher
+    let session = Arc::new(Mutex::new(session));
+    // Some(session start) while the agent waits to look: the reload it asked for
+    // is the next change to that timestamp
+    let looking: Arc<Mutex<Option<Option<u128>>>> = Arc::new(Mutex::new(None));
+    {
+        let (addons, session, looking) = (addons.to_path_buf(), Arc::clone(&session), Arc::clone(&looking));
+        thread::spawn(move || watch_for_looks(&addons, &session, &looking));
+    }
     voice::listen(
         model,
         options,
         || vocabulary(addons),
         |role, text| match role {
-            "ask" => ask(addons, &mut session, text),
+            "ask" => {
+                // a new request supersedes a look still waiting for its reload
+                *looking.lock().unwrap() = None;
+                let look = ask(addons, &mut session.lock().unwrap(), text)?;
+                if look {
+                    *looking.lock().unwrap() = Some(session_began(addons));
+                }
+                Ok(())
+            }
             _ if discards(text) => {
                 println!("  clearing the chat box");
                 send_inbox(addons, "{ kind = \"chat\", clear = true }")
