@@ -126,12 +126,6 @@ local function rows()
 	-- only the conversation in view (the player, 2026-11-10: "in R1 I just see
 	-- the R1 messages")
 	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
-	for slot, since in pairs(core.transcribing or {}) do
-		if slot == view then
-			out[#out + 1] = { state = "hearing", slot = slot, text = "...", at = since }
-		end
-	end
-	table.sort(out, function(a, b) return a.at < b.at end)
 	-- a running job whose conversation stopped working (a reply or a failure
 	-- that named no conversation) has nothing left to do
 	local working = core.working or {}
@@ -141,10 +135,17 @@ local function rows()
 			table.remove(jobs, i)
 		end
 	end
+	-- oldest first (the player, 2026-11-10): the running one, what is queued
+	-- in the order it was said, and last the clip still being heard
 	for _, job in ipairs(jobs) do
-		if job.slot == view then out[#out + 1] = job end
+		if job.slot == view and job.state ~= "queued" then out[#out + 1] = job end
 	end
-	while #out > MAX do table.remove(out, #out) end
+	for _, job in ipairs(jobs) do
+		if job.slot == view and job.state == "queued" then out[#out + 1] = job end
+	end
+	local since = (core.transcribing or {})[view]
+	if since then out[#out + 1] = { state = "hearing", slot = view, text = "...", at = since } end
+	while #out > MAX do table.remove(out, 1) end
 	return out, now
 end
 
@@ -161,8 +162,10 @@ refresh = function()
 			if job then
 				p.job = job
 				p:ClearAllPoints()
-				p:SetPoint("BOTTOMLEFT", well, "BOTTOMLEFT", 8, 8 + (i - 1) * (PANEL_H + 4))
-				p:SetPoint("BOTTOMRIGHT", well, "BOTTOMRIGHT", -8, 8 + (i - 1) * (PANEL_H + 4))
+				-- the first (oldest) at the top of the stack, the newest at the bottom
+				local y = 8 + (#list - i) * (PANEL_H + 4)
+				p:SetPoint("BOTTOMLEFT", well, "BOTTOMLEFT", 8, y)
+				p:SetPoint("BOTTOMRIGHT", well, "BOTTOMRIGHT", -8, y)
 				local who = label(job.slot)
 				local secs = math.floor(now - (job.at or now))
 				local dots = ("."):rep(math.floor(now * 2) % 4)
