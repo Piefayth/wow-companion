@@ -102,7 +102,10 @@ refresh = function()
 	-- that named no conversation) has nothing left to do
 	for i = #jobs, 1, -1 do
 		local job = jobs[i]
-		if job.state == "working" and not working[job.slot] and now - (job.at or now) > 3 then
+		-- a reply (or anything that ended the conversation's work) leaves
+		-- nothing to cancel: gone within a second (the player, 2026-11-10: a
+		-- Cancel stayed on an answered message)
+		if job.state == "working" and not working[job.slot] and now - (job.at or now) > 1 then
 			table.remove(jobs, i)
 		end
 	end
@@ -220,12 +223,18 @@ refresh = function()
 	for _, job in ipairs(jobs) do
 		if job.slot == view and job.state == "working" then running = job end
 	end
+	-- bound once to the message it belongs to (your newest line when the work
+	-- began), so it can never wander onto an older one
 	local runRow
-	if running then
-		for i = #(transcript.rows or {}), 1, -1 do
-			local row = transcript.rows[i]
-			if row.you and not row.queued and row.fs:IsShown() then runRow = row break end
+	if running and working[view] then
+		if not (running.row and running.row.fs:IsShown()) then
+			running.row = nil
+			for i = #(transcript.rows or {}), 1, -1 do
+				local row = transcript.rows[i]
+				if row.you and not row.queued and row.fs:IsShown() then running.row = row break end
+			end
 		end
+		runRow = running.row
 	end
 	if runRow then
 		used = used + 1
