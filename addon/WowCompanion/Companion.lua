@@ -387,25 +387,61 @@ local function buildTabs(frame, messages, pending)
 		if since > 1 then since = 0 refreshStatus() end
 	end)
 
-	-- the conversation picker, above the transcript (Chat tab only)
-	messages.scroll:SetPoint("TOPLEFT", 20, -72)
-	frame.convButtons = {}
-	local prevButton
-	for _, key in ipairs({ "", "l1", "l2", "r1", "r2" }) do
-		local made, b = pcall(CreateFrame, "Button", nil, frame, "UIPanelButtonTemplate")
-		if made and b then
-			b:SetSize(key == "" and 70 or 54, 22)
-			if prevButton then b:SetPoint("LEFT", prevButton, "RIGHT", 4, 0) else b:SetPoint("TOPLEFT", 20, -42) end
-			b:SetText(key == "" and "Main" or key:upper())
-			b:SetScript("OnClick", function() WowCompanion_SetConversation(key) end)
-			if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
-			frame.convButtons[key] = b
-			frame.chatParts = frame.chatParts or {}
-			table.insert(frame.chatParts, b)
-			prevButton = b
-		end
+	-- The conversation picker: a well on the right, the auction house's category
+	-- list art (auctionhouse-nav-button, -select, -highlight, the categories
+	-- background, an inset border). Chat tab only.
+	local WELL = 130
+	local made, well = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
+	if not made or not well then well = CreateFrame("Frame", nil, frame) end
+	well:SetPoint("TOPRIGHT", -16, -40)
+	well:SetPoint("BOTTOMRIGHT", -16, 32)
+	well:SetWidth(WELL)
+	local back = well:CreateTexture(nil, "BACKGROUND", nil, 1)
+	back:SetAtlas("auctionhouse-background-categories")
+	back:SetPoint("TOPLEFT", 3, -3)
+	back:SetPoint("BOTTOMRIGHT", -3, 3)
+	frame.chatParts = frame.chatParts or {}
+	table.insert(frame.chatParts, well)
+	-- the transcript and its arrows move left of the well
+	messages.scroll:ClearAllPoints()
+	messages.scroll:SetPoint("TOPLEFT", 20, -42)
+	messages.scroll:SetPoint("BOTTOMRIGHT", -(16 + WELL + 30), 34)
+	if frame.chatParts[1] and frame.chatParts[2] then
+		frame.chatParts[1]:ClearAllPoints()
+		frame.chatParts[1]:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(16 + WELL + 6), -44)
+		frame.chatParts[2]:ClearAllPoints()
+		frame.chatParts[2]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -(16 + WELL + 6), 36)
 	end
-	if frame.convButtons[""] then frame.convButtons[""]:LockHighlight() end
+	frame.convButtons = {}
+	local LABELS = { [""] = "Main", l1 = "L1", l2 = "L2", r1 = "R1", r2 = "R2" }
+	for i, key in ipairs({ "", "l1", "l2", "r1", "r2" }) do
+		local b = CreateFrame("Button", nil, well)
+		b:SetSize(WELL - 10, 24)
+		b:SetPoint("TOP", well, "TOP", 0, -6 - (i - 1) * 26)
+		local normal = b:CreateTexture(nil, "BACKGROUND")
+		normal:SetAtlas("auctionhouse-nav-button")
+		normal:SetAllPoints()
+		local selected = b:CreateTexture(nil, "ARTWORK")
+		selected:SetAtlas("auctionhouse-nav-button-select")
+		selected:SetBlendMode("ADD")
+		selected:SetAllPoints()
+		selected:Hide()
+		b.selected = selected
+		local glow = b:CreateTexture(nil, "HIGHLIGHT")
+		glow:SetAtlas("auctionhouse-nav-button-highlight")
+		glow:SetBlendMode("ADD")
+		glow:SetAllPoints()
+		local text = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		text:SetPoint("LEFT", 12, 0)
+		text:SetPoint("RIGHT", -8, 0)
+		text:SetJustifyH("LEFT")
+		b:SetFontString(text)
+		b:SetText(LABELS[key])
+		b:SetScript("OnClick", function() WowCompanion_SetConversation(key) end)
+		if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
+		frame.convButtons[key] = b
+	end
+	frame.convButtons[""].selected:Show()
 
 	-- the tabs, hanging under the bottom edge like the character sheet's
 	for i, name in ipairs(TAB_NAMES) do
@@ -797,9 +833,9 @@ local function paintConversations()
 	if not (frame and frame.convButtons) then return end
 	for key, button in pairs(frame.convButtons) do
 		local label = key == "" and "Main" or key:upper()
-		if unread[key] then label = "|cff40ff40" .. label .. " *|r" end
+		if unread[key] then label = "|cff40ff40" .. label .. "  new|r" end
 		button:SetText(label)
-		if key == viewSlot then button:LockHighlight() else button:UnlockHighlight() end
+		if button.selected then button.selected:SetShown(key == viewSlot) end
 	end
 end
 
