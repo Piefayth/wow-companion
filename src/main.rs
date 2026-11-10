@@ -272,7 +272,10 @@ fn watch_for_looks(addons: &Path, session: &Mutex<agent::Session>, looking: &Mut
         match ask(addons, &mut session.lock().unwrap(), note) {
             Ok(true) => *looking.lock().unwrap() = Some(session_began(addons)),
             Ok(false) => {}
-            Err(err) => eprintln!("  looking again failed: {err}"),
+            Err(err) => {
+                eprintln!("  looking again failed: {err}");
+                tell_failure(addons, &err);
+            }
         }
     }
 }
@@ -552,7 +555,10 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     match ask(&addons, &mut session.lock().unwrap(), &text) {
                         Ok(true) => *looking.lock().unwrap() = Some(session_began(&addons)),
                         Ok(false) => {}
-                        Err(err) => eprintln!("  not delivered: {err}"),
+                        Err(err) => {
+                            eprintln!("  not delivered: {err}");
+                            tell_failure(&addons, &err);
+                        }
                     }
                 });
                 Ok(())
@@ -673,6 +679,15 @@ fn channeled(text: &str) -> String {
     format!("{slash} {message}")
 }
 
+/// A request that failed says so in the window, and stops the spinner: a console
+/// line nobody is watching is how a stuck-looking agent happens.
+fn tell_failure(addons: &Path, err: &io::Error) {
+    let line = format!("That request failed: {err}");
+    if let Err(also) = send_inbox(addons, &log_inbox("error", &line, None, None)) {
+        eprintln!("  and telling the game failed too: {also}");
+    }
+}
+
 fn chat_inbox(text: &str) -> String {
     format!("{{ kind = \"chat\", text = {} }}", lua_string(text))
 }
@@ -687,7 +702,11 @@ fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
     if !game_running()? {
         return Err(io::Error::other("Wow.exe isn't running, so nothing would read this"));
     }
-    if addon_is_stale(addons)? {
+    // A reply or a progress line is read by handlers every version of the addon
+    // has, so a stale UI can still take it. Blocking those is how a finished answer
+    // sat undelivered behind "reload first" while the window spun "thinking".
+    let always_readable = inbox.starts_with("{ kind = \"log\"") || inbox.starts_with("{ kind = \"progress\"");
+    if !always_readable && addon_is_stale(addons)? {
         return Err(io::Error::other(
             "the addon on disk is newer than the running UI session: /reload in game first",
         ));

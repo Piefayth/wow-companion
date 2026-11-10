@@ -205,6 +205,9 @@ end
 
 -- Spinning while the agent thinks. Several seconds of silence after you speak is
 -- indistinguishable from a broken channel, which is the whole reason this exists.
+-- when the current wait began: kept across progress updates, so the count is the
+-- whole request, not the time since the last "reading ..."
+local pendingSince
 local function setPending(text)
 	local frame = logFrame()
 	if pendingTicker then
@@ -212,13 +215,16 @@ local function setPending(text)
 		pendingTicker = nil
 	end
 	if not text then
+		pendingSince = nil
 		frame.pending:Hide()
 		return
 	end
-	local turn = 0
+	-- the seconds count is the "is it stuck?" answer: counting means working
+	pendingSince = pendingSince or GetTime()
+	local turn, since = 0, pendingSince
 	local function spin()
 		turn = turn + 1
-		frame.pending:SetText(("%s%s"):format(text, ("."):rep(turn % 4)))
+		frame.pending:SetText(("%s%s  %ds"):format(text, ("."):rep(turn % 4), GetTime() - since))
 	end
 	spin()
 	frame.pending:Show()
