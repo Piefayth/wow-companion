@@ -163,3 +163,36 @@ fn current_bell(name: &str) -> bool {
             && (stem.starts_with('m') || stem.starts_with('c'))
             && stem[1..].parse::<u32>().is_ok_and(|n| (1..=8).contains(&n)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{current_bell, rings};
+    use std::fs;
+
+    #[test]
+    fn a_ringing_bell_rings_and_the_quiet_and_emptied_ones_do_not() {
+        let dir = std::env::temp_dir().join(format!("wc-doctor-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let at = |name: &str, bytes: Vec<u8>| {
+            let path = dir.join(name);
+            fs::write(&path, bytes).unwrap();
+            path
+        };
+        assert!(rings(&at("bell.wav", crate::bells::bell())));
+        assert!(rings(&at("message.wav", crate::bells::message_bell())));
+        // the same size as a ringing bell: size alone cannot tell them apart
+        assert!(!rings(&at("quiet.wav", crate::bells::quiet())));
+        assert!(!rings(&at("empty.wav", Vec::new())));
+        assert!(!rings(&dir.join("missing.wav")));
+    }
+
+    #[test]
+    fn only_todays_bell_names_are_current() {
+        for name in ["m1.wav", "m8.wav", "c3.wav", "pulse-a.wav", "always.wav", "never.wav", "doctor.wav"] {
+            assert!(current_bell(name), "{name}");
+        }
+        for name in ["1.wav", "m9.wav", "alive-a.wav", "show.wav", "m10.wav"] {
+            assert!(!current_bell(name), "{name}");
+        }
+    }
+}

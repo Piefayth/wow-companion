@@ -1566,6 +1566,76 @@ fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::channeled;
+    use super::*;
+    use std::time::{Duration, Instant, SystemTime};
+
+    /// A throwaway game folder: <root>/Interface/AddOns/WowCompanion and the
+    /// account's SavedVariables, which is where the slot cursor's reset comes from.
+    fn game(name: &str, slot_count: u32) -> (PathBuf, PathBuf) {
+        let root = env::temp_dir().join(format!("wc-test-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let addons = root.join("Interface").join("AddOns");
+        fs::create_dir_all(addons.join(ADDON)).unwrap();
+        let saved_dir = root.join("WTF").join("Account").join("A").join("SavedVariables");
+        fs::create_dir_all(&saved_dir).unwrap();
+        let saved = saved_dir.join(format!("{ADDON}.lua"));
+        fs::write(&saved, format!("WowCompanionDB = {{ [\"slotCount\"] = {slot_count}, }}")).unwrap();
+        (addons, saved)
+    }
+
+    #[test]
+    fn slots_count_up_and_start_over_when_the_game_saves() {
+        let (addons, saved) = game("cursor", 100);
+        assert_eq!(slots_used(&addons), 0);
+        assert_eq!(next_slot(&addons).unwrap(), 1);
+        assert_eq!(next_slot(&addons).unwrap(), 2);
+        assert_eq!(slots_used(&addons), 2);
+        // a /reload writes SavedVariables: the addon's cursor is back at slot 1
+        let later = SystemTime::now() + Duration::from_secs(5);
+        fs::File::options().write(true).open(&saved).unwrap().set_modified(later).unwrap();
+        assert_eq!(slots_used(&addons), 0);
+        assert_eq!(next_slot(&addons).unwrap(), 1);
+    }
+
+    #[test]
+    fn sends_stop_at_the_slots_the_game_can_see() {
+        let (addons, _) = game("limit", 2);
+        assert_eq!(known_slots(&addons), 2);
+        next_slot(&addons).unwrap();
+        next_slot(&addons).unwrap();
+        let err = next_slot(&addons).unwrap_err().to_string();
+        assert!(err.contains("slots are spent"), "{err}");
+    }
+
+    #[test]
+    fn bells_reuse_eight_names_in_turn() {
+        assert_eq!(bell_name(1), "m1.wav");
+        assert_eq!(bell_name(8), "m8.wav");
+        assert_eq!(bell_name(9), "m1.wav");
+        assert_eq!(catch_up_name(17), "c1.wav");
+    }
+
+    #[test]
+    fn lua_strings_survive_quotes_backslashes_and_newlines() {
+        assert_eq!(lua_string(r#"say "hi""#), r#""say \"hi\"""#);
+        assert_eq!(lua_string(r"C:\x"), r#""C:\\x""#);
+        assert_eq!(lua_string("a\nb"), r#""a\nb""#);
+    }
+
+    #[test]
+    fn the_board_lists_every_working_conversation_and_is_sent_even_when_empty() {
+        assert_eq!(board_inbox(&[]), "{ kind = \"board\", resync = true, working = {  } }");
+        let working = vec![
+            (String::new(), "thinking".to_string(), Instant::now()),
+            ("l1".to_string(), "reading \"main.rs\"".to_string(), Instant::now()),
+        ];
+        let inbox = board_inbox(&working);
+        // never opens with its kind, or the send would treat it as droppable
+        assert!(inbox.starts_with("{ kind = \"board\""), "{inbox}");
+        assert!(!inbox.starts_with("{ kind = \"progress\""));
+        assert!(inbox.contains("{ slot = \"\", text = \"thinking\", since = 0 }"), "{inbox}");
+        assert!(inbox.contains("slot = \"l1\", text = \"reading \\\"main.rs\\\"\""), "{inbox}");
+    }
 
     #[test]
     fn spoken_channels_become_slash_commands() {
