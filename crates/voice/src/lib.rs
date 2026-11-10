@@ -217,6 +217,9 @@ pub static HOLDING: AtomicBool = AtomicBool::new(false);
 pub static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 /// Set once the mic is closed after SHUTDOWN.
 pub static STOPPED: AtomicBool = AtomicBool::new(false);
+/// Set by the companion when something could not reach the game (every slot
+/// spent): the voice loop answers with three quick pulses, which need no slot.
+pub static ALERT: AtomicBool = AtomicBool::new(false);
 
 pub fn listen(
     model: &Path,
@@ -308,6 +311,10 @@ pub fn listen(
     let rumbler = pad::Rumbler::new(vid, pid);
     let mut holding: Option<&str> = None;
     let mut pressed_at = Instant::now();
+    // the opening pulse waits until a press has outlasted a tap: a tap (which
+    // the game handles itself, opening the window) stays silent, and feeling
+    // the pulse means "this is a hold, I'm listening"
+    let mut pulsed = false;
     let mut retry_pad = Instant::now();
     let mut retry_mic = Instant::now();
     let mut healed_at: Option<Instant> = None;
@@ -373,6 +380,9 @@ pub fn listen(
             }
             continue;
         }
+        if ALERT.swap(false, Ordering::SeqCst) && rumbles {
+            rumbler.play(&[(0, PULSE, PULSE), (60, 0, 0), (120, PULSE, PULSE), (180, 0, 0), (240, PULSE, PULSE), (300, 0, 0)]);
+        }
         // first match wins, so holding both does one thing rather than two
         let held = bindings
             .iter()
@@ -413,10 +423,7 @@ pub fn listen(
                 if !hold_mode && beeps {
                     cue(cue_device.clone(), cue_volume, &CUE_OPEN);
                 }
-                if rumbles {
-                    // one firm pulse: listening
-                    rumbler.play(&[(0, PULSE, PULSE), (120, 0, 0)]);
-                }
+                pulsed = false;
                 println!("listening for {role}");
             }
             (None, Some(role)) => {
@@ -442,8 +449,9 @@ pub fn listen(
                     // falling fifth on release: rising means live, falling means it has it
                     cue(cue_device.clone(), cue_volume, &CUE_SHUT);
                 }
-                if rumbles {
-                    // one softer, shorter pulse: got it (the player found two too much)
+                if rumbles && pulsed {
+                    // one softer, shorter pulse: got it (the player found two too much);
+                    // none after a tap, which never got the opening pulse either
                     rumbler.play(&[(0, PULSE_SOFT, PULSE_SOFT), (80, 0, 0)]);
                 }
                 let seconds = clip.len() as f32 / WHISPER_RATE as f32;
@@ -468,8 +476,11 @@ pub fn listen(
                             println!("heard nothing (level {level:.4})");
                             let _ = heard("notice", "I heard nothing in that clip, so nothing was sent.");
                         }
-                        // Whisper filling silence with its own prompt, at any volume
-                        Ok(text) if echoes_prompt(&text) => {
+                        // Whisper filling silence with its own prompt: nothing but the
+                        // echo, or an echo in a clip too quiet to hold speech (a dead
+                        // mic measured 0.0011; speech here is 0.016 and up)
+                        Ok(text) if without_echo(&text).is_empty()
+                            || (level < SILENCE && without_echo(&text) != text.trim()) => {
                             println!("heard only the prompt echoed (level {level:.4}); ignored {text:?}");
                             let _ = heard("notice", "That clip held no words I could make out, so nothing was sent.");
                         }
@@ -480,6 +491,9 @@ pub fn listen(
                             ));
                         }
                         Ok(text) => {
+                            // Whisper sometimes glues its prompt onto real speech
+                            // ("Commands: and, uh, ..."): keep the speech
+                            let text = without_echo(&text);
                             println!("heard ({seconds:.1}s, {role}, level {level:.4}): {text}");
                             // a failed delivery must not kill the loop: the game may
                             // be closed, or every slot spent until the next reload
@@ -489,6 +503,13 @@ pub fn listen(
                         }
                         Err(err) => eprintln!("transcribe failed: {err}"),
                     }
+                }
+            }
+            (Some(_), Some(_)) => {
+                if rumbles && !pulsed && pressed_at.elapsed() >= TAP {
+                    // one firm pulse: past a tap, so listening
+                    pulsed = true;
+                    rumbler.play(&[(0, PULSE, PULSE), (120, 0, 0)]);
                 }
             }
             _ => {}
@@ -506,13 +527,46 @@ fn loudness(clip: &[f32]) -> f32 {
     (clip.iter().map(|sample| sample * sample).sum::<f32>() / clip.len() as f32).sqrt()
 }
 
-/// Whisper, given silence, writes out the prompt it was seeded with
-/// ("Commands: the first one.", "World of Warcraft. Spells and macros: ...").
-fn echoes_prompt(text: &str) -> bool {
-    let lowered = text.trim().to_lowercase();
-    lowered.starts_with("commands:")
-        || lowered.starts_with("world of warcraft. spells")
-        || lowered.contains("spells and macros:")
+/// The transcript with any echo of Whisper's own prompt taken off the front.
+/// Given silence it writes the prompt out ("Commands: the first one."), and given
+/// speech it sometimes starts with it ("Commands: and, uh, ..."): dropping every
+/// clip that began that way threw away real speech at normal volume. So the echo
+/// is cut and what is left is the clip; empty means there was nothing else.
+#[cfg(test)]
+mod echo_tests {
+    use super::without_echo;
+
+    #[test]
+    fn keeps_speech_after_an_echo() {
+        assert_eq!(without_echo("Commands: and, uh, put Moonfire on R2"), "and, uh, put Moonfire on R2");
+        assert_eq!(without_echo("Put Moonfire on R2."), "Put Moonfire on R2.");
+    }
+
+    #[test]
+    fn an_echo_alone_is_nothing() {
+        assert_eq!(without_echo("Commands:"), "");
+        assert_eq!(without_echo("World of Warcraft. Spells and macros:"), "");
+        assert_eq!(without_echo("Commands: macro, action bar, slot, bind, chat"), "");
+    }
+}
+
+fn without_echo(text: &str) -> String {
+    let mut rest = text.trim();
+    loop {
+        let lowered = rest.to_lowercase();
+        let cut = ["commands:", "world of warcraft.", "spells and macros:"]
+            .iter()
+            .find_map(|echo| lowered.starts_with(echo).then_some(echo.len()));
+        match cut {
+            Some(len) => rest = rest[len..].trim_start_matches(|c: char| c.is_whitespace() || c == ','),
+            None => break,
+        }
+    }
+    // an echo can carry the prompt's own spell list or command words after it
+    if rest.to_lowercase().starts_with("macro, action bar, slot") {
+        return String::new();
+    }
+    rest.trim().to_string()
 }
 
 fn phantom(text: &str) -> bool {

@@ -848,12 +848,24 @@ fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
 /// The window's own bell, checked on every poll beside the slot bells: ringing it
 /// opens the window, and spends no slot.
 fn ring_show_bell(addons: &Path) -> io::Result<()> {
+    // The game opens this bell every half second, so it is locked more often than
+    // a slot's; a 2 s retry gave up (measured). Rung off the voice loop and kept at
+    // for up to 10 s: a tap is not urgent, but it should not be lost.
     let bell = addons.join(ADDON).join("Signals").join("show.wav");
-    write_reporting(&bell, &silent_wav())?;
-    let addons = addons.to_path_buf();
     thread::spawn(move || {
+        let start = Instant::now();
+        while fs::write(&bell, silent_wav()).is_err() {
+            if start.elapsed() > Duration::from_secs(10) {
+                eprintln!("  could not ring the window bell: it stayed locked");
+                return;
+            }
+            thread::sleep(Duration::from_millis(30));
+        }
         thread::sleep(BELL_HEARD);
-        let _ = write_reporting(&addons.join(ADDON).join("Signals").join("show.wav"), &[]);
+        let start = Instant::now();
+        while fs::write(&bell, []).is_err() && start.elapsed() < Duration::from_secs(10) {
+            thread::sleep(Duration::from_millis(30));
+        }
     });
     Ok(())
 }
