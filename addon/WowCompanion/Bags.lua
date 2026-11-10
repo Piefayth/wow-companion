@@ -122,7 +122,20 @@ local function build()
 	local function region(b, key, global)
 		return b[key] or _G[b:GetName() .. global]
 	end
+	-- the template's own overlays, shown by Blizzard's ContainerFrame updates we
+	-- do not run: the store highlight (BattlepayItemTexture, a soft blue outline,
+	-- shown by default: on every slot, 2026-11-10), the new-item glow, the flash,
+	-- the quest, upgrade and junk marks. Hidden through the regions' own methods.
+	local OVERLAYS = { "BattlepayItemTexture", "NewItemTexture", "flash", "IconQuestTexture", "UpgradeIcon", "JunkIcon" }
+	local function plain(b)
+		for _, key in ipairs(OVERLAYS) do
+			local r = b[key] or _G[b:GetName() .. key]
+			if r and r.Hide then r:Hide() end
+		end
+		if b.newitemglowAnim and b.newitemglowAnim:IsPlaying() then b.newitemglowAnim:Stop() end
+	end
 	local function paint(b)
+		plain(b)
 		local m = meta[b]
 		local info = C_Container.GetContainerItemInfo(m.bag, m.slot)
 		local icon = region(b, "icon", "IconTexture")
