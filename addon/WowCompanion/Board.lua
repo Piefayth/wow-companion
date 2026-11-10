@@ -87,7 +87,9 @@ local function buildToast()
 	frame.rule:SetPoint("TOPLEFT", PAD, -PAD - 17)
 	frame.rule:SetPoint("TOPRIGHT", -PAD, -PAD - 17)
 	frame.rows = {}
-	-- in combat nothing shows; what arrived is shown when the fight ends
+	-- shown in combat too (the player, 2026-11-10: hiding it mid-fight was the
+	-- "disappearing" panel). It is a plain frame with no mouse, so nothing
+	-- restricts it; toastHeld stays for anything that still defers.
 	frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 	frame:SetScript("OnEvent", function()
 		if toastHeld then
@@ -156,11 +158,6 @@ local function toast(text, r, g, b, hold)
 		toastFrame:Hide()
 		return
 	end
-	if InCombatLockdown() then
-		toastHeld = function() toast(text, r, g, b, hold) end
-		toastFrame:Hide()
-		return
-	end
 	placeToast(toastFrame)
 	boardMode(toastFrame, false)
 	toastFrame.text:SetText(text)
@@ -181,11 +178,6 @@ function WC.Toast(...) return toast(...) end
 
 local function toastBoard(rows)
 	toastFrame = toastFrame or buildToast()
-	if InCombatLockdown() then
-		toastHeld = function() toastBoard(rows) end
-		toastFrame:Hide()
-		return
-	end
 	placeToast(toastFrame)
 	boardMode(toastFrame, true)
 	for i, item in ipairs(rows) do
