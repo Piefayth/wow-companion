@@ -140,8 +140,14 @@ function WC.BagsInput.Build(f)
 			local pad = self:GetFrameRef("pad")
 			if PlayerInCombat() then
 				if pad:IsShown() then pad:Hide() else pad:Show() end
-			elseif pad:IsShown() then pad:CallMethod("Shut") else pad:CallMethod("Open") end
+			else pad:CallMethod("Toggle") end
 		]])
+	end
+	-- out of combat the window decides, not the pad: a pad left shown with the
+	-- window hidden (a reload, a close by plain code) made the first press a
+	-- Shut and the bags opened only on the second (the player, 2026-11-10)
+	function pad:Toggle()
+		if f:IsShown() and f:GetAlpha() > 0 then f:Shut() else f:Open() end
 	end
 	function pad:Open() f:Open() end
 	function pad:Shut() f:Shut() end
