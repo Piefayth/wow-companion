@@ -210,7 +210,7 @@ pub fn listen(
             match result {
                         Ok(text) if text.is_empty() => {
                             println!("heard nothing (level {level:.4})");
-                            let _ = heard("notice", "I heard nothing in that clip, so nothing was sent.");
+                            let _ = heard(&format!("{role} notice"), "I heard nothing in that clip, so nothing was sent.");
                         }
                         // Whisper filling silence with its own prompt: nothing but the
                         // echo, or an echo in a clip too quiet to hold speech (a dead
@@ -218,11 +218,11 @@ pub fn listen(
                         Ok(text) if without_echo(&text).is_empty()
                             || (level < SILENCE && without_echo(&text) != text.trim()) => {
                             println!("heard only the prompt echoed (level {level:.4}); ignored {text:?}");
-                            let _ = heard("notice", "That clip held no words I could make out, so nothing was sent.");
+                            let _ = heard(&format!("{role} notice"), "That clip held no words I could make out, so nothing was sent.");
                         }
                         Ok(text) if level < SILENCE && phantom(&text) => {
                             println!("heard only silence (level {level:.4}); ignored {text:?}");
-                            let _ = heard("notice", &format!(
+                            let _ = heard(&format!("{role} notice"), &format!(
                                 "That clip sounded like silence (I made out only {text:?}), so nothing was sent."
                             ));
                         }
@@ -240,7 +240,7 @@ pub fn listen(
                         }
                         Err(err) => {
                             eprintln!("transcribe failed: {err}");
-                            let _ = heard("notice", &format!("I could not transcribe that clip ({err}), so nothing was sent."));
+                            let _ = heard(&format!("{role} notice"), &format!("I could not transcribe that clip ({err}), so nothing was sent."));
                         }
             }
         }
@@ -377,7 +377,7 @@ pub fn listen(
                 } else if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
                     // held long enough to mean it, yet almost no audio arrived
                     println!("too short, ignored ({seconds:.2}s of audio)");
-                    let _ = heard("notice", &format!(
+                    let _ = heard(&format!("{role} notice"), &format!(
                         "I got only {seconds:.1}s of audio from that press, so nothing was sent. If you spoke, the mic may not be sending."
                     ));
                 } else {

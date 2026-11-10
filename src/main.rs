@@ -351,6 +351,16 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             "ask tap" => deliver("{ kind = \"show\" }".to_string()),
             // the voice loop's own news (a reconnected headset), for the window
             "notice" => deliver(log_inbox("error", text, None, None)),
+            // a clip's own notice ("nothing was sent") goes to the conversation it
+            // was for, not whichever one the window shows ("ask@r2 notice")
+            r if r.ends_with(" notice") => {
+                let role = r.trim_end_matches(" notice");
+                let slot = match role {
+                    "ask" => Some(""),
+                    _ => role.strip_prefix("ask@").filter(|slot| *slot != "say"),
+                };
+                deliver(log_inbox_in(slot, "error", text, None, None))
+            }
             _ if role.ends_with(" tap") => Ok(()),
             r if r.starts_with("ask") && r.ends_with(" heard") => {
                 *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
