@@ -38,8 +38,9 @@ const SLOTS_LOW: u32 = 8;
 static RELOAD_OFFERED: Mutex<String> = Mutex::new(String::new());
 // requests to the agent running right now; a restart waits for zero
 static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
-/// How long after the last clip a request waits for the player to add to it.
-const GATHER: Duration = Duration::from_millis(2000);
+/// How long after the last clip a request waits for the player to add to it:
+/// long enough to slip off the button and back on, short enough not to be felt.
+const GATHER: Duration = Duration::from_millis(500);
 
 /// Counts a request out of IN_FLIGHT however its thread ends.
 struct InFlight;
