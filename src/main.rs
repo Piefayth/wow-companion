@@ -1241,8 +1241,27 @@ fn watch_for_restart(args: Vec<String>) {
     }
 }
 
+/// What identifies the game's UI session for the slot cursor: the last save
+/// (written at every /reload and logout) and when the running Wow.exe started.
+/// The second matters: a freshly launched game starts its own cursor at 1 before
+/// it has saved anything, and messages counted against the old session sent the
+/// fresh addon waiting on a slot that had already rung (2026-11-10).
 fn saved_variables_stamp(addons: &Path) -> Option<String> {
-    session_began(addons).map(|millis| millis.to_string())
+    let saved = session_began(addons).map(|millis| millis.to_string())?;
+    Some(format!("{saved}|{}", game_started().unwrap_or_default()))
+}
+
+/// When the running Wow.exe started, as Windows reports it; None if not running.
+fn game_started() -> Option<String> {
+    let out = std::process::Command::new("wmic")
+        .args(["process", "where", "name='Wow.exe'", "get", "CreationDate"])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .find(|line| line.chars().next().is_some_and(|c| c.is_ascii_digit()))
+        .map(str::to_string)
 }
 
 /// When the running UI session started, near enough: a `/reload` writes SavedVariables

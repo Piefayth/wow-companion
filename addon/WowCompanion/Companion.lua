@@ -1861,31 +1861,33 @@ end
 -- read from the save file instead of guessed at.
 local channel = { polls = 0, heard = 0, caughtUp = 0 }
 
--- Each message's bell rings for about two seconds. Missing that window once (a
--- hitch, a locked file) used to leave the addon waiting on that slot forever
--- while the companion moved on to the next ones: every later message lost until
--- a reload, which is what "broken again" was. So the next slot's bell is checked
--- too: if it rings, the missed slot (still on disk, never loaded) is taken first,
--- then this one. Late and in order, never lost.
+-- Each message's bell rings for about two seconds, and only the newest rings:
+-- the companion silences the rest before each send. So all BELLS bells are
+-- listened to, and whichever rings says how far ahead the companion is: the slots
+-- up to it (still on disk, never loaded) are taken in order. Falling behind for
+-- any reason (a missed ring, messages sent while the game was still loading)
+-- corrects itself, up to BELLS slots behind. Checking only the next slot or two
+-- left the addon waiting forever on a slot that had already rung.
 local function poll()
 	channel.polls = channel.polls + 1
 	channel.lastPoll = time()
 	channel.waitingOn = nextSlot
 	local waiting = nextSlot
-	safely("bell poll", listen, bellPath(waiting), function(rang)
-		if rang and nextSlot == waiting then
-			channel.heard = channel.heard + 1
-			safely("a message from the companion", receive)
-		end
-	end)
-	safely("bell poll ahead", listen, bellPath(waiting + 1), function(rang)
-		if rang and nextSlot == waiting then
-			channel.caughtUp = channel.caughtUp + 1
-			channel.lastCaughtUp = ("slot %d missed, taken late at %s"):format(waiting, date("%H:%M:%S"))
-			safely("a missed message from the companion", receive)
-			safely("a message from the companion", receive)
-		end
-	end)
+	for ahead = 0, BELLS - 1 do
+		safely("bell poll", listen, bellPath(waiting + ahead), function(rang)
+			if rang and nextSlot == waiting then
+				if ahead == 0 then
+					channel.heard = channel.heard + 1
+				else
+					channel.caughtUp = channel.caughtUp + 1
+					channel.lastCaughtUp = ("%d slot(s) behind at slot %d, caught up at %s"):format(ahead, waiting, date("%H:%M:%S"))
+				end
+				for _ = 0, ahead do
+					safely("a message from the companion", receive)
+				end
+			end
+		end)
+	end
 end
 
 -- Polled from OnUpdate, which WoW keeps calling whatever happened the frame
