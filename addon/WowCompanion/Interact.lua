@@ -72,23 +72,29 @@ do
 	local held = false
 	local button = _G[BUTTON_NAME] or CreateFrame("Button", BUTTON_NAME, UIParent, "SecureActionButtonTemplate")
 	button:RegisterForClicks("AnyDown", "AnyUp")
+	-- "back": after looting, one press puts the enemy kept in focus back as the
+	-- target, and lets focus go
+	local back = _G["WCCombatInteractBack"] or CreateFrame("Button", "WCCombatInteractBack", UIParent, "SecureActionButtonTemplate")
+	back:RegisterForClicks("AnyDown")
+	if not InCombatLockdown() then
+		back:SetAttribute("type", "macro")
+		back:SetAttribute("macrotext", "/target [@focus,harm,nodead] focus\n/clearfocus")
+	end
 	-- Plan A: a secure /cleartarget on the way down, only in mode "clear"
 	local function applyMode()
 		if InCombatLockdown() then return end
 		if db().mode == "clear" then
 			button:SetAttribute("type", "macro")
-			-- only a live hostile target blocks soft interact; Blizzard turns it
-			-- back on at PLAYER_TARGET_CHANGED, then interact takes the corpse
-			-- [@target]: without it the condition also reads the soft enemy target,
-			-- so with a live mob merely nearby Home stayed "clear" and never looted
-			-- (traced 2026-11-10: the state flipped clear/take with no target at all)
-			-- First the last target: TargetEnemyAttacker moves the target off a
-			-- kill at once, so the corpse just made is usually the last target.
-			-- If that one is dead, Home is now "corpse" and the next press loots
-			-- exactly it (not the nearest chest); if it is alive, it is cleared and
-			-- soft interact picks (the player, 2026-11-10: "the closest not-alive
-			-- thing", for a melee spec standing among mobs and objects).
-			button:SetAttribute("macrotext", "/targetlasttarget\n/cleartarget [@target,harm,nodead]")
+			-- Why "arm" (the player, 2026-11-10; /targetlasttarget and /cleartarget
+			-- both rejected): Blizzard keeps soft interact off while the hard target
+			-- is attackable in combat (TargetLogic.lua UpdateSoftTargetInteract),
+			-- and SoftTargetInteract is a secure CVar: our SetTempCVar is blocked,
+			-- and /console runs forceinsecure() (SlashCommands.lua). So the target
+			-- changes, but to YOU, not to nothing: the enemy is kept in focus, you
+			-- are not attackable, Blizzard turns soft interact on itself, and the
+			-- gamepad's TargetEnemyAttacker does not grab a new target (it only
+			-- acts with no target; the race that undid /cleartarget).
+			button:SetAttribute("macrotext", "/focus [@target,harm,nodead]\n/target player")
 		else
 			button:SetAttribute("type", nil)
 			button:SetAttribute("macrotext", nil)
@@ -136,10 +142,15 @@ do
 		if not key then return end
 		if newstate == "clear" then
 			self:SetBindingClick(true, key, "WCCombatInteract", "LeftButton")
+		elseif newstate == "back" then
+			self:SetBindingClick(true, key, "WCCombatInteractBack", "LeftButton")
 		elseif newstate == "corpse" then
 			-- the hard target is a dead mob: Blizzard keeps soft interact off for
 			-- it (UnitCanAttack is true of a corpse; traced), so interact with it
 			self:SetBinding(true, key, "INTERACTTARGET")
+		elseif newstate == "none" then
+			-- in combat, nothing lootable picked yet: Home does nothing, so it
+			-- never opens a chest mid-fight (it cannot: "Ability is not ready")
 		else
 			self:SetBinding(true, key, "INTERACTSOFTTARGET")
 		end
@@ -190,7 +201,7 @@ do
 		local d = db()
 		switch:SetAttribute("key", d.key)
 		UnregisterStateDriver(switch, "interact")
-		if d.key then RegisterStateDriver(switch, "interact", "[@target,harm,nodead] clear; [@target,dead] corpse; take") end
+		if d.key then RegisterStateDriver(switch, "interact", "[@softinteract,dead] take; [@target,dead] corpse; [combat,@target,harm,nodead] clear; [combat,@focus,harm,nodead] back; [combat] none; take") end
 		if d.takeKey then SetOverrideBinding(owner, false, d.takeKey, "INTERACTSOFTTARGET") end
 		applyMode()
 		return true
