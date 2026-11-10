@@ -273,14 +273,16 @@ Transcript.__index = Transcript
 -- order, and the companion's `started` progress takes the oldest.
 local queuedLive, queuedBySlot, queuedNext = {}, {}, 0
 local queuedRows = {}
-local SPIN = { "|", "/", "-", "\\" }
+-- quiet: dots filling in slowly, as the waiting line does (the player found a
+-- spinning character too busy, 2026-11-10)
+local SPIN = { "", ".", "..", "..." }
 local spinTicker
 local function paintQueued()
-	local turn = math.floor(GetTime() * 6) % #SPIN + 1
+	local turn = math.floor(GetTime() * 2) % #SPIN + 1
 	local alive = {}
 	for _, row in ipairs(queuedRows) do
 		if queuedLive[row.queued] and row.fs:IsShown() then
-			row.fs:SetText(row.base .. "  |cff9d9d9dqueued behind the request before it  " .. SPIN[turn] .. "|r")
+			row.fs:SetText(row.base .. "  |cff9d9d9dqueued" .. SPIN[turn] .. "|r")
 			alive[#alive + 1] = row
 		else
 			row.fs:SetText(row.base)
@@ -291,7 +293,7 @@ local function paintQueued()
 end
 local function watchQueued(row)
 	queuedRows[#queuedRows + 1] = row
-	if not spinTicker then spinTicker = C_Timer.NewTicker(0.17, paintQueued) end
+	if not spinTicker then spinTicker = C_Timer.NewTicker(0.5, paintQueued) end
 	paintQueued()
 end
 local function queueRequest(slot)
