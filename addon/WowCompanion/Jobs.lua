@@ -32,17 +32,18 @@ local refresh
 -- small icon buttons on the lines that already say what is going on (the
 -- player, 2026-11-10: "you could have just used little smaller icons and the
 -- existing working/running paradigm"): the game's own art, named in a tooltip
-local ICONS = {
-	cancel = { "Interface\\Buttons\\UI-GroupLoot-Pass-Up", "Interface\\Buttons\\UI-GroupLoot-Pass-Down", "Interface\\Buttons\\UI-GroupLoot-Pass-Highlight" },
-	now = { "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up", "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down", "Interface\\Buttons\\UI-Common-MouseHilight" },
-}
+-- one family of flat icons from the game's own common set (the player,
+-- 2026-11-10: the glowing loot X beside a plain arrow did not match)
+local ICONS = { cancel = "common-icon-redx", now = "common-icon-forwardarrow" }
 local function icon(parent, kind, tip, onClick)
 	local b = CreateFrame("Button", nil, parent)
 	b:SetSize(20, 20)
-	local art = ICONS[kind]
-	b:SetNormalTexture(art[1])
-	b:SetPushedTexture(art[2])
-	b:SetHighlightTexture(art[3], "ADD")
+	b:SetSize(16, 16)
+	b:SetNormalAtlas(ICONS[kind])
+	b:SetPushedAtlas(ICONS[kind])
+	b:GetPushedTexture():SetVertexColor(0.7, 0.7, 0.7)
+	b:SetHighlightAtlas(ICONS[kind], "ADD")
+	b:GetHighlightTexture():SetAlpha(0.4)
 	b:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:SetText(tip)
