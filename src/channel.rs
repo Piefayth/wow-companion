@@ -81,6 +81,10 @@ pub(crate) fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
         SENDING.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     };
     if !game_running()? {
+        // a conversation line waits in the save file for the next login
+        if crate::offline::keep(addons, inbox)? {
+            return Ok(());
+        }
         return Err(io::Error::other("Wow.exe isn't running, so nothing would read this"));
     }
     // A reply or a progress line is read by handlers every version of the addon

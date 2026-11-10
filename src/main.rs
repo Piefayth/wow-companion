@@ -13,6 +13,7 @@ mod context;
 mod restart;
 mod chat;
 mod install;
+mod offline;
 use channel::*;
 use requests::*;
 use context::*;
