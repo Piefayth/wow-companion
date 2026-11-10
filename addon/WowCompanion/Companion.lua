@@ -672,7 +672,10 @@ local function buildLog()
 		local pick = SIZES[index] or SIZES[2]
 		-- grow from the top-left corner, so the window stays where it is
 		local left, top = frame:GetLeft(), frame:GetTop()
-		frame:SetSize(pick[1], pick[2])
+		-- never taller than the screen below its top, with room for the tabs
+		-- that hang under it (the large size ran off the bottom, measured)
+		local room = (top or (UIParent:GetHeight() - 116)) - 44
+		frame:SetSize(pick[1], math.min(pick[2], math.max(240, room)))
 		if left and top then
 			frame:ClearAllPoints()
 			frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
@@ -959,8 +962,10 @@ local function offer(label, macro)
 			return "could not build the button: " .. tostring(button)
 		end
 		actionButton = button
-		actionButton:SetSize(150, 24)
-		actionButton:SetPoint("BOTTOMRIGHT", -32, 12)
+		-- in the raised strip along the bottom, beside the waiting line and
+		-- clear of both wells (it overlapped them once the wells came in)
+		actionButton:SetSize(150, 22)
+		actionButton:SetPoint("BOTTOMRIGHT", -18, 8)
 		-- Measured, one variable at a time. "AnyUp": the wrapper runs -- PreClick and
 		-- PostClick both fire -- and the macro does not, which reads exactly like a
 		-- permissions refusal and is not one. Both edges: runs, but twice, once down
