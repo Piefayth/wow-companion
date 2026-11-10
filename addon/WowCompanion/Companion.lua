@@ -894,7 +894,7 @@ local function remember(who, text, continued, slot)
 	end
 	if slot == viewSlot then
 		showLine(who, text, continued, entries[#entries].at)
-	elseif not continued then
+	elseif not continued and who ~= "you" then
 		unread[slot] = true
 		paintConversations()
 	end
@@ -1483,10 +1483,8 @@ function handlers.log(inbox)
 	-- the conversation a line belongs to; lines that name none (chat lines,
 	-- notices) go to whichever is in view
 	local islot = inbox.slot or viewSlot
-	-- speaking into a conversation brings it up
-	if who == "you" and islot ~= viewSlot then
-		WowCompanion_SetConversation(islot)
-	end
+	-- the view never jumps on its own (the player, 2026-11-10): a reply in
+	-- another conversation lights it up in the list, and what you said does not
 	-- `pending` starts this conversation's waiting line; a line without it ends it
 	if inbox.slot or inbox.pending then setPending(inbox.pending, islot) end
 	-- "got it, transcribing" has no conversation yet: whatever line comes next
