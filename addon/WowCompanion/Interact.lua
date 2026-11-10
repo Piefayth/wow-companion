@@ -85,7 +85,20 @@ do
 			button:SetAttribute("macrotext", nil)
 		end
 	end
-	button:HookScript("OnClick", function(_, _, down)
+	button:HookScript("OnClick", function(self, _, down)
+		-- what each press saw, for the export (the player, 2026-11-10: in combat
+		-- with a hostile target, Home seemed to do nothing)
+		pcall(function()
+			local d = db()
+			d.presses = d.presses or {}
+			table.insert(d.presses, 1, ("%s %s combat=%s target=%s harm=%s type=%s macro=%s soft=%s state=%s"):format(
+				date("%H:%M:%S"), down and "down" or "up", tostring(InCombatLockdown()),
+				tostring(UnitExists("target")), tostring(UnitCanAttack("player", "target")),
+				tostring(self:GetAttribute("type")), tostring(self:GetAttribute("macrotext")),
+				tostring(C_CVar.GetCVar("SoftTargetInteract")),
+				tostring(_G.WCCombatInteractSwitch and _G.WCCombatInteractSwitch:GetAttribute("state-interact"))))
+			while #d.presses > 12 do table.remove(d.presses) end
+		end)
 		if db().mode == "clear" or InCombatLockdown() then return end
 		held = down and true or false
 		if held then setInteract(true) else blizzardRule() end
