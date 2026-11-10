@@ -18,6 +18,12 @@ local function build()
 		edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
 		edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 },
 	})
+	-- the dialog texture is translucent: the quest tracker showed through
+	-- (screenshot, 2026-11-10), so a solid layer goes under it
+	local solid = f:CreateTexture(nil, "BACKGROUND", nil, -8)
+	solid:SetPoint("TOPLEFT", 11, -12)
+	solid:SetPoint("BOTTOMRIGHT", -12, 11)
+	solid:SetColorTexture(0.04, 0.04, 0.04, 1)
 	f:Hide()
 	-- even margins all round (the player, 2026-11-10): EDGE from the border's
 	-- inside on every side, a title row, the grid, a legend row
