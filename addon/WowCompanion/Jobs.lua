@@ -68,8 +68,8 @@ local function build(i)
 	-- small icon buttons (the player, 2026-11-10: "whole wordy buttons"): the
 	-- game's own art, the name in a tooltip when the cursor lands on one
 	local ICONS = {
-		cancel = { "Interface\Buttons\UI-GroupLoot-Pass-Up", "Interface\Buttons\UI-GroupLoot-Pass-Down", "Interface\Buttons\UI-GroupLoot-Pass-Highlight" },
-		now = { "Interface\Buttons\UI-SpellbookIcon-NextPage-Up", "Interface\Buttons\UI-SpellbookIcon-NextPage-Down", "Interface\Buttons\UI-Common-MouseHilight" },
+		cancel = { "Interface\\Buttons\\UI-GroupLoot-Pass-Up", "Interface\\Buttons\\UI-GroupLoot-Pass-Down", "Interface\\Buttons\\UI-GroupLoot-Pass-Highlight" },
+		now = { "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up", "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down", "Interface\\Buttons\\UI-Common-MouseHilight" },
 	}
 	local function button(text, onClick, icon)
 		local b = CreateFrame("Button", nil, p)
