@@ -121,18 +121,18 @@ end
 
 -- the heartbeat
 local present = { false, false }
-local lastSeen = nil
-local swappedAt = nil
+local lastKey = nil -- which bells were present at the last check, as "a", "b", "ab" or ""
+local changedAt = nil -- GetTime() of the last change seen
 
+-- Any change in which bells exist is a beat. Judging by "which one" alone read
+-- both-present (a slow delete) as no swap, and the mark flapped on and off.
 local function decide()
-	local which = present[1] and 1 or (present[2] and 2) or nil
-	if which and lastSeen and which ~= lastSeen then
-		swappedAt = GetTime()
+	local key = (present[1] and "a" or "") .. (present[2] and "b" or "")
+	if lastKey and key ~= lastKey then
+		changedAt = GetTime()
 	end
-	if which then
-		lastSeen = which
-	end
-	show(which ~= nil and swappedAt ~= nil and GetTime() - swappedAt < STALE)
+	lastKey = key
+	show(key ~= "" and changedAt ~= nil and GetTime() - changedAt < STALE)
 end
 
 local function check(index)
