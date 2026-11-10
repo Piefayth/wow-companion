@@ -234,6 +234,8 @@ function Transcript:Add(who, text, continued, at, queued)
 			local stamp = date("%H:%M", at or time())
 			local header = ("%s%s|r  |cff5c6370%s|r"):format(voice[2], voice[1], stamp)
 			local row = self:Row("GameFontNormalSmall", header, 0, TURN_GAP)
+			-- your own message's header carries its controls (Jobs.lua)
+			if who == "you" then row.you = true end
 			if queued and queuedLive[queued] then
 				row.base, row.queued = header, queued
 				watchQueued(row)

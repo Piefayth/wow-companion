@@ -108,15 +108,11 @@ refresh = function()
 	end
 	-- the waiting line: hearing first (the newest thing), else the running request
 	statusX = statusX or icon(frame, "cancel", CANCEL or "Cancel", cancel)
+	-- only a clip still being heard has no line of its own yet: its X sits
+	-- on the waiting line; a request being worked on has it on its own line
 	local target
 	local since = (core.transcribing or {})[view]
-	if since then
-		target = { state = "hearing", slot = view }
-	else
-		for _, job in ipairs(jobs) do
-			if job.slot == view and job.state == "working" then target = job end
-		end
-	end
+	if since then target = { state = "hearing", slot = view } end
 	if target and frame.pending:IsShown() then
 		statusX.job = target
 		statusX:ClearAllPoints()
@@ -162,6 +158,34 @@ refresh = function()
 			pair.go:SetPoint("RIGHT", pair.x, "LEFT", -2, 0)
 			pair.go:SetShown(runningThere and not job.sending)
 		end
+	end
+	-- the request being worked on: an X on its own line, the newest of yours
+	-- that is not queued (the player, 2026-11-10: "on the chat message like it
+	-- is for everything else")
+	local running
+	for _, job in ipairs(jobs) do
+		if job.slot == view and job.state == "working" then running = job end
+	end
+	local runRow
+	if running then
+		for i = #(transcript.rows or {}), 1, -1 do
+			local row = transcript.rows[i]
+			if row.you and not row.queued and row.fs:IsShown() then runRow = row break end
+		end
+	end
+	if runRow then
+		used = used + 1
+		local pair = pairsPool[used]
+		if not pair then
+			pair = { x = icon(transcript.content, "cancel", CANCEL or "Cancel", cancel),
+				go = icon(transcript.content, "now", "Send now", sendNow) }
+			pairsPool[used] = pair
+		end
+		pair.x.job = running
+		pair.x:ClearAllPoints()
+		pair.x:SetPoint("TOPRIGHT", runRow.fs, "TOPRIGHT", -4, 3)
+		pair.x:Show()
+		pair.go:Hide()
 	end
 	for i = used + 1, #pairsPool do
 		pairsPool[i].x:Hide()
@@ -268,19 +292,26 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	-- the legend: what square and triangle do right now, shown only while
 	-- they work (the player, 2026-11-10: "no input legend")
 	if window then
-		if not window.jobsLegend then
-			local fs = window:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-			fs:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -24, 14)
-			fs:SetJustifyH("RIGHT")
-			window.jobsLegend = fs
+		-- the game's own button prompts (the glyph art, as the destroy dialog
+		-- uses), not key names: "3" was PAD3's text name (the player, 2026-11-10)
+		if not window.jobsCancelPrompt and WowCompanion_Style and WowCompanion_Style.Prompt then
+			window.jobsCancelPrompt = WowCompanion_Style.Prompt(window, "PAD3", CANCEL or "Cancel")
+			window.jobsCancelPrompt:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -22, 10)
+			window.jobsNowPrompt = WowCompanion_Style.Prompt(window, "PAD4", "Send now")
+			window.jobsNowPrompt:SetPoint("RIGHT", window.jobsCancelPrompt, "LEFT", -14, 0)
 		end
-		local parts = {}
-		if focused then
-			if newest() then parts[#parts + 1] = WowCompanion_Glyph("PAD3") .. " " .. (CANCEL or "Cancel") end
-			if newest("queued") then parts[#parts + 1] = WowCompanion_Glyph("PAD4") .. " Send now" end
+		if window.jobsCancelPrompt then
+			local canCancel = focused and newest() ~= nil
+			local canSend = focused and newest("queued") ~= nil
+			window.jobsCancelPrompt:SetShown(canCancel)
+			window.jobsNowPrompt:ClearAllPoints()
+			if canCancel then
+				window.jobsNowPrompt:SetPoint("RIGHT", window.jobsCancelPrompt, "LEFT", -14, 0)
+			else
+				window.jobsNowPrompt:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -22, 10)
+			end
+			window.jobsNowPrompt:SetShown(canSend)
 		end
-		window.jobsLegend:SetText(table.concat(parts, "    "))
-		window.jobsLegend:SetShown(#parts > 0)
 	end
 	if focused and not bound then
 		SetOverrideBindingClick(keyOwner, true, "PAD3", "WCJobsCancelKey")
