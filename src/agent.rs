@@ -103,6 +103,14 @@ the controller section names, so the same chord fires StanceBar slots in cat or
 bear form and the other bar's out of form. Say which you chose and why, so a
 wrong form is caught. Changing form is the L1+L2 wheel, never an action slot.
 
+Layouts. The 'reach' section lists every castable spell, form versions included
+(a spell can become a different spell in cat or bear form), and what presses it.
+A layout you propose or apply must leave every line reachable: on a bar page, a
+wheel, or a macro. Rarely cast spells can go behind a wheel; none may go nowhere.
+Before you answer, check your layout against that list and name anything still
+unreachable, and why. Forms the section has not recorded yet are unknown, not
+empty: say so and ask them to shift into that form once.
+
 - `bar`: put something on an action bar slot, or empty one. `slot` is the slot
   number; `what` is spell, macro, item or empty; `name` is the spell, macro or item
   name exactly as in <character> (a spell or item ID also works). One slot per

@@ -1310,6 +1310,201 @@ end
 -- draws -- measured from the live UI instead of guessed from the classic bar
 -- layout. "bindings" is the other half: what the controller can already press, and
 -- therefore what is left for us.
+-- Every spell the player can cast, and where each one can be pressed.
+--
+-- The spellbook lists what it shows in the form you are in: Feral Charge reads
+-- "(Bear)" out of form and is a different spell in cat, and a layout designed from
+-- one export left the cat one off the bars. So each walk records what every entry
+-- turns into in the current form (its override, and the name the book shows), and
+-- keeps the union across forms in SavedVariables, refreshed whenever the form
+-- changes. A flyout ("Shapeshift") is opened up into its spells. The reach section
+-- then checks each castable one against the bar pages, wheels and macros, so a
+-- spell nothing can press is listed by name instead of quietly missing.
+local function bookEntries()
+	local found = {}
+	if not (C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines) then
+		return found
+	end
+	local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
+	local flyoutType = Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.Flyout
+	for tab = 1, C_SpellBook.GetNumSpellBookSkillLines() do
+		local info = C_SpellBook.GetSpellBookSkillLineInfo(tab)
+		local offset = info and info.itemIndexOffset or 0
+		for at = offset + 1, offset + (info and info.numSpellBookItems or 0) do
+			local item = C_SpellBook.GetSpellBookItemInfo(at, bank)
+			if item and item.name then
+				if flyoutType and item.itemType == flyoutType and GetFlyoutInfo and GetFlyoutSlotInfo then
+					-- called the way Blizzard's SpellFlyout.lua calls them
+					local _, _, numSlots = GetFlyoutInfo(item.actionID)
+					for i = 1, numSlots or 0 do
+						local spellID, overrideID, known, name = GetFlyoutSlotInfo(item.actionID, i)
+						if spellID and known then
+							found[#found + 1] = { id = spellID, override = overrideID,
+								name = name or spellName(spellID), flyout = item.name }
+						end
+					end
+				elseif item.spellID then
+					found[#found + 1] = { id = item.spellID, name = item.name, passive = item.isPassive or nil }
+				end
+			end
+		end
+	end
+	return found
+end
+
+local function noteForms()
+	if InCombatLockdown() then
+		return
+	end
+	WowCompanionDB.spellForms = WowCompanionDB.spellForms or {}
+	local store = WowCompanionDB.spellForms
+	local form = tostring(GetShapeshiftForm and GetShapeshiftForm() or 0)
+	for _, entry in ipairs(bookEntries()) do
+		local key = tostring(entry.id)
+		local known = store[key] or { forms = {} }
+		known.name = known.name or entry.name
+		known.passive = entry.passive
+		known.flyout = entry.flyout
+		local override = entry.override
+		if (not override or override == 0) and C_Spell and C_Spell.GetOverrideSpell then
+			local ok, id = pcall(C_Spell.GetOverrideSpell, entry.id)
+			override = ok and id or nil
+		end
+		local shown = entry.name
+		if override and override ~= 0 and override ~= entry.id then
+			shown = spellName(override) or shown
+		else
+			override = nil
+		end
+		known.forms[form] = { id = override or entry.id, name = shown }
+		store[key] = known
+	end
+end
+
+local function trim(text)
+	return (text:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function reachLines(line, frames)
+	pcall(noteForms)
+	local store = WowCompanionDB.spellForms or {}
+	local where = {}
+	local function reach(name, place)
+		if type(name) == "string" and name ~= "" then
+			local key = name:lower()
+			where[key] = where[key] or place
+		end
+	end
+	-- a slot counts if it is drawn now or sits on a gamepad bar or form page
+	local function pageOf(slot)
+		local drawn = frames and frames[slot]
+		if drawn and drawn.visible then
+			return tostring(drawn.label)
+		end
+		if (slot >= 181 and slot <= 208) or (slot >= 265 and slot <= 288) then
+			return "slot " .. slot .. " (form page)"
+		end
+	end
+	local function fromMacroBody(body, place)
+		for verb, rest in (body or ""):gmatch("/(%a+)%s+([^\n]+)") do
+			verb = verb:lower()
+			if verb == "cast" or verb == "use" or verb == "castsequence" then
+				rest = rest:gsub("%b[]", "")
+				for name in rest:gmatch("[^,;]+") do
+					name = trim(name):gsub("^reset=%S+%s*", ""):gsub("^!", "")
+					reach(trim(name), place)
+				end
+			end
+		end
+	end
+	for slot = 1, LAST_ACTION_SLOT do
+		local place = pageOf(slot)
+		if place and HasAction(slot) then
+			local kind, id = GetActionInfo(slot)
+			if kind == "spell" then
+				reach(spellName(id), place)
+				-- a slot holding the base spell fires its form's version too
+				for key, known in pairs(store) do
+					local match = tonumber(key) == id
+					for _, variant in pairs(known.forms or {}) do
+						if variant.id == id then match = true end
+					end
+					if match then
+						for _, variant in pairs(known.forms or {}) do
+							reach(variant.name, place)
+						end
+					end
+				end
+			elseif kind == "macro" then
+				local _, _, body = GetMacroInfo(id)
+				fromMacroBody(body, place .. " via macro")
+			end
+		end
+	end
+	local wheels = WowCompanionWheelDB and WowCompanionWheelDB.wheels or {}
+	for wheel, def in pairs(wheels) do
+		for _, slot in ipairs(def.slots or {}) do
+			if slot.spell then
+				local name = tonumber(slot.spell) and spellName(tonumber(slot.spell)) or tostring(slot.spell)
+				reach(name, "wheel " .. wheel)
+			elseif slot.macro then
+				local _, _, body = GetMacroInfo(slot.macro)
+				fromMacroBody(body, "wheel " .. wheel .. " via macro")
+			elseif slot.macrotext then
+				fromMacroBody(slot.macrotext, "wheel " .. wheel)
+			end
+		end
+	end
+
+	local keys = {}
+	for key in pairs(store) do keys[#keys + 1] = key end
+	table.sort(keys, function(a, b) return (store[a].name or "") < (store[b].name or "") end)
+	local rows, missing, done, formsSeen = {}, {}, {}, {}
+	for _, key in ipairs(keys) do
+		local known = store[key]
+		local variants = {}
+		for form, variant in pairs(known.forms or {}) do
+			formsSeen[form] = true
+			variants[#variants + 1] = ("form %s: %s (%s)"):format(form, variant.name, tostring(variant.id))
+		end
+		table.sort(variants)
+		if not known.passive then
+			local names = {}
+			for _, variant in pairs(known.forms or {}) do
+				if not done[variant.name] then
+					done[variant.name] = true
+					names[#names + 1] = variant.name
+				end
+			end
+			table.sort(names)
+			for _, name in ipairs(names) do
+				local at = where[name:lower()]
+				if not at and (known.flyout or name:find(" Form$")) then
+					at = "the L1+L2 form wheel"
+				end
+				rows[#rows + 1] = ("%s: %s%s"):format(name, at or "NOT REACHABLE",
+					#variants > 1 and ("  [" .. table.concat(variants, "; ") .. "]") or "")
+				if not at then
+					missing[#missing + 1] = name
+				end
+			end
+		end
+	end
+	local list = {}
+	for form in pairs(formsSeen) do list[#list + 1] = form end
+	table.sort(list)
+	line("-- every castable spell (passives left out) and what presses it. Spells turn")
+	line("-- into other spells in a form, and the book shows only the current form's,")
+	line("-- so this is the union over forms recorded so far: " .. table.concat(list, ", ")
+		.. " (0 is caster); a form not listed has not been entered since this began.")
+	line("-- A layout must give every line a place: a bar slot, a wheel, or a macro.")
+	for _, row in ipairs(rows) do
+		line(row)
+	end
+	line(("-- %d not reachable%s"):format(#missing,
+		#missing > 0 and (": " .. table.concat(missing, ", ")) or ""))
+end
+
 local function exportContext()
 	local newline = string.char(10)
 	local out = {}
@@ -1566,6 +1761,12 @@ local function exportContext()
 	end)
 	if not walked then
 		line("-- the spellbook walk failed partway; the lines above are what it reached")
+	end
+
+	section("reach")
+	local reached, why = pcall(reachLines, line, actionFrames())
+	if not reached then
+		line("-- the reach check failed: " .. tostring(why))
 	end
 
 	section("modules")
@@ -2327,10 +2528,17 @@ frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("ADDON_ACTION_BLOCKED")
 frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
+-- the spellbook shows a form's own spells only while in it
+frame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 frame:SetScript("OnEvent", function(_, event, ...)
 	if event == "ADDON_LOADED" then
 		-- Blizzard_ScriptErrors may load before or after us
 		pcall(watchErrors)
+	end
+	if event == "UPDATE_SHAPESHIFT_FORM" then
+		-- a moment later, once the book has swapped its entries
+		C_Timer.After(0.2, function() pcall(noteForms) end)
+		return
 	end
 	if event == "ADDON_LOADED" and ... == ADDON then
 		WowCompanionDB = WowCompanionDB or {}
