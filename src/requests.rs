@@ -147,7 +147,17 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
     // start the agent before announcing ourselves: the announcement costs a bell
     // wait, the agent costs several seconds, and they may as well run together
     voice::mark(&format!("agent starting [{}]", session.slot));
-    let waiting = session.start(spoken, agent_context_for(addons, &session.slot))?;
+    let mut context = agent_context_for(addons, &session.slot);
+    if wants_chat(spoken) {
+        set_working(&session.slot, "reading chat");
+        if let Some(chat) = live_chat(addons) {
+            context = Some(format!("{}
+== live chat ==
+-- read from the game just now, through the data strip
+{chat}", context.unwrap_or_default()));
+        }
+    }
+    let waiting = session.start(spoken, context)?;
     // a queued request already showed its words; now it only starts thinking
     if shown {
         // `started` first, so this one is not advisory: it is what ends the queued
@@ -268,7 +278,17 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
 pub(crate) fn think(addons: &Path, spoken: &str) -> io::Result<()> {
     let mut session = agent::Session::default();
     let started = Instant::now();
-    let waiting = session.start(spoken, agent_context_for(addons, &session.slot))?;
+    let mut context = agent_context_for(addons, &session.slot);
+    if wants_chat(spoken) {
+        set_working(&session.slot, "reading chat");
+        if let Some(chat) = live_chat(addons) {
+            context = Some(format!("{}
+== live chat ==
+-- read from the game just now, through the data strip
+{chat}", context.unwrap_or_default()));
+        }
+    }
+    let waiting = session.start(spoken, context)?;
     let answer = session.finish(waiting, |doing| println!("  ... {doing}"))?;
     println!("({:.1}s) say: {}", started.elapsed().as_secs_f32(), answer.say);
     println!("would send: {}", answer.inbox.as_deref().unwrap_or("nothing"));

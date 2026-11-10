@@ -5,9 +5,16 @@
 local M = WC.Module('LinkCatcher')
 local EVENTS = { 'CHAT_MSG_GUILD', 'CHAT_MSG_OFFICER', 'CHAT_MSG_PARTY', 'CHAT_MSG_PARTY_LEADER', 'CHAT_MSG_RAID', 'CHAT_MSG_RAID_LEADER', 'CHAT_MSG_INSTANCE_CHAT', 'CHAT_MSG_SAY', 'CHAT_MSG_YELL', 'CHAT_MSG_WHISPER', 'CHAT_MSG_BN_WHISPER', 'CHAT_MSG_CHANNEL' }
 
-local function heard(event, text, sender)
+-- recent chat, this session only, for the agent's live look (WCChatStrip)
+WCRecentChat = WCRecentChat or {}
+
+local function heard(event, text, sender, _, channelName)
   if type(text) ~= 'string' then return end
   local where = event:gsub('CHAT_MSG_', ''):lower()
+  if where == 'channel' and type(channelName) == 'string' and channelName ~= '' then where = channelName end
+  local plainText = text:gsub('|c%x%x%x%x%x%x%x%x', ''):gsub('|r', ''):gsub('|H[^|]*|h(.-)|h', '%1')
+  table.insert(WCRecentChat, 1, ('%s [%s] %s: %s'):format(date('%H:%M'), where, tostring(sender or '?'), plainText:sub(1, 200)))
+  while #WCRecentChat > 40 do table.remove(WCRecentChat) end
   for link in text:gmatch('(|c[^|]*|Hitem:[^|]+|h%[[^%]]+%]|h|r)') do
     local list = WowCompanionDB.links
     local entry = { link = link, from = tostring(sender or '?'), where = where, at = time() }
@@ -83,4 +90,17 @@ function WCOpenTradeLink(n)
   print(('opening %s from %s (%s)'):format(t.label, t.from, t.where))
   local ok, err = pcall(SetItemRef, t.data, t.full, 'LeftButton', ChatFrame1)
   if not ok then print('could not open it: ' .. tostring(err)) end
+end
+
+-- the companion asks for this before a request about chat or links: recent chat
+-- and the caught profession links, drawn as the data strip for the PC to read
+function WCChatStrip()
+  if not (WowCompanion_Strip and WowCompanion_Strip.Send) then return end
+  local out = { 'recent chat (newest first, this session):' }
+  for _, line in ipairs(WCRecentChat) do out[#out + 1] = line end
+  out[#out + 1] = 'profession links caught (n for WCOpenTradeLink(n), newest first):'
+  for i, e in ipairs(WowCompanionDB.tradeLinks or {}) do
+    out[#out + 1] = ('%d: %s from %s in %s at %s'):format(i, e.label or '?', e.from or '?', e.where or '?', e.at and date('%H:%M', e.at) or '?')
+  end
+  WowCompanion_Strip.Send(table.concat(out, '\n'), 6)
 end
