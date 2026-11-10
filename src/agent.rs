@@ -109,7 +109,7 @@ and spec, with where each comes from:
   `questName`); slots from `GearQuest.Data:GetSlotsForClass(classFile)`;
   `GearQuest.Compare:GetEquippedItemLevel(slot)` for the gain. pcall each call.
 Auctionator (installed): prices from the player's auction house scans, via
-`Auctionator.API.v1` (callerID is a string naming you, e.g. "WowCompanion"):
+`Auctionator.API.v1` (callerID is a string naming you, e.g. 'WowCompanion'):
 `GetAuctionPriceByItemID(callerID, itemID)`, `GetVendorPriceByItemID`,
 `GetAuctionAgeByItemID` (days since seen). Nil means never scanned: ask them to
 open the auction house once. Source: AddOns/Auctionator/Source/API.
