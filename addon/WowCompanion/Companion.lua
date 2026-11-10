@@ -16,6 +16,12 @@ local ticker
 local logWindow
 local pendingTicker
 local actionButton
+-- One offered button per conversation (the player, 2026-11-10): a Reload from
+-- one agent replaced the Quit another had just offered. Each keeps its own; the
+-- one secure button shows the offer of the conversation in view.
+local offers = {}
+-- the conversation of the message being handled, for the steps it carries
+local offerSlot
 -- which pad key the offer button binds to; set with /wc key <PADNAME>
 local offerKey
 
@@ -973,6 +979,8 @@ function WowCompanion_ViewSlot() return viewSlot end
 function WowCompanion_SetConversation(slot)
 	viewSlot = slot or ""
 	unreadSet()[viewSlot] = nil
+	-- the button follows the view: each conversation shows its own offer
+	if WowCompanion_ShowOffer then WowCompanion_ShowOffer(viewSlot) end
 	if renderPending then renderPending() end
 	logFrame().messages:Clear()
 	replayLog()
@@ -990,12 +998,7 @@ end
 -- SecureActionButtonTemplate for the secure path, UIPanelButtonTemplate so it looks
 -- like the game's own. Macro text is the limit of what it can do, which is also the
 -- limit of what the player could type -- it grants no power they lacked.
-local function offer(label, macro)
-	-- attributes on a secure frame cannot be set in combat, and this is
-	-- configuration anyway
-	if InCombatLockdown() then
-		return "refused: in combat"
-	end
+local function buildActionButton()
 	local frame = logFrame()
 	if not actionButton then
 		local made, button = pcall(CreateFrame, "Button", "WowCompanionDo", frame,
@@ -1004,10 +1007,17 @@ local function offer(label, macro)
 			return "could not build the button: " .. tostring(button)
 		end
 		actionButton = button
-		-- in the raised strip along the bottom, beside the waiting line and
-		-- clear of both wells (it overlapped them once the wells came in)
-		actionButton:SetSize(150, 22)
-		actionButton:SetPoint("BOTTOMRIGHT", -18, 8)
+		-- at the foot of the conversation list, the list's width, under its
+		-- buttons (the player, 2026-11-10): it belongs to the conversation in view
+		local last = frame.convButtons and frame.convButtons.r2
+		if last then
+			actionButton:SetSize(last:GetWidth(), 24)
+			actionButton:SetPoint("TOP", last, "BOTTOM", 0, -10)
+			actionButton:SetFrameLevel(last:GetFrameLevel() + 2)
+		else
+			actionButton:SetSize(150, 22)
+			actionButton:SetPoint("BOTTOMRIGHT", -18, 8)
+		end
 		-- Measured, one variable at a time. "AnyUp": the wrapper runs -- PreClick and
 		-- PostClick both fire -- and the macro does not, which reads exactly like a
 		-- permissions refusal and is not one. Both edges: runs, but twice, once down
@@ -1033,9 +1043,31 @@ local function offer(label, macro)
 			if ClearOverrideBindings then
 				ClearOverrideBindings(self)
 			end
+			if self.slot then offers[self.slot] = nil end
 			self:Hide()
 		end)
 	end
+	return frame
+end
+
+-- Put the view's offer on the button, or take the button away when it has none.
+-- Secure attributes cannot change in combat; the button then stays as it was
+-- until the next switch.
+local function showOffer(slot)
+	if InCombatLockdown() then return "in combat" end
+	local held = offers[slot]
+	if not held then
+		if actionButton then
+			if ClearOverrideBindings then ClearOverrideBindings(actionButton) end
+			actionButton.slot = nil
+			actionButton:Hide()
+		end
+		return "nothing"
+	end
+	local label, macro = held.label, held.macro
+	buildActionButton()
+	if not actionButton then return "nothing" end
+	actionButton.slot = slot
 	actionButton:SetAttribute("macrotext", macro)
 	actionButton:SetText(label)
 	actionButton:Show()
@@ -1064,10 +1096,32 @@ local function offer(label, macro)
 			end
 		end
 	end
+	return bound
+end
+WowCompanion_ShowOffer = showOffer
+
+local function offer(label, macro, slot)
+	-- attributes on a secure frame cannot be set in combat, and this is
+	-- configuration anyway
+	if InCombatLockdown() then
+		return "refused: in combat"
+	end
+	slot = slot or offerSlot or viewSlot
+	offers[slot] = { label = label, macro = macro }
+	local where = slot == "" and "Main" or slot:upper()
+	if slot ~= viewSlot then
+		-- the view never jumps on its own: the button waits in its conversation
+		remember("claude", ("button |cffffffff%s|r runs |cff9ad5ff%s|r — it waits in this conversation")
+			:format(label, macro), nil, slot)
+		toast(("|cffffd100%s|r  has a button for you: |cffffffff%s|r (open %s)"):format(where, label, where),
+			0.8, 0.8, 0.8, 30)
+		return ("offering %q in %s, not in view"):format(label, where)
+	end
+	local bound = showOffer(slot)
 	-- show the macro, not just the label: the player is the one authorising this, and
 	-- "Do it" tells them nothing about what they would be running
 	remember("claude", ("button |cffffffff%s|r runs |cff9ad5ff%s|r — %s or click it")
-		:format(label, macro, bound ~= "nothing" and ("press " .. bound) or "mouse"))
+		:format(label, macro, bound ~= "nothing" and ("press " .. bound) or "mouse"), nil, slot)
 	toast(("|cffffd100Claude|r  %s: |cffffffff%s|r"):format(
 		bound ~= "nothing" and ("press " .. bound) or "open the window", label), 0.8, 0.8, 0.8, 30)
 	return ("offering %q which runs %q, bound to %s"):format(label, macro, bound)
@@ -1708,15 +1762,15 @@ end
 -- trusts. So build a secure button on the fly, point it at a macro, and let the
 -- player press it: the click runs through the secure path, taints nothing, and is
 -- never blocked. Anything expressible as a macro can go through here.
-function handlers.reload()
-	return offer("Reload UI", "/reload")
+function handlers.reload(inbox)
+	return offer("Reload UI", "/reload", inbox and inbox.slot)
 end
 
 -- Whatever the helper asks for, as a button the player presses. The macro text is
 -- the limit of what this can do, which is also the limit of what the player could
 -- type themselves -- so it grants no power they did not already have.
 function handlers.press(inbox)
-	return offer(inbox.label or "Do it", inbox.macro or "")
+	return offer(inbox.label or "Do it", inbox.macro or "", inbox.slot)
 end
 
 function handlers.probe(inbox)
@@ -1775,7 +1829,10 @@ local function receive()
 	-- reading the answer and being offered the button.
 	local following = inbox.andThen
 	if following and handlers[following.kind or ""] then
+		-- a button among the follow-up's steps belongs to the reply's conversation
+		offerSlot = inbox.slot
 		local done, outcome = pcall(handlers[following.kind], following)
+		offerSlot = nil
 		if not done then
 			record("slot " .. slot .. " follow-up", "error: " .. tostring(outcome))
 		end
