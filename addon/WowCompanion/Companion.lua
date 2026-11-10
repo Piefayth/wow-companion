@@ -278,7 +278,7 @@ function Transcript:Clear()
 end
 
 -- Tabs along the bottom edge, as Blizzard's own panels have them
--- (PanelTabButtonTemplate, PanelTemplates_SetTab), and L1 / R1 step between them
+-- (PanelTabButtonTemplate, PanelTemplates_SetTab), picked with the cursor
 -- while the window is open, the way the controller UI pages its own tabbed
 -- windows. Those two keys are bound only while the window is shown and out of
 -- combat: L1 and R1 are the targeting buttons, and a binding left behind would
@@ -472,32 +472,12 @@ local function buildTabs(frame, messages, pending)
 	end
 	frame.SelectTab(1)
 
-	-- L1 / R1 page the tabs while the window is open
-	local prev = CreateFrame("Button", "WowCompanionTabPrev", frame)
-	prev:SetScript("OnClick", function() frame.SelectTab((frame.currentTab or 1) - 1) end)
-	local nxt = CreateFrame("Button", "WowCompanionTabNext", frame)
-	nxt:SetScript("OnClick", function() frame.SelectTab((frame.currentTab or 1) + 1) end)
+	-- Tabs are picked with the controller cursor. L1 and R1 used to page them,
+	-- but they are talk-button slots now (the player, 2026-11-10), so the window
+	-- binds nothing. The reload button waits out combat, being secure.
 	local keys = CreateFrame("Frame")
-	local function bind()
-		if InCombatLockdown() or not frame:IsShown() then return end
-		ClearOverrideBindings(keys)
-		SetOverrideBindingClick(keys, true, "PADLSHOULDER", "WowCompanionTabPrev")
-		SetOverrideBindingClick(keys, true, "PADRSHOULDER", "WowCompanionTabNext")
-	end
-	frame:HookScript("OnShow", bind)
-	frame:HookScript("OnHide", function()
-		if not InCombatLockdown() then ClearOverrideBindings(keys) end
-	end)
-	keys:RegisterEvent("PLAYER_REGEN_DISABLED")
 	keys:RegisterEvent("PLAYER_REGEN_ENABLED")
-	keys:SetScript("OnEvent", function(_, event)
-		if event == "PLAYER_REGEN_DISABLED" then
-			ClearOverrideBindings(keys)
-		else
-			bind()
-			makeReload()
-		end
-	end)
+	keys:SetScript("OnEvent", function() makeReload() end)
 end
 
 -- The conversation window. Chat lines scroll away and cannot be scrolled back
