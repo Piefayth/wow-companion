@@ -19,14 +19,29 @@ local function build()
 		edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 },
 	})
 	f:Hide()
-	-- A controller panel like the game's own (the player, 2026-11-10): the frame
-	-- manager lists it, so L2 / R2 (previous / next frame) reach it beside a
-	-- vendor or the mail. It navigates itself (useCustomNavigation: the manager
-	-- hides SmartNavigation and calls FocusGamepad / UnfocusGamepad on us), and
-	-- it is announced the way ShowUIPanel announces a panel with no area. In
-	-- combat it opens by the secure snippet alone, unannounced, still usable.
+	-- A focusable controller panel (the player, 2026-11-10), the same recipe as
+	-- the Companion window: marked focusable, a UIPanelWindows entry, opened with
+	-- ShowUIPanel (its secure dispatch tells the frame manager), FrameHidden on
+	-- hide. Firing the manager's EventRegistry event ourselves ran its focus code
+	-- tainted: SetPreferredGamepadInteractTarget was blocked. Never do that.
+	-- It navigates itself (useCustomNavigation: the manager calls FocusGamepad /
+	-- UnfocusGamepad on us). In combat ShowUIPanel is refused, so the secure
+	-- snippet shows it plainly: usable, not in the focus cycle.
 	f.useCustomNavigation = true
 	if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, f) end
+	if UIPanelWindows then
+		UIPanelWindows["WCBags"] = { area = "right", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
+	end
+	function f:Open()
+		if InCombatLockdown() then self:Show() return end
+		ShowUIPanel(self)
+		if not self:IsShown() then self:Show() end
+	end
+	function f:Shut()
+		if InCombatLockdown() then self:Hide() return end
+		HideUIPanel(self)
+		if self:IsShown() then self:Hide() end
+	end
 	-- even margins all round (the player, 2026-11-10): EDGE from the border's
 	-- inside on every side, a title row, the grid, a legend row
 	local EDGE, TITLE_H, LEGEND_H, GAP_V = 18, 20, 24, 8
@@ -284,7 +299,10 @@ local function build()
 	local close = CreateFrame("Button", "WCBagsClose", UIParent, "SecureHandlerClickTemplate")
 	close:RegisterForClicks("AnyDown")
 	close:SetFrameRef("bags", f)
-	close:SetAttribute("_onclick", [[ self:GetFrameRef("bags"):Hide() ]])
+	close:SetAttribute("_onclick", [[
+		local bags = self:GetFrameRef("bags")
+		if PlayerInCombat() then bags:Hide() else bags:CallMethod("Shut") end
+	]])
 	-- Holding an item, circle puts it back (Blizzard's Back). Out of combat the
 	-- binding swaps to WCBagsDrop, which only puts it back; in combat it puts it
 	-- back and closes.
@@ -453,7 +471,9 @@ local function build()
 		t:SetFrameRef("bags", f)
 		t:SetAttribute("_onclick", [[
 			local bags = self:GetFrameRef("bags")
-			if bags:IsShown() then bags:Hide() else bags:Show() end
+			if PlayerInCombat() then
+				if bags:IsShown() then bags:Hide() else bags:Show() end
+			elseif bags:IsShown() then bags:CallMethod("Shut") else bags:CallMethod("Open") end
 		]])
 	end
 
@@ -487,17 +507,13 @@ local function build()
 	end)
 	f:HookScript("OnShow", function(self)
 		self:Paint()
-		if not InCombatLockdown() and EventRegistry then
-			self.announced = true
-			EventRegistry:TriggerEvent("UIParentPanelManager.ShowUIPanel", self)
-		end
 	end)
+	-- however it closes, the manager hears (or the bars stay dead after it)
 	f:HookScript("OnHide", function(self)
-		if self.announced and GamepadMode and GamepadMode.FrameControlsManager
+		if GamepadMode and GamepadMode.FrameControlsManager
 			and InputUtil and InputUtil.IsGamepadUIEnabled() then
 			GamepadMode.FrameControlsManager:FrameHidden(self)
 		end
-		self.announced = nil
 	end)
 	-- focus moved to another window: give the d-pad and face buttons back to it;
 	-- focus came back: take them again

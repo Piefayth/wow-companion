@@ -144,7 +144,10 @@ goes to a detached process.
 - **A window of ours the controller can focus**: `SmartNavigation_MarkFrameFocusable`,
   an entry in `UIPanelWindows`, shown with `ShowUIPanel`, and `OnHide` calling
   `GamepadMode.FrameControlsManager:FrameHidden(self)`, or the bars stay dead after
-  it closes.
+  it closes. **Never fire the panel manager's events or call its `FrameShown` /
+  `Focus*` yourself** (`EventRegistry:TriggerEvent("UIParentPanelManager...")`): its
+  focus code then runs tainted and `SetPreferredGamepadInteractTarget` is blocked
+  (the bag window, 2026-11-10). `ShowUIPanel` dispatches securely; use it.
 - **Look before calling.** `docs/api-surface.md` and `.tsv` give every one of the
   10,957 names a tier and its terms (protected, press only, out of combat, secret
   results in combat, read, change, dormant, Blizzard's own Lua). `docs/wow-ui-source`
