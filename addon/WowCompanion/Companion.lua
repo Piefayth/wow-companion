@@ -344,7 +344,8 @@ renderPending = function()
 	frame.pendingShown = view ~= nil
 	if view then
 		frame.pending:SetText(view)
-		if (frame.currentTab or 1) == 1 then frame.pending:Show() end
+		-- shown in the chat itself now, as the line the reply will take
+		-- (Jobs.lua, the player, 2026-11-10); the footer line stays hidden
 	else
 		frame.pending:Hide()
 	end

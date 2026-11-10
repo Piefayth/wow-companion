@@ -113,21 +113,61 @@ refresh = function()
 	local target
 	local since = (core.transcribing or {})[view]
 	if since then target = { state = "hearing", slot = view } end
-	if target and frame.pending:IsShown() then
-		statusX.job = target
-		statusX:ClearAllPoints()
-		-- in the same column as the queued lines' icons (the player, 2026-11-10:
-		-- aligned controls are easier to reach with the cursor)
-		local scroll = frame.messages.scroll
-		local right, left = scroll:GetRight(), frame:GetLeft()
-		local _, y = frame.pending:GetCenter()
-		local bottom = frame:GetBottom()
-		if right and left and y and bottom then
-			statusX:SetPoint("RIGHT", frame, "BOTTOMLEFT", right - left - 4, y - bottom)
-		else
-			statusX:SetPoint("LEFT", frame.pending, "RIGHT", 4, 0)
+	-- In the chat itself (the player, 2026-11-10): the states the footer line
+	-- used to carry are lines at the end of the conversation, where the reply
+	-- will appear: the agent working, then your next clip being heard.
+	local transcript0 = frame.messages
+	local ghosts = transcript0.jobsGhosts
+	if not ghosts then
+		ghosts = {}
+		for i = 1, 2 do
+			local fs = transcript0.content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+			fs:SetJustifyH("LEFT")
+			fs:SetWordWrap(false)
+			fs:Hide()
+			ghosts[i] = fs
 		end
-		statusX:SetFrameLevel(frame:GetFrameLevel() + 10)
+		transcript0.jobsGhosts = ghosts
+	end
+	local texts = {}
+	local dots = ("."):rep(math.floor(now * 2) % 4)
+	local entry = working[view]
+	if entry then
+		local doing = tostring(entry.text or "thinking"):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+		texts[#texts + 1] = ("|cffffe08aClaude|r  |cff808080working %ds  %s%s|r"):format(now - (entry.since or now), doing, dots)
+	end
+	if since then
+		texts[#texts + 1] = ("|cff9ad5ffYou|r  |cff808080hearing you%s  %ds|r"):format(dots, now - since)
+	end
+	local base = transcript0.height or 0
+	local width = transcript0.Width and transcript0:Width() or 300
+	local y = base
+	for i, fs in ipairs(ghosts) do
+		local text = texts[i]
+		if text then
+			y = y + 10
+			fs:ClearAllPoints()
+			fs:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -y)
+			fs:SetWidth(math.max(50, width - 30))
+			fs:SetText(text)
+			fs:Show()
+			fs.y = y
+			y = y + 14
+		else
+			fs:Hide()
+		end
+	end
+	local scroll = transcript0.scroll
+	local following = scroll:GetVerticalScroll() >= scroll:GetVerticalScrollRange() - 30
+	transcript0.content:SetHeight(math.max(y, base, 1))
+	if following and y > base then scroll:SetVerticalScroll(scroll:GetVerticalScrollRange()) end
+	local hearingLine = since and ghosts[#texts]
+	if target and hearingLine and hearingLine:IsShown() then
+		statusX.job = target
+		statusX:SetParent(transcript0.content)
+		statusX:ClearAllPoints()
+		statusX:SetPoint("TOPRIGHT", transcript0.content, "TOPLEFT", width - 4, -(hearingLine.y - 3))
+		statusX:SetFrameLevel(transcript0.content:GetFrameLevel() + 5)
 		statusX:Show()
 	else
 		statusX.job = nil

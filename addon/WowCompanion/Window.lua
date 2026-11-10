@@ -276,7 +276,7 @@ local function buildTabs(frame, messages, pending)
 		local chat = id == 1
 		messages.scroll:SetShown(chat)
 		for _, part in ipairs(frame.chatParts or {}) do part:SetShown(chat) end
-		if not chat then pending:Hide() elseif frame.pendingShown then pending:Show() end
+		pending:Hide() -- its state shows in the chat itself (Jobs.lua)
 		for i, p in pairs(pages) do p:SetShown(i == id) end
 		if id == 2 then makeReload() end
 	end
