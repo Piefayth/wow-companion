@@ -283,7 +283,7 @@ local function buildLog()
 	local closed, close = pcall(CreateFrame, "Button", nil, frame, "UIPanelCloseButton")
 	if closed and close then
 		close:SetPoint("TOPRIGHT", -6, -6)
-		close:SetScript("OnClick", function() frame:Hide() end)
+		close:SetScript("OnClick", function() if WowCompanion_HideWindow then WowCompanion_HideWindow() else frame:Hide() end end)
 		-- the controller's back button (circle) closes a focused window by clicking
 		-- its frame.CloseButton (SmartNavigation:AttemptClose), so name it that
 		frame.CloseButton = close

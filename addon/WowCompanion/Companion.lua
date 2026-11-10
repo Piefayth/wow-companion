@@ -638,10 +638,47 @@ end
 -- player's binding underneath is untouched.
 local TAP_MAX = 0.35
 local nativeToggleAt = 0
+-- Closing in combat (the player, 2026-11-10: "can't close the companion window
+-- during combat"). The offered button (WowCompanionDo) is a secure button inside
+-- the window, which makes the window protected, and Hide on a protected frame is
+-- refused in combat. Alpha is not restricted: in combat the window goes
+-- invisible and stops listening, and the real Hide happens when the fight ends.
+local combatHidden = false
+local combatCloser = CreateFrame("Frame")
+combatCloser:SetScript("OnEvent", function(self)
+	self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+	if combatHidden and logWindow then
+		combatHidden = false
+		logWindow:Hide()
+		logWindow:SetAlpha(1)
+	end
+end)
+function WowCompanion_HideWindow()
+	local frame = logWindow
+	if not frame then return end
+	if InCombatLockdown() and frame:IsProtected() then
+		frame:SetAlpha(0)
+		combatHidden = true
+		-- give the pad back to the bars now: FrameHidden is the one manager call
+		-- Blizzard wraps for insecure callers (Bags.lua does the same)
+		if GamepadMode and GamepadMode.FrameControlsManager then
+			pcall(GamepadMode.FrameControlsManager.FrameHidden, GamepadMode.FrameControlsManager, frame)
+		end
+		combatCloser:RegisterEvent("PLAYER_REGEN_ENABLED")
+		return
+	end
+	frame:Hide() -- plain Hide; see the /wc log note on HideUIPanel
+end
+local function windowOpen()
+	return logWindow and logWindow:IsShown() and not combatHidden
+end
 local function toggleWindow()
 	local frame = logFrame()
-	if frame:IsShown() then
-		frame:Hide() -- plain Hide; see the /wc log note on HideUIPanel
+	if windowOpen() then
+		WowCompanion_HideWindow()
+	elseif combatHidden then
+		combatHidden = false
+		frame:SetAlpha(1)
 	else
 		reveal(frame)
 	end
@@ -1345,15 +1382,11 @@ SlashCmdList.WOWCOMPANION = function(command)
 		end
 		say("bell poll running")
 	elseif command == "log" then
-		local frame = logFrame()
-		if frame:IsShown() then
-			-- plain Hide, not HideUIPanel: a programmatic HideUIPanel from a click
-			-- handler is the exact path that taints gamepad navigation on this client.
-			-- OnHide tells the gamepad manager, which is what Hide alone never did.
-			frame:Hide()
-		else
-			reveal(frame)
-		end
+		-- plain Hide, not HideUIPanel: a programmatic HideUIPanel from a click
+		-- handler is the exact path that taints gamepad navigation on this client.
+		-- OnHide tells the gamepad manager, which is what Hide alone never did.
+		-- toggleWindow also handles combat (WowCompanion_HideWindow).
+		toggleWindow()
 	elseif command == "clear" then
 		WowCompanionDB.log = {}
 		logFrame().messages:Clear()
