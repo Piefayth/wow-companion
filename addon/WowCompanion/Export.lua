@@ -670,6 +670,11 @@ local function exportContext()
 			line("    " .. (err.stack:gsub(newline, newline .. "    ")))
 		end
 	end
+	local wc = WowCompanionDB.windowCombat
+	if wc then
+		line(("-- Companion window at the last fight's start: still protected=%s, extra secure children stowed: %s; last close: %s; last hidden: %s")
+			:format(tostring(wc.protectedAfter), wc.stowedExtra ~= "" and tostring(wc.stowedExtra) or "none", tostring(wc.lastHide), tostring(wc.lastOnHide)))
+	end
 	local blocked = WowCompanionDB.blocked or {}
 	if #blocked > 0 then
 		line("-- actions the game blocked (\"Interface action failed\"), newest first")

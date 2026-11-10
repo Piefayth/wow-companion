@@ -105,7 +105,16 @@ local function unqueue(...) return WC.Transcript.unqueue(...) end
 -- moved to Window.lua
 local function buildLog(...) return WC.Window.buildLog(...) end
 local function logFrame()
-	logWindow = logWindow or buildLog()
+	if not logWindow then
+		logWindow = buildLog()
+		-- who closed it, when it vanishes on its own (the player, 2026-11-10)
+		logWindow:HookScript("OnHide", function()
+			WowCompanionDB.windowCombat = WowCompanionDB.windowCombat or {}
+			WowCompanionDB.windowCombat.lastOnHide = ("%s combat=%s by %s"):format(date("%H:%M:%S"),
+				tostring(InCombatLockdown()), (debugstack(3, 3, 0) or "?"):gsub("
+", " | "):sub(1, 300))
+		end)
+	end
 	return logWindow
 end
 
@@ -139,6 +148,7 @@ end
 -- back when the fight ends, and a window opened mid-fight becomes a panel again
 -- so the controller's focus cycle reaches it.
 local stowed = {}
+local extraStowed = {}
 local stash = CreateFrame("Frame", "WowCompanionStash", UIParent)
 stash:Hide()
 local combatNote
@@ -164,10 +174,48 @@ stowWatch:SetScript("OnEvent", function(_, event)
 				button:SetPoint("CENTER")
 			end)
 		end
+		-- anything else secure inside the window (a button another file added)
+		-- would keep it protected and bring back the vanishing: stow those too,
+		-- with their anchors, and write down who they were
+		local frame = logWindow
+		local found = {}
+		local function walk(f)
+			for _, child in ipairs({ f:GetChildren() }) do
+				if child:IsProtected() and not stowed[child] then
+					local points = {}
+					for i = 1, child:GetNumPoints() do points[i] = { child:GetPoint(i) } end
+					local parent = child:GetParent()
+					local ok = pcall(function()
+						child:ClearAllPoints()
+						child:SetParent(stash)
+						child:SetPoint("CENTER")
+					end)
+					if ok then
+						extraStowed[child] = { parent = parent, points = points }
+						found[#found + 1] = tostring(child:GetName() or child:GetObjectType())
+					end
+				else
+					walk(child)
+				end
+			end
+		end
+		if frame then pcall(walk, frame) end
+		WowCompanionDB.windowCombat = {
+			at = time(), stowedExtra = table.concat(found, ", "),
+			protectedAfter = frame and frame:IsProtected() or nil,
+		}
 		noteCombat(true)
 		return
 	end
 	for button, restore in pairs(stowed) do pcall(restore, button) end
+	for child, was in pairs(extraStowed) do
+		pcall(function()
+			child:SetParent(was.parent)
+			child:ClearAllPoints()
+			for _, pt in ipairs(was.points) do child:SetPoint(unpack(pt)) end
+		end)
+	end
+	wipe(extraStowed)
 	noteCombat(false)
 	local frame = logWindow
 	if shownInCombat and frame and frame:IsShown() and UIPanelWindows and UIPanelWindows["WowCompanionLog"] then
@@ -741,14 +789,15 @@ end)
 function WowCompanion_HideWindow()
 	local frame = logWindow
 	if not frame then return end
+	WowCompanionDB.windowCombat = WowCompanionDB.windowCombat or {}
+	WowCompanionDB.windowCombat.lastHide = ("%s combat=%s protected=%s"):format(date("%H:%M:%S"),
+		tostring(InCombatLockdown()), tostring(frame:IsProtected()))
 	if InCombatLockdown() and frame:IsProtected() then
 		frame:SetAlpha(0)
 		combatHidden = true
-		-- give the pad back to the bars now: FrameHidden is the one manager call
-		-- Blizzard wraps for insecure callers (Bags.lua does the same)
-		if GamepadMode and GamepadMode.FrameControlsManager then
-			pcall(GamepadMode.FrameControlsManager.FrameHidden, GamepadMode.FrameControlsManager, frame)
-		end
+		-- the manager hears when the fight ends (FrameHidden from addon code in
+		-- a fight is "Interface action failed")
+		WC.FrameHidden(frame)
 		combatCloser:RegisterEvent("PLAYER_REGEN_ENABLED")
 		return
 	end
