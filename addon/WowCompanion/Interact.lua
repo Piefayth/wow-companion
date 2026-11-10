@@ -194,6 +194,7 @@ do
 		trace(event .. (a and (" " .. tostring(a)) or "") .. (b and (" " .. tostring(b)) or ""))
 	end)
 	button:HookScript("OnClick", function(_, _, down) trace("Home clicked (clear) " .. (down and "down" or "up")) end)
+	back:HookScript("OnClick", function() trace("Home clicked (back)") end)
 
 	local function bindAll()
 		if InCombatLockdown() then return false end
