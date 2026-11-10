@@ -11,3 +11,8 @@ cpal = "0.18.2"
 # each for every architecture ggml supports. Set CUDAARCHS=89 to build for this
 # GPU alone. Nothing outside this crate's manifest can invalidate it now.
 whisper-rs = { version = "0.16.0", features = ["cuda"] }
+
+# The Bluetooth voice-link reconnect (IKsControl on the endpoint's topology). The
+# same version cpal already builds, so this adds features, not a second copy.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Media_Audio", "Win32_Media_KernelStreaming", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_Foundation"] }

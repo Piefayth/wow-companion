@@ -101,10 +101,13 @@ fn main() {
         }
         [command] if command == "pads" => pad::list(),
         [command] if command == "buzz" => pad::buzz(),
+        [command] if command == "reconnect" => voice::reconnect(),
         [command, id] if command == "pads" => pad::watch(id),
         [command] if command == "mics" => voice::microphones(),
         [command] if command == "speakers" => voice::speakers(),
         [command, fragment] if command == "formats" => voice::formats(fragment),
+        [command, fragment] if command == "miccheck" => voice::miccheck(Some(fragment), None),
+        [command, fragment, wake] if command == "miccheck" => voice::miccheck(Some(fragment), Some(wake)),
         [command, model, options @ ..] if command == "voice" => {
             voice::listen(Path::new(model), options, Vec::new, |_, _| Ok(()))
         }
@@ -612,6 +615,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         |role, text| match role {
             // a tap of the ask button, too short to be speech: show the window
             "ask tap" => deliver("{ kind = \"show\" }".to_string()),
+            // the voice loop's own news (a reconnected headset), for the window
+            "notice" => deliver(log_inbox("error", text, None, None)),
             _ if role.ends_with(" tap") => Ok(()),
             "ask" => {
                 // a new request supersedes a look still waiting for its reload
@@ -654,7 +659,15 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 deliver(dictation_inbox(text, &routed))
             }
         },
-    )
+    )?;
+    // a restart closed the voice loop; the restart thread starts the next copy and
+    // exits this process, so do not let main return and end it first
+    if voice::SHUTDOWN.load(Ordering::SeqCst) {
+        loop {
+            thread::park();
+        }
+    }
+    Ok(())
 }
 
 /// Built field by field rather than by patching a finished string: the first attempt
@@ -961,6 +974,13 @@ fn watch_for_restart(args: Vec<String>) {
         }
         let _ = fs::remove_file(&request);
         println!("restarting onto the new build");
+        // close the mic properly first: the next copy must not open it while this
+        // one holds it, and an abandoned hands-free stream can wedge the link
+        voice::SHUTDOWN.store(true, Ordering::SeqCst);
+        let asked = Instant::now();
+        while !voice::STOPPED.load(Ordering::SeqCst) && asked.elapsed() < Duration::from_secs(3) {
+            thread::sleep(Duration::from_millis(20));
+        }
         // the next generation runs as a copy already, and owns the console from here
         match std::process::Command::new(&next).args(&args).env(SOURCE_EXE, &source).spawn() {
             Ok(_) => std::process::exit(0),

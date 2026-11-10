@@ -61,6 +61,10 @@ const SILENCE: f32 = 0.01;
 // ("Commands: the first one."), which then went to the agent as a request. Such
 // a clip is dropped whatever the transcript says.
 const NOTHING: f32 = 0.004;
+// no buffers for this long and the mic stream is taken for dead
+const STALL: Duration = Duration::from_millis(1500);
+// at most one automatic reconnect this often, so an absent headset cannot loop
+const HEAL_EVERY: Duration = Duration::from_secs(15);
 // rumble strength for the listening pulses, of 255 (the test buzz was 192)
 const PULSE: u8 = 160;
 // the closing pulse: softer than the opening one, so the two are told apart
@@ -68,6 +72,92 @@ const PULSE_SOFT: u8 = 90;
 // hold mode: how long after the mic closes to wait for the headset to be back in
 // stereo before the closing cue (`return=` tunes it, in ms)
 const RETURN_MS: u64 = 1000;
+
+/// Ask every active audio endpoint to reconnect its Bluetooth link, the way the
+/// Sound control panel's "Connect" does: KSPROPERTY_ONESHOT_RECONNECT on the
+/// endpoint's topology part. Endpoints that are not Bluetooth refuse it and are
+/// skipped. Needs no admin. Returns how many accepted.
+#[cfg(windows)]
+fn reconnect_bluetooth_audio() -> usize {
+    reconnect_bluetooth_audio_verbose(false)
+}
+
+#[cfg(windows)]
+fn reconnect_bluetooth_audio_verbose(verbose: bool) -> usize {
+    use windows::{
+        Win32::{
+            Media::{
+                Audio::{eAll, IDeviceTopology, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE},
+                KernelStreaming::{
+                    IKsControl, KSIDENTIFIER, KSIDENTIFIER_0, KSIDENTIFIER_0_0, KSPROPERTY_ONESHOT_RECONNECT,
+                    KSPROPERTY_TYPE_GET, KSPROPSETID_BtAudio,
+                },
+            },
+            System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED},
+        },
+    };
+    let mut accepted = 0;
+    unsafe {
+        // already initialised on this thread is fine
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let Ok(enumerator) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else {
+            return 0;
+        };
+        let Ok(devices) = enumerator.EnumAudioEndpoints(eAll, DEVICE_STATE_ACTIVE) else { return 0 };
+        let count = devices.GetCount().unwrap_or(0);
+        for index in 0..count {
+            let attempt = || -> Result<(), String> {
+                let step = |what: &str, err: windows::core::Error| format!("{what}: {err}");
+                let device = devices.Item(index).map_err(|e| step("item", e))?;
+                let topology: IDeviceTopology = device.Activate(CLSCTX_ALL, None).map_err(|e| step("topology", e))?;
+                let connector = topology.GetConnector(0).map_err(|e| step("connector", e))?;
+                // the device on the far side of the endpoint's connector is the
+                // Bluetooth audio filter; IKsControl lives on it, not on its parts
+                let filter_id = connector.GetDeviceIdConnectedTo().map_err(|e| step("filter id", e))?;
+                let filter = enumerator
+                    .GetDevice(windows::core::PCWSTR(filter_id.0))
+                    .map_err(|e| step("filter", e))?;
+                let control: IKsControl = filter.Activate(CLSCTX_ALL, None).map_err(|e| step("ks control", e))?;
+                let property = KSIDENTIFIER {
+                    Anonymous: KSIDENTIFIER_0 {
+                        Anonymous: KSIDENTIFIER_0_0 {
+                            Set: KSPROPSETID_BtAudio,
+                            Id: KSPROPERTY_ONESHOT_RECONNECT.0 as u32,
+                            Flags: KSPROPERTY_TYPE_GET,
+                        },
+                    },
+                };
+                let mut returned = 0u32;
+                control
+                    .KsProperty(
+                        &property,
+                        std::mem::size_of::<KSIDENTIFIER>() as u32,
+                        std::ptr::null_mut(),
+                        0,
+                        &mut returned,
+                    )
+                    .map_err(|e| step("reconnect", e))
+            };
+            match attempt() {
+                Ok(()) => accepted += 1,
+                Err(why) if verbose => println!("  endpoint {index}: {why}"),
+                Err(_) => {}
+            }
+        }
+    }
+    accepted
+}
+
+#[cfg(not(windows))]
+fn reconnect_bluetooth_audio() -> usize {
+    0
+}
+
+/// For testing the reconnect by hand: `wow-companion reconnect`.
+pub fn reconnect() -> io::Result<()> {
+    println!("reconnect accepted by {} endpoint(s)", reconnect_bluetooth_audio_verbose(true));
+    Ok(())
+}
 
 /// The stereo output of the headset whose hands-free mic is `mic`: "Headset
 /// (AirPods Max Hands-Free AG Audio)" -> "Headphones (AirPods Max Stereo)".
@@ -125,6 +215,13 @@ fn prompt(spells: &[String]) -> String {
 /// True while a push-to-talk button is held: a restart waits for the release, so
 /// no clip is cut off halfway.
 pub static HOLDING: AtomicBool = AtomicBool::new(false);
+
+/// Set by a restart: the voice loop closes the mic properly and returns, and only
+/// then does the next copy start. Abandoning a live hands-free stream (a killed
+/// process, an exit that skips destructors) is the likeliest way the link wedged.
+pub static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+/// Set once the mic is closed after SHUTDOWN.
+pub static STOPPED: AtomicBool = AtomicBool::new(false);
 
 pub fn listen(
     model: &Path,
@@ -218,7 +315,32 @@ pub fn listen(
     let mut pressed_at = Instant::now();
     let mut retry_pad = Instant::now();
     let mut retry_mic = Instant::now();
+    let mut healed_at: Option<Instant> = None;
     loop {
+        if SHUTDOWN.load(Ordering::SeqCst) {
+            // close the mic properly before the next copy opens its own
+            drop(microphone.take());
+            STOPPED.store(true, Ordering::SeqCst);
+            return Ok(());
+        }
+        // The stream open, the device listed, and no audio arriving: the headset's
+        // voice link is wedged. Reconnect it the way Sound settings' Connect does,
+        // then reopen the mic. The player hears about it in the window.
+        if !hold_mode && microphone.as_ref().is_some_and(Microphone::stalled)
+            && healed_at.is_none_or(|at| at.elapsed() > HEAL_EVERY)
+        {
+            healed_at = Some(Instant::now());
+            eprintln!("mic stopped delivering audio; reconnecting the headset's voice link");
+            drop(microphone.take());
+            let reconnected = reconnect_bluetooth_audio();
+            eprintln!("  reconnect sent to {reconnected} endpoint(s)");
+            thread::sleep(Duration::from_millis(1500));
+            microphone = Microphone::open_quietly(wanted_mic, true).ok();
+            let _ = heard(
+                "notice",
+                "The headset's mic stopped sending audio, so I reconnected its voice link. If I still cannot hear you, reconnect the headset.",
+            );
+        }
         // a dead stream is replaced between presses, never during one
         if !hold_mode && holding.is_none() && microphone.as_ref().is_some_and(Microphone::broken) {
             eprintln!("microphone lost; waiting for it to come back");
@@ -417,6 +539,9 @@ struct Capture {
     // gap is how long the headset took to switch into hands-free and deliver
     started: Option<Instant>,
     first: Option<Instant>,
+    // the last time the stream delivered anything, recording or not: a live
+    // stream delivers every few milliseconds, so a gap means the link is dead
+    last: Instant,
 }
 
 struct Microphone {
@@ -481,6 +606,7 @@ impl Microphone {
             samples: Vec::new(),
             started: None,
             first: None,
+            last: Instant::now(),
         }));
         let sink = Arc::clone(&capture);
         let dead = Arc::new(AtomicBool::new(false));
@@ -530,6 +656,12 @@ impl Microphone {
         capture.first = None;
     }
 
+    /// True when the stream has delivered nothing for `STALL`: the device is
+    /// listed and the stream open, but no audio is coming (a wedged hands-free link).
+    fn stalled(&self) -> bool {
+        self.capture.lock().unwrap().last.elapsed() > STALL
+    }
+
     /// How long after start() the first audio arrived, if it has.
     fn lag(&self) -> Option<Duration> {
         let capture = self.capture.lock().unwrap();
@@ -547,6 +679,7 @@ impl Microphone {
 
 fn push(capture: &Arc<Mutex<Capture>>, samples: impl Iterator<Item = f32>) {
     let mut capture = capture.lock().unwrap();
+    capture.last = Instant::now();
     if capture.recording {
         let before = capture.samples.len();
         capture.samples.extend(samples);
@@ -681,6 +814,36 @@ pub fn speakers() -> io::Result<()> {
     }
     println!("\n* is the current default. A Bluetooth headset held in hands-free mode for");
     println!("  its mic cannot play through its stereo endpoint: name the hands-free one.");
+    Ok(())
+}
+
+/// Record two seconds from the mic and say how much arrived and how loud it was:
+/// "is the headset actually sending audio" without a press or a transcription.
+pub fn miccheck(wanted: Option<&str>, wake: Option<&str>) -> io::Result<()> {
+    let mic = Microphone::open(wanted)?;
+    // optionally play silence on an output meanwhile, to see whether that is what
+    // starts a hands-free link's audio
+    if let Some(output) = wake {
+        let wake = output;
+        let output = output.to_string();
+        thread::spawn(move || {
+            if let Err(err) = chime(Some(&output), 0.000_01, &[440.0; 24]) {
+                eprintln!("wake output failed: {err}");
+            }
+        });
+        println!("playing near-silence on the {wake:?} output during the check");
+    }
+    mic.start();
+    thread::sleep(Duration::from_secs(2));
+    let lag = mic.lag();
+    let clip = mic.stop();
+    println!(
+        "{} samples at 16 kHz in 2 s ({:.2} s of audio), level {:.4}, first audio after {}",
+        clip.len(),
+        clip.len() as f32 / WHISPER_RATE as f32,
+        loudness(&clip),
+        lag.map_or("never".to_string(), |lag| format!("{} ms", lag.as_millis()))
+    );
     Ok(())
 }
 

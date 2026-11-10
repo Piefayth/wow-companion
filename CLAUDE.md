@@ -374,6 +374,19 @@ Open:
   agent command. What the scan cannot see is a hand check under real play: no
   `/wc verdict` has been recorded yet, so the first "Interface action failed" after
   a `bar` command is worth a look at `taint.log`.
+- **Never kill the companion; restart it.** `wow-companion restart` closes the mic
+  properly and hands over. On 2026-11-09 a night of `taskkill /F` and exits that
+  skipped cleanup, each abandoning a live hands-free stream, left the AirPods' voice
+  link wedged: Windows listed every device as OK and the mic delivered zero buffers
+  (`miccheck` measures it). Now the stream is closed before handover, and a mic that
+  delivers nothing for 1.5 s is healed in place: KSPROPERTY_ONESHOT_RECONNECT
+  (KSPROPSETID_BtAudio) sent to `IKsControl` on each endpoint's connected filter
+  device (not its topology part, which refuses the interface), the same call as
+  Sound settings' "Connect", no admin needed, then the mic reopened and the player
+  told. Measured accepted by the three AirPods endpoints. `wow-companion reconnect`
+  sends it by hand. Push-to-talk feedback is rumble (DualSense report 0x02): beeps
+  played over the 8 kHz hands-free link hiss, and opening the mic per press is too
+  slow (no audio during a whole press).
 - **Devices come and go.** A pad that sleeps or a headset that drops hands-free used
   to end `run`. Now a failed HID read, or a mic stream error other than an underrun
   (`DeviceNotAvailable` is what WASAPI reports), is waited out and reopened every 2 s;
