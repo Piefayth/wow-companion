@@ -10,6 +10,7 @@
 Engine.lua
 Style.lua
 Companion.lua
+Chords.lua
 Probes.lua
 Export.lua
 Pins.lua

@@ -73,6 +73,17 @@ def main():
     print('block', first, '-', after - 1, f'({len(block)} lines)')
     print('needs from Companion:', needs)
     print('Companion needs from block:', gives)
+    # a constant (a number or string literal, never reassigned) is simply declared
+    # in both files
+    consts = {}
+    for g in gives:
+        if g in funcs:
+            continue
+        decl = [l for l in block if re.match(r'local %s = (-?\d+|"[^"]*")\s*$' % re.escape(g), l)]
+        if len(decl) == 1 and not re.search(r'(?<![\w.:])%s\s*=[^=]' % re.escape(g),
+                                             code('\n'.join(l for l in block if l != decl[0]))):
+            consts[g] = decl[0]
+    gives = [g for g in gives if g not in consts]
     bad = [g for g in gives if g not in funcs]
     if bad:
         print('REFUSED: Companion uses non-function locals of the block:', bad)
@@ -98,14 +109,14 @@ def main():
     needs = [n for n in needs if n not in mutable]
     if dry:
         return
-    already = set(re.findall(r'^WC\.Core\.(\w+) = ', src, re.M))
+    already = set(re.findall(r'^WC\.Core\.(\w+) = ', rtext, re.M))
     head = [f'-- Split out of Companion.lua (2026-11-10). What it needs from there comes',
             f'-- through WC.Core; what Companion.lua calls here is WC.{table}.', '',
             'local core = WC.Core'] + [f'local {n} = core.{n}' for n in needs] +         [f'local function {n}_now() return core.{n}_get() end' for n in mutable] + ['']
     tail = ['', f'WC.{table} = WC.{table} or {{}}'] + [f'WC.{table}.{g} = {g}' for g in gives] + ['']
     open(P + newfile, 'w', encoding='utf-8', newline='\n').write('\n'.join(head + block + tail))
     wrappers = [f'local function {g}(...) return WC.{table}.{g}(...) end' for g in gives]
-    out = lines[:first - 1] + [f'-- moved to {newfile}'] + wrappers + lines[after - 1:]
+    out = lines[:first - 1] + [f'-- moved to {newfile}'] + list(consts.values()) + wrappers + lines[after - 1:]
     pub = [f'WC.Core.{n} = {n}' for n in needs if n not in already] +         [f'WC.Core.{n}_get = function() return {n} end' for n in mutable if n + '_get' not in already]
     if pub:
         out += ['', f'-- for {newfile}', 'WC.Core = WC.Core or {}'] + pub + ['']
