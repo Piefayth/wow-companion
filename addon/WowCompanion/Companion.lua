@@ -799,6 +799,7 @@ local working = {}
 local SLOT_ORDER = { "", "l1", "l2", "r1", "r2" }
 local function slotLabel(slot) return slot == "" and "Main" or slot:upper() end
 local renderPending
+local paintHook -- the conversation list's painter, set once it exists
 local function setPending(text, slot)
 	slot = slot or ""
 	if text then
@@ -824,6 +825,7 @@ renderPending = function()
 			if slot == (WowCompanion_ViewSlot and WowCompanion_ViewSlot() or "") then view = line end
 		end
 	end
+	if paintHook then paintHook() end
 	pendingSince = view and GetTime() or nil
 	frame.pendingShown = view ~= nil
 	if view then
@@ -856,11 +858,20 @@ local function paintConversations()
 	if not (frame and frame.convButtons) then return end
 	for key, button in pairs(frame.convButtons) do
 		local label = key == "" and "Main" or key:upper()
-		if unread[key] then label = "|cff40ff40" .. label .. "  new|r" end
+		-- each conversation shows its own progress in the list (the player,
+		-- 2026-11-10): the seconds while its agent works, "new" once it answered
+		local entry = working[key]
+		if entry then
+			label = label .. "  |cffb0b0b0" .. math.floor(GetTime() - entry.since) .. "s|r"
+		elseif unread[key] then
+			label = "|cff40ff40" .. label .. "  new|r"
+		end
 		button:SetText(label)
 		if button.selected then button.selected:SetShown(key == viewSlot) end
 	end
 end
+
+paintHook = paintConversations
 
 local function remember(who, text, continued, slot)
 	slot = slot or viewSlot
