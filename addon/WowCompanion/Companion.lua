@@ -1598,6 +1598,21 @@ local function exportContext()
 		line("none")
 	end
 
+	section("lua errors")
+	line("-- errors from addons that are not Blizzard's (ours, the agent's, the player's),")
+	line("-- newest first, with how often each repeated. Read the stack, fix the cause")
+	local errors = WowCompanionDB.errors or {}
+	for at = #errors, math.max(1, #errors - 9), -1 do
+		local err = errors[at]
+		line(("%s x%d: %s"):format(date("%m-%d %H:%M:%S", err.at or 0), err.count or 1, tostring(err.message)))
+		if err.stack and err.stack ~= "" then
+			line("    " .. (err.stack:gsub(newline, newline .. "    ")))
+		end
+	end
+	if #errors == 0 then
+		line("none")
+	end
+
 	WowCompanionDB.context = table.concat(out, newline) .. newline
 	return #out
 end
@@ -2249,6 +2264,61 @@ if EventRegistry and EventRegistry.RegisterCallback then
 	end, draftOwner)
 end
 
+-- Lua errors, so the agent sees what its code broke instead of writing blind.
+-- Blizzard's own hook for this (AddLuaErrorHandler) is secure-only, and replacing
+-- the error handler would run Blizzard's error window tainted. A post-hook on the
+-- method its handler ends in (ScriptErrors:AddUnhandledError) gets the message,
+-- the stack and the locals without touching that path. Only errors whose stack
+-- names a non-Blizzard addon are kept: Blizzard's own are not ours to fix.
+local ERRORS_KEPT = 25
+local function keepError(_, message, stack)
+	message = tostring(message or "")
+	stack = tostring(stack or "")
+	local where = message .. "\n" .. stack
+	local foreign = false
+	for addon in where:gmatch("AddOns[/\\]([%w_%-]+)") do
+		if not addon:find("^Blizzard_") then
+			foreign = true
+			break
+		end
+	end
+	if not foreign then
+		return
+	end
+	WowCompanionDB.errors = WowCompanionDB.errors or {}
+	local errors = WowCompanionDB.errors
+	for _, seen in ipairs(errors) do
+		if seen.message == message then
+			seen.count = (seen.count or 1) + 1
+			seen.at = time()
+			return
+		end
+	end
+	-- the first lines of a stack say where; the rest is the engine's frames
+	local lines, kept = {}, 0
+	for text in stack:gmatch("[^\n]+") do
+		kept = kept + 1
+		if kept > 8 then
+			break
+		end
+		lines[#lines + 1] = text
+	end
+	errors[#errors + 1] = { at = time(), count = 1, message = message:sub(1, 400), stack = table.concat(lines, "\n") }
+	while #errors > ERRORS_KEPT do
+		table.remove(errors, 1)
+	end
+end
+
+local function watchErrors()
+	if ScriptErrors and ScriptErrors.AddUnhandledError then
+		hooksecurefunc(ScriptErrors, "AddUnhandledError", function(...)
+			pcall(keepError, ...)
+		end)
+		-- hooked once: from here on this does nothing
+		watchErrors = function() end
+	end
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
@@ -2258,6 +2328,10 @@ frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("ADDON_ACTION_BLOCKED")
 frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
 frame:SetScript("OnEvent", function(_, event, ...)
+	if event == "ADDON_LOADED" then
+		-- Blizzard_ScriptErrors may load before or after us
+		pcall(watchErrors)
+	end
 	if event == "ADDON_LOADED" and ... == ADDON then
 		WowCompanionDB = WowCompanionDB or {}
 		-- the game saves before it reloads, so hold on to the session we just read
