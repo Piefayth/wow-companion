@@ -111,8 +111,7 @@ local function logFrame()
 		logWindow:HookScript("OnHide", function()
 			WowCompanionDB.windowCombat = WowCompanionDB.windowCombat or {}
 			WowCompanionDB.windowCombat.lastOnHide = ("%s combat=%s by %s"):format(date("%H:%M:%S"),
-				tostring(InCombatLockdown()), (debugstack(3, 3, 0) or "?"):gsub("
-", " | "):sub(1, 300))
+				tostring(InCombatLockdown()), ((debugstack(3, 3, 0) or "?"):gsub("\n", " | ")):sub(1, 300))
 		end)
 	end
 	return logWindow
