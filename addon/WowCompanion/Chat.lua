@@ -346,6 +346,8 @@ local function buildPreview()
 	cancel:SetSize(110, 26)
 	cancel:SetPoint("RIGHT", send, "LEFT", -10, 0)
 	cancel:SetText("Don't send")
+	frame.cancelButton = cancel
+	cancel:RegisterForClicks("AnyDown")
 	cancel:SetScript("OnClick", function() frame:Hide() end)
 
 	local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
@@ -356,8 +358,10 @@ local function buildPreview()
 
 	if SmartNavigation_MarkFrameFocusable then
 		pcall(SmartNavigation_MarkFrameFocusable, frame)
-		pcall(SmartNavigation_MarkFrameFocusable, send)
-		pcall(SmartNavigation_MarkFrameFocusable, cancel)
+		-- the buttons are not focus targets: cross is bound to Send while the
+		-- preview is up, so cross on a focused "Don't send" sent the line (the
+		-- player, 2026-11-10). Cross sends and circle cancels, wherever focus is;
+		-- the labels carry the glyphs.
 	end
 	if UIPanelWindows then
 		UIPanelWindows["WowCompanionPreview"] = { area = "center", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
@@ -434,7 +438,9 @@ function showPreview(line, heading, shown, dictated)
 	if not preview:IsShown() then preview:Show() end
 	local glyph = WowCompanion_Glyph or function(k) return k end
 	if bindPreview(preview) then
-		preview.hint:SetText(("%s send   %s don't send"):format(glyph("PAD1"), glyph("PAD2")))
+		preview.send:SetText(glyph("PAD1") .. " Send")
+		preview.cancelButton:SetText(glyph("PAD2") .. " Don't send")
+		preview.hint:SetText("")
 	else
 		preview.hint:SetText(("In combat: tap %s to send   \"edit, ...\" to change"):format(glyph(WowCompanion_TalkKey or "PADSOCIAL")))
 	end
