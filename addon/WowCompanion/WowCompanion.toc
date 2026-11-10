@@ -21,6 +21,9 @@ Probes.lua
 Export.lua
 Pins.lua
 Strip.lua
+BagsInput.lua
+BagsMenu.lua
 Bags.lua
+BagsStandIn.lua
 Status.lua
 Modules.lua
