@@ -520,30 +520,12 @@ local function showOffer(slot)
 	actionButton:SetText(label)
 	actionButton:Show()
 
-	-- The window is not a frame the gamepad cursor will focus, so instead of making
-	-- it focusable we bind a pad button straight to clicking this one. The binding
-	-- exists only while a button is pending and is cleared the moment it is pressed,
-	-- so it costs nothing the rest of the time.
+	-- No pad key is bound to it any more (the player, 2026-11-10: "just let me
+	-- navigate to it and click it"): the window is in the focus cycle, so the
+	-- cursor reaches the button like any other. A binding left from an older
+	-- build is cleared.
 	local bound = "nothing"
-	if SetOverrideBindingClick then
-		ClearOverrideBindings(actionButton)
-		-- built without holes: ipairs stops at the first nil, so a nil offerKey at the
-		-- front meant this loop never ran once and every key looked unbindable
-		local candidates = {}
-		if offerKey then
-			candidates[#candidates + 1] = offerKey
-		end
-		-- names taken from the client's own config, not guessed
-		for _, fallback in ipairs({ "PADDRIGHT", "PADDUP", "PADRSHOULDER" }) do
-			candidates[#candidates + 1] = fallback
-		end
-		for _, key in ipairs(candidates) do
-			if key and SetOverrideBindingClick(actionButton, true, key, "WowCompanionDo") ~= false then
-				bound = key
-				break
-			end
-		end
-	end
+	if ClearOverrideBindings then ClearOverrideBindings(actionButton) end
 	return bound
 end
 WowCompanion_ShowOffer = showOffer
@@ -568,10 +550,9 @@ local function offer(label, macro, slot)
 	local bound = showOffer(slot)
 	-- show the macro, not just the label: the player is the one authorising this, and
 	-- "Do it" tells them nothing about what they would be running
-	remember("claude", ("button |cffffffff%s|r runs |cff9ad5ff%s|r — %s or click it")
-		:format(label, macro, bound ~= "nothing" and ("press " .. bound) or "mouse"), nil, slot)
-	toast(("|cffffd100Claude|r  %s: |cffffffff%s|r"):format(
-		bound ~= "nothing" and ("press " .. bound) or "open the window", label), 0.8, 0.8, 0.8, 30)
+	remember("claude", ("button |cffffffff%s|r runs |cff9ad5ff%s|r — it is in the window")
+		:format(label, macro), nil, slot)
+	toast(("|cffffd100Claude|r  a button in the window: |cffffffff%s|r"):format(label), 0.8, 0.8, 0.8, 30)
 	return ("offering %q which runs %q, bound to %s"):format(label, macro, bound)
 end
 
