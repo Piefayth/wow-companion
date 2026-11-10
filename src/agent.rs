@@ -134,6 +134,8 @@ Other things of ours agent code can call (all globals, all in WowCompanion):
 - `WCPins.Set{...}`, `WCPins.Add{map=, x=, y=, r=}`, `WCPins.Clear()`: minimap and
   world map pins (docs/api-useful.md, Minimap pins).
 - `WCWheel.Set(name, {label=, slots={...}})`: the radial wheels.
+- `WowCompanion_SetFont(name)`: the interface font, live (Fonts.lua; the Tools tab
+  button steps through them). Names in `WC.Fonts.list`; `Default` restores Blizzard's.
 Other addons are integrations, used only when installed. The request's
 `== integrations ==` section lists the ones in the player's AddOns folder now, each
 with its API; anything not listed is not installed, so never assume one (another

@@ -28,5 +28,6 @@ BagsMenu.lua
 Bags.lua
 BagsStandIn.lua
 Interact.lua
+Fonts.lua
 Status.lua
 Modules.lua

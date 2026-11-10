@@ -81,6 +81,18 @@ local function buildTabs(frame, messages, pending)
 			self:SetText("Size: " .. frame.CycleDefaultSize())
 		end)
 	end
+	-- the interface font, switched live (Fonts.lua); one button the pad can
+	-- press steps through the list, its label saying which is on
+	local fontButton = button("Font: " .. (WC.Fonts and WC.Fonts.Current() or "Default"),
+		"Steps through the interface fonts. Changes at once, kept across reloads.")
+	if fontButton then
+		fontButton:SetScript("OnClick", function(self)
+			if not (WC.Fonts and WC.Fonts.Next) then return end
+			local said = WC.Fonts.Next()
+			self:SetText("Font: " .. WC.Fonts.Current())
+			if said:find("restart") then print(said) end
+		end)
+	end
 	button("Clear map pins", "Remove every pin I put on your minimap and world map.", function()
 		if WCPins and WCPins.Clear then WCPins.Clear() end
 		frame.SelectTab(3)
