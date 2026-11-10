@@ -38,6 +38,14 @@ const SLOTS_LOW: u32 = 8;
 static RELOAD_OFFERED: Mutex<String> = Mutex::new(String::new());
 // requests to the agent running right now; a restart waits for zero
 static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+/// When the last clip was released. A request is not "in flight" until Whisper
+/// and the gather window are done with it, so a restart in those few seconds
+/// could cut a request off or, by the player's report, deliver it twice: the
+/// restart also waits until no clip has been released for a few seconds.
+static LAST_RELEASE: Mutex<Option<Instant>> = Mutex::new(None);
+fn recently_released() -> bool {
+    LAST_RELEASE.lock().unwrap().is_some_and(|at| at.elapsed() < Duration::from_secs(4))
+}
 /// The last chat line sent to the send preview, and when: "edit that, ..." is
 /// handed to the agent with it, so the player can reword a line by voice.
 static LAST_CHAT: Mutex<Option<(String, Instant)>> = Mutex::new(None);
@@ -703,15 +711,20 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             // follows as soon as the words are known).
             // a second clip on its way to Whisper keeps the gather window open
             r if r.starts_with("ask") && r.ends_with(" heard") && gathering.lock().unwrap().is_some() => {
+                *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
                 if let Some((_, last, _)) = gathering.lock().unwrap().as_mut() {
                     *last = Instant::now();
                 }
                 Ok(())
             }
             r if r.starts_with("ask") && r.ends_with(" heard") && IN_FLIGHT.load(Ordering::SeqCst) == 0 => {
+                *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
                 deliver("{ kind = \"progress\", text = \"got it, transcribing\" }".to_string())
             }
-            _ if role.ends_with(" heard") => Ok(()),
+            _ if role.ends_with(" heard") => {
+                *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
+                Ok(())
+            }
             // Home with a trigger (or Home held alone): that slot starts over
             r if r.starts_with("clear@") => {
                 let slot = match &r["clear@".len()..] { "main" => "", other => other };
@@ -1155,7 +1168,7 @@ fn watch_for_restart(args: Vec<String>) {
     let (Ok(request), Some(source)) = (restart_request(), env::var_os(SOURCE_EXE)) else { return };
     loop {
         thread::sleep(Duration::from_secs(1));
-        if !request.exists() || IN_FLIGHT.load(Ordering::SeqCst) > 0 || voice::HOLDING.load(Ordering::Relaxed) {
+        if !request.exists() || IN_FLIGHT.load(Ordering::SeqCst) > 0 || voice::HOLDING.load(Ordering::Relaxed) || recently_released() {
             continue;
         }
         // copy the new build now; if it is mid-build the copy fails, so try again
@@ -1199,7 +1212,7 @@ fn watch_for_restart(args: Vec<String>) {
             continue;
         }
         // and not mid-request or mid-press, now that the new copy is waiting
-        while IN_FLIGHT.load(Ordering::SeqCst) > 0 || voice::HOLDING.load(Ordering::Relaxed) {
+        while IN_FLIGHT.load(Ordering::SeqCst) > 0 || voice::HOLDING.load(Ordering::Relaxed) || recently_released() {
             thread::sleep(Duration::from_millis(100));
         }
         voice::SHUTDOWN.store(true, Ordering::SeqCst);
