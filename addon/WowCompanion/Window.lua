@@ -81,16 +81,49 @@ local function buildTabs(frame, messages, pending)
 			self:SetText("Size: " .. frame.CycleDefaultSize())
 		end)
 	end
-	-- the interface font, switched live (Fonts.lua); one button the pad can
-	-- press steps through the list, its label saying which is on
-	local fontButton = button("Font: " .. (WC.Fonts and WC.Fonts.Current() or "Default"),
-		"Steps through the interface fonts. Changes at once, kept across reloads.")
-	if fontButton then
-		fontButton:SetScript("OnClick", function(self)
-			if not (WC.Fonts and WC.Fonts.Next) then return end
-			local said = WC.Fonts.Next()
-			self:SetText("Font: " .. WC.Fonts.Current())
-			if said:find("restart") or said:find("failed") then print(said) end
+	-- the interface font, switched live (Fonts.lua), picked from a dropdown:
+	-- the button opens a list of every font beside it, each a button the pad
+	-- can land on; choosing one applies it and closes the list (the player,
+	-- 2026-11-10)
+	local fontButton = button("Font: " .. (WC.Fonts and WC.Fonts.Current() or "Default") .. "  >",
+		"Pick the interface font. Changes at once, kept across reloads.")
+	if fontButton and WC.Fonts then
+		local made, list = pcall(CreateFrame, "Frame", nil, tools, "InsetFrameTemplate")
+		if not made or not list then list = CreateFrame("Frame", nil, tools) end
+		list:SetPoint("TOPLEFT", fontButton, "TOPRIGHT", 8, 0)
+		list:SetFrameLevel(fontButton:GetFrameLevel() + 10)
+		list:Hide()
+		local back = list:CreateTexture(nil, "BACKGROUND", nil, -1)
+		back:SetColorTexture(0, 0, 0, 0.92)
+		back:SetAllPoints()
+		local function label() return "Font: " .. WC.Fonts.Current() .. "  >" end
+		for i, entry in ipairs(WC.Fonts.list) do
+			local ok, b = pcall(CreateFrame, "Button", nil, list, "UIPanelButtonTemplate")
+			if ok and b then
+				b:SetSize(200, 24)
+				b:SetPoint("TOPLEFT", 6, -6 - (i - 1) * 26)
+				b:SetText(entry.name)
+				b:SetScript("OnClick", function()
+					local said = WC.Fonts.Set(entry.name)
+					fontButton:SetText(label())
+					list:Hide()
+					if said:find("refused") or said:find("failed") then print(said) end
+				end)
+				if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
+			end
+		end
+		list:SetSize(212, 12 + #WC.Fonts.list * 26)
+		fontButton:SetScript("OnClick", function() list:SetShown(not list:IsShown()) end)
+		tools:HookScript("OnHide", function() list:Hide() end)
+	end
+	local function scaleText()
+		return ("Text size: %d%%"):format(math.floor((WC.Fonts and WC.Fonts.Scale() or 1) * 100 + 0.5))
+	end
+	local scaleButton = button(scaleText(), "Steps the interface text 90% to 140%, with any font.")
+	if scaleButton and WC.Fonts then
+		scaleButton:SetScript("OnClick", function(self)
+			WC.Fonts.NextScale()
+			self:SetText(scaleText())
 		end)
 	end
 	button("Clear map pins", "Remove every pin I put on your minimap and world map.", function()

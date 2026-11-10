@@ -11,4 +11,4 @@ Medium/Regular cuts, except Roboto Condensed (variable, default instance).
 - IBMPlexSansCondensed.ttf: ofl/ibmplexsanscondensed/IBMPlexSansCondensed-Medium.ttf
 - SairaSemiCondensed.ttf: ofl/sairasemicondensed/SairaSemiCondensed-Medium.ttf
 - AtkinsonHyperlegible.ttf: ofl/atkinsonhyperlegible/AtkinsonHyperlegible-Regular.ttf
-- RobotoCondensed.ttf: ofl/robotocondensed/RobotoCondensed[wght].ttf
+- RobotoCondensed.ttf: ofl/robotocondensed/RobotoCondensed[wght].ttf, made static at weight 500 with fontTools (the game refused the variable font)
