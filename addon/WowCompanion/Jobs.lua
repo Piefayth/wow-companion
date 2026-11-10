@@ -418,14 +418,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 			fs:SetJustifyH("RIGHT")
 			window.jobsLegend = fs
 		end
-		local function glyph(key)
-			local ok, atlas = pcall(function()
-				local name = InputIconTextureSetUtility.GetInputIconNameFromBindingKey(key)
-				return InputIconTextureSetUtility.GetNormalActiveInputIconButtonTexture(name)
-			end)
-			if ok and atlas and CreateAtlasMarkup then return CreateAtlasMarkup(atlas, 14, 14) end
-			return WowCompanion_Glyph(key)
-		end
+		local function glyph(key) return WowCompanion_Glyph(key) end
 		local parts = {}
 		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " " .. (CANCEL or "Cancel") end
 		if focused and newest("queued") then parts[#parts + 1] = glyph("PAD4") .. " Send now" end

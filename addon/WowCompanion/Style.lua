@@ -26,23 +26,12 @@ WowCompanion_TalkKey = "PADSOCIAL"
 -- device's labelStyle, Shp shapes, Ltr letters, Rev Nintendo), from the strings
 -- SharedConstants.lua defines (KEY_ABBR_PAD1_SHP...). Never a fixed name, so any
 -- controller reads right. Falls back to the generic glyph, then the key name.
-local GLYPH_SUFFIX = { Shp = "_SHP", Ltr = "_LTR", Rev = "_REV" }
--- First choice: the button's own icon art, inline (the atlas Blizzard's input
--- prompts draw). The glyph characters below live in Blizzard's font, so a
--- custom interface font (Fonts.lua) turned them into plain numbers (the
--- player, 2026-11-10: "the legends lost their Sony-ness").
-local function glyphArt(key, size)
-	local ok, atlas = pcall(function()
-		local name = InputIconTextureSetUtility.GetInputIconNameFromBindingKey(key)
-		return InputIconTextureSetUtility.GetNormalActiveInputIconButtonTexture(name)
-	end)
-	if ok and type(atlas) == "string" and CreateAtlasMarkup then
-		return CreateAtlasMarkup(atlas, size or 14, size or 14)
-	end
-end
-function WowCompanion_Glyph(key, size)
-	local art = glyphArt(key, size)
-	if art then return art end
+-- labelStyle reads "Shapes" on this client (measured 2026-11-10), not "Shp":
+-- unmatched, every glyph fell back to the generic numbered one, which is the
+-- "numbers instead of Sony shapes" the player saw. Both spellings map.
+local GLYPH_SUFFIX = { Shp = "_SHP", Shapes = "_SHP", Ltr = "_LTR", Letters = "_LTR",
+	Rev = "_REV", Reverse = "_REV", Reversed = "_REV" }
+function WowCompanion_Glyph(key)
 	local style
 	pcall(function()
 		local state = C_GamePad.GetDeviceMappedState(C_GamePad.GetActiveDeviceID())
