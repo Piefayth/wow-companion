@@ -6,11 +6,10 @@ in the box, macros, bars, wheels, addon code, addons installed.
 
 This file is what is true now, kept short because the in-game agent reads it on
 every request. **How each thing was learned is in `docs/history.md`**; when a rule
-here looks odd, its story is there. **You can look at the screen** (the player, 2026-11-10): `powershell -NoProfile -File
-tools/shot.ps1` saves the screen at half size and prints the path; `Read` it. On the PC
-only, nothing in the game is touched, so use it whenever seeing beats guessing (where a
-frame sits, what a tooltip says, what the player is pointing at). Looking is fine;
-acting on what you see for the player is not (no automation).
+here looks odd, its story is there. **Never take screenshots to get information** (the player's standing rule,
+2026-11-10). `tools/shot.ps1` exists, but use it only when the player explicitly
+asks you to look at their screen. Game state comes from Lua in a `lua` step and the
+export after a reload, never from reading the screen.
 
 **What we do next is `docs/PLAN.md`**, with the
 player's standing terms. Read it before starting anything sizeable.
@@ -83,7 +82,7 @@ reaches the game with two tricks, and the game reaches the PC only at a reload.
   nothing else reaches disk while playing). The export carries character, bars,
   chords, macros, spellbook, reach, code runs, Lua errors from non-Blizzard addons,
   and the channel's counts. The agent's `look` offers a Reload and resumes after
-  it. The agent may look at screenshots (tools/shot.ps1); encoding data on screen for the PC to decode (a pixel strip, a QR code) is still not built.
+  it. No screenshots for information (the player's rule), and no data encoded on screen.
 - **The heartbeat**: while the voice loop can hear, one of two `pulse` bells exists
   and swaps every 4 s; `Status.lua` shows the minimap button in colour on a swap
   seen recently, grey with a red edge otherwise.
