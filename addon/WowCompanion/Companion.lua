@@ -1072,10 +1072,10 @@ local function buildPreview()
 	send:SetAttribute("type", "macro")
 	send:RegisterForClicks("AnyDown") -- the only edge that runs the macro once
 	send:SetScript("PostClick", function()
-		-- not "Sent": the press is all we know. Chat from a macro is restricted on
-		-- this client (C_ChatInfo.SendChatMessage and C_BattleNet.SendWhisper carry
-		-- RestrictedForMacroChatMessages), and a Battle.net whisper sent this way
-		-- vanished without a word (measured 2026-11-10)
+		-- not "Sent": the press is all we know here. Macro chat is restricted only
+		-- during instance encounters (ChatConstants, RestrictedForMacroChatMessages).
+		-- A Battle.net whisper to an offline friend fails without a chat line, so
+		-- that one is reported from BN_CHAT_WHISPER_UNDELIVERABLE below.
 		toast("|cffffd100Pressed|r  check chat to see it went out", 0.8, 0.8, 0.8, 4)
 		frame:Hide()
 	end)
@@ -1124,6 +1124,17 @@ local function showPreview(line, heading, shown)
 	if not preview:IsShown() then preview:Show() end
 	return true
 end
+-- Blizzard's chat prints nothing when a Battle.net whisper cannot be delivered
+-- (the friend is offline, or appearing offline), so say it ourselves
+do
+	local undeliverable = CreateFrame("Frame")
+	undeliverable:RegisterEvent("BN_CHAT_WHISPER_UNDELIVERABLE")
+	undeliverable:SetScript("OnEvent", function()
+		toast("|cffff7777Battle.net could not deliver that whisper|r: they are offline, or appearing offline", 1, 0.6, 0.6, 10)
+		remember("error", "Battle.net could not deliver that whisper: the friend is offline, or appearing offline.")
+	end)
+end
+
 -- for agent code: show a line in the send preview (line, heading, shown text)
 WowCompanion_Preview = showPreview
 
@@ -1154,10 +1165,7 @@ function handlers.chat(inbox)
 				end
 				line, heading, shown = "/w " .. target .. " " .. message, "Whisper to " .. label, message
 			end
-			-- a Battle.net whisper cannot go out from a macro (see the Send button),
-			-- so it takes the chat-box path below: the player's Enter sends it
-			local bnet = line:find("|K", 1, true)
-			if not bnet and #line <= 255 and showPreview(line, heading, shown) then
+			if #line <= 255 and showPreview(line, heading, shown) then
 				return ("preview: %q"):format(line)
 			end
 		end
