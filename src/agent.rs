@@ -448,7 +448,7 @@ The player said: {transcript}"
             claude.args(["--append-system-prompt", QUICK_RULES]).args(["--effort", "low"]);
         }
         // the repository root: docs, this code, the addon, and its CLAUDE.md
-        claude.current_dir(env!("CARGO_MANIFEST_DIR"));
+        claude.current_dir(crate::home());
         claude
             // every tool, no prompts: the player's choice, and nothing should ever
             // block on a prompt nobody is at the keyboard to answer

@@ -36,6 +36,20 @@ use std::{
 };
 
 const ADDON: &str = "WowCompanion";
+
+/// Where the companion's own files are (addon/, modules/, integrations/,
+/// player/, CLAUDE.md): the folder of the exe in a release, this checkout in
+/// development. `run` executes from a copy in %LOCALAPPDATA%, which names the
+/// exe it came from, so that one counts.
+fn home() -> PathBuf {
+    let exe = env::var_os(SOURCE_EXE).map(PathBuf::from).or_else(|| env::current_exe().ok());
+    if let Some(dir) = exe.as_deref().and_then(Path::parent) {
+        if dir.join("addon").join(ADDON).is_dir() {
+            return dir.to_path_buf();
+        }
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
 /// When the last clip was released. A request is not "in flight" until Whisper
 /// and the gather window are done with it, so a restart in those few seconds
 /// could cut a request off or, by the player's report, deliver it twice: the
@@ -111,6 +125,8 @@ fn main() {
         },
         [command, id] if command == "pads" => pad::watch(id),
         [command] if command == "mics" => voice::microphones(),
+        // Whisper alone on a recorded clip, timed: checks a build on a new machine
+        [command, model, wav] if command == "transcribe" => voice::transcribe_file(Path::new(model), Path::new(wav)),
         [command] if command == "speakers" => voice::speakers(),
         [command, fragment] if command == "formats" => voice::formats(fragment),
         [command, fragment] if command == "miccheck" => voice::miccheck(Some(fragment), None),
@@ -189,7 +205,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         "game: {}\nAddOns: {}\nthis project: {}\nhelper: {}",
         game.display(),
         addons.display(),
-        env!("CARGO_MANIFEST_DIR"),
+        home().display(),
         env::current_exe().map(|exe| exe.display().to_string()).unwrap_or_default()
     );
     // one conversation, reached from the voice loop and from the reload watcher

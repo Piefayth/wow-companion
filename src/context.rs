@@ -108,7 +108,7 @@ pub(crate) fn agent_context_for(addons: &Path, slot: &str) -> Option<String> {
     }
     out.push("== player profile ==".to_string());
     out.push(
-        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("player").join("profile.md"))
+        fs::read_to_string(crate::home().join("player").join("profile.md"))
             .unwrap_or_else(|_| "(none yet: player/profile.md does not exist)".to_string()),
     );
     out.push("== integrations ==".to_string());
@@ -121,7 +121,7 @@ pub(crate) fn agent_context_for(addons: &Path, slot: &str) -> Option<String> {
 /// AddOns folder now (read from disk, so an install counts before any reload).
 /// Other players have other addons: the agent is told only about the ones present.
 pub(crate) fn integrations(addons: &Path) -> String {
-    let notes = Path::new(env!("CARGO_MANIFEST_DIR")).join("integrations");
+    let notes = crate::home().join("integrations");
     let mut present = Vec::new();
     let mut absent = Vec::new();
     for entry in fs::read_dir(&notes).into_iter().flatten().flatten() {

@@ -10,7 +10,7 @@ pub(crate) const PROBE_COUNTDOWN: Duration = Duration::from_secs(8);
 pub(crate) const BRIDGE_PATIENCE: Duration = Duration::from_secs(20);
 
 pub(crate) fn install(addons: &Path) -> io::Result<()> {
-    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("addon").join(ADDON);
+    let source = crate::home().join("addon").join(ADDON);
     // Modules.lua is built from modules/, never edited by hand
     modules::regenerate(None)?;
     let addon = addons.join(ADDON);

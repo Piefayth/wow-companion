@@ -16,12 +16,12 @@ use std::{
 
 /// `modules/` in this repository.
 pub fn dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("modules")
+    crate::home().join("modules")
 }
 
 /// The generated file in the repository's copy of the addon.
 fn generated_in_repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("addon").join(crate::ADDON).join("Modules.lua")
+    crate::home().join("addon").join(crate::ADDON).join("Modules.lua")
 }
 
 /// A module name the addon accepts: letters, digits and underscores.

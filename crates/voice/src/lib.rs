@@ -29,6 +29,7 @@ use transcribe::*;
 use cue::*;
 pub use bluetooth::reconnect;
 pub use mic::{formats, miccheck, microphones, speakers};
+pub use transcribe::transcribe_file;
 
 const POLL: Duration = Duration::from_millis(16);
 /// A press released this quickly was a tap, not speech: it is reported as the

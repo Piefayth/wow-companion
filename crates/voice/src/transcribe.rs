@@ -104,3 +104,63 @@ pub(crate) fn transcribe(whisper: &WhisperContext, clip: &[f32], prompt: &str) -
     }
     Ok(text.trim().to_string())
 }
+
+/// `wow-companion transcribe <model> <clip.wav>`: Whisper on a recorded clip,
+/// timed, with no mic, pad or game. How a build is checked on a new machine (the
+/// setup window's self-test) and how backends are compared on the same clip:
+/// ggml prints which device it loaded (a Vulkan or CUDA GPU, or the CPU).
+pub fn transcribe_file(model: &std::path::Path, wav: &std::path::Path) -> io::Result<()> {
+    let (samples, channels, rate) = read_wav(&std::fs::read(wav)?)?;
+    let clip = crate::mic::to_whisper(&samples, channels, rate);
+    let path = model.to_str().ok_or_else(|| io::Error::other("model path isn't UTF-8"))?;
+    let loading = std::time::Instant::now();
+    let whisper = WhisperContext::new_with_params(path, WhisperContextParameters::default())
+        .map_err(|err| io::Error::other(format!("{err:?}")))?;
+    let loaded = loading.elapsed();
+    let started = std::time::Instant::now();
+    let text = transcribe(&whisper, &clip, &prompt(&[]))?;
+    println!("model loaded in {:.2}s", loaded.as_secs_f32());
+    println!(
+        "{:.1}s of audio transcribed in {:.2}s",
+        clip.len() as f32 / WHISPER_RATE as f32,
+        started.elapsed().as_secs_f32()
+    );
+    println!("text: {}", text.trim());
+    Ok(())
+}
+
+/// A WAV file's samples as f32, with its channel count and rate: 16-bit PCM or
+/// 32-bit float, the two formats anything records.
+fn read_wav(bytes: &[u8]) -> io::Result<(Vec<f32>, u16, u32)> {
+    let bad = |why: &str| io::Error::other(format!("not a usable WAV: {why}"));
+    if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Err(bad("no RIFF/WAVE header"));
+    }
+    let u16_at = |at: usize| u16::from_le_bytes([bytes[at], bytes[at + 1]]);
+    let u32_at = |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
+    let (mut format, mut channels, mut rate, mut bits, mut data) = (0, 0, 0, 0, None);
+    let mut at = 12;
+    while at + 8 <= bytes.len() {
+        let size = u32_at(at + 4) as usize;
+        let body = at + 8;
+        let end = (body + size).min(bytes.len());
+        match &bytes[at..at + 4] {
+            b"fmt " if size >= 16 => {
+                format = u16_at(body);
+                channels = u16_at(body + 2);
+                rate = u32_at(body + 4);
+                bits = u16_at(body + 14);
+            }
+            b"data" => data = Some(&bytes[body..end]),
+            _ => {}
+        }
+        at = body + size + (size & 1);
+    }
+    let data = data.ok_or_else(|| bad("no data chunk"))?;
+    let samples = match (format, bits) {
+        (1, 16) => data.chunks_exact(2).map(|s| i16::from_le_bytes([s[0], s[1]]) as f32 / i16::MAX as f32).collect(),
+        (3, 32) => data.chunks_exact(4).map(|s| f32::from_le_bytes([s[0], s[1], s[2], s[3]])).collect(),
+        _ => return Err(bad(&format!("format {format} at {bits} bits (16-bit PCM or 32-bit float only)"))),
+    };
+    Ok((samples, channels.max(1), rate))
+}
