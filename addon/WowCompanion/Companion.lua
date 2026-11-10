@@ -296,7 +296,44 @@ local function remember(who, text, continued, slot, queued)
 	local entries = WowCompanionDB.log
 	entries[#entries + 1] = { at = time(), who = who, text = text, continued = continued or nil,
 		slot = slot ~= "" and slot or nil, queued = queued }
-	while #entries > LOG_KEEP do
+	-- Each conversation keeps its own LOG_KEEP lines, so a busy one never pushes
+	-- out a quiet one; when one fills, its oldest third is compacted into one
+	-- line that keeps what was asked, not dropped (the player, 2026-11-10).
+	local key = slot ~= "" and slot or nil
+	local count = 0
+	for _, e in ipairs(entries) do
+		if e.slot == key then count = count + 1 end
+	end
+	if count > LOG_KEEP then
+		local fold, asked, first, last, at = math.floor(LOG_KEEP / 3), {}, nil, nil, nil
+		local i, taken = 1, 0
+		while i <= #entries and taken < fold do
+			local e = entries[i]
+			if e.slot == key then
+				at = at or i
+				first = first or e.at
+				last = e.at
+				if e.who == "you" and not e.continued and type(e.text) == "string" then
+					local t = e.text:gsub("%s+", " ")
+					asked[#asked + 1] = "- " .. (#t > 90 and (t:sub(1, 87) .. "...") or t)
+				elseif e.who == "summary" and type(e.text) == "string" then
+					asked[#asked + 1] = e.text
+				end
+				table.remove(entries, i)
+				taken = taken + 1
+			else
+				i = i + 1
+			end
+		end
+		local head = ("Earlier, %s to %s, compacted: what you asked"):format(
+			first and date("%b %d %H:%M", first) or "?", last and date("%H:%M", last) or "?")
+		local body = table.concat(asked, "\n")
+		if #body > 3000 then body = "...\n" .. body:sub(-3000):gsub("^[^\n]*\n", "") end
+		table.insert(entries, at or 1, { at = first or time(), who = "summary", slot = key,
+			text = head .. "\n" .. body })
+	end
+	-- a hard ceiling over all conversations, so the save file stays bounded
+	while #entries > LOG_KEEP * 8 do
 		table.remove(entries, 1)
 	end
 	if slot == viewSlot then
