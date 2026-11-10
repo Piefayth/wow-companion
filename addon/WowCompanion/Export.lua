@@ -616,6 +616,14 @@ local function exportContext()
 			line("    " .. (err.stack:gsub(newline, newline .. "    ")))
 		end
 	end
+	local blocked = WowCompanionDB.blocked or {}
+	if #blocked > 0 then
+		line("-- actions the game blocked (\"Interface action failed\"), newest first")
+		for at = #blocked, math.max(1, #blocked - 9), -1 do
+			local b = blocked[at]
+			line(("%s x%d: %s %s%s"):format(date("%m-%d %H:%M:%S", b.at or 0), b.count or 1, tostring(b.event), tostring(b.what), b.combat and " (in combat)" or ""))
+		end
+	end
 	if #errors == 0 then
 		line("none")
 	end

@@ -1349,9 +1349,20 @@ frame:SetScript("OnEvent", function(_, event, ...)
 	elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
 		-- taint cascades, and the first block names the real culprit, so number them
 		-- rather than letting each one overwrite the last
+		-- kept for the agents (the export) and the Status tab, not said in the
+		-- conversation: it is a diagnosis, not news for the player (2026-11-10)
 		local addon, func = ...
 		blocked = blocked + 1
-		record(("%s %d"):format(event, blocked), ("%s called %s"):format(tostring(addon), tostring(func)))
+		local list = WowCompanionDB.blocked or {}
+		WowCompanionDB.blocked = list
+		local last = list[#list]
+		local what = ("%s called %s"):format(tostring(addon), tostring(func))
+		if last and last.what == what and last.event == event then
+			last.count, last.at = (last.count or 1) + 1, time()
+		else
+			list[#list + 1] = { at = time(), event = event, what = what, count = 1, combat = InCombatLockdown() or nil }
+			while #list > 20 do table.remove(list, 1) end
+		end
 	end
 end)
 

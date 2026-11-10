@@ -109,6 +109,9 @@ local function buildTabs(frame, messages, pending)
 		for name in pairs(effectiveModules()) do modules[#modules + 1] = name end
 		table.sort(modules)
 		add("My modules", #modules > 0 and table.concat(modules, ", ") or "none")
+		local blocked = WowCompanionDB.blocked or {}
+		local b = blocked[#blocked]
+		add("Blocked actions", b and ("%d kinds, last %s: %s x%d"):format(#blocked, date("%H:%M", b.at or 0), b.what, b.count or 1) or "none")
 		add("Combat", InCombatLockdown() and "|cffff6060yes|r " .. grey .. "(changes wait until it ends)|r" or "no")
 		status:SetText(table.concat(lines, "\n"))
 	end
