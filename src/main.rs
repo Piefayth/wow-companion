@@ -354,6 +354,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             _ if role.ends_with(" tap") => Ok(()),
             r if r.starts_with("ask") && r.ends_with(" heard") => {
                 *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
+                note_release();
                 // a second clip on its way to Whisper keeps the gather window open
                 if let Some((_, last, _)) = gathering.lock().unwrap().as_mut() {
                     *last = Instant::now();
@@ -367,6 +368,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             }
             _ if role.ends_with(" heard") => {
                 *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
+                note_release();
                 Ok(())
             }
             // L1+R1: dictation, no agent. Sent at once (no gathering): the line

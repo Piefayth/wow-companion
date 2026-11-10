@@ -156,7 +156,20 @@ static RUNNING_REQ: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
 static CANCELLED: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 /// Cancels of a clip still being heard: (conversation, when). A clip released
 /// before the cancel is dropped when its words arrive.
-static HEARING_CANCELLED: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
+static HEARING_CANCELLED: Mutex<Vec<(String, u128)>> = Mutex::new(Vec::new());
+/// When the newest clip was let go, wall clock (unix ms): the game stamps its
+/// cancel with its own clock, and a cancel read late off the strip must not
+/// reach a clip let go after the press (the player, 2026-11-10: a cancel
+/// dropped the message after the one meant).
+static RELEASE_WALL: Mutex<u128> = Mutex::new(0);
+
+fn now_ms() -> u128 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default()
+}
+
+pub(crate) fn note_release() {
+    *RELEASE_WALL.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = now_ms();
+}
 
 /// Messages waiting for their conversation: (conversation, request id, words).
 static WAITING: Mutex<Vec<(String, u64, String)>> = Mutex::new(Vec::new());
@@ -227,10 +240,14 @@ pub(crate) fn new_request() -> u64 {
 }
 
 /// `released`: when the clip whose words just arrived was let go.
-pub(crate) fn hearing_cancelled(slot: &str, released: Option<Instant>) -> bool {
+/// Words just arrived for this conversation: drop them when a Cancel was
+/// pressed after their clip was let go. `_released` is kept for the callers.
+pub(crate) fn hearing_cancelled(slot: &str, _released: Option<Instant>) -> bool {
+    let released = *RELEASE_WALL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut all = HEARING_CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    all.retain(|(_, at)| at.elapsed() < Duration::from_secs(30));
-    let hit = all.iter().position(|(at, when)| at == slot && released.is_none_or(|released| *when >= released));
+    let now = now_ms();
+    all.retain(|(_, press)| now.saturating_sub(*press) < 30_000);
+    let hit = all.iter().position(|(at, press)| at == slot && released <= *press + 1000);
     hit.map(|i| all.remove(i)).is_some()
 }
 
@@ -298,35 +315,43 @@ pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool
 }
 
 /// The newest request each conversation made from a clip, and when.
-static LAST_REQ: Mutex<Vec<(String, u64, Instant)>> = Mutex::new(Vec::new());
+static LAST_REQ: Mutex<Vec<(String, u64, u128)>> = Mutex::new(Vec::new());
 
 pub(crate) fn note_request(slot: &str, req: u64) {
+    let released = *RELEASE_WALL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut all = LAST_REQ.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     all.retain(|(at, _, _)| at != slot);
-    all.push((slot.to_string(), req, Instant::now()));
+    all.push((slot.to_string(), req, released));
 }
 
-pub(crate) fn cancel_hearing(addons: &Path, slot: &str) {
+/// `press`: when the X was pressed, by the game's clock (unix ms, to the second).
+pub(crate) fn cancel_hearing(addons: &Path, slot: &str, press: u128) {
     println!("cancel hearing [{}]", if slot.is_empty() { "main" } else { slot });
-    // Too late to drop the words (the player, 2026-11-10: "if I cancelled a
-    // transcription but it sent it, it should cancel the message instead"):
-    // when the newest clip has already become a request, cancel that request.
-    let released = *super::LAST_RELEASE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let latest = *RELEASE_WALL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let newest = LAST_REQ
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .iter()
         .find(|(at, _, _)| at == slot)
-        .map(|(_, req, when)| (*req, *when));
-    if let Some((req, made)) = newest {
-        if made.elapsed() < Duration::from_secs(60) && released.is_none_or(|released| made >= released) {
+        .map(|(_, req, released)| (*req, *released));
+    let slack = 1000; // the game's clock is to the second
+    // a clip let go before the press and not yet a request: drop its words
+    let transcribing = latest <= press + slack && newest.is_none_or(|(_, released)| latest > released);
+    if transcribing {
+        HEARING_CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((slot.to_string(), press));
+        let _ = send_inbox(addons, &format!("{{ kind = \"stopped\", slot = {}, hearing = true }}", lua_string(slot)));
+        return;
+    }
+    // too late to drop the words (the player, 2026-11-10): the clip it meant
+    // became a request, so cancel that request, never a later one
+    if let Some((req, released)) = newest {
+        if released <= press + slack && now_ms().saturating_sub(released) < 120_000 {
             println!("  the clip already became request {req}: cancelling that");
             cancel_request(addons, slot, req, false);
             return;
         }
     }
-    HEARING_CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((slot.to_string(), Instant::now()));
-    let _ = send_inbox(addons, &format!("{{ kind = \"stopped\", slot = {}, hearing = true }}", lua_string(slot)));
+    println!("  nothing to cancel for that press");
 }
 static STOPS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::new());
 /// Per conversation, how many times its running request was ended (by Stop or
@@ -443,7 +468,11 @@ pub(crate) fn watch_commands(addons: &Path) {
                             cancel_request(addons, &main(slot), req, *verb == "now");
                         }
                     }
-                    ["WCCMD", _nonce, "hear", slot, ..] => cancel_hearing(addons, &main(slot)),
+                    ["WCCMD", nonce, "hear", slot, ..] => {
+                        // the nonce opens with the game's time() in seconds
+                        let press = nonce.get(..10).and_then(|secs| secs.parse::<u128>().ok()).map(|secs| secs * 1000 + 999);
+                        cancel_hearing(addons, &main(slot), press.unwrap_or_else(now_ms));
+                    }
                     ["WCCMD", _nonce, verb @ ("stop" | "now"), slot] => stop(addons, &main(slot), *verb == "stop"),
                     _ => {}
                 }
