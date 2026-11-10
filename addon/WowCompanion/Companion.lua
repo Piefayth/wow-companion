@@ -741,67 +741,182 @@ end
 -- It cannot take the mouse or the gamepad focus, so it never gets in the way,
 -- and in combat it holds what arrives until the fight is over.
 local toastFrame, toastHeld, toastTimer
-local function toast(text, r, g, b, hold)
-	if not toastFrame then
-		-- bottom left, flush with the screen's corner, under the chat box; the
-		-- game's tooltip border and dark dialog backing, like Blizzard's own UI
-		local made, frame = pcall(CreateFrame, "Frame", nil, UIParent, "BackdropTemplate")
-		toastFrame = made and frame or CreateFrame("Frame", nil, UIParent)
-		toastFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
-		local chat = ChatFrame1 and ChatFrame1:GetWidth()
-		toastFrame:SetSize(math.max(380, (chat or 430) + 40), 34)
-		toastFrame:SetFrameStrata("HIGH")
-		toastFrame:EnableMouse(false)
-		if toastFrame.SetBackdrop then
-			toastFrame:SetBackdrop({
-				bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-				edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-				tile = true, tileSize = 16, edgeSize = 16,
-				insets = { left = 4, right = 4, top = 4, bottom = 4 },
-			})
-			toastFrame:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
-		end
-		toastFrame.text = toastFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		-- fills the frame and wraps, so a board of several rows shows every
-		-- row: a non-wrapping string anchored only left and right drew the first
-		-- line alone in a frame grown tall for all of them (seen 2026-11-10)
-		toastFrame.text:SetPoint("TOPLEFT", 12, -9)
-		toastFrame.text:SetPoint("BOTTOMRIGHT", -12, 9)
-		toastFrame.text:SetJustifyH("LEFT")
-		toastFrame.text:SetJustifyV("MIDDLE")
-		toastFrame.text:SetWordWrap(true)
-		toastFrame.text:SetMaxLines(8)
-		toastFrame.text:SetSpacing(3)
-		toastFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-		toastFrame:SetScript("OnEvent", function()
-			if toastHeld then
-				local held = toastHeld
-				toastHeld = nil
-				toast(unpack(held))
-			end
-		end)
+-- Styled like the game's own tooltips (the player, 2026-11-10: the plain-text
+-- board "really isn't very WoW native"): tooltip background and border, a gold
+-- title over a thin divider, then one aligned row per conversation with the
+-- ready-check mark for its state. A plain notice is one wrapped string instead.
+-- Bottom left, under the chat box; it cannot take the mouse or gamepad focus.
+local TOAST_W, ROW_H, PAD = 420, 18, 14
+-- Above the chat box and its tabs, as wide as it, so a chat box resized to its
+-- biggest pushes the board up instead of being covered (the player,
+-- 2026-11-10). Only our frame is anchored: nothing of Blizzard's is changed.
+local function placeToast(frame)
+	frame:ClearAllPoints()
+	local chat = ChatFrame1
+	if chat and chat.GetTop and chat:GetTop() then
+		frame:SetPoint("BOTTOMLEFT", chat, "TOPLEFT", -6, 28)
+		frame:SetWidth(math.max(TOAST_W, chat:GetWidth() + 12))
+	else
+		frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 4, 4)
+		frame:SetWidth(TOAST_W)
 	end
+end
+local function buildToast()
+	local made, frame = pcall(CreateFrame, "Frame", nil, UIParent, "BackdropTemplate")
+	frame = made and frame or CreateFrame("Frame", nil, UIParent)
+	frame:SetSize(TOAST_W, 34)
+	placeToast(frame)
+	frame:SetFrameStrata("HIGH")
+	frame:EnableMouse(false)
+	if frame.SetBackdrop then
+		-- the game's own dialog border: the gold-trimmed frame of its popups
+		frame:SetBackdrop({
+			bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+			edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+			tile = true, tileSize = 16, edgeSize = 24,
+			insets = { left = 6, right = 6, top = 6, bottom = 6 },
+		})
+		frame:SetBackdropColor(0.06, 0.06, 0.1, 0.92)
+		frame:SetBackdropBorderColor(1, 1, 1, 1)
+	end
+	-- a notice: one string that fills the frame and wraps (a non-wrapping one
+	-- anchored only left and right drew its first line alone, 2026-11-10)
+	frame.text = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	frame.text:SetPoint("TOPLEFT", PAD + 2, -PAD)
+	frame.text:SetPoint("BOTTOMRIGHT", -PAD - 2, PAD)
+	frame.text:SetJustifyH("LEFT")
+	frame.text:SetJustifyV("MIDDLE")
+	frame.text:SetWordWrap(true)
+	frame.text:SetMaxLines(8)
+	frame.text:SetSpacing(3)
+	-- the board: a title, a hint, a divider, then rows made as needed
+	frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	frame.title:SetPoint("TOPLEFT", PAD + 2, -PAD)
+	frame.title:SetText("Companion")
+	frame.hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	frame.hint:SetPoint("TOPRIGHT", -PAD - 2, -PAD - 1)
+	frame.hint:SetText("tap minus to read")
+	frame.rule = frame:CreateTexture(nil, "ARTWORK")
+	frame.rule:SetColorTexture(1, 0.82, 0, 0.35)
+	frame.rule:SetHeight(1)
+	frame.rule:SetPoint("TOPLEFT", PAD, -PAD - 17)
+	frame.rule:SetPoint("TOPRIGHT", -PAD, -PAD - 17)
+	frame.rows = {}
+	-- in combat nothing shows; what arrived is shown when the fight ends
+	frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+	frame:SetScript("OnEvent", function()
+		if toastHeld then
+			local held = toastHeld
+			toastHeld = nil
+			held()
+		end
+	end)
+	return frame
+end
+
+-- each state's mark: Blizzard's ready-check atlases, a coloured square if missing
+local MARKS = { hearing = "UI-LFG-PendingMark", working = "UI-LFG-PendingMark",
+	replied = "UI-LFG-ReadyMark", problem = "UI-LFG-DeclineMark" }
+local function setMark(tex, state, r, g, b)
+	local atlas = MARKS[state]
+	local known = atlas and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas)
+	if known then
+		tex:SetAtlas(atlas)
+		if state == "hearing" then tex:SetVertexColor(0.6, 0.85, 1) else tex:SetVertexColor(1, 1, 1) end
+	else
+		tex:SetColorTexture(r, g, b, 1)
+	end
+end
+
+local function showRow(row, on)
+	row.mark:SetShown(on) row.name:SetShown(on) row.state:SetShown(on) row.detail:SetShown(on)
+end
+
+local function toastRow(frame, i)
+	local row = frame.rows[i]
+	if row then return row end
+	row = {}
+	row.mark = frame:CreateTexture(nil, "OVERLAY")
+	row.mark:SetSize(14, 14)
+	row.mark:SetPoint("TOPLEFT", PAD + 2, -PAD - 23 - (i - 1) * ROW_H)
+	row.name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	row.name:SetWidth(40)
+	row.name:SetJustifyH("LEFT")
+	row.name:SetPoint("LEFT", row.mark, "RIGHT", 6, 0)
+	row.state = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.state:SetWidth(84)
+	row.state:SetJustifyH("LEFT")
+	row.state:SetPoint("LEFT", row.name, "RIGHT", 2, 0)
+	row.detail = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	row.detail:SetJustifyH("LEFT")
+	row.detail:SetWordWrap(false)
+	row.detail:SetPoint("LEFT", row.state, "RIGHT", 4, 0)
+	row.detail:SetPoint("RIGHT", frame, "RIGHT", -PAD - 2, 0)
+	frame.rows[i] = row
+	return row
+end
+
+local function boardMode(frame, on)
+	frame.title:SetShown(on)
+	frame.hint:SetShown(on)
+	frame.rule:SetShown(on)
+	frame.text:SetShown(not on)
+	if not on then
+		for _, row in ipairs(frame.rows) do showRow(row, false) end
+	end
+end
+
+local function toast(text, r, g, b, hold)
+	toastFrame = toastFrame or buildToast()
 	if not text then
 		toastFrame:Hide()
 		return
 	end
 	if InCombatLockdown() then
-		toastHeld = { text, r, g, b, hold }
+		toastHeld = function() toast(text, r, g, b, hold) end
 		toastFrame:Hide()
 		return
 	end
+	placeToast(toastFrame)
+	boardMode(toastFrame, false)
 	toastFrame.text:SetText(text)
-	-- one row per line: several agents at work show one each
 	local rows = select(2, text:gsub("\n", "")) + 1
-	toastFrame:SetHeight(18 + rows * 15 + (rows - 1) * 3)
+	toastFrame:SetHeight(2 * PAD + rows * 15 + (rows - 1) * 3)
 	toastFrame.text:SetTextColor(r or 1, g or 1, b or 1)
-	toastFrame:SetAlpha(1)
 	toastFrame:Show()
 	if toastTimer then toastTimer:Cancel() end
 	toastTimer = nil
 	if hold then
 		toastTimer = C_Timer.NewTimer(hold, function() toastFrame:Hide() end)
 	end
+end
+
+-- The agents at work: rows = { { label, state, detail, r, g, b }, ... }
+local function toastBoard(rows)
+	toastFrame = toastFrame or buildToast()
+	if InCombatLockdown() then
+		toastHeld = function() toastBoard(rows) end
+		toastFrame:Hide()
+		return
+	end
+	placeToast(toastFrame)
+	boardMode(toastFrame, true)
+	for i, item in ipairs(rows) do
+		local row = toastRow(toastFrame, i)
+		local label, state, detail, r, g, b = unpack(item)
+		setMark(row.mark, state:match("^%a+"), r, g, b)
+		row.name:SetText(label)
+		row.name:SetTextColor(r, g, b)
+		row.state:SetText(state)
+		row.state:SetTextColor(r, g, b)
+		row.detail:SetText(detail or "")
+		showRow(row, true)
+	end
+	for i = #rows + 1, #toastFrame.rows do showRow(toastFrame.rows[i], false) end
+	toastFrame:SetHeight(2 * PAD + 21 + #rows * ROW_H)
+	if toastTimer then toastTimer:Cancel() end
+	toastTimer = nil
+	toastFrame:Show()
 end
 
 local function reveal(frame)
@@ -889,9 +1004,10 @@ renderPending = function()
 		return text
 	end
 	local function row(slot, colour, state, detail)
-		local name = ("|cff%s%-4s|r"):format(colour, slotLabel(slot))
-		return ("%s  |cff%s%s|r%s"):format(name, colour, state,
-			detail and detail ~= "" and ("   |cffa0a0a0" .. clip(detail, 64) .. "|r") or "")
+		local r = tonumber(colour:sub(1, 2), 16) / 255
+		local g = tonumber(colour:sub(3, 4), 16) / 255
+		local b = tonumber(colour:sub(5, 6), 16) / 255
+		return { slotLabel(slot), state, clip(detail, 90), r, g, b }
 	end
 	for _, slot in ipairs(SLOT_ORDER) do
 		local entry = working[slot]
@@ -927,7 +1043,7 @@ renderPending = function()
 	end
 	if #lines > 0 then
 		if not frame:IsShown() then
-			toast(table.concat(lines, "\n"), 0.8, 0.8, 0.8)
+			toastBoard(lines)
 		end
 		if not pendingTicker then pendingTicker = C_Timer.NewTicker(0.4, function() renderPending() end) end
 	else
@@ -1670,7 +1786,7 @@ function handlers.log(inbox)
 		-- a row of its own in the toast, under its conversation's label, so
 		-- the other agents' rows stay visible beside it
 		if who == "claude" and first ~= "" then
-			WowCompanion_Recent(islot, first .. "  |cff808080(minus to read)|r")
+			WowCompanion_Recent(islot, first)
 		elseif who == "error" and first ~= "" then
 			WowCompanion_Recent(islot, "|cffff7777" .. first .. "|r")
 		end
