@@ -108,8 +108,13 @@ end
 local function rows()
 	local out = {}
 	local now = GetTime()
+	-- only the conversation in view (the player, 2026-11-10: "in R1 I just see
+	-- the R1 messages")
+	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
 	for slot, since in pairs(core.transcribing or {}) do
-		out[#out + 1] = { state = "hearing", slot = slot, text = "...", at = since }
+		if slot == view then
+			out[#out + 1] = { state = "hearing", slot = slot, text = "...", at = since }
+		end
 	end
 	table.sort(out, function(a, b) return a.at < b.at end)
 	-- a running job whose conversation stopped working (a reply or a failure
@@ -121,7 +126,9 @@ local function rows()
 			table.remove(jobs, i)
 		end
 	end
-	for _, job in ipairs(jobs) do out[#out + 1] = job end
+	for _, job in ipairs(jobs) do
+		if job.slot == view then out[#out + 1] = job end
+	end
 	while #out > MAX do table.remove(out, #out) end
 	return out, now
 end
