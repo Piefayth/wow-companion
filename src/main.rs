@@ -3,6 +3,8 @@
 //! and `probe` sends numbered messages so we can watch the channel work.
 
 mod agent;
+mod bells;
+mod doctor;
 mod heartbeat;
 
 use wow_companion_pad as pad;
@@ -60,10 +62,6 @@ const BELL_HEARD: Duration = Duration::from_secs(2);
 // what cadence, so give a slow flush room to show itself before calling it dead
 const BRIDGE_PATIENCE: Duration = Duration::from_secs(20);
 
-// bells must exceed the client's sound cache limit (174,762 bytes) so it rereads them every play
-const BELL_SECONDS: u32 = 10;
-const SAMPLE_RATE: u32 = 22_050;
-
 // every slot is identical; Slot.xml pulls in Inbox.lua so addon managers see one fixed fingerprint
 const SLOT_TOC: &str = "## Interface: 16001\n## Title: WoW Companion slot\n## LoadOnDemand: 1\n## Group: WowCompanion\n\nSlot.xml\n";
 const SLOT_XML: &str = "<Ui xmlns=\"http://www.blizzard.com/wow/ui/\">\n\t<Script file=\"Inbox.lua\"></Script>\n</Ui>\n";
@@ -111,6 +109,8 @@ fn main() {
         [command] if command == "pads" => pad::list(),
         [command] if command == "buzz" => pad::buzz(),
         [command] if command == "reconnect" => voice::reconnect(),
+        // every link of the chain, checked: is it broken, and where
+        [command, addons] if command == "doctor" => doctor::run(Path::new(addons)),
         [command, id] if command == "pads" => pad::watch(id),
         [command] if command == "mics" => voice::microphones(),
         [command] if command == "speakers" => voice::speakers(),
@@ -175,11 +175,16 @@ fn install(addons: &Path) -> io::Result<()> {
     }
     let signals = addon.join("Signals");
     fs::create_dir_all(&signals)?;
+    // silence is a missing file (see bells.rs): clear any bell left from before
     for bell in 1..=BELLS {
-        fs::write(signals.join(format!("{bell}.wav")), [])?;
+        bells::silence(&signals.join(bell_name(bell)))?;
     }
-    fs::write(signals.join("always.wav"), silent_wav())?;
-    fs::write(signals.join("never.wav"), [])?;
+    for old in ["show.wav", "alive-a.wav", "alive-b.wav"] {
+        let _ = bells::silence(&signals.join(old));
+    }
+    // the sound probe's controls: one that must play, one that must not
+    bells::ring(&signals.join("always.wav"))?;
+    bells::silence(&signals.join("never.wav"))?;
     for slot in 1..=SLOTS {
         let dir = addons.join(slot_name(slot));
         fs::create_dir_all(&dir)?;
@@ -220,7 +225,7 @@ fn probe(addons: &Path) -> io::Result<()> {
     }
     // the bells still ringing are the last few; earlier ones were silenced as we went
     for slot in used.iter().rev().take(BELL_LINGER as usize) {
-        write_reporting(&signals.join(bell_name(*slot)), &[])?;
+        bells::silence(&signals.join(bell_name(*slot)))?;
     }
     if !game_running()? {
         println!("warning: the game closed partway through, so the run is incomplete");
@@ -890,12 +895,12 @@ fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     // long enough to be heard, then silence it. The addon polls every 0.5 s.
     let signals = addons.join(ADDON).join("Signals");
     for bell in 1..=BELLS {
-        write_reporting(&signals.join(bell_name(bell)), &[])?;
+        bells::silence(&signals.join(bell_name(bell)))?;
     }
     deliver(addons, slot, inbox)?;
     println!("sent in slot {slot}: {inbox}");
     thread::sleep(BELL_HEARD);
-    write_reporting(&signals.join(bell_name(slot)), &[])?;
+    bells::silence(&signals.join(bell_name(slot)))?;
     Ok(())
 }
 
@@ -904,11 +909,11 @@ fn deliver(addons: &Path, slot: u32, inbox: &str) -> io::Result<()> {
     let lua = format!("WowCompanion_Inbox = {inbox}\n");
     // the inbox lands first: the bell is what tells the addon to go read it
     write_reporting(&addons.join(slot_name(slot)).join("Inbox.lua"), lua.as_bytes())?;
-    write_reporting(&signals.join(bell_name(slot)), &silent_wav())?;
+    bells::ring(&signals.join(bell_name(slot)))?;
     // a bell is reused every BELLS sends, so silence it well before then or the
     // addon hears a stale ring and reads a slot we haven't written yet
     if slot > BELL_LINGER {
-        write_reporting(&signals.join(bell_name(slot - BELL_LINGER)), &[])?;
+        bells::silence(&signals.join(bell_name(slot - BELL_LINGER)))?;
     }
     Ok(())
 }
@@ -1184,25 +1189,6 @@ fn bell_name(n: u32) -> String {
     format!("{}.wav", (n - 1) % BELLS + 1)
 }
 
-// 16-bit mono PCM of pure silence
-fn silent_wav() -> Vec<u8> {
-    let data_len = BELL_SECONDS * SAMPLE_RATE * 2;
-    let mut wav = Vec::with_capacity(44 + data_len as usize);
-    wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
-    wav.extend_from_slice(b"WAVEfmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    wav.extend_from_slice(&1u16.to_le_bytes()); // mono
-    wav.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
-    wav.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
-    wav.extend_from_slice(&2u16.to_le_bytes());
-    wav.extend_from_slice(&16u16.to_le_bytes());
-    wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&data_len.to_le_bytes());
-    wav.resize(44 + data_len as usize, 0);
-    wav
-}
 
 fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
     fs::create_dir_all(to)?;

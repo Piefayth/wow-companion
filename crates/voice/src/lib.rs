@@ -64,9 +64,6 @@ const HEAL_EVERY: Duration = Duration::from_secs(15);
 const PULSE: u8 = 160;
 // the closing pulse: softer than the opening one, so the two are told apart
 const PULSE_SOFT: u8 = 90;
-// hold mode: how long after the mic closes to wait for the headset to be back in
-// stereo before the closing cue (`return=` tunes it, in ms)
-const RETURN_MS: u64 = 1000;
 
 /// Ask every active audio endpoint to reconnect its Bluetooth link, the way the
 /// Sound control panel's "Connect" does: KSPROPERTY_ONESHOT_RECONNECT on the
@@ -152,27 +149,6 @@ fn reconnect_bluetooth_audio() -> usize {
 pub fn reconnect() -> io::Result<()> {
     println!("reconnect accepted by {} endpoint(s)", reconnect_bluetooth_audio_verbose(true));
     Ok(())
-}
-
-/// The stereo output of the headset whose hands-free mic is `mic`: "Headset
-/// (AirPods Max Hands-Free AG Audio)" -> "Headphones (AirPods Max Stereo)".
-fn stereo_twin(mic: &str) -> Option<String> {
-    let inner = mic.split_once('(')?.1.trim_end_matches(')');
-    let base = inner.split(" Hands-Free").next()?.trim().to_ascii_lowercase();
-    if base.is_empty() {
-        return None;
-    }
-    let host = cpal::default_host();
-    let outputs = host.output_devices().ok()?;
-    for device in outputs {
-        let Ok(described) = device.description() else { continue };
-        let name = described.name().to_string();
-        let lowered = name.to_ascii_lowercase();
-        if lowered.contains(&base) && !lowered.contains("hands-free") {
-            return Some(name);
-        }
-    }
-    None
 }
 
 fn prompt(spells: &[String]) -> String {
@@ -262,37 +238,10 @@ pub fn listen(
     // A Bluetooth headset holding HFP for the mic has its A2DP render endpoint
     // switched off, so the cue has to name the hands-free one or it plays into a
     // dead device. Nothing is audible and nothing errors.
-    let mut cue_device = option(options, "cue").map(str::to_string);
+    let cue_device = option(options, "cue").map(str::to_string);
     let cue_volume = option(options, "volume")
         .and_then(|given| given.parse().ok())
         .unwrap_or(CUE_VOLUME);
-
-    // Hold mode. A Bluetooth headset's mic only works in the hands-free (phone
-    // call) profile, which is 8 kHz both ways and hisses whenever anything plays;
-    // stereo cannot run alongside it (a protocol limit, not a driver one). Keeping
-    // the mic open all session pinned the headset in hands-free, so every cue
-    // hissed. In hold mode the mic is open only while a button is held: the rest of
-    // the time the headset is in stereo, the cues play there cleanly, and each cue
-    // finishes before the profile switches (the player's condition).
-    let hands_free = microphone.as_ref().is_some_and(|mic| mic.name.to_ascii_lowercase().contains("hands-free"));
-    // Measured on AirPods Max: after the mic stream opened (8 ms), no audio at all
-    // arrived during a whole press, so the switch into hands-free takes longer
-    // than a press, let alone the 250 ms cue. Off unless asked for.
-    let _ = hands_free;
-    let hold_mode = option(options, "mic-mode") == Some("hold");
-    let return_after = Duration::from_millis(
-        option(options, "return").and_then(|given| given.parse().ok()).unwrap_or(RETURN_MS),
-    );
-    if hold_mode {
-        if let Some(stereo) = microphone.as_ref().and_then(|mic| stereo_twin(&mic.name)) {
-            println!("hold mode: mic opens only while held; cues on {stereo}");
-            cue_device = Some(stereo);
-        } else {
-            println!("hold mode: mic opens only while held; no stereo output found, cues stay on {:?}", cue_device);
-        }
-        // closed until a button is held, so the headset can go back to stereo
-        microphone = None;
-    }
 
     // loading the model is the slow part, so do it once and keep it resident
     let path = model.to_str().ok_or_else(|| io::Error::other("model path isn't UTF-8"))?;
@@ -344,7 +293,7 @@ pub fn listen(
         // The stream open, the device listed, and no audio arriving: the headset's
         // voice link is wedged. Reconnect it the way Sound settings' Connect does,
         // then reopen the mic. The player hears about it in the window.
-        if !hold_mode && microphone.as_ref().is_some_and(Microphone::stalled)
+        if microphone.as_ref().is_some_and(Microphone::stalled)
             && healed_at.is_none_or(|at| at.elapsed() > HEAL_EVERY)
         {
             healed_at = Some(Instant::now());
@@ -360,12 +309,12 @@ pub fn listen(
             );
         }
         // a dead stream is replaced between presses, never during one
-        if !hold_mode && holding.is_none() && microphone.as_ref().is_some_and(Microphone::broken) {
+        if holding.is_none() && microphone.as_ref().is_some_and(Microphone::broken) {
             eprintln!("microphone lost; waiting for it to come back");
             microphone = None;
             retry_mic = Instant::now();
         }
-        if !hold_mode && microphone.is_none() && Instant::now() >= retry_mic {
+        if microphone.is_none() && Instant::now() >= retry_mic {
             retry_mic = Instant::now() + RETRY;
             // open prints the device it found, which doubles as "it's back"
             if let Ok(opened) = Microphone::open(wanted_mic) {
@@ -404,23 +353,6 @@ pub fn listen(
             .iter()
             .find(|(_, press)| pad.held(press))
             .map(|(role, _)| *role);
-        // hold mode: a press plays the opening cue to its end on stereo, and only
-        // then opens the mic, which is what switches the headset into hands-free
-        if hold_mode && held.is_some() && holding.is_none() && microphone.is_none() {
-            if cue_volume > 0.0 {
-                if let Err(err) = chime(cue_device.as_deref(), cue_volume, &CUE_OPEN) {
-                    eprintln!("cue failed: {err}");
-                }
-            }
-            let opening = Instant::now();
-            match Microphone::open_quietly(wanted_mic, true) {
-                Ok(opened) => {
-                    println!("  mic opened in {} ms", opening.elapsed().as_millis());
-                    microphone = Some(opened);
-                }
-                Err(err) => eprintln!("microphone unavailable: {err}"),
-            }
-        }
         let Some(mic) = &microphone else {
             if held.is_some() && holding.is_none() {
                 println!("no microphone yet; still waiting for it");
@@ -435,8 +367,7 @@ pub fn listen(
             (Some(role), None) => {
                 pressed_at = Instant::now();
                 mic.start();
-                // in hold mode the opening cue has already played, before the switch
-                if !hold_mode && beeps {
+                if beeps {
                     cue(cue_device.clone(), cue_volume, &CUE_OPEN);
                 }
                 pulsed = false;
@@ -444,24 +375,7 @@ pub fn listen(
             }
             (None, Some(role)) => {
                 let clip = mic.stop();
-                if hold_mode {
-                    match mic.lag() {
-                        Some(lag) => println!("  first audio {} ms after the mic opened", lag.as_millis()),
-                        None => println!("  no audio arrived while held"),
-                    }
-                    // Closing the mic lets the headset go back to stereo; the closing
-                    // cue waits for that, then plays there, clean.
-                    microphone = None;
-                    let (device, volume) = (cue_device.clone(), cue_volume);
-                    thread::spawn(move || {
-                        thread::sleep(return_after);
-                        if volume > 0.0 {
-                            if let Err(err) = chime(device.as_deref(), volume, &CUE_SHUT) {
-                                eprintln!("cue failed: {err}");
-                            }
-                        }
-                    });
-                } else if beeps {
+                if beeps {
                     // falling fifth on release: rising means live, falling means it has it
                     cue(cue_device.clone(), cue_volume, &CUE_SHUT);
                 }
@@ -643,7 +557,6 @@ struct Microphone {
     channels: u16,
     // set from the stream's error callback when the device is gone, not merely late
     dead: Arc<AtomicBool>,
-    name: String,
 }
 
 impl Microphone {
@@ -732,7 +645,7 @@ impl Microphone {
         .map_err(|err| io::Error::other(err.to_string()))?;
         stream.play().map_err(|err| io::Error::other(err.to_string()))?;
 
-        Ok(Self { _stream: stream, capture, rate, channels, dead, name })
+        Ok(Self { _stream: stream, capture, rate, channels, dead })
     }
 
     fn broken(&self) -> bool {
