@@ -88,6 +88,9 @@ can be offered, and put it last. Each step has a `kind`:
   (/g, /p, /raid, /i, /s, /y, /1 General, /2 Trade, /w Name); for a whisper,
   resolve the name first with `WowCompanion_ResolveWhisper('Name message')`, which
   returns target, message, label (or nil and why), then send '/w '..target..' '..message.
+  In Forever every character has a first and last name ('Cecil Sorrowheart'): always
+  pass both. When it returns nil, print the reason with `WowCompanion_Recent(slot, why)`
+  so the player sees it, never a silent print. Use the channel they name ('say' is /s).
   A Battle.net whisper cannot be sent from a macro: whisper the character the friend
   is playing (the resolver does this), and a friend not in WoW cannot be whispered.
 
