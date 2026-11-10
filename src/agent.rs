@@ -337,6 +337,9 @@ pub struct Spoken {
     /// to remove (src/modules.rs)
     pub modules: Vec<(String, Option<String>)>,
 
+    /// the request ran out of steps before answering: nothing to deliver, the
+    /// conversation can be told to carry on
+    pub out_of_steps: bool,
 }
 
 /// One continuing conversation with the agent.
@@ -568,14 +571,14 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
         return Err(io::Error::other(format!("claude exited {status}: {}", complaint.trim())));
     }
     let envelope = envelope.ok_or_else(|| io::Error::other(format!("claude gave no result: {}", complaint.trim())))?;
+    let thread = envelope.get("session_id").and_then(Value::as_str).map(str::to_string);
     if envelope.get("is_error").and_then(Value::as_bool) == Some(true) {
-        // the step limit is not a fault: the work so far stands, and saying
-        // "continue" picks it up. The raw envelope was a wall of JSON in red.
+        // the step limit is not a fault: the work so far stands and the
+        // conversation can carry on (the companion does, a few times)
         let errors = envelope.get("errors").map(Value::to_string).unwrap_or_default();
         if errors.contains("maximum number of turns") {
-            return Err(io::Error::other(format!(
-                "ran out of steps for one request before finishing; what it did so far stands. Say \"continue\" to carry on."
-            )));
+            let spoken = Spoken { say: String::new(), inbox: None, look: false, modules: Vec::new(), out_of_steps: true };
+            return Ok(Answer { spoken, thread });
         }
         return Err(io::Error::other(format!("claude reported an error: {envelope}")));
     }
@@ -627,11 +630,7 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
         1 => built.pop(),
         _ => Some(format!("{{ kind = \"batch\", steps = {{ {} }} }}", built.join(", "))),
     };
-    let thread = envelope
-        .get("session_id")
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    Ok(Answer { spoken: Spoken { say, inbox, look, modules }, thread })
+    Ok(Answer { spoken: Spoken { say, inbox, look, modules, out_of_steps: false }, thread })
 }
 
 /// One step as the inbox table the addon's dispatch accepts.

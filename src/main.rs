@@ -32,6 +32,8 @@ const ADDON: &str = "WowCompanion";
 // stuck; with 512 slots a line every 15 s is affordable
 const PROGRESS_EVERY: Duration = Duration::from_secs(15);
 const PROGRESS_LIMIT: u32 = 16;
+// how many times a request that ran out of steps carries on by itself
+const CONTINUES: u32 = 3;
 // at this many slots used, offer the Reload button once, while slots remain
 // Margins below the slots the game knows (see known_slots): offer Reload at 16
 // left, stop progress lines at 14 left, and from 8 left every reply says so.
@@ -507,12 +509,43 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
             })
         };
         let slot = session.slot.clone();
-        let answer = session.finish(waiting, |doing| {
+        let mut progress = |doing: &str| {
             voice::mark(&format!("agent: {}", doing.chars().take(60).collect::<String>()));
             println!("  ... {doing}");
             set_working(&slot, doing);
             let _ = tell.send(doing.to_string());
-        });
+        };
+        // A request that runs out of steps carries on by itself, a few times: the
+        // work so far stands, and the turn just ended early. Without this, a long
+        // job (L1's addon split, 2026-11-10) stopped dead until someone said
+        // "continue". The step limit still bounds each round.
+        let mut waiting = waiting;
+        let mut round = 0;
+        let answer = loop {
+            let answer = match session.finish(waiting, &mut progress) {
+                Ok(answer) => answer,
+                Err(err) => break Err(err),
+            };
+            if !answer.out_of_steps {
+                break Ok(answer);
+            }
+            round += 1;
+            if round > CONTINUES {
+                break Err(io::Error::other(format!(
+                    "ran out of steps {} times in a row; what it did so far stands. Say \"continue\" to carry on.",
+                    CONTINUES + 1
+                )));
+            }
+            println!("  out of steps: continuing ({round} of {CONTINUES})");
+            progress(&format!("continuing ({round} of {CONTINUES})"));
+            waiting = match session.start(
+                "(The step limit ended your last turn before you answered. Carry on where you left off, then answer as usual.)",
+                None,
+            ) {
+                Ok(next) => next,
+                Err(err) => break Err(err),
+            };
+        };
         drop(tell);
         let _ = courier.join();
         answer?
