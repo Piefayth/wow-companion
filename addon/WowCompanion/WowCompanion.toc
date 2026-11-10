@@ -2,6 +2,10 @@
 ## Title: WoW Companion
 ## Notes: Takes commands from the companion helper running on your PC.
 ## SavedVariables: WowCompanionDB
+## IconTexture: Interface\Icons\UI_Chat
+## AddonCompartmentFunc: WowCompanion_OnCompartmentClick
+## AddonCompartmentFuncOnEnter: WowCompanion_OnCompartmentEnter
+## AddonCompartmentFuncOnLeave: WowCompanion_OnCompartmentLeave
 
 Companion.lua
 Status.lua

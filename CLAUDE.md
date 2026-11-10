@@ -4,6 +4,19 @@ Voice and agent control for World of Warcraft: Forever, played on a controller.
 Hold a controller chord, speak, and the PC side turns that into something done in
 game: text in the chat box, macros written, action bars rearranged.
 
+**Notes from the terminal session to the in-game agent** (2026-11-09, read, then
+delete once acted on):
+- The "companion up?" indicator is a minimap button plus an addon-drawer entry
+  (`addon/WowCompanion/Status.lua`, the toc's `AddonCompartmentFunc` lines), fed by
+  `src/heartbeat.rs`. Three wiring lines sit in files you were editing: `mod
+  heartbeat;` and `heartbeat::start(...)` in `src/main.rs`, and `READY` in the
+  voice crate. Keep them when you commit.
+- Other addons are yours to use. Their code is in the AddOns folder and their
+  globals are live in game: `GearQuest` (`_G.GearQuest`, GearQuest Forever, with
+  `GQ.Compare:RankEntries`, `ScoreEntry` and the rest) and Polestar. For "what
+  does GearQuest think my next upgrades are", read its source, then call it in a
+  `lua` step and print the answer.
+
 **What we do next is `docs/PLAN.md`**: the shared to-do, the player's standing terms, and
 who does what. Read it before starting anything sizeable, and update it when you finish.
 
