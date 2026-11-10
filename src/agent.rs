@@ -569,6 +569,14 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
     }
     let envelope = envelope.ok_or_else(|| io::Error::other(format!("claude gave no result: {}", complaint.trim())))?;
     if envelope.get("is_error").and_then(Value::as_bool) == Some(true) {
+        // the step limit is not a fault: the work so far stands, and saying
+        // "continue" picks it up. The raw envelope was a wall of JSON in red.
+        let errors = envelope.get("errors").map(Value::to_string).unwrap_or_default();
+        if errors.contains("maximum number of turns") {
+            return Err(io::Error::other(format!(
+                "ran out of steps for one request before finishing; what it did so far stands. Say \"continue\" to carry on."
+            )));
+        }
         return Err(io::Error::other(format!("claude reported an error: {envelope}")));
     }
     // `structured_output` is the schema'd answer already parsed; `result` carries
