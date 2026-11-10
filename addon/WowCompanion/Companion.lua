@@ -1750,7 +1750,7 @@ function WowCompanion_Style.Menu(frame)
 	local bg = frame:CreateTexture(nil, "BACKGROUND")
 	if pcall(bg.SetAtlas, bg, "common-dropdown-c-bg") then
 		bg:SetPoint("TOPLEFT", -17, 12)
-		bg:SetPoint("BOTTOMRIGHT", 17, -22)
+		bg:SetPoint("BOTTOMRIGHT", 17, -14) -- the atlas reads as more padding below than above at -22 (the player, 2026-11-10)
 	else
 		bg:SetAllPoints()
 		bg:SetColorTexture(0, 0, 0, 0.9)

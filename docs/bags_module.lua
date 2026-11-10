@@ -19,8 +19,11 @@ local function build()
 		edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 },
 	})
 	f:Hide()
+	-- even margins all round (the player, 2026-11-10): EDGE from the border's
+	-- inside on every side, a title row, the grid, a legend row
+	local EDGE, TITLE_H, LEGEND_H, GAP_V = 18, 20, 24, 8
 	local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	title:SetPoint("TOPLEFT", PAD + 4, -PAD - 2)
+	title:SetPoint("LEFT", f, "TOPLEFT", EDGE, -(EDGE + TITLE_H / 2))
 	f.title = title
 	local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	hint:SetPoint("BOTTOMLEFT", PAD + 4, PAD)
@@ -30,10 +33,18 @@ local function build()
 	if WowCompanion_Style then
 		hint:Hide()
 		local prev
-		for _, p in ipairs({ { "PAD3", USE or "Use" }, { "PAD1", "Move" }, { "PAD4", "More" },
-			{ "PAD2", CLOSE or "Close" }, { "PADRSHOULDER", "Next bag" } }) do
+		f.legendW = 0
+		for i, p in ipairs({ { "PAD3", USE or "Use" }, { "PAD1", "Move" }, { "PAD4", "More" },
+			{ "PAD2", CLOSE or "Close" }, { "PADRSHOULDER", "Bag" } }) do
 			local pr = WowCompanion_Style.Prompt(f, p[1], p[2])
-			if prev then pr:SetPoint("LEFT", prev, "RIGHT", 14, 0) else pr:SetPoint("BOTTOMLEFT", PAD + 2, PAD - 2) end
+			pr:SetHeight(LEGEND_H)
+			if prev then pr:SetPoint("LEFT", prev, "RIGHT", 12, 0) else pr:SetPoint("BOTTOMLEFT", EDGE, EDGE) end
+			local w = pr:GetWidth()
+			if pr.ControlDescText and pr.ControlDescText.GetWidth then
+				w = math.max(w, 28 + (pr.ControlDescText.Text and pr.ControlDescText.Text:GetStringWidth() or pr.ControlDescText:GetWidth()))
+				pr:SetWidth(w)
+			end
+			f.legendW = f.legendW + w + (i > 1 and 12 or 0)
 			prev = pr
 		end
 	end
@@ -147,6 +158,7 @@ local function build()
 		self.layoutOwed = nil
 		for _, b in pairs(self.buttons) do b:Hide() end
 		wipe(self.order)
+		self.gridX = EDGE + math.floor((math.max(COLS * (SIZE + GAP) - GAP, self.legendW or 0) - (COLS * (SIZE + GAP) - GAP)) / 2)
 		for bag = 0, MAXBAG do
 			for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
 				self.order[#self.order + 1] = slotButton(bag, slot)
@@ -158,14 +170,16 @@ local function build()
 			if not self:GetAttribute("bagstart" .. b.bag) then self:SetAttribute("bagstart" .. b.bag, i) end
 			local col, row = (i - 1) % COLS, math.floor((i - 1) / COLS)
 			b:ClearAllPoints()
-			b:SetPoint("TOPLEFT", PAD + col * (SIZE + GAP), -(PAD + 24 + row * (SIZE + GAP)))
+			b:SetPoint("TOPLEFT", self.gridX + col * (SIZE + GAP), -(EDGE + TITLE_H + GAP_V + row * (SIZE + GAP)))
 			b.index = i
 			b:Show()
 			self:SetFrameRef("slot" .. i, b)
 		end
 		self:SetAttribute("count", n)
 		local rows = math.max(1, math.ceil(n / COLS))
-		self:SetSize(PAD * 2 + COLS * (SIZE + GAP) - GAP, PAD * 2 + 24 + rows * (SIZE + GAP) + 26)
+		local gridW = COLS * (SIZE + GAP) - GAP
+		local inner = math.max(gridW, self.legendW or 0)
+		self:SetSize(EDGE * 2 + inner, EDGE * 2 + TITLE_H + GAP_V + rows * (SIZE + GAP) - GAP + GAP_V + LEGEND_H)
 		if (self:GetAttribute("focus") or 1) > n then self:SetAttribute("focus", 1) end
 		self:Paint()
 	end
@@ -344,20 +358,7 @@ local function build()
 				list[#list + 1] = { "Split one off", function() split(b, 1) end }
 			end
 		end
-		local link = C_Container.GetContainerItemLink(b.bag, b.slot)
-		if link and WowCompanion_Preview then
-			-- the send preview: the player's Send press is the send
-			if IsInGroup() then
-				list[#list + 1] = { "Link to party", function() WowCompanion_Preview("/p " .. link, "Link to party") end }
-			end
-			if IsInGuild() then
-				list[#list + 1] = { "Link to guild", function() WowCompanion_Preview("/g " .. link, "Link to guild") end }
-			end
-			list[#list + 1] = { "Link to someone (say who)", function()
-				WowCompanionDB.bagLink = link
-				print("bags: say \"send it to\" and a name, and I will whisper " .. link)
-			end }
-		end
+		-- linking is by voice (\"link X to Y\"), not a menu entry (the player, 2026-11-10)
 		if info and WowCompanion_ConfirmDestroy then
 			list[#list + 1] = { "|cffff6060Destroy|r", function()
 				-- the confirmation takes cross and circle; ours come back when it closes
@@ -387,8 +388,8 @@ local function build()
 				menu.hl:ClearAllPoints()
 				menu.hl:SetPoint("LEFT", menu, "LEFT", 2, 0)
 				menu.hl:SetPoint("RIGHT", menu, "RIGHT", -2, 0)
-				menu.hl:SetPoint("TOP", row, "TOP", 0, 3)
-				menu.hl:SetPoint("BOTTOM", row, "BOTTOM", 0, -3)
+				menu.hl:SetPoint("TOP", menu, "TOP", 0, -(6 + (i - 1) * 20))
+				menu.hl:SetHeight(20)
 				menu.hl:Show()
 			end
 		end
@@ -413,12 +414,13 @@ local function build()
 		if not b then return end
 		menu.list, menu.sel = entries(b), 1
 		for i = #menu.rows + 1, #menu.list do
+			-- MenuStyle2's insets: 6 above, 7 below; each row a 20 px cell, text centred in it
 			local row = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-			row:SetPoint("TOPLEFT", 12, -6 - (i - 1) * 20)
+			row:SetPoint("LEFT", menu, "TOPLEFT", 12, -(6 + (i - 0.5) * 20))
 			row:SetJustifyH("LEFT")
 			menu.rows[i] = row
 		end
-		menu:SetSize(190, 8 + #menu.list * 20)
+		menu:SetSize(190, 6 + #menu.list * 20 + 7)
 		menu:ClearAllPoints()
 		menu:SetPoint("TOPLEFT", b, "BOTTOMRIGHT", 4, 4)
 		paintMenu()
