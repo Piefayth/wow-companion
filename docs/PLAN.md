@@ -34,7 +34,7 @@ on its command line means one is). Two writers on one file is how replies got lo
 
 ### 1. Make the loop tight
 
-The foundation: everything after this is cheaper once requests are never lost,
+Being built by the terminal session (the player's call, 2026-11-09). The foundation: everything after this is cheaper once requests are never lost,
 never invisible and never slow for no reason.
 
 1. **Safe self-restart.** `run` checks for a restart request (a file), finishes the
@@ -50,15 +50,21 @@ never invisible and never slow for no reason.
    ("we skip a game-to-PC channel", superseded designs). Split it into a short file
    of what is true now and `docs/history.md` for how we got here. Every request
    gets faster and stops reading claims that are no longer true.
-5. **Measured by use.** Each agent Lua run records which API names it called and
+5. **Dictation into any focused text box**, not only chat: the auction house
+   search, a mail recipient, any search field. The player focused it, so setting
+   its text is the same as chat. It turns voice into typing everywhere.
+6. **Measured by use.** Each agent Lua run records which API names it called and
    whether it errored; `tools/api_surface.py` promotes those from inferred to
    measured. The map gets truer as the agent works, at no extra cost.
 
 ### 2. Controller features
 
-Order is the player's call. From `docs/api-surface.md`, all live in Forever:
+In the player's order (2026-11-09). From `docs/api-surface.md`, all live in Forever:
 
-- **Self-filling wheels**: food and drink, quest items, mounts, toys, travel, party.
+- **Self-filling wheels** (first): food and drink, quest items, mounts, toys, travel,
+  party. Plus a **magic slot**: one slot on a wheel that becomes "the thing you just
+  asked for" ("I need my hearthstone" puts it there).
+- **Find things in my bags, fast**: say or pick it, and it is found, shown, usable.
 - **Quest helper**: next objective on screen, a waypoint to it, its items on a wheel,
   track and abandon without the quest log.
 - **Vendor button**: sell greys and repair in one press at a merchant.
@@ -68,14 +74,11 @@ Order is the player's call. From `docs/api-surface.md`, all live in Forever:
 - **Roles**: talents, equipment sets and bars per role, swapped with one press.
 - **Auction house**: search, price and prepare; the player presses post or buy.
 
-### 3. Decisions for the player
+### 3. Decided
 
-- **A live return channel.** Reloads are the only way results reach the agent.
-  `Screenshot()` writes a file at once, so the addon could draw data on screen for a
-  frame and the companion read it: live results, no reload. It is the pixel-strip
-  idea this project declined as the ToS-grey part, so it is the player's call.
-- **Speed versus smarts.** Opus everywhere (now), or Sonnet for quick requests
-  (chat, a single bar change) and Opus for the rest.
+- **No live pixel channel** (2026-11-09): reloads stay the return path. Screenshots
+  could carry data live, but that is the ToS-grey pixel strip; the player said no.
+- **Opus for everything** (2026-11-09): smarts over speed, even for quick requests.
 
 ### 4. Small and open
 

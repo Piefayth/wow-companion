@@ -55,6 +55,213 @@ local function activeEditBox()
 	return get and get()
 end
 
+-- The transcript, laid out like a document rather than a chat log: each turn
+-- gets a small "Claude 20:45" header, and a reply is rendered from the little
+-- markdown it carries. Blank lines are paragraph gaps, "#" lines headings,
+-- "- " and "1." lines bullets with a hanging indent, ``` fences code on a
+-- dark band, and `code` and **bold** inline colour. A ScrollingMessageFrame
+-- cannot do any of that (one font, no hanging indent), so this is a scroll
+-- frame of font strings, one per line, stacked top to bottom.
+local TURN_GAP, PARA_GAP, LINE_SPACING = 14, 7, 2
+local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
+local NOTE_FONT = "GameFontHighlightSmall"
+
+local function inline(text)
+	text = text:gsub("%*%*(.-)%*%*", "|cffffffff%1|r")
+	text = text:gsub("`([^`]+)`", "|cff9ad5ff%1|r")
+	return text
+end
+
+local Transcript = {}
+Transcript.__index = Transcript
+
+local function newTranscript(parent)
+	local scroll = CreateFrame("ScrollFrame", nil, parent)
+	local content = CreateFrame("Frame", nil, scroll)
+	content:SetSize(1, 1)
+	scroll:SetScrollChild(content)
+	local t = setmetatable({ scroll = scroll, content = content, rows = {}, height = 0 }, Transcript)
+	scroll:EnableMouseWheel(true)
+	scroll:SetScript("OnMouseWheel", function(self, delta)
+		local range = self:GetVerticalScrollRange()
+		local step = IsShiftKeyDown() and range or 48
+		self:SetVerticalScroll(math.max(0, math.min(range, self:GetVerticalScroll() - delta * step)))
+	end)
+	-- wrapping depends on width, so a resize lays everything out again
+	scroll:SetScript("OnSizeChanged", function() t:Layout() end)
+	scroll:SetScript("OnShow", function() t:Layout(); t:ToBottom() end)
+	return t
+end
+
+function Transcript:Width()
+	local width = self.scroll:GetWidth()
+	return width and width > 60 and width or nil
+end
+
+-- place one row below the last; returns the new bottom
+function Transcript:Place(row, y, width)
+	y = y + (y > 0 and row.gap or 0)
+	local fs = row.fs
+	fs:ClearAllPoints()
+	fs:SetPoint("TOPLEFT", self.content, "TOPLEFT", row.indent, -y)
+	fs:SetWidth(width - row.indent - 4)
+	local height = fs:GetStringHeight()
+	if row.marker then
+		row.marker:ClearAllPoints()
+		row.marker:SetPoint("TOPRIGHT", fs, "TOPLEFT", -5, 0)
+	end
+	if row.band then
+		row.band:ClearAllPoints()
+		row.band:SetPoint("TOPLEFT", self.content, "TOPLEFT", row.indent - 6, -y + 3)
+		row.band:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", 0, -y + 3)
+		row.band:SetHeight(height + 6)
+		height = height + 3
+	end
+	return y + height
+end
+
+function Transcript:Layout()
+	if self.holding then return end
+	local width = self:Width()
+	if not width then return end
+	self.content:SetWidth(width)
+	local y = 0
+	for _, row in ipairs(self.rows) do
+		y = self:Place(row, y, width)
+	end
+	self.height = y
+	self.content:SetHeight(math.max(y, 1))
+end
+
+function Transcript:ToBottom()
+	local scroll = self.scroll
+	scroll:UpdateScrollChildRect()
+	scroll:SetVerticalScroll(scroll:GetVerticalScrollRange())
+	-- the range settles a frame later; follow it there too
+	C_Timer.After(0, function()
+		scroll:UpdateScrollChildRect()
+		scroll:SetVerticalScroll(scroll:GetVerticalScrollRange())
+	end)
+end
+
+function Transcript:Row(font, text, indent, gap, r, g, b)
+	local fs = self.content:CreateFontString(nil, "OVERLAY", font)
+	fs:SetJustifyH("LEFT")
+	fs:SetJustifyV("TOP")
+	fs:SetWordWrap(true)
+	fs:SetNonSpaceWrap(true)
+	fs:SetSpacing(LINE_SPACING)
+	if r then fs:SetTextColor(r, g, b) end
+	fs:SetText(text)
+	local row = { fs = fs, indent = indent or 0, gap = self.gap or gap or 0 }
+	self.gap = nil
+	self.rows[#self.rows + 1] = row
+	-- appended rows are placed alone; only a resize walks them all
+	local width = not self.holding and self:Width()
+	if width then
+		local scroll = self.scroll
+		local following = scroll:GetVerticalScroll() >= scroll:GetVerticalScrollRange() - 4
+		self.height = self:Place(row, self.height, width)
+		self.content:SetHeight(math.max(self.height, 1))
+		if following then self:ToBottom() end
+	end
+	return row
+end
+
+-- one line of a reply or of what you said
+function Transcript:Markdown(line, r, g, b)
+	if line:match("^%s*```") then
+		self.code = not self.code
+		self.gap = self.gap or 4
+		return
+	end
+	if self.code then
+		local row = self:Row(BODY_FONT, (line:gsub("|", "||")), 14, 0, 0.74, 0.86, 0.74)
+		row.band = self.content:CreateTexture(nil, "BACKGROUND")
+		row.band:SetColorTexture(1, 1, 1, 0.06)
+		return
+	end
+	if line:match("^%s*$") then
+		self.gap = PARA_GAP
+		return
+	end
+	local hashes, heading = line:match("^(#+)%s+(.+)$")
+	if heading then
+		self:Row(#hashes == 1 and "GameFontNormalLarge" or "GameFontNormal", inline(heading), 0,
+			PARA_GAP + 2)
+		self.gap = 3
+		return
+	end
+	local lead, mark, rest = line:match("^(%s*)([-*])%s+(.+)$")
+	if not mark then
+		lead, mark, rest = line:match("^(%s*)(%d+[.)])%s+(.+)$")
+	end
+	if mark then
+		local indent = 18 + math.floor(#lead / 2) * 16
+		local row = self:Row(BODY_FONT, inline(rest), indent, 3, r, g, b)
+		row.marker = self.content:CreateFontString(nil, "OVERLAY", BODY_FONT)
+		row.marker:SetText((mark == "-" or mark == "*") and "|cffffd100•|r" or ("|cffffd100%s|r"):format(mark))
+		return
+	end
+	self:Row(BODY_FONT, inline(line), 0, 2, r, g, b)
+end
+
+local WHO = {
+	you = { "You", "|cff9ad5ff", 0.74, 0.84, 0.96 },
+	claude = { "Claude", "|cffffd100", 0.93, 0.93, 0.93 },
+}
+
+function Transcript:Add(who, text, continued, at)
+	local voice = WHO[who]
+	if not continued then
+		self.code = false
+		if voice then
+			local stamp = date("%H:%M", at or time())
+			self:Row("GameFontNormalSmall", ("%s%s|r  |cff5c6370%s|r"):format(voice[2], voice[1], stamp),
+				0, TURN_GAP)
+			self.gap = 3
+		end
+	end
+	if voice then
+		self:Markdown(text, voice[3], voice[4], voice[5])
+	else
+		-- what a step did, a probe found, or an error: small notes under the reply
+		local row = self:Row(NOTE_FONT, inline(text), 14, continued and 1 or 5,
+			who == "error" and 1 or 0.62, who == "error" and 0.47 or 0.65, who == "error" and 0.47 or 0.70)
+		row.marker = self.content:CreateFontString(nil, "OVERLAY", NOTE_FONT)
+		row.marker:SetText(who == "error" and "|cffff7777!|r" or "|cff5c6370›|r")
+	end
+	-- a long session would grow without end; keep the newest rows
+	if #self.rows > LOG_KEEP * 3 then
+		for i = 1, LOG_KEEP do
+			local row = table.remove(self.rows, 1)
+			row.fs:Hide()
+			if row.marker then row.marker:Hide() end
+			if row.band then row.band:Hide() end
+		end
+		self:Layout()
+	end
+end
+
+-- replaying hundreds of saved lines places them once at the end, not one by one
+function Transcript:Hold(holding)
+	self.holding = holding or nil
+	if not holding then
+		self:Layout()
+		self:ToBottom()
+	end
+end
+
+function Transcript:Clear()
+	for _, row in ipairs(self.rows) do
+		row.fs:Hide()
+		if row.marker then row.marker:Hide() end
+		if row.band then row.band:Hide() end
+	end
+	self.rows, self.height, self.code, self.gap = {}, 0, false, nil
+	self.content:SetHeight(1)
+end
+
 -- The conversation window. Chat lines scroll away and cannot be scrolled back
 -- through, so replies live in their own frame and in SavedVariables, which is what
 -- makes history survive a /reload.
@@ -121,28 +328,9 @@ local function buildLog()
 	pending:Hide()
 	frame.pending = pending
 
-	local messages = CreateFrame("ScrollingMessageFrame", nil, frame)
-	messages:SetPoint("TOPLEFT", 18, -40)
-	messages:SetPoint("BOTTOMRIGHT", -20, 34)
-	messages:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
-	messages:SetJustifyH("LEFT")
-	-- wrapped lines indent under the text instead of running back to the edge,
-	-- as the chat frame does (ChatFrameOverrides.lua); a little air between lines
-	messages:SetIndentedWordWrap(true)
-	messages:SetSpacing(2)
-	messages:SetFading(false)
-	messages:SetMaxLines(LOG_KEEP)
-	messages:SetHyperlinksEnabled(true)
-	messages:EnableMouseWheel(true)
-	messages:SetScript("OnMouseWheel", function(self, delta)
-		if IsShiftKeyDown() then
-			if delta > 0 then self:ScrollToTop() else self:ScrollToBottom() end
-		elseif delta > 0 then
-			self:ScrollUp()
-		else
-			self:ScrollDown()
-		end
-	end)
+	local messages = newTranscript(frame)
+	messages.scroll:SetPoint("TOPLEFT", 20, -42)
+	messages.scroll:SetPoint("BOTTOMRIGHT", -22, 34)
 	frame.messages = messages
 
 	-- 1.60.1 added a SmartNavigation API for exactly this: an addon can mark its own
@@ -220,32 +408,8 @@ local function colouredFor(who)
 	return "|cffffe08a"
 end
 
--- The little markdown a terminal would render, as colour codes: `code` light blue,
--- **bold** white, "- " bullets, "# " headings gold. Lines that already carry |c
--- codes (the offered button) pass through; none of these patterns touch them.
-local function styled(text)
-	text = text:gsub("^(%s*)[-*] ", "%1  • ")
-	text = text:gsub("^#+%s+(.+)$", "|cffffd100%1|r")
-	text = text:gsub("%*%*(.-)%*%*", "|cffffffff%1|r")
-	text = text:gsub("`([^`]+)`", "|cff9ad5ff%1|r")
-	return text
-end
-
--- Only the first line of a reply is labelled; the rest line up underneath, or a
--- nine-line answer says "claude" nine times and reads as nine separate replies.
 local function showLine(who, text, continued, at)
-	local messages = logFrame().messages
-	text = styled(text)
-	-- a gap before each thing you say, so a conversation reads as turns
-	if who == "you" and not continued then
-		messages:AddMessage(" ")
-	end
-	if continued then
-		messages:AddMessage("              " .. text)
-	else
-		messages:AddMessage(("|cff4a5260%s|r %s%-6s|r %s"):format(
-			date("%H:%M", at or time()), colouredFor(who), who, text))
-	end
+	logFrame().messages:Add(who, text, continued, at)
 end
 
 -- Spinning while the agent thinks. Several seconds of silence after you speak is
@@ -291,9 +455,12 @@ local function remember(who, text, continued)
 end
 
 local function replayLog()
+	local messages = logFrame().messages
+	messages:Hold(true)
 	for _, entry in ipairs(WowCompanionDB.log or {}) do
 		showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at)
 	end
+	messages:Hold(false)
 end
 
 -- A button in the Companion window, retargeted on demand.
