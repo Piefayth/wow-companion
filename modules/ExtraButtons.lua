@@ -6,7 +6,6 @@ function M:Enable()
   self.owner = self.owner or WCExtraButtonsOwner or CreateFrame('Frame', 'WCExtraButtonsOwner')
   ClearOverrideBindings(self.owner)
   SetOverrideBinding(self.owner, false, 'PAD5', 'TOGGLEAUTORUN')
-  print('extra buttons: PAD5 toggles autorun')
 end
 function M:Disable()
   WC.AfterCombat(function() ClearOverrideBindings(self.owner) end)

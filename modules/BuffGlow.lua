@@ -60,7 +60,6 @@ function M:Enable()
   glow:RegisterUnitEvent('UNIT_AURA', 'player')
   glow:SetScript('OnEvent', function() pcall(update) end)
   pcall(update)
-  print('buff glow: watching Mark of the Wild and Thorns', button() and 'on your Buffs button' or '(Buffs button not found)')
 end
 function M:Disable()
   glow:UnregisterAllEvents()
