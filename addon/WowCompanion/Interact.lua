@@ -43,8 +43,10 @@ do
 		-- combat is ADDON_ACTION_BLOCKED, so "hold" cannot work there. "clear" (a
 		-- secure /cleartarget on a live hostile target) is the default, and any
 		-- saved "hold" is moved over once.
-		if WowCompanionDB.interact.mode ~= "clear" and not WowCompanionDB.interact.holdTested then
-			WowCompanionDB.interact.mode = "clear"
+		-- 2026-11-10: "tap" (below) replaces "clear" as the default, moved over once
+		if not WowCompanionDB.interact.tapMoved then
+			WowCompanionDB.interact.tapMoved = true
+			WowCompanionDB.interact.mode = "tap"
 		end
 		return WowCompanionDB.interact
 	end
@@ -196,13 +198,59 @@ do
 	button:HookScript("OnClick", function(_, _, down) trace("Home clicked (clear) " .. (down and "down" or "up")) end)
 	back:HookScript("OnClick", function() trace("Home clicked (back)") end)
 
+	-- Tap mode (the player, 2026-11-10; the default): one Home press, down and up.
+	-- Blizzard's own gamepad interact button (GamepadMainActionBarFrame, top bar,
+	-- Right.ActionButton1) resolves on release what to do, lootable soft interact
+	-- first (MainActionBarFrame.lua interactActions), or at 0.5 s held. /click
+	-- reaches it from a macro (SlashCommands.lua CLICK passes up or down). So:
+	--   down: in a fight with a live enemy targeted, keep it in focus and target
+	--         yourself, so Blizzard turns soft interact on (it is a secure CVar:
+	--         nothing else can), then press Blizzard's interact button down;
+	--   up:   let Blizzard's interact button go (it loots the corpse soft interact
+	--         picked by now, measured 0.1 s after targeting yourself), then put
+	--         the enemy back as target and let focus go.
+	-- A secure action button acts on one edge only (SecureTemplates.lua), so a
+	-- wrapper picks the edge and the attribute set for each press.
+	local tap = _G["WCCombatInteractTap"] or CreateFrame("Button", "WCCombatInteractTap", UIParent, "SecureActionButtonTemplate")
+	tap:RegisterForClicks("AnyDown", "AnyUp")
+	local tapHeader = _G["WCCombatInteractTapHeader"]
+		or CreateFrame("Frame", "WCCombatInteractTapHeader", UIParent, "SecureHandlerBaseTemplate")
+	local function interactButtonName()
+		local ok, name = pcall(function()
+			return GamepadMainActionBarFrame:GetActionBars().topBar.Right.ActionButton1:GetName()
+		end)
+		return ok and name or nil
+	end
+	local function setupTap()
+		if InCombatLockdown() then return false end
+		local name = interactButtonName()
+		if not name then say("Blizzard's gamepad interact button was not found") return false end
+		tap:SetAttribute("type-dn", "macro")
+		tap:SetAttribute("macrotext-dn", "/focus [combat,@target,harm,nodead]\n/target [combat,@target,harm,nodead] player\n/click " .. name .. " LeftButton true")
+		tap:SetAttribute("type-up", "macro")
+		tap:SetAttribute("macrotext-up", "/click " .. name .. " LeftButton false\n/target [combat,@focus,harm,nodead] focus\n/clearfocus [combat,@focus,exists]")
+		if not tap.wcWrapped then
+			tap.wcWrapped = true
+			SecureHandlerWrapScript(tap, "OnClick", tapHeader, [[
+				self:SetAttribute("useOnKeyDown", down and true or false)
+				return down and "dn" or "up"
+			]])
+			tap:HookScript("OnClick", function(_, b, down) trace("Home " .. (down and "down" or "up") .. " (" .. tostring(b) .. ")") end)
+		end
+		db().tapButton = name
+		return true
+	end
+
 	local function bindAll()
 		if InCombatLockdown() then return false end
 		ClearOverrideBindings(owner)
 		local d = db()
 		switch:SetAttribute("key", d.key)
 		UnregisterStateDriver(switch, "interact")
-		if d.key then RegisterStateDriver(switch, "interact", "[@softinteract,dead] take; [@target,dead] corpse; [combat,@target,harm,nodead] clear; [combat,@focus,harm,nodead] back; [combat] none; take") end
+		ClearOverrideBindings(switch)
+		if d.key and (d.mode or "tap") == "tap" and setupTap() then
+			SetOverrideBindingClick(owner, true, d.key, "WCCombatInteractTap", "LeftButton")
+		elseif d.key then RegisterStateDriver(switch, "interact", "[@softinteract,dead] take; [@target,dead] corpse; [combat,@target,harm,nodead] clear; [combat,@focus,harm,nodead] back; [combat] none; take") end
 		if d.takeKey then SetOverrideBinding(owner, false, d.takeKey, "INTERACTSOFTTARGET") end
 		applyMode()
 		return true
@@ -242,7 +290,7 @@ do
 			blizzardRule()
 			say("unbound; the keys do what they did before")
 		elseif cmd == "mode" then
-			if arg ~= "HOLD" and arg ~= "CLEAR" then say("mode is hold or clear") return end
+			if arg ~= "HOLD" and arg ~= "CLEAR" and arg ~= "TAP" then say("mode is tap, hold or clear") return end
 			d.mode = arg:lower()
 			bindAll()
 			say("mode " .. d.mode)
