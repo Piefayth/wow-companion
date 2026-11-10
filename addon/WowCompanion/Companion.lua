@@ -736,7 +736,6 @@ end
 -- A line for the conversation window. Opens it out of combat so a reply is not
 -- missed, but never steals the screen mid-fight.
 function handlers.log(inbox)
-	if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
 	local text = inbox.text or ""
 	local who = inbox.who or "claude"
 	local lines = 0
@@ -750,6 +749,9 @@ function handlers.log(inbox)
 	-- `pending` starts this conversation's waiting line; a line without it ends it
 	-- a queued request leaves the running one's waiting line alone
 	local queued = inbox.queued and queueRequest(islot) or nil
+	-- the message's Cancel / Send now (Jobs.lua) sit on its queued line
+	inbox.queueId = queued
+	if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
 	if (inbox.slot or inbox.pending) and not queued then setPending(inbox.pending, islot) end
 	-- what a clip became ends its "transcribing": the request's own line in its
 	-- conversation, or a line that names none (a chat line, a dropped-clip

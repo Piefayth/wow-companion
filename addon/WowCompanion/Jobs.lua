@@ -1,9 +1,8 @@
 -- Your messages while something can still be done to them (the player,
 -- 2026-11-10: "give the individual messages their own panel ... and once a
 -- message doesn't have anything you can do to it anymore, the majigger goes
--- away"). A panel per message, docked under the transcript: being heard
--- (Whisper has the clip), queued behind another, or being worked on. Each has
--- its buttons, reachable with the controller cursor:
+-- away"), shown on the lines that already say so: the waiting line (hearing
+-- you, working) and each queued message's header. Reachable with the cursor:
 --   hearing: Cancel (the words are dropped when they arrive)
 --   queued:  Send now (ends the running request so this one starts), Cancel
 --   working: Cancel (ends the agent)
@@ -13,14 +12,8 @@
 -- Fed by Companion.lua: WC.Jobs.Note(inbox) for each log line, Started, Gone.
 
 local core = WC.Core
-local jobs = {} -- { req, slot, text, state = "queued" | "working" | "cancelling", at }
-local panels = {}
-local MAX = 4
-local PANEL_H = 46
-
-local function label(slot)
-	return slot == "" and "Main" or slot == "quick" and "Quick" or slot:upper()
-end
+local jobs = {} -- { req, slot, text, state = "queued" | "working" | "cancelling", at, queueId }
+local made = {} -- every icon button, for marking after a fight
 
 local function find(req)
 	for i, job in ipairs(jobs) do
@@ -34,178 +27,134 @@ local function command(verb, slot, req)
 		slot ~= "" and slot or "main", req and (" " .. req) or ""), 2.5)
 end
 
-local function clean(text)
-	text = tostring(text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("^%[%u%d]+%]%s*", "")
-	return (text:gsub("%s+", " "))
-end
-
 local refresh
 
-local function build(i)
-	local frame = core.logFrame()
-	local well = frame.chatWell or frame
-	local made, p = pcall(CreateFrame, "Frame", nil, well, "BackdropTemplate")
-	p = made and p or CreateFrame("Frame", nil, well)
-	p:SetHeight(PANEL_H)
-	if p.SetBackdrop then
-		-- the game's tooltip border: a small Blizzard-style card per message
-		p:SetBackdrop({
-			bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-			tile = true, tileSize = 16, edgeSize = 14,
-			insets = { left = 4, right = 4, top = 4, bottom = 4 },
-		})
-		p:SetBackdropColor(0.05, 0.05, 0.08, 0.95)
-		p:SetBackdropBorderColor(0.8, 0.7, 0.4, 1)
+-- small icon buttons on the lines that already say what is going on (the
+-- player, 2026-11-10: "you could have just used little smaller icons and the
+-- existing working/running paradigm"): the game's own art, named in a tooltip
+local ICONS = {
+	cancel = { "Interface\\Buttons\\UI-GroupLoot-Pass-Up", "Interface\\Buttons\\UI-GroupLoot-Pass-Down", "Interface\\Buttons\\UI-GroupLoot-Pass-Highlight" },
+	now = { "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up", "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down", "Interface\\Buttons\\UI-Common-MouseHilight" },
+}
+local function icon(parent, kind, tip, onClick)
+	local b = CreateFrame("Button", nil, parent)
+	b:SetSize(20, 20)
+	local art = ICONS[kind]
+	b:SetNormalTexture(art[1])
+	b:SetPushedTexture(art[2])
+	b:SetHighlightTexture(art[3], "ADD")
+	b:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:SetText(tip)
+		GameTooltip:Show()
+	end)
+	b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	b:SetScript("OnClick", function(self) onClick(self.job) end)
+	if not InCombatLockdown() and SmartNavigation_MarkFrameFocusable then
+		pcall(SmartNavigation_MarkFrameFocusable, b)
+	else
+		b.unmarked = true
 	end
-	p:SetFrameLevel(well:GetFrameLevel() + 6)
-	p.state = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	p.state:SetPoint("TOPLEFT", 10, -8)
-	p.text = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	p.text:SetPoint("TOPLEFT", p.state, "BOTTOMLEFT", 0, -3)
-	p.text:SetJustifyH("LEFT")
-	p.text:SetWordWrap(false)
-	-- small icon buttons (the player, 2026-11-10: "whole wordy buttons"): the
-	-- game's own art, the name in a tooltip when the cursor lands on one
-	local ICONS = {
-		cancel = { "Interface\\Buttons\\UI-GroupLoot-Pass-Up", "Interface\\Buttons\\UI-GroupLoot-Pass-Down", "Interface\\Buttons\\UI-GroupLoot-Pass-Highlight" },
-		now = { "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up", "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down", "Interface\\Buttons\\UI-Common-MouseHilight" },
-	}
-	local function button(text, onClick, icon)
-		local b = CreateFrame("Button", nil, p)
-		b:SetSize(26, 26)
-		local art = ICONS[icon]
-		b:SetNormalTexture(art[1])
-		b:SetPushedTexture(art[2])
-		b:SetHighlightTexture(art[3], "ADD")
-		b:SetScript("OnEnter", function(self)
-			GameTooltip:SetOwner(self, "ANCHOR_TOP")
-			GameTooltip:SetText(text)
-			GameTooltip:Show()
-		end)
-		b:SetScript("OnLeave", function() GameTooltip:Hide() end)
-		b:SetScript("OnClick", function() onClick(p.job) end)
-		if not InCombatLockdown() and SmartNavigation_MarkFrameFocusable then
-			pcall(SmartNavigation_MarkFrameFocusable, b)
-		else
-			b.unmarked = true
-		end
-		return b
-	end
-	p.cancel = button(CANCEL or "Cancel", function(job)
-		if not job then return end
-		if job.state == "hearing" then
-			command("hear", job.slot)
-			if core.setTranscribing then core.setTranscribing(job.slot, false) end
-		else
-			command("cancel", job.slot, job.req)
-			local live = find(job.req)
-			if live then live.state = "cancelling" end
-		end
-		refresh()
-	end, "cancel")
-	p.cancel:SetPoint("RIGHT", -6, 0)
-	p.now = button("Send now", function(job)
-		if not job then return end
-		command("now", job.slot, job.req)
-		local live = find(job.req)
-		if live then live.sending = true end
-		refresh()
-	end, "now")
-	p.now:SetPoint("RIGHT", p.cancel, "LEFT", -2, 0)
-	p.text:SetPoint("RIGHT", p.now, "LEFT", -8, 0)
-	p:Hide()
-	panels[i] = p
-	return p
+	b:Hide()
+	made[#made + 1] = b
+	return b
 end
 
--- what to show: hearing first (a slot Whisper is busy with), then each message
-local function rows()
-	local out = {}
+local function cancel(job)
+	if not job then return end
+	if job.state == "hearing" then
+		command("hear", job.slot)
+		if core.setTranscribing then core.setTranscribing(job.slot, false) end
+	else
+		command("cancel", job.slot, job.req)
+		local live = find(job.req)
+		if live then live.state = "cancelling" end
+	end
+	refresh()
+end
+local function sendNow(job)
+	if not job then return end
+	command("now", job.slot, job.req)
+	local live = find(job.req)
+	if live then live.sending = true end
+	refresh()
+end
+
+-- the waiting line (hearing you / working) gets an X at its end; each queued
+-- message's own header line in the transcript gets a play and an X
+local statusX
+local pairsPool = {}
+
+local function queuedRow(transcript, queueId)
+	for _, row in ipairs(transcript.rows or {}) do
+		if row.queued == queueId and row.fs:IsShown() then return row end
+	end
+end
+
+refresh = function()
+	local frame = core.logFrame and core.logFrame()
+	if not frame or not frame.messages or not frame.pending then return end
 	local now = GetTime()
-	-- only the conversation in view (the player, 2026-11-10: "in R1 I just see
-	-- the R1 messages")
 	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
+	local working = core.working or {}
 	-- a running job whose conversation stopped working (a reply or a failure
 	-- that named no conversation) has nothing left to do
-	local working = core.working or {}
 	for i = #jobs, 1, -1 do
 		local job = jobs[i]
 		if job.state == "working" and not working[job.slot] and now - (job.at or now) > 3 then
 			table.remove(jobs, i)
 		end
 	end
-	-- oldest first (the player, 2026-11-10): the running one, what is queued
-	-- in the order it was said, and last the clip still being heard
-	for _, job in ipairs(jobs) do
-		if job.slot == view and job.state ~= "queued" then out[#out + 1] = job end
-	end
-	for _, job in ipairs(jobs) do
-		if job.slot == view and job.state == "queued" then out[#out + 1] = job end
-	end
+	-- the waiting line: hearing first (the newest thing), else the running request
+	statusX = statusX or icon(frame, "cancel", CANCEL or "Cancel", cancel)
+	local target
 	local since = (core.transcribing or {})[view]
-	if since then out[#out + 1] = { state = "hearing", slot = view, text = "...", at = since } end
-	while #out > MAX do table.remove(out, 1) end
-	return out, now
-end
-
-refresh = function()
-	local frame = core.logFrame and core.logFrame()
-	if not frame or not frame.messages then return end
-	local list, now = rows()
-	local well = frame.chatWell or frame
-	local working = core.working or {}
-	for i = 1, math.max(#list, #panels) do
-		local job = list[i]
-		local p = panels[i] or (job and build(i))
-		if p then
-			if job then
-				p.job = job
-				p:ClearAllPoints()
-				-- the first (oldest) at the top of the stack, the newest at the bottom
-				local y = 8 + (#list - i) * (PANEL_H + 4)
-				p:SetPoint("BOTTOMLEFT", well, "BOTTOMLEFT", 8, y)
-				p:SetPoint("BOTTOMRIGHT", well, "BOTTOMRIGHT", -8, y)
-				local who = label(job.slot)
-				local secs = math.floor(now - (job.at or now))
-				local dots = ("."):rep(math.floor(now * 2) % 4)
-				if job.state == "hearing" then
-					p.state:SetText(("|cff9ad5ff%s  hearing you%s|r"):format(who, dots))
-					p.text:SetText("|cff808080transcribing" .. dots .. "|r")
-				elseif job.state == "queued" then
-					p.state:SetText(("|cffb0b0b0%s  queued|r"):format(who))
-					p.text:SetText(clean(job.text))
-				elseif job.state == "cancelling" then
-					p.state:SetText(("|cffff7777%s  cancelling%s|r"):format(who, dots))
-					p.text:SetText(clean(job.text))
-				else
-					p.state:SetText(("|cffffd100%s  working %ds|r"):format(who, secs))
-					local doing = working[job.slot] and working[job.slot].text
-					-- the message itself is already in the transcript just above:
-					-- here, what the agent is doing with it (the player, 2026-11-10)
-					p.text:SetText("|cffb0b0b0" .. clean(doing or "thinking") .. "|r")
-				end
-				local runningThere = false
-				for _, other in ipairs(jobs) do
-					if other.slot == job.slot and other.state == "working" then runningThere = true end
-				end
-				p.cancel:SetShown(job.state ~= "cancelling")
-				p.now:SetShown(job.state == "queued" and runningThere and not job.sending)
-				if p.text.SetPoint then
-					p.text:SetPoint("RIGHT", p.now:IsShown() and p.now or p.cancel, "LEFT", -8, 0)
-				end
-				p:Show()
-			else
-				p.job = nil
-				p:Hide()
-			end
+	if since then
+		target = { state = "hearing", slot = view }
+	else
+		for _, job in ipairs(jobs) do
+			if job.slot == view and job.state == "working" then target = job end
 		end
 	end
-	-- the transcript ends above the panels
-	local shown = math.min(#list, MAX)
-	local scroll = frame.messages.scroll
-	if scroll and frame.chatWell then
-		scroll:SetPoint("BOTTOMRIGHT", frame.chatWell, "BOTTOMRIGHT", -28, 8 + shown * (PANEL_H + 4))
+	if target and frame.pending:IsShown() then
+		statusX.job = target
+		statusX:ClearAllPoints()
+		statusX:SetPoint("LEFT", frame.pending, "LEFT", math.min(frame.pending:GetStringWidth(), frame.pending:GetWidth()) + 6, 0)
+		statusX:SetFrameLevel(frame:GetFrameLevel() + 10)
+		statusX:Show()
+	else
+		statusX.job = nil
+		statusX:Hide()
+	end
+	-- queued messages, on their own lines
+	local transcript = frame.messages
+	local used = 0
+	local runningThere = false
+	for _, job in ipairs(jobs) do
+		if job.slot == view and job.state == "working" then runningThere = true end
+	end
+	for _, job in ipairs(jobs) do
+		local row = job.slot == view and job.state == "queued" and job.queueId and queuedRow(transcript, job.queueId)
+		if row then
+			used = used + 1
+			local pair = pairsPool[used]
+			if not pair then
+				pair = { x = icon(transcript.content, "cancel", CANCEL or "Cancel", cancel),
+					go = icon(transcript.content, "now", "Send now", sendNow) }
+				pairsPool[used] = pair
+			end
+			pair.x.job, pair.go.job = job, job
+			pair.x:ClearAllPoints()
+			pair.x:SetPoint("TOPRIGHT", row.fs, "TOPRIGHT", -4, 3)
+			pair.x:Show()
+			pair.go:ClearAllPoints()
+			pair.go:SetPoint("RIGHT", pair.x, "LEFT", -2, 0)
+			pair.go:SetShown(runningThere and not job.sending)
+		end
+	end
+	for i = used + 1, #pairsPool do
+		pairsPool[i].x:Hide()
+		pairsPool[i].go:Hide()
 	end
 end
 
@@ -222,6 +171,7 @@ function WC.Jobs.Note(inbox)
 			jobs[#jobs + 1] = job
 		end
 		job.text = inbox.text or job.text
+		job.queueId = inbox.queueId or job.queueId
 		job.state = inbox.queued and "queued" or "working"
 		if job.state == "working" then job.at = GetTime() end
 	elseif inbox.slot and not inbox.pending and inbox.who ~= "you" and not inbox.queued then
@@ -261,12 +211,10 @@ end
 local marker = CreateFrame("Frame")
 marker:RegisterEvent("PLAYER_REGEN_ENABLED")
 marker:SetScript("OnEvent", function()
-	for _, p in ipairs(panels) do
-		for _, b in ipairs({ p.cancel, p.now }) do
-			if b.unmarked and SmartNavigation_MarkFrameFocusable then
-				b.unmarked = nil
-				pcall(SmartNavigation_MarkFrameFocusable, b)
-			end
+	for _, b in ipairs(made) do
+		if b.unmarked and SmartNavigation_MarkFrameFocusable then
+			b.unmarked = nil
+			pcall(SmartNavigation_MarkFrameFocusable, b)
 		end
 	end
 end)
