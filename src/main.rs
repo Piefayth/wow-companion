@@ -493,9 +493,21 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                             let line = log_inbox_in(Some(&slot), "you", &text, None, None)
                                 .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\", queued = true, req = {req}"), 1);
                             let _ = courier.send(line);
-                            // the conversation still runs one request at a time
+                            // waiting messages go together (the player, 2026-11-10:
+                            // "it should send every queued message"): the first to get
+                            // the conversation takes all of them
+                            queue_message(&slot, req, &text);
                             (session.lock().unwrap_or_else(|poisoned| poisoned.into_inner()), true)
                         }
+                    };
+                    let text = if queued {
+                        match take_queued(&addons, &slot, req) {
+                            Some(all) => all,
+                            // another waiting request already took this one
+                            None => return,
+                        }
+                    } else {
+                        text
                     };
                     IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
                     let _done = InFlight;

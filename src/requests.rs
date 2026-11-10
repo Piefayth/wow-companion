@@ -158,6 +158,67 @@ static CANCELLED: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 /// before the cancel is dropped when its words arrive.
 static HEARING_CANCELLED: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
 
+/// Messages waiting for their conversation: (conversation, request id, words).
+static WAITING: Mutex<Vec<(String, u64, String)>> = Mutex::new(Vec::new());
+
+pub(crate) fn queue_message(slot: &str, req: u64, text: &str) {
+    WAITING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((slot.to_string(), req, text.to_string()));
+}
+
+/// Every message still waiting in this conversation, as one request, once the
+/// conversation is free; None when another waiting request took them already.
+/// Cancelled ones are left out; the others' lines are marked started.
+pub(crate) fn take_queued(addons: &Path, slot: &str, req: u64) -> Option<String> {
+    let taken: Vec<(u64, String)> = {
+        let mut waiting = WAITING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !waiting.iter().any(|(at, id, _)| at == slot && *id == req) {
+            return None;
+        }
+        let mut taken = Vec::new();
+        waiting.retain(|(at, id, text)| {
+            if at == slot {
+                taken.push((*id, text.clone()));
+                false
+            } else {
+                true
+            }
+        });
+        taken
+    };
+    let taken: Vec<(u64, String)> = {
+        let mut cancelled = CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        taken
+            .into_iter()
+            .filter(|(id, _)| {
+                match cancelled.iter().position(|c| c == id) {
+                    Some(at) => {
+                        cancelled.remove(at);
+                        false
+                    }
+                    None => true,
+                }
+            })
+            .collect()
+    };
+    // the others' lines leave the queue too: their request starts with this one
+    for (id, _) in &taken {
+        if *id != req {
+            let _ = send_inbox(addons, &format!("{{ started = true, kind = \"progress\", text = \"thinking\", slot = {}, req = {id} }}", lua_string(slot)));
+        }
+    }
+    if taken.is_empty() {
+        return None;
+    }
+    if taken.len() == 1 {
+        return taken.into_iter().next().map(|(_, text)| text);
+    }
+    let mut out = String::from("(Several messages, said one after another while you were busy; answer them together:)");
+    for (i, (_, text)) in taken.iter().enumerate() {
+        out.push_str(&format!("\n{}. {}", i + 1, text));
+    }
+    Some(out)
+}
+
 /// A new request on this thread: its id, for its lines and for cancelling it.
 pub(crate) fn new_request() -> u64 {
     let id = NEXT_REQ.fetch_add(1, Ordering::SeqCst);
