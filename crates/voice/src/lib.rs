@@ -4,7 +4,6 @@
 //! start of it. Stays on this machine, so a hot mic can't leak the room.
 
 use std::{
-    collections::VecDeque,
     io,
     path::Path,
     sync::{
@@ -136,9 +135,6 @@ pub fn listen(
     let cue_volume = option(options, "volume")
         .and_then(|given| given.parse().ok())
         .unwrap_or(CUE_VOLUME);
-    // one output stream for the session, like the microphone: see Speaker
-    let mut speaker = Speaker::default();
-    speaker.play(cue_device.as_deref(), 0.0, &[]);
 
     // loading the model is the slow part, so do it once and keep it resident
     let path = model.to_str().ok_or_else(|| io::Error::other("model path isn't UTF-8"))?;
@@ -210,13 +206,13 @@ pub fn listen(
             (Some(role), None) => {
                 pressed_at = Instant::now();
                 mic.start();
-                speaker.play(cue_device.as_deref(), cue_volume, &CUE_OPEN);
+                cue(cue_device.clone(), cue_volume, &CUE_OPEN);
                 println!("listening for {role}");
             }
             (None, Some(role)) => {
                 let clip = mic.stop();
                 // falling fifth on release: rising means live, falling means it has it
-                speaker.play(cue_device.as_deref(), cue_volume, &CUE_SHUT);
+                cue(cue_device.clone(), cue_volume, &CUE_SHUT);
                 let seconds = clip.len() as f32 / WHISPER_RATE as f32;
                 if pressed_at.elapsed() < TAP {
                     println!("tap: {role}");
@@ -417,141 +413,6 @@ fn push(capture: &Arc<Mutex<Capture>>, samples: impl Iterator<Item = f32>) {
 ///
 /// Spawned on its own thread: capture has to start now, not after the audio device
 /// has finished opening.
-/// The cues' output, opened once and kept playing silence between cues.
-///
-/// Opening a stream per cue (what `cue` did) loses the opening cue on a Bluetooth
-/// headset in hands-free mode: its output path powers down after a few idle
-/// seconds and takes about 200 ms to wake, longer than the two 85 ms notes. The
-/// closing cue came moments after the opening one had woken it, so only "off" was
-/// ever heard (reported by the player). Kept open, the path never sleeps and a cue
-/// starts the moment it is asked for. A lost device is reopened at the next cue.
-#[derive(Default)]
-struct Speaker {
-    open: Option<SpeakerStream>,
-}
-
-struct SpeakerStream {
-    // held because dropping it closes the stream
-    _stream: cpal::Stream,
-    queue: Arc<Mutex<VecDeque<f32>>>,
-    rate: f32,
-    dead: Arc<AtomicBool>,
-}
-
-impl Speaker {
-    fn play(&mut self, wanted: Option<&str>, volume: f32, notes: &[f32]) {
-        if self.open.as_ref().is_some_and(|open| open.dead.load(Ordering::Relaxed)) {
-            self.open = None;
-        }
-        if self.open.is_none() {
-            match SpeakerStream::open(wanted) {
-                Ok(open) => self.open = Some(open),
-                Err(err) => {
-                    eprintln!("cue output unavailable ({err}); trying again at the next cue");
-                    return;
-                }
-            }
-        }
-        if volume <= 0.0 || notes.is_empty() {
-            return;
-        }
-        if let Some(open) = &self.open {
-            let samples = render(notes, volume, open.rate);
-            let mut queue = open.queue.lock().unwrap();
-            // a new cue replaces one still sounding, rather than queueing behind it
-            queue.clear();
-            queue.extend(samples);
-        }
-    }
-}
-
-impl SpeakerStream {
-    fn open(wanted: Option<&str>) -> io::Result<Self> {
-        let device = output_device(wanted)?;
-        let config = device
-            .default_output_config()
-            .map_err(|err| io::Error::other(err.to_string()))?;
-        let rate = config.sample_rate() as f32;
-        let channels = config.channels() as usize;
-        let queue = Arc::new(Mutex::new(VecDeque::<f32>::new()));
-        let dead = Arc::new(AtomicBool::new(false));
-        let (feed, flag) = (Arc::clone(&queue), Arc::clone(&dead));
-        let fail = move |err: cpal::Error| {
-            if !matches!(err.kind(), cpal::ErrorKind::Xrun | cpal::ErrorKind::DeviceChanged)
-                && !flag.swap(true, Ordering::Relaxed)
-            {
-                eprintln!("cue output error: {err}");
-            }
-        };
-        let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => device.build_output_stream(
-                config.config(),
-                move |buffer: &mut [f32], _: &_| {
-                    let mut queue = feed.lock().unwrap();
-                    for frame in buffer.chunks_mut(channels) {
-                        frame.fill(queue.pop_front().unwrap_or(0.0));
-                    }
-                },
-                fail,
-                None,
-            ),
-            cpal::SampleFormat::I16 => device.build_output_stream(
-                config.config(),
-                move |buffer: &mut [i16], _: &_| {
-                    let mut queue = feed.lock().unwrap();
-                    for frame in buffer.chunks_mut(channels) {
-                        frame.fill((queue.pop_front().unwrap_or(0.0) * i16::MAX as f32) as i16);
-                    }
-                },
-                fail,
-                None,
-            ),
-            other => return Err(io::Error::other(format!("unsupported output format {other:?}"))),
-        }
-        .map_err(|err| io::Error::other(err.to_string()))?;
-        stream.play().map_err(|err| io::Error::other(err.to_string()))?;
-        Ok(Self { _stream: stream, queue, rate, dead })
-    }
-}
-
-fn output_device(wanted: Option<&str>) -> io::Result<cpal::Device> {
-    let host = cpal::default_host();
-    match wanted {
-        Some(fragment) => {
-            let lowered = fragment.to_ascii_lowercase();
-            host.output_devices()
-                .map_err(|err| io::Error::other(err.to_string()))?
-                .find(|device| {
-                    device.description().is_ok_and(|described| {
-                        described.name().to_ascii_lowercase().contains(&lowered)
-                    })
-                })
-                .ok_or_else(|| io::Error::other(format!("no output matching {fragment:?}")))
-        }
-        None => host
-            .default_output_device()
-            .ok_or_else(|| io::Error::other("no output device")),
-    }
-}
-
-/// The cue as mono samples at `rate`: struck-and-decaying notes, one after another.
-fn render(notes: &[f32], volume: f32, rate: f32) -> Vec<f32> {
-    let per_note = (rate * CUE_NOTE as f32 / 1000.0) as usize;
-    let attack = (rate * 0.003).max(1.0) as usize;
-    let mut out = Vec::with_capacity(per_note * notes.len());
-    for hz in notes {
-        for step in 0..per_note {
-            let seconds = step as f32 / rate;
-            let phase = seconds * hz * std::f32::consts::TAU;
-            let wave = phase.sin() + 0.12 * (phase * 2.0).sin();
-            let envelope = (step as f32 / attack as f32).min(1.0) * (-seconds * CUE_DECAY).exp();
-            out.push(wave * envelope * volume);
-        }
-    }
-    out
-}
-
-#[allow(dead_code)]
 fn cue(wanted: Option<String>, volume: f32, notes: &'static [f32]) {
     if volume <= 0.0 {
         return;
