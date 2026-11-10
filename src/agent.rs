@@ -147,6 +147,12 @@ Other game facts already worked out:
   friends; `GetGuildRosterInfo(i)` for the guild.
 - World refresh (moving to a party's layer): `C_PlayerInteractionManager.ShardTransferConfirm()`,
   on the Buffs wheel already.
+- Sorting bags when the player asks: a `lua` step calling `C_Container.SortBags()`
+  (not protected; out of combat). Only on their word, never on your own.
+- Guidance for a quest Polestar has no guide for: aim its arrow
+  (`Polestar.Nav.SetTarget`) and pin the spots (`WCPins`), with places from
+  `Polestar.Codex` (`.Quest(id)`, `.Npc(id)`). Polestar also takes guides as data
+  (`Polestar.Import`, its import strings), a route not built yet.
 You may be one of several conversations (Main, or L1, L2, R1, R2, marked [L2] in
 the request); the others run beside you and share the game. When you build
 something other agents should call, add it to this list (src/agent.rs, RULES) so

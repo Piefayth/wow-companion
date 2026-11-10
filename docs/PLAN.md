@@ -197,6 +197,24 @@ and then **must verify**: `Wow.exe` with `-launcherlogin` within 30 s, or say so
 the window. It can break when Blizzard changes the launcher; it must never fail
 quietly. Not built yet: the player's call.
 
+### The to-do list, as the player left it (2026-11-10, 02:30)
+
+- **Missing-buff notices**: wanted; how they show is still to agree. The snapshot
+  checks Mark of the Wild and Thorns (Omen of Clarity is a proc in Forever, never
+  a buff to cast: never report it).
+- **Bag sort**: only when the player says so. `C_Container.SortBags()` from a
+  `lua` step; no button, nothing automatic.
+- **Guidance for quests Polestar has no guide for**: wanted, through Polestar's
+  own display if it can be done. Options: its arrow and our pins today; a
+  generated guide registered as data (`Polestar.Import`, `ns.RegisterPack`) later.
+- **Home wheel**: still liked, not designed.
+- **Cancel a request in flight**: passed on for now.
+- **Invisible-focus bug**: not seen again since the one time; closed until it is.
+- **Auto-relaunch**: only possible by clicking Battle.net's Play, which is
+  computer use; dropped.
+- **Trimming the addon's memory**: not wanted.
+- **L2 and R2 bits**: confirmed working.
+
 ### 4. Small and open
 
 - Restarting the game: the last attempt failed; worth a look when it matters.
