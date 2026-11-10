@@ -1,0 +1,105 @@
+# Release builds for Windows: a GPU build on Vulkan (any NVIDIA, AMD or Intel
+# card with a current driver), a CPU build beside it as the fallback the setup
+# window can switch to, and the setup window. A CUDA build (NVIDIA only, ships
+# ~590 MB of NVIDIA's DLLs) is optional, from the Actions tab.
+#
+# Runs on a tag push (v*), which also makes a GitHub release, or by hand.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      cuda:
+        description: "Also build the CUDA variant (slow: every NVIDIA generation)"
+        type: boolean
+        default: false
+
+env:
+  # bindgen (whisper-rs-sys) needs libclang; the Windows runner has LLVM here
+  LIBCLANG_PATH: C:\Program Files\LLVM\bin
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            crates/setup -> target
+      - name: Vulkan SDK (build only; players need just their graphics driver)
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.3.296.0
+          cache: true
+      - name: Build (Vulkan)
+        run: cargo build --release --no-default-features --features vulkan
+        env:
+          CARGO_TARGET_DIR: target/vulkan
+      - name: Build (CPU fallback)
+        run: cargo build --release --no-default-features
+        env:
+          CARGO_TARGET_DIR: target/cpu
+      - name: Build (setup window)
+        run: cargo build --release
+        working-directory: crates/setup
+      - name: Package
+        shell: pwsh
+        run: >
+          ./packaging/package.ps1
+          -Exe target/vulkan/release/wow-companion.exe
+          -CpuExe target/cpu/release/wow-companion.exe
+          -Setup crates/setup/target/release/wow-companion-setup.exe
+          -Name wow-companion-windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wow-companion-windows
+          path: dist/wow-companion-windows.zip
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/wow-companion-windows.zip
+
+  cuda:
+    if: github.event_name == 'workflow_dispatch' && inputs.cuda
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Jimver/cuda-toolkit@v0.2.19
+        id: cuda
+        with:
+          cuda: "12.4.1"
+          method: network
+          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "visual_studio_integration"]'
+      - name: Build (CUDA, Turing to Hopper)
+        run: cargo build --release
+        env:
+          CUDAARCHS: "75;80;86;89;90"
+      - name: Build (CPU fallback)
+        run: cargo build --release --no-default-features
+        env:
+          CARGO_TARGET_DIR: target/cpu
+      - name: Build (setup window)
+        run: cargo build --release
+        working-directory: crates/setup
+      - name: Package
+        shell: pwsh
+        run: |
+          $bin = Join-Path "${{ steps.cuda.outputs.CUDA_PATH }}" "bin"
+          ./packaging/package.ps1 `
+            -Exe target/release/wow-companion.exe `
+            -CpuExe target/cpu/release/wow-companion.exe `
+            -Setup crates/setup/target/release/wow-companion-setup.exe `
+            -Extra (Join-Path $bin "cudart64_12.dll"), (Join-Path $bin "cublas64_12.dll"), (Join-Path $bin "cublasLt64_12.dll") `
+            -Name wow-companion-windows-cuda
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wow-companion-windows-cuda
+          path: dist/wow-companion-windows-cuda.zip

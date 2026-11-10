@@ -6,3 +6,4 @@ docs/wow-ui-source/
 tools/__pycache__/
 addon/WowCompanion/Modules.lua
 crates/setup/target/
+dist/

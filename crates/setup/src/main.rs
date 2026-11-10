@@ -225,6 +225,10 @@ impl eframe::App for Setup {
                         self.test_speech();
                     }
                 }
+                if self.engine == "cpu" {
+                    // measured: large-v3-turbo on the CPU took 16.5 s for 6 s of speech
+                    ui.small("On the CPU the large model is slow (about 16 s for a 6 s sentence): pick a small one, ggml-small.bin or ggml-base.en.bin.");
+                }
                 if self.engine == "cpu" && ui.small_button("go back to the GPU build").clicked() {
                     self.engine.clear();
                     self.save();
