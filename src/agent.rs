@@ -252,19 +252,22 @@ pub struct Session {
     offered: Option<String>,
     /// told once, at the start of the thread: where the game and this project are
     pub setup: String,
+    /// which conversation this is: "" for the main one, else the trigger held
+    /// with the talk button ("l1", "l2", "r1", "r2"), each kept in its own file
+    pub slot: String,
 }
 
 /// Where the conversation's ID is kept, so a restart of the companion resumes
 /// the same conversation instead of starting a stranger.
-fn thread_file() -> Option<std::path::PathBuf> {
+fn thread_file(slot: &str) -> Option<std::path::PathBuf> {
     let base = std::env::var_os("LOCALAPPDATA")?;
     let dir = std::path::PathBuf::from(base).join("wow-companion");
     std::fs::create_dir_all(&dir).ok()?;
-    Some(dir.join("thread.txt"))
+    Some(dir.join(if slot.is_empty() { "thread.txt".to_string() } else { format!("thread-{slot}.txt") }))
 }
 
-fn save_thread(thread: &str) {
-    if let Some(file) = thread_file() {
+fn save_thread(slot: &str, thread: &str) {
+    if let Some(file) = thread_file(slot) {
         let _ = std::fs::write(file, thread);
     }
 }
@@ -273,11 +276,26 @@ impl Session {
     /// The conversation the companion was last in, if any; delete thread.txt to
     /// start over.
     pub fn resumed() -> Self {
-        let thread = thread_file()
+        Self::resumed_slot("")
+    }
+
+    /// The conversation kept for one trigger slot ("" is the main one).
+    pub fn resumed_slot(slot: &str) -> Self {
+        let thread = thread_file(slot)
             .and_then(|file| std::fs::read_to_string(file).ok())
             .map(|text| text.trim().to_string())
             .filter(|text| !text.is_empty());
-        Session { thread, ..Session::default() }
+        Session { thread, slot: slot.to_string(), ..Session::default() }
+    }
+
+    /// Forget this conversation: the next request starts a fresh one.
+    pub fn forget(&mut self) {
+        self.thread = None;
+        self.seen = None;
+        self.offered = None;
+        if let Some(file) = thread_file(&self.slot) {
+            let _ = std::fs::remove_file(file);
+        }
     }
 
     /// Start the agent without waiting for it. A request takes seconds, and the
@@ -345,7 +363,7 @@ The player said: {transcript}"
         let answer = read(waiting, progress)?;
         // remember the thread even on the first reply, so the next utterance resumes
         if let Some(thread) = answer.thread {
-            save_thread(&thread);
+            save_thread(&self.slot, &thread);
             self.thread = Some(thread);
         }
         if let Some(context) = self.offered.take() {

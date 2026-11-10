@@ -294,6 +294,14 @@ pub fn listen(
     // its own handle and thread, so a pulse keeps time while this loop transcribes
     let rumbler = pad::Rumbler::new(vid, pid);
     let mut holding: Option<&str> = None;
+    // Conversation slots (the player, 2026-11-10): a trigger held with the talk
+    // button picks one; none is the main conversation. Home with a trigger starts
+    // that slot over; Home held alone for a second starts the main one over.
+    let slots = [("l1", pad::press("l1")?), ("l2", pad::press("l2")?), ("r1", pad::press("r1")?), ("r2", pad::press("r2")?)];
+    let home = pad::press("home")?;
+    let mut slot: Option<&str> = None;
+    let mut home_down: Option<Instant> = None;
+    let mut home_done = false;
     let mut pressed_at = Instant::now();
     // the opening pulse waits until a press has outlasted a tap: a tap (which
     // the game handles itself, opening the window) stays silent, and feeling
@@ -412,6 +420,26 @@ pub fn listen(
             .iter()
             .find(|(_, press)| pad.held(press))
             .map(|(role, _)| *role);
+        let modifier = slots.iter().find(|(_, press)| pad.held(press)).map(|(name, _)| *name);
+        if pad.held(&home) && !bindings.iter().any(|(_, press)| *press == home) {
+            match home_down {
+                None => {
+                    home_down = Some(Instant::now());
+                    home_done = false;
+                    if let Some(name) = modifier {
+                        home_done = true;
+                        let _ = heard(&format!("clear@{name}"), "");
+                    }
+                }
+                Some(at) if !home_done && at.elapsed() >= Duration::from_secs(1) => {
+                    home_done = true;
+                    let _ = heard("clear@main", "");
+                }
+                _ => {}
+            }
+        } else {
+            home_down = None;
+        }
         let Some(mic) = &microphone else {
             if held.is_some() && holding.is_none() {
                 println!("no microphone yet; still waiting for it");
@@ -425,6 +453,7 @@ pub fn listen(
         match (held, holding) {
             (Some(role), None) => {
                 pressed_at = Instant::now();
+                slot = if role == "ask" { modifier } else { None };
                 mic.start();
                 if beeps {
                     cue(cue_device.clone(), cue_volume, &CUE_OPEN);
@@ -462,15 +491,24 @@ pub fn listen(
                     let level = loudness(&clip);
                     // said at once, before Whisper runs: the player sees the clip
                     // arrived instead of wondering whether it was dropped
-                    let _ = heard(&format!("{role} heard"), "");
+                    // the slot rides on the role: "ask@l2"
+                    let tagged = match slot {
+                        Some(name) if role == "ask" => format!("ask@{name}"),
+                        _ => role.to_string(),
+                    };
+                    let _ = heard(&format!("{tagged} heard"), "");
                     // Whisper runs on its own thread, so the pad and mic stay
                     // live: slipping back onto the button while this clip is
                     // transcribed starts the next one at once (the player,
                     // 2026-11-10). Results come back in order, below.
-                    let _ = jobs.send(Job { role: role.to_string(), clip, prompt: prompt(&vocabulary()), level, seconds });
+                    let _ = jobs.send(Job { role: tagged, clip, prompt: prompt(&vocabulary()), level, seconds });
                 }
             }
-            (Some(_), Some(_)) => {
+            (Some(role), Some(_)) => {
+                // a trigger pulled just after the talk button still counts
+                if role == "ask" && slot.is_none() {
+                    slot = modifier;
+                }
                 if rumbles && !pulsed && pressed_at.elapsed() >= TAP {
                     // one firm pulse: past a tap, so listening
                     pulsed = true;

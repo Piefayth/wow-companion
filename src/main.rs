@@ -655,7 +655,32 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         courier.send(inbox).map_err(|_| io::Error::other("the courier thread has stopped"))
     };
     // the request being gathered: its words so far, and when the last clip came
-    let gathering: Arc<Mutex<Option<(String, Instant)>>> = Arc::new(Mutex::new(None));
+    let gathering: Arc<Mutex<Option<(String, Instant, String)>>> = Arc::new(Mutex::new(None));
+    // One conversation per trigger slot (L1, L2, R1, R2), each its own thread,
+    // made on first use; "" is the main one. Different slots run side by side.
+    let slots: Arc<Mutex<std::collections::HashMap<String, Arc<Mutex<agent::Session>>>>> = {
+        let mut map = std::collections::HashMap::new();
+        map.insert(String::new(), Arc::clone(&session));
+        Arc::new(Mutex::new(map))
+    };
+    let slot_session = {
+        let (slots, session) = (Arc::clone(&slots), Arc::clone(&session));
+        move |slot: &str| -> Arc<Mutex<agent::Session>> {
+            let mut map = slots.lock().unwrap();
+            if let Some(found) = map.get(slot) {
+                return Arc::clone(found);
+            }
+            let mut fresh = agent::Session::resumed_slot(slot);
+            {
+                let main = session.lock().unwrap();
+                fresh.model = main.model.clone();
+                fresh.setup = main.setup.clone();
+            }
+            let fresh = Arc::new(Mutex::new(fresh));
+            map.insert(slot.to_string(), Arc::clone(&fresh));
+            fresh
+        }
+    };
     voice::listen(
         model,
         options,
@@ -674,34 +699,43 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             // request runs, whose own progress line is on screen (the queued line
             // follows as soon as the words are known).
             // a second clip on its way to Whisper keeps the gather window open
-            "ask heard" if gathering.lock().unwrap().is_some() => {
-                if let Some((_, last)) = gathering.lock().unwrap().as_mut() {
+            r if r.starts_with("ask") && r.ends_with(" heard") && gathering.lock().unwrap().is_some() => {
+                if let Some((_, last, _)) = gathering.lock().unwrap().as_mut() {
                     *last = Instant::now();
                 }
                 Ok(())
             }
-            "ask heard" if IN_FLIGHT.load(Ordering::SeqCst) == 0 => {
+            r if r.starts_with("ask") && r.ends_with(" heard") && IN_FLIGHT.load(Ordering::SeqCst) == 0 => {
                 deliver("{ kind = \"progress\", text = \"got it, transcribing\" }".to_string())
             }
             _ if role.ends_with(" heard") => Ok(()),
-            "ask" => {
+            // Home with a trigger (or Home held alone): that slot starts over
+            r if r.starts_with("clear@") => {
+                let slot = match &r["clear@".len()..] { "main" => "", other => other };
+                slot_session(slot).lock().map(|mut session| session.forget()).ok();
+                let name = if slot.is_empty() { "the main conversation".to_string() } else { slot.to_uppercase() };
+                println!("  {name} starts over");
+                deliver(log_inbox("you", &format!("(started {name} over)"), None, None))
+            }
+            r if r == "ask" || r.starts_with("ask@") => {
+                let slot = r.strip_prefix("ask@").unwrap_or("").to_string();
                 // Gathered, not sent at once: the player often lets go before they
                 // are finished, and a second press within GATHER of the last clip
                 // adds to the same request instead of starting another (the
                 // player, 2026-11-10). The wait runs while minus is held, too.
                 let mut pending = gathering.lock().unwrap();
-                if let Some((words, last)) = pending.as_mut() {
+                if let Some((words, last, _)) = pending.as_mut() {
                     words.push(' ');
                     words.push_str(text);
                     *last = Instant::now();
                     println!("  added to the request being gathered");
                     return Ok(());
                 }
-                *pending = Some((text.to_string(), Instant::now()));
+                *pending = Some((text.to_string(), Instant::now(), slot.clone()));
                 drop(pending);
                 let (addons, session, looking, gathering, courier) = (
                     addons.to_path_buf(),
-                    Arc::clone(&session),
+                    slot_session(&slot),
                     Arc::clone(&looking),
                     Arc::clone(&gathering),
                     courier.clone(),
@@ -710,9 +744,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     let text = loop {
                         thread::sleep(Duration::from_millis(100));
                         let mut pending = gathering.lock().unwrap();
-                        let quiet = pending.as_ref().map(|(_, last)| last.elapsed() >= GATHER).unwrap_or(true);
+                        let quiet = pending.as_ref().map(|(_, last, _)| last.elapsed() >= GATHER).unwrap_or(true);
                         if quiet && !voice::HOLDING.load(Ordering::Relaxed) {
-                            break pending.take().map(|(words, _)| words).unwrap_or_default();
+                            break pending.take().map(|(words, _, _)| words).unwrap_or_default();
                         }
                     };
                     // One button for both: a line that opens with a channel ("party,
@@ -732,6 +766,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         let _ = courier.send(log_inbox("you", &format!("(to chat) {routed}"), None, None));
                         return;
                     }
+                    // a slot's request is marked with it, in the window and for the
+                    // agent ("[L2] ..."), so both can tell the conversations apart
+                    let text = if slot.is_empty() { text } else { format!("[{}] {}", slot.to_uppercase(), text) };
                     // a new request supersedes a look still waiting for its reload
                     *looking.lock().unwrap() = None;
                     // A request made while another runs is shown at once, as
@@ -747,7 +784,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
                     let _done = InFlight;
                     match ask(&addons, &mut session.lock().unwrap(), &text, queued) {
-                        Ok(true) => *looking.lock().unwrap() = Some(session_began(&addons)),
+                        // a look resumes the main conversation, so only the main one looks
+                        Ok(true) if slot.is_empty() => *looking.lock().unwrap() = Some(session_began(&addons)),
+                        Ok(true) => {}
                         Ok(false) => {}
                         Err(err) => {
                             eprintln!("  not delivered: {err}");

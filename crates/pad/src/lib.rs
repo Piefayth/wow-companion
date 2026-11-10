@@ -26,6 +26,7 @@ const CALIBRATE: Duration = Duration::from_secs(3);
 const RESTLESS: u32 = 3;
 
 /// One button, as the bit it occupies in the input report.
+#[derive(PartialEq)]
 pub struct Press {
     pub byte: usize,
     pub mask: u8,
@@ -46,6 +47,10 @@ pub fn press(name: &str) -> io::Result<Press> {
         "capture" | "touchpad" => (10, 0x02),
         "l1" | "lb" => (9, 0x01),
         "r1" | "rb" => (9, 0x02),
+        // the DualSense layout of byte 9, which L1, R1 and minus all match here;
+        // the triggers' digital bits, for talk-button slots
+        "l2" | "lt" => (9, 0x04),
+        "r2" | "rt" => (9, 0x08),
         // measured: Switch minus and plus arrive as the DualSense Create and Options
         // buttons. WoW binds plus to the game menu, so minus is the free one.
         "minus" | "create" | "share" => (9, 0x10),
