@@ -344,6 +344,8 @@ end
 -- What the helper is allowed to ask for. A dispatch table rather than loadstring on
 -- whatever arrives: the rule is configuration only, and this is where that rule lives.
 local handlers = {}
+-- set further down, once taintScan exists: what follows a dictated line
+local onDictated
 
 -- Writes into a chat box the player already opened, and never opens one itself.
 -- That distinction is the whole point: when we called ChatFrame_OpenChat, the
@@ -366,12 +368,18 @@ function handlers.chat(inbox)
 	end
 	local box = activeEditBox()
 	if not box or not box:IsVisible() then
-		say("no chat box open, so nothing was written -- open chat first, then speak")
+		-- in the window, where it is seen: opening the box ourselves is what broke
+		-- A and B, so the player opens it and speaks again
+		remember("error", "No chat box open, so nothing was written. Open chat, then speak.")
 		return "refused: no chat box open"
 	end
-	-- append, so speaking twice builds a line instead of replacing it
+	-- append, so speaking twice builds a line instead of replacing it. Not echoed
+	-- into the window: that is the conversation with the agent, and dictation is
+	-- the player talking to other players
 	box:SetText((box:GetText() or "") .. (inbox.text or ""))
-	remember("you", inbox.text or "")
+	if onDictated then
+		onDictated(box)
+	end
 	return ("chat box holds %q"):format(box:GetText())
 end
 
@@ -397,6 +405,13 @@ function handlers.log(inbox)
 		logWindow:Show()
 	end
 	return ("logged %d line(s)"):format(lines)
+end
+
+-- What the agent is doing right now, on the waiting line: "reading StanceBar.lua".
+-- Not logged; the reply is what stays.
+function handlers.progress(inbox)
+	setPending(inbox.text or "thinking")
+	return "progress"
 end
 
 function handlers.macro(inbox)
@@ -2137,6 +2152,73 @@ local function loadModules()
 	for _, name in ipairs(names) do
 		runCode("module " .. name, WowCompanionDB.modules[name].code, true)
 	end
+end
+
+-- A path we have not measured gets the issecurevariable diff the first time it
+-- runs in a session, and says so in the window if it tainted anything. Kept in
+-- WowCompanionDB.pathTaint, so the verdict survives into the export.
+local measured = {}
+local function measureOnce(label, action)
+	if measured[label] or InCombatLockdown() then
+		return action()
+	end
+	measured[label] = true
+	local before = taintScan()
+	action()
+	C_Timer.After(1.5, function()
+		local after = taintScan()
+		local fresh = {}
+		for name, by in pairs(after) do
+			if before[name] == nil and not moduleGlobals[name] then
+				fresh[#fresh + 1] = ("%s (by %s)"):format(name, by)
+			end
+		end
+		table.sort(fresh)
+		WowCompanionDB.pathTaint = WowCompanionDB.pathTaint or {}
+		WowCompanionDB.pathTaint[label] = #fresh == 0 and "none" or table.concat(fresh, "; ")
+		if #fresh > 0 then
+			remember("error", ("%s tainted %d variable(s): %s -- /reload clears it"):format(
+				label, #fresh, table.concat(fresh, "; ", 1, math.min(#fresh, 4))))
+		end
+	end)
+end
+
+-- "/g hi" placed by SetText still says Say: the box only reads its slash command
+-- when a space is typed (OnSpacePressed -> ParseText(0)) or on send. Run the same
+-- parse, so the header shows the channel before the player presses send.
+onDictated = function(box)
+	local text = box:GetText() or ""
+	if text:find("^/%S+ ") and box.ParseText then
+		measureOnce("chat channel", function()
+			pcall(box.ParseText, box, 0)
+		end)
+	end
+end
+
+-- The controller's cancel takes the box's focus away, and Blizzard closes it then
+-- only if it is empty (ShouldDeactivateChatOnEditFocusLost: GetText() == ""), so a
+-- draft lingered and came back glued to the next line. Escape clears it, but that
+-- is not what cancel does. EventRegistry tells addons the moment focus goes,
+-- before that check, so emptying the box there lets Blizzard's own code close it.
+-- Not while the gamepad chat menu is open: that takes focus too, and means to
+-- come back.
+local draftOwner = {}
+if EventRegistry and EventRegistry.RegisterCallback then
+	EventRegistry:RegisterCallback("ChatFrame.OnEditBoxFocusLost", function(_, box)
+		if WowCompanionDB and WowCompanionDB.keepChatDraft then
+			return
+		end
+		if not (box and box.GetText and box.SetText) or (box:GetText() or "") == "" then
+			return
+		end
+		local chat = box.chatFrame
+		if chat and chat.IsGamepadMenuOpen and chat:IsGamepadMenuOpen() then
+			return
+		end
+		measureOnce("draft clear", function()
+			box:SetText("")
+		end)
+	end, draftOwner)
 end
 
 local frame = CreateFrame("Frame")

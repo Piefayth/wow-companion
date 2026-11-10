@@ -16,6 +16,10 @@ use std::{
 };
 
 const ADDON: &str = "WowCompanion";
+// how often the window hears what the agent is doing, and how many times per
+// request at most: every update spends one of the session's 64 slots
+const PROGRESS_EVERY: Duration = Duration::from_secs(6);
+const PROGRESS_LIMIT: u32 = 8;
 const SLOTS: u32 = 64;
 const BELLS: u32 = 8;
 // the addon only checks the next bell, so a rung bell stays rung for this many sends
@@ -123,6 +127,15 @@ fn install(addons: &Path) -> io::Result<()> {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("addon").join(ADDON);
     let addon = addons.join(ADDON);
     copy_dir(&source, &addon)?;
+    // the suite's other addons (WowCompanion_Wheel...), placed as they are
+    for entry in fs::read_dir(source.parent().unwrap())? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if entry.file_type()?.is_dir() && name != ADDON {
+            copy_dir(&entry.path(), &addons.join(&name))?;
+            println!("installed {}", name.to_string_lossy());
+        }
+    }
     let signals = addon.join("Signals");
     fs::create_dir_all(&signals)?;
     for bell in 1..=BELLS {
@@ -271,7 +284,37 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
     // wait, the agent costs several seconds, and they may as well run together
     let waiting = session.start(spoken, agent_context(addons))?;
     send_inbox(addons, &log_inbox("you", spoken, Some("thinking"), None))?;
-    let answer = session.finish(waiting)?;
+    let answer = {
+        // Progress goes to the spinner, newest only, at most every few seconds: each
+        // update costs a slot, and there are 64 per UI session. Its own thread, so
+        // the agent never waits on the game.
+        let (tell, heard) = std::sync::mpsc::channel::<String>();
+        let courier = {
+            let addons = addons.to_path_buf();
+            thread::spawn(move || {
+                let mut sent = 0;
+                while let Ok(mut latest) = heard.recv() {
+                    thread::sleep(PROGRESS_EVERY);
+                    while let Ok(newer) = heard.try_recv() {
+                        latest = newer;
+                    }
+                    if sent < PROGRESS_LIMIT {
+                        let inbox = format!("{{ kind = \"progress\", text = {} }}", lua_string(&latest));
+                        if send_inbox(&addons, &inbox).is_ok() {
+                            sent += 1;
+                        }
+                    }
+                }
+            })
+        };
+        let answer = session.finish(waiting, |doing| {
+            println!("  ... {doing}");
+            let _ = tell.send(doing.to_string());
+        });
+        drop(tell);
+        let _ = courier.join();
+        answer?
+    };
     println!("claude: {}", answer.say);
     // One message, not two: the reply and the action it describes arrive together,
     // so there is no second bell and no two-second gap between reading the answer
@@ -288,7 +331,7 @@ fn think(addons: &Path, spoken: &str) -> io::Result<()> {
     let mut session = agent::Session::default();
     let started = Instant::now();
     let waiting = session.start(spoken, agent_context(addons))?;
-    let answer = session.finish(waiting)?;
+    let answer = session.finish(waiting, |doing| println!("  ... {doing}"))?;
     println!("({:.1}s) say: {}", started.elapsed().as_secs_f32(), answer.say);
     println!("would send: {}", answer.inbox.as_deref().unwrap_or("nothing"));
     Ok(())
@@ -634,7 +677,13 @@ fn chat_inbox(text: &str) -> String {
     format!("{{ kind = \"chat\", text = {} }}", lua_string(text))
 }
 
+// One send at a time: each one silences every bell before ringing its own and
+// takes the next slot, so progress updates and replies from different threads
+// would otherwise step on each other.
+static SENDING: Mutex<()> = Mutex::new(());
+
 fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
+    let _one_at_a_time = SENDING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if !game_running()? {
         return Err(io::Error::other("Wow.exe isn't running, so nothing would read this"));
     }

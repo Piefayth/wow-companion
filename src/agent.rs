@@ -19,7 +19,8 @@
 //! from chat can steer it; the player accepted that trade.
 
 use std::{
-    io::{self, Write},
+    io::{self, BufRead, BufReader, Read, Write},
+    thread,
     process::{Child, Command, Stdio},
 };
 
@@ -185,9 +186,17 @@ did not ask for with C_AddOns.DisableAddOn(name) in a `lua` step.
 
 The game. New addon folders need a full restart. You can do it: offer a `press`
 step with macro /quit (quitting from addon code is protected, and killing Wow.exe
-skips the save), then wait for Wow.exe to exit and relaunch through Battle.net
-(this install's product flavour is wowf). Ask before closing their game, never
-kill it while it is running, and never in combat.
+skips the save). Ask before closing their game, never kill it, never in combat.
+
+Never wait for the player inside your turn. Nothing you say reaches them until
+your answer is finished, so waiting for them to press a button is minutes of
+silence that looks like a hang (it happened: ten minutes, then a timeout). Hand
+anything that has to wait to a detached background process and finish at once:
+for a restart, start a hidden PowerShell job (Start-Process powershell
+-WindowStyle Hidden) that waits for Wow.exe to exit and then launches the game
+through Battle.net (this install's product flavour is wowf), and answer with the
+Quit button as your last step. Keep turns short; long work is fine, idle waiting
+is not.
 
 Never act for the player in combat. Writing is yours; pressing is theirs.
 
@@ -269,7 +278,9 @@ The player said: {transcript}"
             // every tool, no prompts: the player's choice, and nothing should ever
             // block on a prompt nobody is at the keyboard to answer
             .arg("--dangerously-skip-permissions")
-            .args(["--output-format", "json"])
+            // streamed, so the player sees what it is doing; the last event is
+            // the same result the plain json format would have printed
+            .args(["--output-format", "stream-json", "--verbose"])
             .args(["--json-schema", SCHEMA])
             .args(["--model", if self.model.is_empty() { DEFAULT_MODEL } else { &self.model }])
             .args(["--max-turns", TURNS])
@@ -286,8 +297,11 @@ The player said: {transcript}"
         Ok(child)
     }
 
-    pub fn finish(&mut self, waiting: Child) -> io::Result<Spoken> {
-        let answer = read(waiting)?;
+    /// Wait for the answer, handing each thing the agent does to `progress` as it
+    /// happens ("reading StanceBar.lua"), so a minute of work is not a minute of
+    /// silence.
+    pub fn finish(&mut self, waiting: Child, progress: impl FnMut(&str)) -> io::Result<Spoken> {
+        let answer = read(waiting, progress)?;
         // remember the thread even on the first reply, so the next utterance resumes
         if let Some(thread) = answer.thread {
             self.thread = Some(thread);
@@ -304,19 +318,76 @@ struct Answer {
     thread: Option<String>,
 }
 
-fn read(waiting: Child) -> io::Result<Answer> {
-    let spawned = waiting.wait_with_output()?;
-    if !spawned.status.success() {
-        let complaint = String::from_utf8_lossy(&spawned.stderr);
-        return Err(io::Error::other(format!(
-            "claude exited {}: {}",
-            spawned.status,
-            complaint.trim()
-        )));
+/// One line for the player about a tool call: what, not how.
+fn describe(tool: &str, input: &Value) -> String {
+    let get = |key: &str| input.get(key).and_then(Value::as_str).unwrap_or("");
+    let short = |text: &str| -> String {
+        let text = text.lines().next().unwrap_or("").trim();
+        if text.chars().count() > 70 { format!("{}...", text.chars().take(70).collect::<String>()) } else { text.to_string() }
+    };
+    let file = |path: &str| path.rsplit(['/', '\\']).next().unwrap_or(path).to_string();
+    match tool {
+        "Read" => format!("reading {}", file(get("file_path"))),
+        "Grep" => format!("searching for {}", short(get("pattern"))),
+        "Glob" => format!("looking for {}", short(get("pattern"))),
+        "WebSearch" => format!("searching the web: {}", short(get("query"))),
+        "WebFetch" => format!("reading {}", short(get("url").trim_start_matches("https://"))),
+        "Edit" | "Write" | "MultiEdit" => format!("editing {}", file(get("file_path"))),
+        "Bash" | "PowerShell" => {
+            let what = if get("description").is_empty() { get("command") } else { get("description") };
+            format!("running: {}", short(what))
+        }
+        "Agent" | "Task" => format!("asking a helper: {}", short(get("description"))),
+        other => other.to_string(),
     }
+}
 
-    let envelope: Value = serde_json::from_slice(&spawned.stdout)
-        .map_err(|err| io::Error::other(format!("claude's output wasn't JSON: {err}")))?;
+fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer> {
+    // stderr drained on its own thread: a full pipe would stall the agent
+    let mut stderr = waiting.stderr.take();
+    let complaints = thread::spawn(move || {
+        let mut text = String::new();
+        if let Some(pipe) = stderr.as_mut() {
+            let _ = pipe.read_to_string(&mut text);
+        }
+        text
+    });
+    let stdout = waiting.stdout.take().ok_or_else(|| io::Error::other("claude has no stdout"))?;
+    let mut envelope: Option<Value> = None;
+    for line in BufReader::new(stdout).lines() {
+        let Ok(event) = serde_json::from_str::<Value>(&line?) else { continue };
+        match event.get("type").and_then(Value::as_str) {
+            Some("assistant") => {
+                let content = event.pointer("/message/content").and_then(Value::as_array);
+                for part in content.into_iter().flatten() {
+                    match part.get("type").and_then(Value::as_str) {
+                        Some("tool_use") => {
+                            let name = part.get("name").and_then(Value::as_str).unwrap_or("");
+                            // the answer itself arrives as this tool; it is not progress
+                            if name != "StructuredOutput" {
+                                progress(&describe(name, part.get("input").unwrap_or(&Value::Null)));
+                            }
+                        }
+                        Some("text") => {
+                            let text = part.get("text").and_then(Value::as_str).unwrap_or("").trim();
+                            if !text.is_empty() {
+                                progress(text.lines().next().unwrap_or(text));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Some("result") => envelope = Some(event),
+            _ => {}
+        }
+    }
+    let status = waiting.wait()?;
+    let complaint = complaints.join().unwrap_or_default();
+    if !status.success() && envelope.is_none() {
+        return Err(io::Error::other(format!("claude exited {status}: {}", complaint.trim())));
+    }
+    let envelope = envelope.ok_or_else(|| io::Error::other(format!("claude gave no result: {}", complaint.trim())))?;
     if envelope.get("is_error").and_then(Value::as_bool) == Some(true) {
         return Err(io::Error::other(format!("claude reported an error: {envelope}")));
     }

@@ -373,7 +373,17 @@ Open:
   agent's answer carries `look`: it gets a Reload button offered, and when the save
   lands the helper calls it again with the refreshed context, so one press is the
   whole cost of the agent seeing what its code did.
-- **The chat draft survives cancel** because `chatStyle` defaults to "im". The fix
-  is the setting, offered as a button (`/console chatStyle classic`), not code.
-  Sending from Git Bash rewrites a leading `/console` into a Windows path; use
-  `MSYS_NO_PATHCONV=1`, since a macro line without its slash may be sent as chat.
+- **The chat draft survives cancel, by Blizzard's design.** The box closes on
+  losing focus only when empty (`ShouldDeactivateChatOnEditFocusLost` is
+  `GetText() == ""`), in every chat style; Escape clears it (`ClearChat`), but the
+  controller's cancel takes focus instead. Offering `chatStyle classic` was a wrong
+  guess made before the source was here to read. The fix: on `EventRegistry`
+  "ChatFrame.OnEditBoxFocusLost", which fires before that check, empty the box,
+  and Blizzard's own code closes it (`keepChatDraft` turns it off). Dictated
+  "/g hi" also runs the box's `ParseText(0)`, which is what typing the space does,
+  so the header shows Guild before send. Both new paths get the taint diff the
+  first time they run each session (`WowCompanionDB.pathTaint`). Sending from Git
+  Bash rewrites a leading `/console` into a Windows path; use `MSYS_NO_PATHCONV=1`.
+- **The agent never waits on the player inside a turn.** Its answer is invisible
+  until finished, so its first restart sat ten minutes waiting for a Quit press and
+  looked hung. Waiting goes to a detached process; the turn ends at once.
