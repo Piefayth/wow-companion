@@ -263,6 +263,17 @@ carries nothing. `Logs	aint.log` is **not** a dead end, contrary to what this sa
 it appears once something is actually blocked, with full stacks naming our file and
 line. Check it whenever "Interface action failed" shows.
 
+**Read Blizzard's code before calling anything.** `docs/wow-ui-source` is a
+shallow clone of [Gethe/wow-ui-source](https://github.com/Gethe/wow-ui-source),
+branch `forever`, which is this exact build (1.60.1.70862): 2,877 Lua files of the
+interface Blizzard ships. How Blizzard calls a function (its arguments, its guards)
+is evidence that costs no call and cannot crash the game, which is why it replaced
+widening the blind survey: with thousands of functions, surveying by calling means
+crashing over and over to learn little. Not committed (gitignored); reclone with
+`git clone --depth 1 -b forever` after a patch. `docs/third-party/` holds another
+gamepad addon's notes (Improved Forever, MIT), which reached our own taint
+conclusions independently.
+
 **Never call the API blind.** The first `/wc alive` called every documented
 no-argument read in the client and **crashed it**: an ACCESS_VIOLATION reading
 address 0 inside `Wow.exe`. `pcall` catches Lua errors, not a C null dereference.

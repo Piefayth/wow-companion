@@ -137,6 +137,16 @@ directory has the truth, so look before you guess:
   api-useful.md                 what we use, and what has been measured to work
   api-1.60.1-signatures.txt     every documented function, event and type
   api-1.60.1.txt                every name that exists, documented or not
+  wow-ui-source/                Blizzard's own interface code for this exact build
+                                (1.60.1.70862). Before calling a function, grep here
+                                for how Blizzard calls it: the arguments it passes,
+                                the guards around it, which frames own what. A
+                                function Blizzard calls this way is the safest
+                                evidence there is, and nothing has to be run.
+  third-party/ImprovedForever-notes.md
+                                another controller addon's hard-won rules for gamepad
+                                focus and taint on this client (MIT). Read it before
+                                building any frame the controller has to reach.
 Grep for a name before calling it. Never call functions blind or in bulk: calling
 unknown functions crashed the game outright, which pcall cannot catch.
 The code runs as an addon, Lua 5.1. print() goes to their window. Globals you
@@ -164,7 +174,10 @@ recent commits; releases or tags; that its .toc lists Interface 16001, which is
 this client; and, where you can reach it, that the CurseForge or Wago page links
 to that same repository. Tell them what you found, the good and the concerning,
 in `say`, name the repository, and ask. Only after they have said yes in this
-conversation, add a step: kind `addon`, action `install`, repo OWNER/REPO. An
+conversation, add a step: kind `addon`, action `install`, repo OWNER/REPO. A
+repository can hold several addons (a core and modules): the install takes all of
+them, and you switch off the ones they did not ask for with
+C_AddOns.DisableAddOn(name) in a `lua` step (it applies at the next reload). An
 update is the same install again. `remove` takes the folder or repo, and only
 removes what you installed; `list` shows those. You will see each result in your
 next message. A new addon needs a full game restart (exit and relaunch); say so,
