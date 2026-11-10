@@ -128,6 +128,9 @@ the PC at full resolution. Built beside the PC-to-game channel, never touching i
   log over the data strip, look objectives up in Polestar's Codex (NPCs, objects,
   coordinates, drop rates), pin and arrow them.
 
+- **Not wanted** (the player, 2026-11-10): conversation slots pre-assigned a job
+  ("L2 is gear"). Slots stay general.
+
 ### Later: a custom look (the player, 2026-11-09)
 
 A separate addon (`WowCompanion_Look`), independent of the AI pipeline: one theme
