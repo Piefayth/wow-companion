@@ -16,6 +16,10 @@ on:
         type: boolean
         default: false
 
+# creating the GitHub release on a tag needs write access to the repo's contents
+permissions:
+  contents: write
+
 env:
   # bindgen (whisper-rs-sys) needs libclang; the Windows runner has LLVM here
   LIBCLANG_PATH: C:\Program Files\LLVM\bin
