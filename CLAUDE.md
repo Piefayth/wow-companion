@@ -105,7 +105,10 @@ because the game held them open. The message channel is the 2026-11-09 protocol
 (`bells::message_bell`, one bell polled at a time, emptied to silence, files
 `m1`..`m8`) until a replacement is proven. A replacement runs **beside** it, on
 its own files, and switches over only after the addon's channel counts show it
-delivering for a whole session. Renaming files to escape a wedged one is a sign
+delivering for a whole session. The **catch-up bells** (`c1`..`c8`, `ring_catch_up`
+in main.rs) are such a replacement, beside it since 2026-11-10: the newest slot's
+rings until the next send, so a missed message bell is taken late instead of
+stalling the rest; their count is `channel.caughtUp`. Renaming files to escape a wedged one is a sign
 the change should not have shipped, not a fix.
 
 ## The agent
