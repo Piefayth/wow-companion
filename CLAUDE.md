@@ -101,7 +101,10 @@ goes on stdin (the export overflows a Windows command line). Its answer is `say`
 plus `steps`, the shapes the addon dispatches (chat, macro, press, reload, bar,
 lua, module, show…), sent as one batch; at most one button per answer. Output is
 streamed and shown as a progress line, at most two per request. Requests run off
-the voice loop; one made while another runs shows as waiting. The agent must never
+the voice loop; one made while another runs shows as waiting. **The voice loop
+must never wait on anything a request can hold** (a session's lock, a send): it is
+what reads the pad, so a wait there is a dead controller and no rumble for as long
+as the request runs. Locks, sends and lookups go on the request's own thread. The agent must never
 wait for the player inside a turn (its answer is invisible until done): waiting
 goes to a detached process.
 
