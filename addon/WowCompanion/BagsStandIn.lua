@@ -32,19 +32,34 @@ do
 		local blizz = theirs()
 		if blizz then showAnim:SetTarget(blizz) showGroup:Play() end
 	end
-	-- In combat Blizzard's bags are the bags (the player, 2026-11-10: "our bag
-	-- mod doesn't let us open our bags during combat"). Theirs open in combat
-	-- because ContainerFrameCombinedBags holds nothing secure of an addon's: their
-	-- item buttons are Blizzard's own code, trusted to use items, so the frame is
-	-- not protected and ToggleAllBags may show it any time. Ours must use secure
-	-- /use buttons (our code is not trusted to use items), which makes WCBags
-	-- protected: Show from this hook is refused in combat (only a secure press,
-	-- the Bags macro, may open it then). So in a fight we leave theirs visible and
-	-- in charge, and hand back to ours when the fight ends.
+	-- In combat (the player, 2026-11-10: "I just want my bags all the time").
+	-- Our window is unprotected now (Bags.lua), so it may show in a fight; what a
+	-- fight forbids is binding the pad from this plain hook. So when the bag radial
+	-- or a vendor opens Blizzard's bags mid-fight, theirs keep the controller's
+	-- focus (the game's manager focused them itself), stay invisible, and take the
+	-- presses; ours is laid exactly over theirs (Mirror) and shows the same slots,
+	-- with the highlight following their focus (ContainerFrameItemButton.EnterButton).
+	-- Opened by our own secure toggle (the Bags macro), ours has its own pad
+	-- instead. When the fight ends, ours takes over as usual.
+	local function mirrorIn(blizz)
+		hideAnim:SetTarget(blizz)
+		hideGroup:Play()
+		if WCBags:IsShown() and not WCBags.mirror then
+			-- ours already up with its own pad (the secure toggle): keep it, and
+			-- drop theirs from the focus cycle
+			if GamepadMode and GamepadMode.FrameControlsManager then
+				pcall(GamepadMode.FrameControlsManager.FrameHidden, GamepadMode.FrameControlsManager, blizz)
+			end
+			return
+		end
+		WCBags:Mirror(blizz)
+		WCBags:Show()
+	end
 	local function standIn()
 		local blizz = theirs()
 		if not on() or not blizz or not blizz:IsShown() then return end
-		if InCombatLockdown() then restore() return end
+		if InCombatLockdown() then mirrorIn(blizz) return end
+		if WCBags.mirror then WCBags:Mirror(nil) end
 		hideAnim:SetTarget(blizz)
 		hideGroup:Play()
 		if GamepadMode and GamepadMode.FrameControlsManager and InputUtil and InputUtil.IsGamepadUIEnabled() then
@@ -69,6 +84,7 @@ do
 				local blizz = theirs()
 				if blizz and not blizz:IsShown() then
 					if not on() then restore() end
+					if WCBags and WCBags.mirror then WCBags:Hide() return end
 					-- the vendor or mail closing their bags closes ours too
 					if on() and WCBags:IsShown() and WCBags.followBlizzard then WCBags:Shut() end
 				end
@@ -82,8 +98,8 @@ do
 		C_Timer.After(0, function()
 			local blizz = theirs()
 			if InCombatLockdown() then
-				-- theirs, visible and in the controller's focus cycle
-				if blizz and blizz:IsShown() then restore() end
+				if blizz and blizz:IsShown() then mirrorIn(blizz)
+				elseif WCBags.mirror then WCBags:Hide() end
 				return
 			end
 			if blizz and blizz:IsShown() then standIn()
@@ -101,15 +117,22 @@ do
 		if not on() then return end
 		local blizz = theirs()
 		if not blizz then return end
-		if event == "PLAYER_REGEN_DISABLED" then
-			if not (WCBags and WCBags:IsShown()) then restore() end
+		if event == "PLAYER_REGEN_DISABLED" then return end
+		if WCBags.mirror then
+			WCBags:Mirror(nil)
+			if blizz:IsShown() then WCBags:Hide() standIn() else WCBags:Hide() end
 		elseif blizz:IsShown() then
 			standIn()
-		else
-			hideAnim:SetTarget(blizz)
-			hideGroup:Play()
 		end
 	end)
+	-- their focus, moving over their invisible slots, moves our highlight
+	if EventRegistry and EventRegistry.RegisterCallback then
+		EventRegistry:RegisterCallback("ContainerFrameItemButton.EnterButton", function(_, button)
+			if not (WCBags and WCBags.mirror and button) then return end
+			local ok, bag = pcall(button.GetBagID, button)
+			if ok and bag then WCBags:FocusOn(bag, button:GetID()) end
+		end, "WowCompanionMirror")
+	end
 	if ToggleBackpack_Combined then hooksecurefunc("ToggleBackpack_Combined", toggled) end
 	if ToggleAllBags then hooksecurefunc("ToggleAllBags", toggled) end
 	if WCBags then WCBags.followBlizzard = true end

@@ -28,9 +28,10 @@ function WC.BagsMenu.Build(f, holdBindings, MAXBAG)
 		end
 	end
 	local function split(b, n)
+		local m = f.meta[b]
 		local bag, slot = firstFree()
 		if not bag then print("bags: no free slot to split into") return end
-		C_Container.SplitContainerItem(b.bag, b.slot, n)
+		C_Container.SplitContainerItem(m.bag, m.slot, n)
 		C_Container.PickupContainerItem(bag, slot)
 	end
 	local BARS = { { 181, "d-pad" }, { 185, "L2" }, { 193, "R2" }, { 201, "L2+R2" } }
@@ -39,7 +40,7 @@ function WC.BagsMenu.Build(f, holdBindings, MAXBAG)
 		for _, bar in ipairs(BARS) do
 			for k = 0, 7 do
 				if not GetActionInfo(bar[1] + k) then
-					C_Container.PickupContainerItem(b.bag, b.slot)
+					C_Container.PickupContainerItem(f.meta[b].bag, f.meta[b].slot)
 					PlaceAction(bar[1] + k)
 					ClearCursor()
 					print(("bags: put on %s + %s"):format(bar[2], KEYS[k + 1]))
@@ -51,7 +52,8 @@ function WC.BagsMenu.Build(f, holdBindings, MAXBAG)
 	end
 	local closeMenu
 	local function entries(b)
-		local info = C_Container.GetContainerItemInfo(b.bag, b.slot)
+		local m = f.meta[b]
+		local info = C_Container.GetContainerItemInfo(m.bag, m.slot)
 		local list = {}
 		if info then
 			if C_Item.IsUsableItem(info.itemID) then list[#list + 1] = { "Put on action bar", function() toBar(b) end } end
@@ -65,8 +67,8 @@ function WC.BagsMenu.Build(f, holdBindings, MAXBAG)
 		if info and WowCompanion_ConfirmDestroy then
 			list[#list + 1] = { "|cffff6060Destroy|r", function()
 				-- the confirmation takes cross and circle; ours come back when it closes
-				ClearOverrideBindings(f)
-				if not WowCompanion_ConfirmDestroy(b.bag, b.slot, function() closeMenu() end) then closeMenu() end
+				ClearOverrideBindings(f.pad)
+				if not WowCompanion_ConfirmDestroy(m.bag, m.slot, function() closeMenu() end) then closeMenu() end
 			end }
 		end
 		list[#list + 1] = { "Sort bags", function() C_Container.SortBags() end }
@@ -76,8 +78,8 @@ function WC.BagsMenu.Build(f, holdBindings, MAXBAG)
 	closeMenu = function()
 		menu:Hide()
 		if not InCombatLockdown() and f:IsShown() then
-			ClearOverrideBindings(f)
-			f:Execute(f:GetAttribute("_onshow"))
+			ClearOverrideBindings(f.pad)
+			f.pad:Execute(f.pad:GetAttribute("_onshow"))
 			holdBindings()
 		end
 	end
@@ -128,11 +130,11 @@ function WC.BagsMenu.Build(f, holdBindings, MAXBAG)
 		menu:SetPoint("TOPLEFT", b, "BOTTOMRIGHT", 4, 4)
 		paintMenu()
 		menu:Show()
-		SetOverrideBindingClick(f, true, "PADDUP", "WCBagsMenuUp")
-		SetOverrideBindingClick(f, true, "PADDDOWN", "WCBagsMenuDown")
-		SetOverrideBindingClick(f, true, "PAD1", "WCBagsMenuPick")
+		SetOverrideBindingClick(f.pad, true, "PADDUP", "WCBagsMenuUp")
+		SetOverrideBindingClick(f.pad, true, "PADDDOWN", "WCBagsMenuDown")
+		SetOverrideBindingClick(f.pad, true, "PAD1", "WCBagsMenuPick")
 		for _, key in ipairs({ "PAD2", "PAD3", "PAD4", "PADDLEFT", "PADDRIGHT" }) do
-			SetOverrideBindingClick(f, true, key, "WCBagsMenuBack")
+			SetOverrideBindingClick(f.pad, true, key, "WCBagsMenuBack")
 		end
 	end)
 	return menu
