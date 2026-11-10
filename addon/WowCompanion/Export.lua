@@ -1,3 +1,38 @@
+-- What the bags hold, one line per item (stacks summed), for the export and for
+-- an on-demand read (WowCompanion_Strip.Send(WowCompanion_BagText(), 30)).
+function WowCompanion_BagLines()
+	local out, seen, order = {}, {}, {}
+	out[1] = "-- item (id) xcount @bag:slot..., flags: quest, spare bag, grey (junk), soulbound"
+	for bag = 0, 4 do
+		for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
+			local info = C_Container.GetContainerItemInfo(bag, slot)
+			if info and info.itemID then
+				local e = seen[info.itemID]
+				if not e then
+					e = { id = info.itemID, name = info.itemName, n = 0, at = {}, flags = {} }
+					local _, _, _, loc, _, class = C_Item.GetItemInfoInstant(info.itemID)
+					local q = C_Container.GetContainerItemQuestInfo(bag, slot)
+					if q and (q.isQuestItem or q.questID) then e.flags[#e.flags + 1] = "quest" end
+					if class == 1 and loc == "INVTYPE_BAG" then e.flags[#e.flags + 1] = "spare bag" end
+					if info.quality == 0 then e.flags[#e.flags + 1] = "grey" end
+					if info.isBound then e.flags[#e.flags + 1] = "soulbound" end
+					seen[info.itemID] = e
+					order[#order + 1] = e
+				end
+				e.n = e.n + (info.stackCount or 1)
+				e.at[#e.at + 1] = bag .. ":" .. slot
+			end
+		end
+	end
+	for _, e in ipairs(order) do
+		out[#out + 1] = ("%s (%d) x%d @%s%s"):format(e.name or C_Item.GetItemInfo(e.id) or "?", e.id, e.n,
+			table.concat(e.at, ","), #e.flags > 0 and (", " .. table.concat(e.flags, ", ")) or "")
+	end
+	if #order == 0 then out[#out + 1] = "(empty)" end
+	return out
+end
+function WowCompanion_BagText() return table.concat(WowCompanion_BagLines(), "\n") end
+
 -- The context export (split out of Companion.lua, 2026-11-10): what the agent
 -- reads after every reload, written into SavedVariables at logout, and the form
 -- notes it rests on. Companion.lua shares what this needs through WC.Core and
@@ -290,6 +325,11 @@ local function exportContext()
 			local name = C_Container.GetBagName(bag)
 			line(("%d: %s, %d slots, %d free"):format(bag, slots > 0 and (name or "?") or "EMPTY BAG SLOT", slots, free))
 		end
+	end)
+
+	section("bag contents")
+	pcall(function()
+		for _, l in ipairs(WowCompanion_BagLines()) do line(l) end
 	end)
 
 	section("skills")

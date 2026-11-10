@@ -160,6 +160,11 @@ Add `--then <your conversation>` (main, l1, l2, r1, r2 or quick, from the [..]
 mark on the request; none is main): when the text lands in the out file you are
 asked to carry on by yourself, so finish the job then; never ask the player to
 prompt you. Never send Lua from a second process (it races the channel).
+Bags: the export's `== bag contents ==` lists every item (stacks summed, bag:slot,
+flags quest, spare bag, grey, soulbound) as of the last reload. For now, read them
+live: a `lua` step `WowCompanion_Strip.Send(WowCompanion_BagText(), 30)` with the
+strip reader (`WowCompanion_BagLines()` gives the lines as a table). Never say
+you cannot see the bags.
 Gear and bag advice: read what is equipped first (GetInventoryItemLink('player',
 1..19), and the bag slots via C_Container.GetContainerNumSlots(1..4)) and check
 every suggestion against it. A two-hand weapon in the main hand means no off-hand
