@@ -355,26 +355,28 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	-- the legend: what square and triangle do right now, shown only while
 	-- they work (the player, 2026-11-10: "no input legend")
 	if window then
-		-- the game's own button prompts (the glyph art, as the destroy dialog
-		-- uses), not key names: "3" was PAD3's text name (the player, 2026-11-10)
-		if not window.jobsCancelPrompt and WowCompanion_Style and WowCompanion_Style.Prompt then
-			window.jobsCancelPrompt = WowCompanion_Style.Prompt(window, "PAD3", CANCEL or "Cancel")
-			window.jobsCancelPrompt:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -22, 10)
-			window.jobsNowPrompt = WowCompanion_Style.Prompt(window, "PAD4", "Send now")
-			window.jobsNowPrompt:SetPoint("RIGHT", window.jobsCancelPrompt, "LEFT", -14, 0)
+		-- one line of small text with the game's own button glyphs inline (the
+		-- player, 2026-11-10: the prompt widgets did not fit the panel)
+		if not window.jobsLegend then
+			local fs = window:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+			fs:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -24, 16)
+			fs:SetJustifyH("RIGHT")
+			window.jobsLegend = fs
 		end
-		if window.jobsCancelPrompt then
-			local canCancel = focused and newest() ~= nil
-			local canSend = focused and newest("queued") ~= nil
-			window.jobsCancelPrompt:SetShown(canCancel)
-			window.jobsNowPrompt:ClearAllPoints()
-			if canCancel then
-				window.jobsNowPrompt:SetPoint("RIGHT", window.jobsCancelPrompt, "LEFT", -14, 0)
-			else
-				window.jobsNowPrompt:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -22, 10)
-			end
-			window.jobsNowPrompt:SetShown(canSend)
+		local function glyph(key)
+			local ok, atlas = pcall(function()
+				local name = InputIconTextureSetUtility.GetInputIconNameFromBindingKey(key)
+				return InputIconTextureSetUtility.GetNormalActiveInputIconButtonTexture(name)
+			end)
+			if ok and atlas and CreateAtlasMarkup then return CreateAtlasMarkup(atlas, 14, 14) end
+			return WowCompanion_Glyph(key)
 		end
+		local parts = {}
+		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " " .. (CANCEL or "Cancel") end
+		if focused and newest("queued") then parts[#parts + 1] = glyph("PAD4") .. " Send now" end
+		window.jobsLegend:SetText(table.concat(parts, "     "))
+		window.jobsLegend:SetShown(#parts > 0)
+		if window.jobsCancelPrompt then window.jobsCancelPrompt:Hide() window.jobsNowPrompt:Hide() end
 	end
 	if focused and not bound then
 		SetOverrideBindingClick(keyOwner, true, "PAD3", "WCJobsCancelKey")
