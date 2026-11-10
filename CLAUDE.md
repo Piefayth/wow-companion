@@ -33,8 +33,12 @@ yes; don't reinvent what Claude Code has.
   Rumble is DualSense output report 0x02.
 - `crates/voice`: mic (`cpal`) and Whisper large-v3-turbo on the 4090, its own crate
   so the CUDA build is not invalidated by edits elsewhere.
-- `src/`: the helper. `main.rs` (commands, the voice loop's wiring, slots),
-  `agent.rs` (the agent and its rules), `bells.rs`, `heartbeat.rs`, `doctor.rs`.
+- `src/`: the helper, one job per file: `main.rs` (command dispatch, `run`'s
+  wiring of the voice loop), `channel.rs` (slots, the cursor, sending, bells),
+  `requests.rs` (asking the agent, progress, auto-continue, re-sync, `tell`),
+  `context.rs` (the export, profile and integrations the agent gets), `chat.rs`
+  (spoken chat lines), `restart.rs`, `install.rs`, `agent.rs` (the agent and its
+  rules), `bells.rs`, `heartbeat.rs`, `doctor.rs`, `modules.rs`.
 - `addon/WowCompanion/`: the in-game half, one job per file, in .toc order
   (split 2026-11-10 so conversations stop editing the same file; a change goes in
   the file that owns it):
