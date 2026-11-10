@@ -220,6 +220,9 @@ pub static STOPPED: AtomicBool = AtomicBool::new(false);
 /// Set by the companion when something could not reach the game (every slot
 /// spent): the voice loop answers with three quick pulses, which need no slot.
 pub static ALERT: AtomicBool = AtomicBool::new(false);
+/// True once the loop is reading the pad with a model loaded: the companion can
+/// hear the player. The in-game "companion" mark beats only while this holds.
+pub static READY: AtomicBool = AtomicBool::new(false);
 
 pub fn listen(
     model: &Path,
@@ -312,6 +315,7 @@ pub fn listen(
             thread::sleep(Duration::from_millis(20));
         }
     }
+    READY.store(true, Ordering::SeqCst);
     // Feedback is rumble by default. Cues in a Bluetooth headset play over its
     // hands-free link (8 kHz, the only one this PC negotiates with AirPods Max),
     // which hisses whenever anything plays; the pad's rumble is instant, silent and
@@ -483,6 +487,9 @@ pub fn listen(
                     // on level dropped a real, quiet sentence (0.0024, the first
                     // press after a restart) without a word to the player.
                     let level = loudness(&clip);
+                    // said at once, before Whisper runs: the player sees the clip
+                    // arrived instead of wondering whether it was dropped
+                    let _ = heard(&format!("{role} heard"), "");
                     match transcribe(&whisper, &clip, &prompt(&vocabulary())) {
                         Ok(text) if text.is_empty() => {
                             println!("heard nothing (level {level:.4})");
@@ -513,7 +520,10 @@ pub fn listen(
                                 eprintln!("  not delivered: {err}");
                             }
                         }
-                        Err(err) => eprintln!("transcribe failed: {err}"),
+                        Err(err) => {
+                            eprintln!("transcribe failed: {err}");
+                            let _ = heard("notice", &format!("I could not transcribe that clip ({err}), so nothing was sent."));
+                        }
                     }
                 }
             }

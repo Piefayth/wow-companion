@@ -3,6 +3,7 @@
 //! and `probe` sends numbered messages so we can watch the channel work.
 
 mod agent;
+mod heartbeat;
 
 use wow_companion_pad as pad;
 use wow_companion_voice as voice;
@@ -594,6 +595,11 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         let args: Vec<String> = env::args().skip(1).collect();
         thread::spawn(move || watch_for_restart(args));
     }
+    // the in-game "companion" mark: beats while the voice loop can hear the player,
+    // and stops when a restart hands over
+    heartbeat::start(addons, || {
+        voice::READY.load(Ordering::SeqCst) && !voice::SHUTDOWN.load(Ordering::SeqCst)
+    });
     // the same conversation as before a restart: it remembers what you were doing
     let mut session = agent::Session::resumed();
     if let Some(chosen) = options.iter().find_map(|option| option.strip_prefix("agent=")) {
@@ -653,6 +659,14 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             // the voice loop's own news (a reconnected headset), for the window
             "notice" => deliver(log_inbox("error", text, None, None)),
             _ if role.ends_with(" tap") => Ok(()),
+            // released and on its way to Whisper: show it at once, so a long clip
+            // reads as "being worked on" and not as dropped. Not while another
+            // request runs, whose own progress line is on screen (the queued line
+            // follows as soon as the words are known).
+            "ask heard" if IN_FLIGHT.load(Ordering::SeqCst) == 0 => {
+                deliver("{ kind = \"progress\", text = \"got it, transcribing\" }".to_string())
+            }
+            _ if role.ends_with(" heard") => Ok(()),
             "ask" => {
                 // a new request supersedes a look still waiting for its reload
                 *looking.lock().unwrap() = None;
@@ -741,6 +755,10 @@ const CHANNELS: &[(&str, &str)] = &[
     ("yell", "/y"),
     ("reply", "/r"),
     ("emote", "/e"),
+    // the addon finds who the name means (friends, guild, group) and writes
+    // it the way the game needs it, surname and all
+    ("whisper", "/w"),
+    ("tell", "/w"),
 ];
 
 /// The whole clip is a request to throw the line away. Whole clip only: "cancel

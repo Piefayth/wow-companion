@@ -87,6 +87,19 @@ In the player's order (2026-11-09). From `docs/api-surface.md`, all live in Fore
 - **Roles**: talents, equipment sets and bars per role, swapped with one press.
 - **Auction house**: search, price and prepare; the player presses post or buy.
 
+### Later: the Companion window's controls (the player, 2026-11-09)
+
+Not the main initiative now. A full button row was too many for the main screen;
+much of what the player wants is contextual, so think **tabs** (e.g. transcript,
+actions, settings) with at most a few buttons on the main view. Constraints already
+known: a window button cannot reach the PC (no game-to-PC channel), so app actions
+(cancel, retry, new conversation) are minus chords the helper reads off the pad;
+the offered button must never take focus while the window is hidden (that broke
+the bars once, cause not yet reproduced).
+
+- **Several conversations** (the player, 2026-11-10, an idea): separate threads,
+  each its own agent session, picked from a side list in the window.
+
 ### Later: a custom look (the player, 2026-11-09)
 
 A separate addon (`WowCompanion_Look`), independent of the AI pipeline: one theme

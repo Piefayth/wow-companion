@@ -277,6 +277,173 @@ function Transcript:Clear()
 	self.content:SetHeight(1)
 end
 
+-- Tabs along the bottom edge, as Blizzard's own panels have them
+-- (PanelTabButtonTemplate, PanelTemplates_SetTab), and L1 / R1 step between them
+-- while the window is open, the way the controller UI pages its own tabbed
+-- windows. Those two keys are bound only while the window is shown and out of
+-- combat: L1 and R1 are the targeting buttons, and a binding left behind would
+-- take them in a fight. PLAYER_REGEN_DISABLED fires before the lockdown starts,
+-- which is the last moment a binding can still be cleared.
+local TAB_NAMES = { "Chat", "Tools", "Status" }
+local function buildTabs(frame, messages, pending)
+	local pages = {}
+	local function page()
+		local p = CreateFrame("Frame", nil, frame)
+		p:SetPoint("TOPLEFT", 20, -42)
+		p:SetPoint("BOTTOMRIGHT", -20, 34)
+		p:Hide()
+		return p
+	end
+	pages[2], pages[3] = page(), page()
+
+	-- Tools: everyday buttons, Blizzard's red panel buttons in a column, each
+	-- with a line saying what it does
+	local tools = pages[2]
+	local y = 0
+	local function note(b, text)
+		local fs = tools:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		fs:SetPoint("LEFT", b, "RIGHT", 12, 0)
+		fs:SetPoint("RIGHT", tools, "RIGHT", 0, 0)
+		fs:SetJustifyH("LEFT")
+		fs:SetText(text)
+	end
+	local function button(label, text, onClick)
+		local made, b = pcall(CreateFrame, "Button", nil, tools, "UIPanelButtonTemplate")
+		if not made or not b then return end
+		b:SetSize(170, 26)
+		b:SetPoint("TOPLEFT", 0, -y)
+		b:SetText(label)
+		b:SetScript("OnClick", onClick)
+		note(b, text)
+		if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
+		y = y + 34
+		return b
+	end
+	-- The reload is protected, so it is a secure button the player presses. Built
+	-- out of combat only: a secure frame's attributes cannot be set in one.
+	local reloadY = y
+	y = y + 34
+	local function makeReload()
+		if frame.reloadButton or InCombatLockdown() then return end
+		local made, b = pcall(CreateFrame, "Button", "WowCompanionReload", tools,
+			"SecureActionButtonTemplate, UIPanelButtonTemplate")
+		if not made or not b then return end
+		b:SetSize(170, 26)
+		b:SetPoint("TOPLEFT", 0, -reloadY)
+		b:SetText("Reload UI")
+		b:SetAttribute("type", "macro")
+		b:SetAttribute("macrotext", "/reload")
+		b:RegisterForClicks("AnyDown") -- see CLAUDE.md, "Register a secure button for AnyDown"
+		note(b, "Lets me see what changed, and clears any taint.")
+		if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
+		frame.reloadButton = b
+	end
+	makeReload()
+	button("Window size", "Step through small, medium and large.", function() frame.CycleSize() end)
+	button("Clear map pins", "Remove every pin I put on your minimap and world map.", function()
+		if WCPins and WCPins.Clear then WCPins.Clear() end
+		frame.SelectTab(3)
+	end)
+	button("Clear transcript", "Empty this window. The conversation itself carries on.", function()
+		WowCompanionDB.log = {}
+		messages:Clear()
+		frame.SelectTab(1)
+	end)
+
+	-- Status: what is running, read fresh while the tab is looked at
+	local status = pages[3]:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	status:SetPoint("TOPLEFT")
+	status:SetPoint("TOPRIGHT")
+	status:SetJustifyH("LEFT")
+	status:SetJustifyV("TOP")
+	status:SetSpacing(5)
+	local function refreshStatus()
+		local gold, grey = "|cffffd100", "|cff9d9d9d"
+		local lines = {}
+		local function add(label, value) lines[#lines + 1] = gold .. label .. "|r   " .. value end
+		local up = WowCompanion_IsUp and WowCompanion_IsUp()
+		add("Companion app", up and "|cff40ff40connected|r"
+			or "|cffff6060not heard from|r " .. grey .. "(is it running on the PC?)|r")
+		add("Messages this session", ("%d of 64 %s(a reload resets it)|r"):format(nextSlot - 1, grey))
+		local pins = WowCompanionDB.pins and #WowCompanionDB.pins or 0
+		add("Map pins", pins == 0 and "none" or tostring(pins))
+		local wheels = {}
+		for key, wheel in pairs(WowCompanionWheelDB and WowCompanionWheelDB.wheels or {}) do
+			wheels[#wheels + 1] = (wheel.label or key) .. " " .. grey .. "(" .. #(wheel.slots or {}) .. ")|r"
+		end
+		table.sort(wheels)
+		add("Wheels", #wheels > 0 and table.concat(wheels, ", ") or "none")
+		local modules = {}
+		for name in pairs(WowCompanionDB.modules or {}) do modules[#modules + 1] = name end
+		table.sort(modules)
+		add("My modules", #modules > 0 and table.concat(modules, ", ") or "none")
+		add("Combat", InCombatLockdown() and "|cffff6060yes|r " .. grey .. "(changes wait until it ends)|r" or "no")
+		status:SetText(table.concat(lines, "\n"))
+	end
+	local since = 0
+	pages[3]:SetScript("OnShow", function() since = 0 refreshStatus() end)
+	pages[3]:SetScript("OnUpdate", function(_, dt)
+		since = since + dt
+		if since > 1 then since = 0 refreshStatus() end
+	end)
+
+	-- the tabs, hanging under the bottom edge like the character sheet's
+	for i, name in ipairs(TAB_NAMES) do
+		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTabButtonTemplate")
+		if not made or not tab then return end
+		tab:SetID(i)
+		tab:SetText(name)
+		if i == 1 then
+			tab:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 14, 6)
+		else
+			tab:SetPoint("TOPLEFT", frame.Tabs[i - 1], "TOPRIGHT", 3, 0)
+		end
+		tab:SetScript("OnClick", function(self) frame.SelectTab(self:GetID()) end)
+		if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, tab) end
+	end
+	PanelTemplates_SetNumTabs(frame, #TAB_NAMES)
+
+	function frame.SelectTab(id)
+		id = ((id - 1) % #TAB_NAMES) + 1
+		frame.currentTab = id
+		PanelTemplates_SetTab(frame, id)
+		local chat = id == 1
+		messages.scroll:SetShown(chat)
+		for _, part in ipairs(frame.chatParts or {}) do part:SetShown(chat) end
+		if not chat then pending:Hide() elseif frame.pendingShown then pending:Show() end
+		for i, p in pairs(pages) do p:SetShown(i == id) end
+		if id == 2 then makeReload() end
+	end
+	frame.SelectTab(1)
+
+	-- L1 / R1 page the tabs while the window is open
+	local prev = CreateFrame("Button", "WowCompanionTabPrev", frame)
+	prev:SetScript("OnClick", function() frame.SelectTab((frame.currentTab or 1) - 1) end)
+	local nxt = CreateFrame("Button", "WowCompanionTabNext", frame)
+	nxt:SetScript("OnClick", function() frame.SelectTab((frame.currentTab or 1) + 1) end)
+	local keys = CreateFrame("Frame")
+	local function bind()
+		if InCombatLockdown() or not frame:IsShown() then return end
+		ClearOverrideBindings(keys)
+		SetOverrideBindingClick(keys, true, "PADLSHOULDER", "WowCompanionTabPrev")
+		SetOverrideBindingClick(keys, true, "PADRSHOULDER", "WowCompanionTabNext")
+	end
+	frame:HookScript("OnShow", bind)
+	frame:HookScript("OnHide", function()
+		if not InCombatLockdown() then ClearOverrideBindings(keys) end
+	end)
+	keys:RegisterEvent("PLAYER_REGEN_DISABLED")
+	keys:RegisterEvent("PLAYER_REGEN_ENABLED")
+	keys:SetScript("OnEvent", function(_, event)
+		if event == "PLAYER_REGEN_DISABLED" then
+			ClearOverrideBindings(keys)
+		else
+			bind()
+			makeReload()
+		end
+	end)
+end
+
 -- The conversation window. Chat lines scroll away and cannot be scrolled back
 -- through, so replies live in their own frame and in SavedVariables, which is what
 -- makes history survive a /reload.
@@ -364,6 +531,8 @@ local function buildLog()
 		{ "UIPanelScrollDownButtonTemplate", 1, "BOTTOMRIGHT", -16, 36 } }) do
 		local made, arrow = pcall(CreateFrame, "Button", nil, frame, spec[1])
 		if made and arrow then
+			frame.chatParts = frame.chatParts or {}
+			table.insert(frame.chatParts, arrow)
 			arrow:SetPoint(spec[3], frame, spec[3], spec[4], spec[5])
 			arrow:SetScript("OnClick", function() scrollBy(spec[2]) end)
 		end
@@ -446,6 +615,9 @@ local function buildLog()
 			return
 		end
 		sizeBefore = nil
+		frame.CycleSize()
+	end)
+	function frame.CycleSize()
 		local width = frame:GetWidth()
 		local pick = SIZES[1]
 		for _, size in ipairs(SIZES) do
@@ -461,8 +633,9 @@ local function buildLog()
 			frame:ClearAllPoints()
 			frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
 		end
-	end)
+	end
 
+	buildTabs(frame, messages, pending)
 	return frame
 end
 
@@ -569,6 +742,7 @@ local function setPending(text)
 	end
 	if not text then
 		pendingSince = nil
+		frame.pendingShown = false
 		frame.pending:Hide()
 		if toastFrame and toastFrame:IsShown() and not toastTimer then toast(nil) end
 		return
@@ -585,7 +759,8 @@ local function setPending(text)
 		end
 	end
 	spin()
-	frame.pending:Show()
+	frame.pendingShown = true
+	if (frame.currentTab or 1) == 1 then frame.pending:Show() end
 	pendingTicker = C_Timer.NewTicker(0.4, spin)
 end
 
@@ -713,6 +888,125 @@ local onDictated
 -- A box the player opened was activated by real hardware input, so the secure path
 -- stays intact and we only set text on it. Refuses rather than opening one, because
 -- opening one is the thing that broke the controller.
+-- Whispers by the name the player knows someone by. "whisper Sage, on my way"
+-- arrives as "/w Sage, on my way"; this finds who Sage is among the people the
+-- game can see (Battle.net friends by BattleTag or the character they are on,
+-- character friends, the guild, the group) and writes the name the way
+-- Blizzard's own whisper menus do, which is the part a spoken name gets wrong:
+-- names here are first and last, and UnitName gives only the first, so a
+-- whisper to "Pietra" came back "no player named Pietra". The unit popup joins
+-- name and surname with CHARACTERNAME_SURNAME_SEPARATOR when regional unique
+-- names are on (UnitPopupUtils.lua, GetFullPlayerName); so do we.
+local function plain(text)
+	return (text or ""):lower():gsub("[^%w]", "")
+end
+
+local function fullUnitName(unit)
+	local name, surname = UnitName(unit)
+	if not name then return nil end
+	if surname and surname ~= "" then
+		local seps = Constants and Constants.CharacterNameSeparatorConsts
+		if RegionalUniqueNamesEnabled and RegionalUniqueNamesEnabled() and seps then
+			return name .. seps.CHARACTERNAME_SURNAME_SEPARATOR .. surname
+		elseif seps then
+			return name .. seps.CHARACTERNAME_REALMNAME_SEPARATOR .. surname
+		end
+	end
+	return name
+end
+
+-- every person we could mean: { keys = {...}, target = what goes after /w, label }
+local function people()
+	local list = {}
+	local function add(target, label, ...)
+		if not target or target == "" then return end
+		local keys = {}
+		for _, key in ipairs({ ... }) do
+			key = plain(key)
+			if key ~= "" then keys[#keys + 1] = key end
+		end
+		list[#list + 1] = { target = target, label = label, keys = keys }
+	end
+	-- Battle.net friends, online: their BattleTag and the character they are on
+	if BNGetNumFriends and C_BattleNet and C_BattleNet.GetFriendAccountInfo then
+		local count = BNGetNumFriends() or 0
+		for i = 1, count do
+			local ok, info = pcall(C_BattleNet.GetFriendAccountInfo, i)
+			if ok and info and info.gameAccountInfo and info.gameAccountInfo.isOnline then
+				local tag = info.battleTag and info.battleTag:match("^[^#]+")
+				local character = info.gameAccountInfo.characterName
+				add(info.accountName, (tag or "?") .. (character and (" (on " .. character .. ")") or ""),
+					tag, character)
+			end
+		end
+	end
+	-- character friends
+	if C_FriendList and C_FriendList.GetNumFriends then
+		for i = 1, C_FriendList.GetNumFriends() or 0 do
+			local info = C_FriendList.GetFriendInfoByIndex(i)
+			if info and info.connected and info.name then
+				add(info.name, info.name, info.name, info.name:match("^[^%-%s]+"))
+			end
+		end
+	end
+	-- the guild, online
+	if IsInGuild and IsInGuild() and GetNumGuildMembers then
+		for i = 1, GetNumGuildMembers() or 0 do
+			local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
+			if name and online then
+				add(name, name .. " (guild)", name, name:match("^[^%-%s]+"))
+			end
+		end
+	end
+	-- the group
+	local prefix, size = IsInRaid() and "raid" or "party", IsInRaid() and GetNumGroupMembers() or GetNumSubgroupMembers()
+	for i = 1, size or 0 do
+		local unit = prefix .. i
+		if UnitExists(unit) and UnitIsPlayer(unit) and not UnitIsUnit(unit, "player") then
+			local full = fullUnitName(unit)
+			add(full, full .. " (group)", full, (UnitName(unit)))
+		end
+	end
+	return list
+end
+
+-- "/w sage on my way" -> target, message; or nil and why. Tries the first one to
+-- three words as the name, longest first, so a two-word name wins over its
+-- first word.
+function WowCompanion_ResolveWhisper(rest)
+	local words = {}
+	for word in rest:gmatch("%S+") do words[#words + 1] = word end
+	local everyone = people()
+	for take = math.min(3, #words), 1, -1 do
+		local spoken = plain(table.concat(words, " ", 1, take))
+		local hits, seen = {}, {}
+		for _, person in ipairs(everyone) do
+			for _, key in ipairs(person.keys) do
+				if key == spoken and not seen[person.target] then
+					seen[person.target] = true
+					hits[#hits + 1] = person
+					break
+				end
+			end
+		end
+		if #hits == 1 then
+			local message = table.concat(words, " ", take + 1):gsub("^[,:%.%-%s]+", "")
+			return hits[1].target, message, hits[1].label
+		elseif #hits > 1 then
+			local labels = {}
+			for _, hit in ipairs(hits) do labels[#labels + 1] = hit.label end
+			return nil, "more than one person is called that: " .. table.concat(labels, ", ")
+		end
+	end
+	local names = {}
+	for i, person in ipairs(everyone) do
+		if i > 12 then break end
+		names[#names + 1] = person.label
+	end
+	return nil, "I don't see anyone called " .. (words[1] or "that") .. " online. "
+		.. (#names > 0 and ("I can see: " .. table.concat(names, ", ")) or "Nobody on your friends list, guild or group is online.")
+end
+
 function handlers.chat(inbox)
 	-- The controller's cancel unfocuses the box but keeps its text, and dictation
 	-- appends, so a discarded line would come back glued to the next one. Clearing
@@ -748,7 +1042,18 @@ function handlers.chat(inbox)
 	-- append, so speaking twice builds a line instead of replacing it. Not echoed
 	-- into the window: that is the conversation with the agent, and dictation is
 	-- the player talking to other players
-	box:SetText((box:GetText() or "") .. (inbox.text or ""))
+	local text = inbox.text or ""
+	local rest = text:match("^/w%s+(.+)") or text:match("^/whisper%s+(.+)")
+	if rest then
+		local target, message, label = WowCompanion_ResolveWhisper(rest)
+		if not target then
+			remember("error", "Whisper not written: " .. message .. ".")
+			return "refused: " .. message
+		end
+		text = "/w " .. target .. " " .. message
+		toast("|cffffd100Whisper|r to " .. label .. ": press send when it reads right", 0.9, 0.9, 0.9, 8)
+	end
+	box:SetText((box:GetText() or "") .. text)
 	if onDictated then
 		onDictated(box)
 	end

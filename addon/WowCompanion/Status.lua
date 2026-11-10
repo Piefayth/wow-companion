@@ -109,6 +109,9 @@ button:SetScript("OnLeave", function()
 	GameTooltip:Hide()
 end)
 
+-- for the Companion window's Status tab
+function WowCompanion_IsUp() return up end
+
 local function show(isUp)
 	up = isUp
 	icon:SetDesaturated(not isUp)
