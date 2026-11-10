@@ -934,7 +934,7 @@ local function paintConversations()
 		local heard = transcribing[key]
 		if heard then
 			-- Whisper still has this conversation's clip (the player, 2026-11-10)
-			label = label .. "  |cff9ad5ffhearing " .. math.floor(GetTime() - heard) .. "s|r"
+			label = label .. "  |cff9ad5ff" .. math.floor(GetTime() - heard) .. "s|r"
 		elseif entry then
 			label = label .. "  |cffb0b0b0" .. math.floor(GetTime() - entry.since) .. "s|r"
 		elseif unreadSet()[key] then
@@ -1673,6 +1673,15 @@ tapButton:RegisterForClicks("AnyDown", "AnyUp")
 tapButton:SetScript("OnClick", function(self, _, down)
 	if down then
 		self.downAt = GetTime()
+		self.slot = WowCompanion_PadSlot and WowCompanion_PadSlot() or nil
+	elseif self.downAt and GetTime() - self.downAt > TAP_MAX then
+		-- a hold is a clip on its way to Whisper: show it as transcribing the
+		-- moment the button comes up, instead of after the PC's message lands
+		-- (the player, 2026-11-10). The PC's own messages take over from here.
+		local slot = self.slot or (WowCompanion_PadSlot and WowCompanion_PadSlot()) or ""
+		self.downAt = nil
+		if setTranscribing then setTranscribing(slot, true) end
+		if renderPending then renderPending() end
 	elseif self.downAt and GetTime() - self.downAt <= TAP_MAX then
 		self.downAt = nil
 		nativeToggleAt = GetTime()
@@ -2430,6 +2439,22 @@ local function padState()
 	end
 	table.sort(modifiers)
 	return modifiers, bases
+end
+
+-- which conversation slot a talk-button press is for: the trigger held with it,
+-- in the PC's order (l1, l2, r1, r2), or "" for the main conversation
+local SLOT_BY_MODIFIER = { PADLSHOULDER = "l1", PADLTRIGGER = "l2", PADRSHOULDER = "r1", PADRTRIGGER = "r2" }
+function WowCompanion_PadSlot()
+	local modifiers = padState()
+	if not modifiers then return "" end
+	local held = {}
+	for _, name in ipairs(modifiers) do
+		if SLOT_BY_MODIFIER[name] then held[SLOT_BY_MODIFIER[name]] = true end
+	end
+	for _, slot in ipairs({ "l1", "l2", "r1", "r2" }) do
+		if held[slot] then return slot end
+	end
+	return ""
 end
 
 -- WowCompanionDB.chords[bar] = { [modifier] = presses }. chordStats counts every
