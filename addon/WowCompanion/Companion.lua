@@ -1035,6 +1035,7 @@ local CHANNEL_NAMES = {
 	["/p"] = "party", ["/g"] = "guild", ["/o"] = "officer", ["/raid"] = "raid",
 	["/rw"] = "raid warning", ["/i"] = "instance", ["/s"] = "say", ["/y"] = "yell",
 	["/r"] = "your last whisper", ["/e"] = "emote",
+	["/1"] = "General", ["/2"] = "Trade", ["/4"] = "Looking For Group",
 }
 local preview
 local function buildPreview()
@@ -1154,7 +1155,7 @@ function handlers.chat(inbox)
 	-- a line spoken with a channel goes to the send preview, chat box or not
 	do
 		local text = inbox.text or ""
-		local slash, rest = text:match("^(/%a+)%s+(.+)")
+		local slash, rest = text:match("^(/%w+)%s+(.+)")
 		if slash and inbox.raw and inbox.raw ~= text and not InCombatLockdown() then
 			local line, heading, shown = text, "Send to " .. (CHANNEL_NAMES[slash] or slash), rest
 			if slash == "/w" or slash == "/whisper" then

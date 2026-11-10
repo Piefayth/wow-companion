@@ -816,6 +816,10 @@ const CHANNELS: &[(&str, &str)] = &[
     ("yell", "/y"),
     ("reply", "/r"),
     ("emote", "/e"),
+    // the numbered public channels, by the names they have in every zone
+    ("general", "/1"),
+    ("trade", "/2"),
+    ("looking for group", "/4"),
     // the addon finds who the name means (friends, guild, group) and writes
     // it the way the game needs it, surname and all
     ("whisper", "/w"),
