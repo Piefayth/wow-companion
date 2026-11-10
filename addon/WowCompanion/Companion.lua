@@ -116,6 +116,7 @@ local function toastIdleShown(...) return WC.Board.toastIdleShown(...) end
 -- ShowUIPanel, so the window joins the controller's focus cycle (see buildLog).
 -- It is refused in combat, where a plain Show at least puts the text in front of
 -- them; the manager is not told, so nothing is left for it to forget.
+local shownInCombat = false
 local function reveal(frame)
 	toast(nil)
 	if not InCombatLockdown() and UIPanelWindows and UIPanelWindows["WowCompanionLog"] then
@@ -123,6 +124,66 @@ local function reveal(frame)
 	end
 	if not frame:IsShown() then
 		frame:Show()
+		shownInCombat = InCombatLockdown() and true or false
+	end
+end
+
+-- The window in combat (the player, 2026-11-10: "randomly disappearing and
+-- sometimes showing up in combat is completely useless"). A secure button
+-- inside a frame makes that frame protected, and a protected frame cannot be
+-- shown or hidden by an addon mid-fight: that was the whole mess. So the
+-- window's secure buttons (the offered press, Reload) are stowed in a hidden
+-- holder of their own as combat begins (PLAYER_REGEN_DISABLED runs just before
+-- the lockdown, the last moment protected frames can move), which leaves the
+-- window an ordinary frame: a tap opens and closes it all fight long. They go
+-- back when the fight ends, and a window opened mid-fight becomes a panel again
+-- so the controller's focus cycle reaches it.
+local stowed = {}
+local stash = CreateFrame("Frame", "WowCompanionStash", UIParent)
+stash:Hide()
+local combatNote
+local function noteCombat(inCombat)
+	local frame = logWindow
+	if not frame then return end
+	if not combatNote then
+		combatNote = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+		combatNote:SetPoint("BOTTOM", frame, "BOTTOM", 0, 14)
+		combatNote:SetText("In combat: reading only. Buttons come back when the fight ends.")
+	end
+	combatNote:SetShown(inCombat and true or false)
+end
+local stowWatch = CreateFrame("Frame")
+stowWatch:RegisterEvent("PLAYER_REGEN_DISABLED")
+stowWatch:RegisterEvent("PLAYER_REGEN_ENABLED")
+stowWatch:SetScript("OnEvent", function(_, event)
+	if event == "PLAYER_REGEN_DISABLED" then
+		for button in pairs(stowed) do
+			pcall(function()
+				button:ClearAllPoints()
+				button:SetParent(stash)
+				button:SetPoint("CENTER")
+			end)
+		end
+		noteCombat(true)
+		return
+	end
+	for button, restore in pairs(stowed) do pcall(restore, button) end
+	noteCombat(false)
+	local frame = logWindow
+	if shownInCombat and frame and frame:IsShown() and UIPanelWindows and UIPanelWindows["WowCompanionLog"] then
+		-- a plain Show never joined the focus cycle; join it now, in one frame
+		frame:Hide()
+		ShowUIPanel(frame)
+	end
+	shownInCombat = false
+end)
+-- button: a secure button that lives in the window; restore(button) puts it back
+local function stow(button, restore)
+	stowed[button] = restore
+	if InCombatLockdown() then
+		-- built mid-fight cannot happen (secure buttons are built out of combat),
+		-- but say so rather than leave the window protected without knowing
+		say("stow: " .. tostring(button:GetName()) .. " registered in combat")
 	end
 end
 
@@ -390,15 +451,21 @@ local function buildActionButton()
 		actionButton = button
 		-- at the foot of the conversation list, the list's width, under its
 		-- buttons (the player, 2026-11-10): it belongs to the conversation in view
-		local last = frame.convButtons and (frame.convButtons.quick or frame.convButtons.r2)
-		if last then
-			actionButton:SetSize(last:GetWidth(), 24)
-			actionButton:SetPoint("TOP", last, "BOTTOM", 0, -10)
-			actionButton:SetFrameLevel(last:GetFrameLevel() + 2)
-		else
-			actionButton:SetSize(150, 22)
-			actionButton:SetPoint("BOTTOMRIGHT", -18, 8)
+		local function place(b)
+			b:SetParent(frame)
+			b:ClearAllPoints()
+			local last = frame.convButtons and (frame.convButtons.quick or frame.convButtons.r2)
+			if last then
+				b:SetSize(last:GetWidth(), 24)
+				b:SetPoint("TOP", last, "BOTTOM", 0, -10)
+				b:SetFrameLevel(last:GetFrameLevel() + 2)
+			else
+				b:SetSize(150, 22)
+				b:SetPoint("BOTTOMRIGHT", -18, 8)
+			end
 		end
+		place(actionButton)
+		stow(actionButton, place)
 		-- Measured, one variable at a time. "AnyUp": the wrapper runs -- PreClick and
 		-- PostClick both fire -- and the macro does not, which reads exactly like a
 		-- permissions refusal and is not one. Both edges: runs, but twice, once down
@@ -1458,6 +1525,7 @@ WC.Core.record = record
 WC.Core.results = results
 WC.Core.say = say
 WC.Core.actionButton_get = function() return actionButton end
+WC.Core.stow = stow
 WC.Core.blocked_get = function() return blocked end
 
 

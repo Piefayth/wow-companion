@@ -63,6 +63,15 @@ local function buildTabs(frame, messages, pending)
 		note(b, "Lets me see what changed, and clears any taint.")
 		if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
 		frame.reloadButton = b
+		-- out of the window for the length of a fight, so the window stays an
+		-- ordinary frame that opens and closes in combat (Companion.lua, stow)
+		if core.stow then
+			core.stow(b, function(button)
+				button:SetParent(tools)
+				button:ClearAllPoints()
+				button:SetPoint("TOPLEFT", 0, -reloadY)
+			end)
+		end
 	end
 	makeReload()
 	local sizeButton = button("Size: " .. ({ "Small", "Medium", "Large" })[WowCompanionDB.windowSize or 2],
