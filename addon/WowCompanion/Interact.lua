@@ -82,19 +82,17 @@ do
 			-- [@target]: without it the condition also reads the soft enemy target,
 			-- so with a live mob merely nearby Home stayed "clear" and never looted
 			-- (traced 2026-11-10: the state flipped clear/take with no target at all)
-			button:SetAttribute("macrotext", "/cleartarget [@target,harm,nodead]")
+			-- First the last target: TargetEnemyAttacker moves the target off a
+			-- kill at once, so the corpse just made is usually the last target.
+			-- If that one is dead, Home is now "corpse" and the next press loots
+			-- exactly it (not the nearest chest); if it is alive, it is cleared and
+			-- soft interact picks (the player, 2026-11-10: "the closest not-alive
+			-- thing", for a melee spec standing among mobs and objects).
+			button:SetAttribute("macrotext", "/targetlasttarget\n/cleartarget [@target,harm,nodead]")
 		else
 			button:SetAttribute("type", nil)
 			button:SetAttribute("macrotext", nil)
 		end
-	end
-	-- Which unit each press really asked for (the bound INTERACT* actions call
-	-- this; a post-hook leaves the caller secure). Hooked once per UI session.
-	if not WCCombatInteractHooked then
-		WCCombatInteractHooked = true
-		pcall(hooksecurefunc, C_PlayerInteractionManager, "InteractUnit", function(unit)
-			trace("InteractUnit " .. tostring(unit))
-		end)
 	end
 	button:HookScript("OnClick", function(_, _, down)
 		if db().mode == "clear" or InCombatLockdown() then return end
@@ -184,14 +182,6 @@ do
 		if event == "CVAR_UPDATE" and a ~= "SoftTargetInteract" then return end
 		trace(event .. (a and (" " .. tostring(a)) or "") .. (b and (" " .. tostring(b)) or ""))
 	end)
-	-- Which unit each press really asked for (the bound INTERACT* actions call
-	-- this; a post-hook leaves the caller secure). Hooked once per UI session.
-	if not WCCombatInteractHooked then
-		WCCombatInteractHooked = true
-		pcall(hooksecurefunc, C_PlayerInteractionManager, "InteractUnit", function(unit)
-			trace("InteractUnit " .. tostring(unit))
-		end)
-	end
 	button:HookScript("OnClick", function(_, _, down) trace("Home clicked (clear) " .. (down and "down" or "up")) end)
 
 	local function bindAll()
