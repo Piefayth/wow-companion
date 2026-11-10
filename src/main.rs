@@ -583,13 +583,33 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         let (addons, session, looking) = (addons.to_path_buf(), Arc::clone(&session), Arc::clone(&looking));
         thread::spawn(move || watch_for_looks(&addons, &session, &looking));
     }
+    // The voice loop never sends anything itself. A send waits for any other send
+    // and then about two seconds for the game to hear it, and the voice loop is
+    // what reads the pad: sending from it froze the buttons and the cues whenever
+    // the agent was talking at the same time (measured: a request made while
+    // another ran). One courier thread delivers in order instead.
+    let courier = {
+        let (post, mailbox) = std::sync::mpsc::channel::<String>();
+        let addons = addons.to_path_buf();
+        thread::spawn(move || {
+            for inbox in mailbox {
+                if let Err(err) = send_inbox(&addons, &inbox) {
+                    eprintln!("  not delivered: {err}");
+                }
+            }
+        });
+        post
+    };
+    let deliver = |inbox: String| {
+        courier.send(inbox).map_err(|_| io::Error::other("the courier thread has stopped"))
+    };
     voice::listen(
         model,
         options,
         || vocabulary(addons),
         |role, text| match role {
             // a tap of the ask button, too short to be speech: show the window
-            "ask tap" => send_inbox(addons, "{ kind = \"show\" }"),
+            "ask tap" => deliver("{ kind = \"show\" }".to_string()),
             _ if role.ends_with(" tap") => Ok(()),
             "ask" => {
                 // a new request supersedes a look still waiting for its reload
@@ -599,9 +619,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 let queued = IN_FLIGHT.load(Ordering::SeqCst) > 0;
                 if queued {
                     let line = log_inbox("you", text, Some("waiting for the request before this one"), None);
-                    if let Err(err) = send_inbox(addons, &line) {
-                        eprintln!("  could not show the queued request: {err}");
-                    }
+                    deliver(line)?;
                 }
                 // Off the voice loop: real work takes minutes, and the pad must stay
                 // read meanwhile. A second request waits on the session lock, so
@@ -624,14 +642,14 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             }
             _ if discards(text) => {
                 println!("  clearing the chat box");
-                send_inbox(addons, "{ kind = \"chat\", clear = true }")
+                deliver("{ kind = \"chat\", clear = true }".to_string())
             }
             _ => {
                 let routed = channeled(text);
                 if routed != text {
                     println!("  as: {routed}");
                 }
-                send_inbox(addons, &dictation_inbox(text, &routed))
+                deliver(dictation_inbox(text, &routed))
             }
         },
     )
