@@ -641,10 +641,36 @@ local function buildLog()
 		groove:SetPoint("TOPLEFT", 3, 0)
 		groove:SetPoint("BOTTOMRIGHT", -3, 0)
 		groove:SetColorTexture(0, 0, 0, 0.45)
-		local thumb = track:CreateTexture(nil, "ARTWORK")
-		thumb:SetTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-		thumb:SetTexCoord(0.20, 0.80, 0.125, 0.875)
-		thumb:SetWidth(track:GetWidth())
+		-- The thumb in three pieces, as Blizzard's WowTrimScrollBar draws it
+		-- (TrimScrollBar.xml): end caps at their own size and a centre made to
+		-- stretch between them, so a long thumb keeps its rounded ends instead of
+		-- stretching one picture (the player, 2026-11-10). The old single knob is
+		-- the fallback if this client lacks the atlases.
+		local thumb = CreateFrame("Frame", nil, track)
+		thumb:SetWidth(math.min(18, track:GetWidth()))
+		local function piece(atlas)
+			local t = thumb:CreateTexture(nil, "ARTWORK")
+			local known = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas)
+			if not known then return nil end
+			t:SetAtlas(atlas, true)
+			return t
+		end
+		local top = piece("UI-ScrollBar-Knob-EndCap-Top")
+		local bottom = top and piece("UI-ScrollBar-Knob-EndCap-Bottom")
+		local middle = bottom and piece("UI-ScrollBar-Knob-Center")
+		if middle then
+			top:SetPoint("TOP")
+			bottom:SetPoint("BOTTOM")
+			middle:SetPoint("TOPLEFT", top, "BOTTOMLEFT")
+			middle:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT")
+			thumb:SetWidth(math.max(top:GetWidth(), middle:GetWidth()))
+			thumb.minSize = top:GetHeight() + bottom:GetHeight() + 2
+		else
+			local knob = thumb:CreateTexture(nil, "ARTWORK")
+			knob:SetAllPoints()
+			knob:SetTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+			knob:SetTexCoord(0.20, 0.80, 0.125, 0.875)
+		end
 		table.insert(frame.chatParts, track)
 		local function paintThumb()
 			local sc = messages.scroll
@@ -652,7 +678,7 @@ local function buildLog()
 			local view = sc:GetHeight() or 0
 			local room = track:GetHeight() or 0
 			if range <= 1 or view <= 0 or room <= 0 then thumb:Hide() return end
-			local size = math.max(16, room * view / (view + range))
+			local size = math.max(thumb.minSize or 23, room * view / (view + range))
 			local offset = (room - size) * math.min(1, (sc:GetVerticalScroll() or 0) / range)
 			thumb:ClearAllPoints()
 			thumb:SetPoint("TOP", track, "TOP", 0, -offset)
