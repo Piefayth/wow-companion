@@ -63,6 +63,8 @@ const SILENCE: f32 = 0.01;
 const NOTHING: f32 = 0.004;
 // rumble strength for the listening pulses, of 255 (the test buzz was 192)
 const PULSE: u8 = 160;
+// the closing pulse: softer than the opening one, so the two are told apart
+const PULSE_SOFT: u8 = 90;
 // hold mode: how long after the mic closes to wait for the headset to be back in
 // stereo before the closing cue (`return=` tunes it, in ms)
 const RETURN_MS: u64 = 1000;
@@ -324,8 +326,8 @@ pub fn listen(
                     cue(cue_device.clone(), cue_volume, &CUE_SHUT);
                 }
                 if rumbles {
-                    // two quick pulses: got it
-                    rumbler.play(&[(0, PULSE, PULSE), (70, 0, 0), (140, PULSE, PULSE), (210, 0, 0)]);
+                    // one softer, shorter pulse: got it (the player found two too much)
+                    rumbler.play(&[(0, PULSE_SOFT, PULSE_SOFT), (80, 0, 0)]);
                 }
                 let seconds = clip.len() as f32 / WHISPER_RATE as f32;
                 if pressed_at.elapsed() < TAP {
