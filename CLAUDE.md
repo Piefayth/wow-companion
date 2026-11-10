@@ -93,6 +93,19 @@ reaches the game with two tricks, and the game reaches the PC only at a reload.
   and swaps every 4 s; `Status.lua` shows the minimap button in colour on a swap
   seen recently, grey with a red edge otherwise.
 
+## Changing the channel
+
+**Never change how messages reach the game in the live game.** On 2026-11-10 five
+changes in one night (shorter bells, deleting, quiet bells, polling more bells)
+each broke delivery in a new way, the player went most of the night without
+replies, and three sets of bell files had to be abandoned under new names
+because the game held them open. The message channel is the 2026-11-09 protocol
+(`bells::message_bell`, one bell polled at a time, emptied to silence, files
+`m1`..`m8`) until a replacement is proven. A replacement runs **beside** it, on
+its own files, and switches over only after the addon's channel counts show it
+delivering for a whole session. Renaming files to escape a wedged one is a sign
+the change should not have shipped, not a fix.
+
 ## The agent
 
 `claude -p`, Claude Code at full strength (`--dangerously-skip-permissions`, every

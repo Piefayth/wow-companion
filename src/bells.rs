@@ -11,12 +11,17 @@
 //! 2. **Below 174,762 bytes the game caches a sound** and holds the cached file.
 //!    An empty bell polled constantly was locked for good (the window bell). So a
 //!    bell is never small: 192,044 bytes, at 96 kHz stereo.
-//! 3. **A bell file always exists, and is always large.** Silence was first an
-//!    empty file (cached and locked for good), then a missing one: the game
-//!    remembers a missing sound, so a bell created later was never heard (223
-//!    polls, 0 heard, 2026-11-10). So silence is a *quiet* bell: 10 ms of sound,
-//!    over with by the addon's 0.15 s check, padded with a RIFF `JUNK` chunk
-//!    (which players skip) to stay over the cache threshold.
+//! 3. **Never delete a bell the game polls**: it remembers a missing sound, so a
+//!    bell created later was never heard (223 polls, 0 heard, 2026-11-10).
+//! 3b. **A valid sound the game polls constantly is held open constantly.** The
+//!    quiet bell (10 ms of sound padded to size) could not be emptied again once
+//!    the addon polled it. An *empty* file fails to play at once and holds
+//!    nothing, which is why the message channel's idle bells are empty.
+//!
+//! What this means in practice: the message channel uses `message_bell` /
+//! `empty_message` (the 2026-11-09 protocol, measured working); `ring`/`silence`
+//! are only for the heartbeat's own pulse bells. See CLAUDE.md, "Changing the
+//! channel", before touching either.
 //! 4. **Every write and delete is retried and checked**, and a failure names the
 //!    file. A retry that gave up quietly is how a stuck bell looked like nothing.
 //!
