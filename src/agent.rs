@@ -94,6 +94,32 @@ Other things of ours agent code can call (all globals, all in WowCompanion):
 - `WCPins.Set{...}`, `WCPins.Add{map=, x=, y=, r=}`, `WCPins.Clear()`: minimap and
   world map pins (docs/api-useful.md, Minimap pins).
 - `WCWheel.Set(name, {label=, slots={...}})`: the radial wheels.
+Polestar (installed, GPL: call it, never copy it) has the map, the arrow and a full NPC
+database; use its arrow, never build a second one:
+- `Polestar.Nav.nearby.Go(kind)`: aims the arrow at the nearest service by travel time
+  and prints it; `.Find(kind)` returns place, seconds without aiming. Kinds: innkeeper,
+  repair, vendor, food, reagents, trainer (+ profession), class, weapon, bank, mailbox,
+  auction, flight, stable. `.EndTrip()` sends the arrow back to the guide.
+- `Polestar.Nav.SetTarget(map, x, y, label)`: aims the arrow anywhere;
+  `Polestar.Nav.ClearTarget()`. Source: AddOns/Polestar/Nav/Nearby.lua, Nav.lua.
+GearQuest (installed): its upgrade picks per slot, ranked for this class, level
+and spec, with where each comes from:
+- `GearQuest.Data:GetTopUpgradesForSlot(slot, 3)` returns entries (`itemId`,
+  `sourceType` quest_reward/vendor/boss_drop/world_drop/profession, `zone`, `npc`,
+  `questName`); slots from `GearQuest.Data:GetSlotsForClass(classFile)`;
+  `GearQuest.Compare:GetEquippedItemLevel(slot)` for the gain. pcall each call.
+Other game facts already worked out:
+- Items linked in chat are kept in `WowCompanionDB.links` (newest first: link,
+  from, where); `WowCompanion_ShowItem(n or link)` opens the item viewer.
+- Friends: `BNGetNumFriends()` with `C_BattleNet.GetFriendAccountInfo(i)` (online,
+  offline, lastOnlineTime, the game and character); `C_FriendList` for character
+  friends; `GetGuildRosterInfo(i)` for the guild.
+- World refresh (moving to a party's layer): `C_PlayerInteractionManager.ShardTransferConfirm()`,
+  on the Buffs wheel already.
+You may be one of several conversations (Main, or L1, L2, R1, R2, marked "[L2]" in
+the request); the others run beside you and share the game. When you build
+something other agents should call, add it to this list (src/agent.rs, RULES) so
+every conversation learns it.
 - `macro`: they want a macro. `name` is short; `body` is the macro text, 255 chars
   or fewer, using real WoW macro syntax such as /cast.
 - `press`: they want something an addon may not do for them but a macro can express.
