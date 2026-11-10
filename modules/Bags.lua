@@ -29,19 +29,12 @@ local function build()
 	-- snippet shows it plainly: usable, not in the focus cycle.
 	f.useCustomNavigation = true
 	if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, f) end
-	if UIPanelWindows then
-		UIPanelWindows["WCBags"] = { area = "right", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
-	end
-	function f:Open()
-		if InCombatLockdown() then self:Show() return end
-		ShowUIPanel(self)
-		if not self:IsShown() then self:Show() end
-	end
-	function f:Shut()
-		if InCombatLockdown() then self:Hide() return end
-		HideUIPanel(self)
-		if self:IsShown() then self:Hide() end
-	end
+	-- ShowUIPanel called from here (a snippet's CallMethod) still tainted the
+	-- manager's focus code (2026-11-10, the second time): ImprovedForever's rule
+	-- holds, never ShowUIPanel / FrameShown from addon code. Plain Show / Hide
+	-- until our own focus switch is built.
+	function f:Open() self:Show() end
+	function f:Shut() self:Hide() end
 	-- even margins all round (the player, 2026-11-10): EDGE from the border's
 	-- inside on every side, a title row, the grid, a legend row
 	local EDGE, TITLE_H, LEGEND_H, GAP_V = 18, 20, 24, 8
@@ -509,12 +502,7 @@ local function build()
 		self:Paint()
 	end)
 	-- however it closes, the manager hears (or the bars stay dead after it)
-	f:HookScript("OnHide", function(self)
-		if GamepadMode and GamepadMode.FrameControlsManager
-			and InputUtil and InputUtil.IsGamepadUIEnabled() then
-			GamepadMode.FrameControlsManager:FrameHidden(self)
-		end
-	end)
+
 	-- focus moved to another window: give the d-pad and face buttons back to it;
 	-- focus came back: take them again
 	function f:UnfocusGamepad()
