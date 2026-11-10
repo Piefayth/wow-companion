@@ -112,6 +112,10 @@ local function build()
 		b:SetSize(SIZE, SIZE)
 		b:Show()
 		meta[b] = { bag = bag, slot = slot }
+		-- our own highlight and tooltip follow the pad; the game's controller
+		-- cursor must not also land here (two markers and two tooltips, the
+		-- player, 2026-11-10). Blizzard's template is a focusable item button.
+		if SmartNavigation_MarkFrameIgnored then pcall(SmartNavigation_MarkFrameIgnored, b) end
 		-- ours on top of theirs: focus follows the mouse too, without writing to b
 		b:HookScript("OnEnter", function(self) if f.mirror then return end f:Focus(meta[self].index) end)
 		buttons[key] = b
