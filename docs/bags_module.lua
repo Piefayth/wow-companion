@@ -7,8 +7,10 @@ local COLS, SIZE, GAP, PAD = 8, 40, 4, 14
 local MAXBAG = 4
 
 local function build()
-	if WCBags then return end
+	if WCBags and WCBags.SetFrameRef and WCBags.ready then return end
 	local f = CreateFrame("Frame", "WCBags", UIParent, "SecureHandlerShowHideTemplate,BackdropTemplate")
+	-- BackdropTemplate's OnLoad replaces the secure handler's, which gives SetFrameRef
+	if not f.SetFrameRef then SecureHandler_OnLoad(f) end
 	f:SetFrameStrata("DIALOG")
 	f:SetPoint("RIGHT", UIParent, "RIGHT", -120, 40)
 	f:SetBackdrop({
@@ -245,6 +247,7 @@ local function build()
 	end
 
 	f:Layout()
+	f.ready = true
 	print(("bags: ready, %d slots; cross uses, circle closes, triangle sorts"):format(#f.order))
 end
 
