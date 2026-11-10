@@ -19,6 +19,14 @@ local function build()
 		edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 },
 	})
 	f:Hide()
+	-- A controller panel like the game's own (the player, 2026-11-10): the frame
+	-- manager lists it, so L2 / R2 (previous / next frame) reach it beside a
+	-- vendor or the mail. It navigates itself (useCustomNavigation: the manager
+	-- hides SmartNavigation and calls FocusGamepad / UnfocusGamepad on us), and
+	-- it is announced the way ShowUIPanel announces a panel with no area. In
+	-- combat it opens by the secure snippet alone, unannounced, still usable.
+	f.useCustomNavigation = true
+	if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, f) end
 	-- even margins all round (the player, 2026-11-10): EDGE from the border's
 	-- inside on every side, a title row, the grid, a legend row
 	local EDGE, TITLE_H, LEGEND_H, GAP_V = 18, 20, 24, 8
@@ -475,7 +483,35 @@ local function build()
 		if event == "CURSOR_CHANGED" then if self:IsShown() then self:Paint() end return end
 		if self:IsShown() or event == "BAG_UPDATE_DELAYED" then self:Paint() end
 	end)
-	f:HookScript("OnShow", function(self) self:Paint() end)
+	f:HookScript("OnShow", function(self)
+		self:Paint()
+		if not InCombatLockdown() and EventRegistry then
+			self.announced = true
+			EventRegistry:TriggerEvent("UIParentPanelManager.ShowUIPanel", self)
+		end
+	end)
+	f:HookScript("OnHide", function(self)
+		if self.announced and GamepadMode and GamepadMode.FrameControlsManager
+			and InputUtil and InputUtil.IsGamepadUIEnabled() then
+			GamepadMode.FrameControlsManager:FrameHidden(self)
+		end
+		self.announced = nil
+	end)
+	-- focus moved to another window: give the d-pad and face buttons back to it;
+	-- focus came back: take them again
+	function f:UnfocusGamepad()
+		if InCombatLockdown() then return end
+		menu:Hide()
+		ClearOverrideBindings(self)
+		hl:Hide()
+		tip:Hide()
+	end
+	function f:FocusGamepad()
+		if InCombatLockdown() or not self:IsShown() then return end
+		ClearOverrideBindings(self)
+		self:Execute(self:GetAttribute("_onshow"))
+		holdBindings()
+	end
 
 	-- the keyboard's own bag key opens ours (the pad uses the macro)
 	local keys = CreateFrame("Frame", "WCBagsKeys")
