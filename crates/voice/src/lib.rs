@@ -206,10 +206,15 @@ pub fn listen(
     vocabulary: impl Fn() -> Vec<String>,
     mut heard: impl FnMut(&str, &str) -> io::Result<()>,
 ) -> io::Result<()> {
-    let bindings = [
-        ("chat", option(options, "chat").or(option(options, "button")).unwrap_or("home")),
-        ("ask", option(options, "ask").unwrap_or("minus")),
-    ];
+    // One talk button (the player, 2026-11-10): the ask button also takes chat
+    // lines, routed by their channel word, so the old dictation button (home) is
+    // free for something else. `chat=` is still read, but only `chat=on:<button>`
+    // brings the second button back.
+    let chat = option(options, "chat").and_then(|value| value.strip_prefix("on:"));
+    let mut bindings = vec![("ask", option(options, "ask").unwrap_or("minus"))];
+    if let Some(button) = chat {
+        bindings.push(("chat", button));
+    }
     let bindings: Vec<(&str, pad::Press)> = bindings
         .iter()
         .map(|(role, name)| pad::press(name).map(|press| (*role, press)))

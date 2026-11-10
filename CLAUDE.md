@@ -40,7 +40,9 @@ libclang is in `C:\Program Files\LLVM`. No Lua here: check addon files with
 
 ## Running it
 
-- `cargo run -- run <AddOns> models/ggml-large-v3-turbo.bin chat=home ask=minus mic=airpods cue=hands-free`
+- `cargo run -- run <AddOns> models/ggml-large-v3-turbo.bin ask=minus mic=airpods cue=hands-free`
+  (one talk button: a line opening with a channel word goes to chat, the rest to
+  the agent; `chat=on:home` brings back a separate dictation button)
   starts the companion. It runs from a copy in `%LOCALAPPDATA%\wow-companion\bin`,
   so `cargo build` works while it runs.
 - **Never kill it.** `wow-companion restart` asks it to move onto the newest build:

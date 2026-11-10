@@ -715,6 +715,23 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                             break pending.take().map(|(words, _)| words).unwrap_or_default();
                         }
                     };
+                    // One button for both: a line that opens with a channel ("party,
+                    // pulling now", "whisper Sage, ...") is chat, not a request, and
+                    // "scratch that" alone empties the box.
+                    if discards(&text) {
+                        println!("  clearing the chat box");
+                        let _ = courier.send("{ kind = \"chat\", clear = true }".to_string());
+                        // a line without `pending` also clears "got it, transcribing"
+                        let _ = courier.send(log_inbox("you", &text, None, None));
+                        return;
+                    }
+                    let routed = channeled(&text);
+                    if routed != text.trim() {
+                        println!("  chat line: {routed}");
+                        let _ = courier.send(dictation_inbox(&text, &routed));
+                        let _ = courier.send(log_inbox("you", &format!("(to chat) {routed}"), None, None));
+                        return;
+                    }
                     // a new request supersedes a look still waiting for its reload
                     *looking.lock().unwrap() = None;
                     // A request made while another runs is shown at once, as
