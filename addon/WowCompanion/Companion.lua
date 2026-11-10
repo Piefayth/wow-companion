@@ -716,6 +716,10 @@ local function toggleWindow()
 	elseif combatHidden then
 		combatHidden = false
 		frame:SetAlpha(1)
+	elseif InCombatLockdown() and frame:IsProtected() then
+		-- the offer button makes the window protected: Show is refused mid-fight
+		-- (an "interface action failed", 2026-11-10); say so instead
+		toast("|cffffd100Companion|r  opens when this fight ends", 0.8, 0.8, 0.8, 3)
 	else
 		reveal(frame)
 	end

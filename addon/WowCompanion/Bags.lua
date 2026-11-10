@@ -58,12 +58,14 @@ local function build()
 	f.title = title
 	-- the legend: the pad's own glyphs, as Blizzard draws a controller legend
 	f.legendW = 0
+	f.prompts = {}
 	if WowCompanion_Style then
 		local prev
 		for i, p in ipairs({ { "PAD3", USE or "Use" }, { "PAD1", "Move" }, { "PAD4", "More" },
 			{ "PAD2", CLOSE or "Close" }, { "PADRSHOULDER", "Bag" } }) do
 			local pr = WowCompanion_Style.Prompt(f, p[1], p[2])
 			if i == 1 then f.usePrompt = pr end
+			f.prompts[#f.prompts + 1] = pr
 			pr:SetHeight(LEGEND_H)
 			if prev then pr:SetPoint("LEFT", prev, "RIGHT", 12, 0) else pr:SetPoint("BOTTOMLEFT", EDGE, EDGE) end
 			local w = pr:GetWidth()
@@ -283,15 +285,37 @@ local function build()
 	-- only show. Out of it, our own grid again.
 	function f:Mirror(blizz)
 		self.mirror = blizz and true or nil
+		-- our legend names our own buttons; over theirs the game's controller
+		-- drives (its own legend), and ours sat on their bottom row
+		for _, pr in ipairs(self.prompts) do pr:SetShown(not blizz) end
 		if not blizz then
 			self:ClearAllPoints()
 			self:SetPoint(unpack(self.home))
 			self:Layout()
 			return
 		end
+		-- our backing spans their slots only (not their header, search box or
+		-- money row), with our usual margins and the title above
 		self:ClearAllPoints()
-		self:SetPoint("TOPLEFT", blizz, "TOPLEFT", -6, 6)
-		self:SetPoint("BOTTOMRIGHT", blizz, "BOTTOMRIGHT", 6, -6)
+		local l, r, t, bm
+		if blizz.EnumerateValidItems then
+			for _, theirs in blizz:EnumerateValidItems() do
+				if theirs:IsShown() and theirs:GetLeft() then
+					l = math.min(l or 1e9, theirs:GetLeft())
+					r = math.max(r or -1e9, theirs:GetRight())
+					t = math.max(t or -1e9, theirs:GetTop())
+					bm = math.min(bm or 1e9, theirs:GetBottom())
+				end
+			end
+		end
+		if l then
+			local k = blizz:GetEffectiveScale() / self:GetEffectiveScale()
+			self:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", l * k - EDGE, t * k + EDGE + TITLE_H + GAP_V)
+			self:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMLEFT", r * k + EDGE, bm * k - EDGE)
+		else
+			self:SetPoint("TOPLEFT", blizz, "TOPLEFT", -6, 6)
+			self:SetPoint("BOTTOMRIGHT", blizz, "BOTTOMRIGHT", 6, -6)
+		end
 		for _, b in pairs(buttons) do b:Hide() end
 		if blizz.EnumerateValidItems then
 			for _, theirs in blizz:EnumerateValidItems() do
