@@ -26,6 +26,17 @@ local function build()
 	hint:SetPoint("BOTTOMLEFT", PAD + 4, PAD)
 	-- the buttons Blizzard's controller bags use (ContainerFrame.lua, SetupGamepad)
 	hint:SetText("|cffffd100square|r use   |cffffd100cross|r move   |cffffd100triangle|r more   |cffffd100circle|r close   |cffffd100L1 R1|r bags")
+	-- the controller legend as Blizzard draws it: the pad's own glyphs
+	if WowCompanion_Style then
+		hint:Hide()
+		local prev
+		for _, p in ipairs({ { "PAD3", USE or "Use" }, { "PAD1", "Move" }, { "PAD4", "More" },
+			{ "PAD2", CLOSE or "Close" }, { "PADRSHOULDER", "Next bag" } }) do
+			local pr = WowCompanion_Style.Prompt(f, p[1], p[2])
+			if prev then pr:SetPoint("LEFT", prev, "RIGHT", 14, 0) else pr:SetPoint("BOTTOMLEFT", PAD + 2, PAD - 2) end
+			prev = pr
+		end
+	end
 	f:SetAttribute("cols", COLS)
 
 	local tip = CreateFrame("GameTooltip", "WCBagsTip", UIParent, "GameTooltipTemplate")
@@ -154,7 +165,7 @@ local function build()
 		end
 		self:SetAttribute("count", n)
 		local rows = math.max(1, math.ceil(n / COLS))
-		self:SetSize(PAD * 2 + COLS * (SIZE + GAP) - GAP, PAD * 2 + 24 + rows * (SIZE + GAP) + 16)
+		self:SetSize(PAD * 2 + COLS * (SIZE + GAP) - GAP, PAD * 2 + 24 + rows * (SIZE + GAP) + 26)
 		if (self:GetAttribute("focus") or 1) > n then self:SetAttribute("focus", 1) end
 		self:Paint()
 	end
@@ -279,16 +290,19 @@ local function build()
 
 	-- triangle: more actions, out of combat (Blizzard's list has bind to the
 	-- bar and split the stack; sorting is added here)
-	local menu = CreateFrame("Frame", "WCBagsMenu", f, "BackdropTemplate")
-	menu:SetBackdrop({
-		bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-		edgeSize = 14, insets = { left = 3, right = 3, top = 3, bottom = 3 },
-	})
-	menu:SetBackdropColor(0, 0, 0, 0.95)
-	menu:SetFrameLevel(f:GetFrameLevel() + 40)
+	-- drawn as Blizzard's context menu (WowCompanion_Style, in the addon)
+	local menu = CreateFrame("Frame", "WCBagsMenu", f)
+	menu:SetFrameStrata("FULLSCREEN_DIALOG")
 	menu:Hide()
+	if WowCompanion_Style then WowCompanion_Style.Menu(menu) end
+	menu.hl = WowCompanion_Style and WowCompanion_Style.Highlight(menu) or menu:CreateTexture(nil, "ARTWORK")
 	menu.rows = {}
+	if WowCompanion_Style then
+		local pick = WowCompanion_Style.Prompt(menu, "PAD1", ACCEPT or "Select")
+		pick:SetPoint("TOPLEFT", menu, "BOTTOMLEFT", 2, -10)
+		local back = WowCompanion_Style.Prompt(menu, "PAD2", BACK or "Back")
+		back:SetPoint("LEFT", pick, "RIGHT", 14, 0)
+	end
 	local function firstFree()
 		for bag = 0, MAXBAG do
 			for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
@@ -366,9 +380,17 @@ local function build()
 	local function paintMenu()
 		for i, row in ipairs(menu.rows) do
 			local on = i == menu.sel
-			row:SetTextColor(1, on and 0.82 or 1, on and 0 or 1)
-			row:SetText((on and "> " or "   ") .. (menu.list[i] and menu.list[i][1] or ""))
+			row:SetTextColor(1, 1, 1)
+			row:SetText(menu.list[i] and menu.list[i][1] or "")
 			row:SetShown(menu.list[i] ~= nil)
+			if on then
+				menu.hl:ClearAllPoints()
+				menu.hl:SetPoint("LEFT", menu, "LEFT", 2, 0)
+				menu.hl:SetPoint("RIGHT", menu, "RIGHT", -2, 0)
+				menu.hl:SetPoint("TOP", row, "TOP", 0, 3)
+				menu.hl:SetPoint("BOTTOM", row, "BOTTOM", 0, -3)
+				menu.hl:Show()
+			end
 		end
 	end
 	local function plainButton(name, fn)
@@ -391,12 +413,12 @@ local function build()
 		if not b then return end
 		menu.list, menu.sel = entries(b), 1
 		for i = #menu.rows + 1, #menu.list do
-			local row = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-			row:SetPoint("TOPLEFT", 10, -8 - (i - 1) * 20)
+			local row = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+			row:SetPoint("TOPLEFT", 12, -6 - (i - 1) * 20)
 			row:SetJustifyH("LEFT")
 			menu.rows[i] = row
 		end
-		menu:SetSize(200, 16 + #menu.list * 20)
+		menu:SetSize(190, 8 + #menu.list * 20)
 		menu:ClearAllPoints()
 		menu:SetPoint("TOPLEFT", b, "BOTTOMRIGHT", 4, 4)
 		paintMenu()
