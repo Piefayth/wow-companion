@@ -192,6 +192,22 @@ goes to a detached process.
   drop it from the focus cycle with `GamepadMode.FrameControlsManager:FrameHidden`,
   the one manager call Blizzard wraps for insecure callers. Calling their
   `CloseAllBags` from our code, by contrast, tainted the next focus switch.
+- **A window usable in combat** (the bags, 2026-11-10; verified by the player).
+  A frame holding a secure button is protected, and a protected frame cannot
+  Show/Hide in a fight. So keep the window itself **unprotected** and put
+  bindings on a separate invisible `SecureHandlerShowHideTemplate` (`WCBagsPad`):
+  its `_onshow` binds the pad with `SetBindingClick` by button name, `_onhide`
+  clears, and `CallMethod` shows or hides the window. The opener is a
+  `SecureHandlerClickTemplate` that shows the handler in combat. Item slots are
+  Blizzard's `ContainerFrameItemButtonTemplate` (bag from the parent's `GetID`,
+  slot from the button's), the Bagnon way. Never write Lua fields on those
+  buttons; keep our data in a side table. Attributes are written only out of
+  combat (owe the layout until the fight ends).
+  **SmartNavigation's `SecureHelper` wraps `FrameHidden` and `MarkFrame*`**: an
+  addon calling one in a fight gets "Interface action failed" with no
+  `ADDON_ACTION_BLOCKED`. Use `WC.FrameHidden(frame)`, which waits for the fight's
+  end, and mark frames out of combat. `WowCompanionDB.blockedNotices` records
+  every such notice with our calling line.
 - **Look before calling.** `docs/api-surface.md` and `.tsv` give every one of the
   10,957 names a tier and its terms (protected, press only, out of combat, secret
   results in combat, read, change, dormant, Blizzard's own Lua). `docs/wow-ui-source`
