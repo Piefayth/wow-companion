@@ -4,6 +4,9 @@ Voice and agent control for World of Warcraft: Forever, played on a controller.
 Hold a controller chord, speak, and the PC side turns that into something done in
 game: text in the chat box, macros written, action bars rearranged.
 
+**What we do next is `docs/PLAN.md`**: the shared to-do, the player's standing terms, and
+who does what. Read it before starting anything sizeable, and update it when you finish.
+
 ## Shape
 
 A cargo workspace, three crates, split along their build costs:
