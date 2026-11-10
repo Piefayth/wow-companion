@@ -104,11 +104,31 @@ do
 	end)
 
 	local owner = _G[OWNER_NAME] or CreateFrame("Frame", OWNER_NAME)
+	-- One key that does both (the player, 2026-11-10: "out of combat, no target,
+	-- I press Home, no reaction"): a state driver swaps what the key is bound to,
+	-- securely and in combat too. A live hostile target: the key clears it (so
+	-- Blizzard turns soft interact back on). Otherwise: the key is Blizzard's own
+	-- INTERACTSOFTTARGET, which loots or interacts with the nearest thing.
+	local switch = _G["WCCombatInteractSwitch"]
+		or CreateFrame("Frame", "WCCombatInteractSwitch", UIParent, "SecureHandlerStateTemplate")
+	switch:SetAttribute("_onstate-interact", [[
+		local key = self:GetAttribute("key")
+		self:ClearBindings()
+		if not key then return end
+		if newstate == "clear" then
+			self:SetBindingClick(true, key, "WCCombatInteract", "LeftButton")
+		else
+			self:SetBinding(true, key, "INTERACTSOFTTARGET")
+		end
+	]])
+
 	local function bindAll()
 		if InCombatLockdown() then return false end
 		ClearOverrideBindings(owner)
 		local d = db()
-		if d.key then SetOverrideBindingClick(owner, false, d.key, BUTTON_NAME, "LeftButton") end
+		switch:SetAttribute("key", d.key)
+		UnregisterStateDriver(switch, "interact")
+		if d.key then RegisterStateDriver(switch, "interact", "[harm,nodead] clear; take") end
 		if d.takeKey then SetOverrideBinding(owner, false, d.takeKey, "INTERACTSOFTTARGET") end
 		applyMode()
 		return true
@@ -143,6 +163,8 @@ do
 		elseif cmd == "unbind" then
 			d.key, d.takeKey = nil, nil
 			ClearOverrideBindings(owner)
+			UnregisterStateDriver(switch, "interact")
+			ClearOverrideBindings(switch)
 			blizzardRule()
 			say("unbound; the keys do what they did before")
 		elseif cmd == "mode" then
