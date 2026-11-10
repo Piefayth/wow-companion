@@ -63,18 +63,29 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
   controller path that works in every situation, and reach for speech only where
   the game has none. So a chat draft is cleared by the chat setting that clears it,
   not by saying "scratch that" (which exists, but is the fallback).
-- **The agent installs addons, on the player's terms.** GitHub first, with the
-  maintainer checked (account age, other repositories, stars, fork, commits, tags,
-  the `.toc` listing interface 16001, and the CurseForge or Wago page linking back
-  where reachable); CurseForge and Wago are fine as sources. It reports the good
-  and the concerning and installs only after the player says yes. The research is
-  the agent's (`WebFetch` pre-approved for github.com, api.github.com,
-  raw.githubusercontent.com, curseforge and wago, nowhere else). `src/addons.rs` is
-  only the disk: download with curl, unpack with Windows' tar into a staging
-  folder, drop what the addon's `.pkgmeta` ignores plus dotfiles (a source install
-  should match the release), refuse any file type an addon has no reason to ship,
-  back up what it replaces, and record it in `%LOCALAPPDATA%\wow-companion`.
-  It removes only what it installed. New folders need a full game restart.
+- **The agent is Claude Code at full strength.** Every tool, no permission
+  prompts (`--dangerously-skip-permissions`), working from the repository root, at
+  the player's explicit request. The first design walled it off (read-only tools
+  over `docs/`, `--restricted`, a domain allow-list) and the result was the
+  opposite of the rule above: code of ours to install addons and restart the game,
+  doing badly what Claude Code already does. Steps remain, because they are the
+  only way *into the game*; everything on the PC the agent does with its own
+  tools. The trade is stated plainly: what it reads from the web or chat can steer
+  it, and the player accepted that. The prompt goes on stdin, since the character
+  export pushes a command line past Windows' 32,767-character limit. Requests run
+  off the voice loop, so the pad stays live during a minutes-long job.
+- **Addons are installed on the player's terms, as instructions.** GitHub first
+  (CurseForge and Wago are fine), the maintainer checked (account age, other
+  repositories, stars, fork, commits, tags, the `.toc` listing interface 16001, the
+  CurseForge or Wago page linking back where reachable), the files looked at in a
+  staging folder before placing (Lua, XML, `.toc` and media only; an executable or
+  PC script means stop), the good and the concerning told, and nothing installed
+  before the player says yes. Then the agent installs it the way a release would
+  (`.pkgmeta` ignores and dotfiles left out), backs up what it replaces, and records
+  it in `%LOCALAPPDATA%\wow-companionddons.json`. Not foolproof against a
+  determined attacker; it catches the low-grade kind. A restart is the agent's too:
+  it offers `/quit` as a button (quitting from addon code is protected, killing the
+  process skips the save), waits for the exit, and relaunches (flavour `wowf`).
 
 - **No game → PC channel.** t3code-wow reads an on-screen pixel strip; we skip it.
   It's the complex part and the ToS-grayest part. Context the agent needs (current
@@ -124,10 +135,9 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
   refused by name. That list guards against mistakes, not an adversary. Every
   non-login run is followed by the `issecurevariable` diff, so code that taints says
   so. Results, stored modules and taint land in the context export, so the agent sees
-  what its code did after the next reload. The agent gets `Read`/`Grep`/`Glob` over
-  `docs/` only (`--restricted`, cwd `docs/`) and 8 turns, to look functions up
-  before calling them. `cargo run -- think <AddOns> <text>` shows its answer without
-  sending anything.
+  what its code did after the next reload. `cargo run -- think <AddOns> <text>`
+  shows its answer without sending anything into the game (it can still act on
+  the PC, now that it has every tool).
 - **Register a secure button for `"AnyDown"`.** Measured one variable at a time:
   `"AnyUp"` alone runs the wrapper — `PreClick` and `PostClick` both fire — while the
   macro does not, which reads exactly like a permissions refusal and is not one. Both

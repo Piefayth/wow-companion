@@ -2,7 +2,6 @@
 //! game's AddOns folder, `send` delivers one command through a slot and a bell,
 //! and `probe` sends numbered messages so we can watch the channel work.
 
-mod addons;
 mod agent;
 
 use wow_companion_pad as pad;
@@ -46,8 +45,6 @@ fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let result = match args.as_slice() {
         [command, addons] if command == "install" => install(Path::new(addons)),
-        // other people's addons, from GitHub: install, list, remove
-        [command, verb, rest @ ..] if command == "addon" => addon_command(verb, rest),
         [command, addons] if command == "probe" => probe(Path::new(addons)),
         [command, addons, rest @ ..] if command == "send" => send(Path::new(addons), rest),
         // the agent's answer, printed and never delivered: for trying the agent
@@ -281,29 +278,6 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
     // and being offered the button. This one carries no `pending`, which stops the
     // spinner.
     send_inbox(addons, &log_inbox("claude", &answer.say, None, answer.inbox.as_deref()))?;
-    // installs and removals happen here, not in game; the player sees the outcome
-    // in the window and the agent hears it with their next request
-    if !answer.addons.is_empty() {
-        let mut results = Vec::new();
-        for (action, target) in &answer.addons {
-            println!("  addon {action} {target}");
-            let outcome = match action.as_str() {
-                "install" => addons::install(addons, target),
-                "remove" => addons::remove(addons, target),
-                "list" => addons::list(),
-                other => Err(io::Error::other(format!("unknown addon action {other:?}"))),
-            };
-            let line = match outcome {
-                Ok(done) => done,
-                Err(err) => format!("{action} {target} failed: {err}"),
-            };
-            println!("  {line}");
-            results.push(line);
-        }
-        let all = results.join("\n");
-        send_inbox(addons, &log_inbox("addons", &all, None, None))?;
-        session.note = Some(all);
-    }
     if answer.look {
         println!("  waiting for the reload to look at the results");
     }
@@ -501,6 +475,14 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         "agent: claude -p --model {}",
         if session.model.is_empty() { agent::DEFAULT_MODEL } else { &session.model }
     );
+    let game = addons.parent().and_then(Path::parent).unwrap_or(addons);
+    session.setup = format!(
+        "game: {}\nAddOns: {}\nthis project: {}\nhelper: {}",
+        game.display(),
+        addons.display(),
+        env!("CARGO_MANIFEST_DIR"),
+        env::current_exe().map(|exe| exe.display().to_string()).unwrap_or_default()
+    );
     // one conversation, reached from the voice loop and from the reload watcher
     let session = Arc::new(Mutex::new(session));
     // Some(session start) while the agent waits to look: the reload it asked for
@@ -518,10 +500,18 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             "ask" => {
                 // a new request supersedes a look still waiting for its reload
                 *looking.lock().unwrap() = None;
-                let look = ask(addons, &mut session.lock().unwrap(), text)?;
-                if look {
-                    *looking.lock().unwrap() = Some(session_began(addons));
-                }
+                // Off the voice loop: real work takes minutes, and the pad must stay
+                // read meanwhile. A second request waits on the session lock, so
+                // the conversation still runs one request at a time.
+                let (addons, session, looking, text) =
+                    (addons.to_path_buf(), Arc::clone(&session), Arc::clone(&looking), text.to_string());
+                thread::spawn(move || {
+                    match ask(&addons, &mut session.lock().unwrap(), &text) {
+                        Ok(true) => *looking.lock().unwrap() = Some(session_began(&addons)),
+                        Ok(false) => {}
+                        Err(err) => eprintln!("  not delivered: {err}"),
+                    }
+                });
                 Ok(())
             }
             _ if discards(text) => {
@@ -638,21 +628,6 @@ fn channeled(text: &str) -> String {
         return trimmed.to_string();
     }
     format!("{slash} {message}")
-}
-
-fn addon_command(verb: &str, rest: &[String]) -> io::Result<()> {
-    let report = match (verb, rest) {
-        ("install", [folder, repo]) => addons::install(Path::new(folder), repo)?,
-        ("remove", [folder, which]) => addons::remove(Path::new(folder), which)?,
-        ("list", []) => addons::list()?,
-        _ => {
-            return Err(io::Error::other(
-                "addon install <AddOns> <owner/repo> | remove <AddOns> <name> | list",
-            ))
-        }
-    };
-    println!("{report}");
-    Ok(())
 }
 
 fn chat_inbox(text: &str) -> String {

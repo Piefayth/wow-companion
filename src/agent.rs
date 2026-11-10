@@ -11,12 +11,15 @@
 //! environment out of combat, with a taint check after. The client's own security
 //! is the real fence there: insecure code cannot cast, target or move.
 //!
-//! The agent can read `docs/` (the API index, the signatures, the shortlist) and
-//! nothing else: `--restricted` confines the file tools to the working directory,
-//! and `--tools` leaves only the read-only ones.
+//! The agent is Claude Code with every tool and no permission prompts, at the
+//! player's request: an agent walled off from the shell could not install an
+//! addon or restart the game, so we wrote code to do it for it, which is the code
+//! Claude Code already is. It runs from the repository root, so it reads the docs,
+//! this code and the addon, and can change them. What it reads from the web or
+//! from chat can steer it; the player accepted that trade.
 
 use std::{
-    io,
+    io::{self, Write},
     process::{Child, Command, Stdio},
 };
 
@@ -26,19 +29,9 @@ use serde_json::Value;
 // wrong often enough that the player noticed. `run ... agent=sonnet` trades back.
 pub const DEFAULT_MODEL: &str = "opus";
 
-// Most requests are one turn. Writing Lua usually means looking a function up in
-// docs/ first, and each lookup is a turn, so leave room for a few.
-// addon research is a search plus several fetches (repo, owner, toc, the
-// CurseForge page), each a turn
-const TURNS: &str = "20";
-// Claude Code's own tools, not ours: the docs to look things up, and the web to
-// research addons. Fetching is pre-approved for the three places addons are
-// published and nowhere else; dontAsk refuses the rest.
-const TOOLS: &str = "Read,Grep,Glob,WebSearch,WebFetch";
-const ALLOWED: &str = "Read,Grep,Glob,WebSearch,\
-WebFetch(domain:github.com),WebFetch(domain:api.github.com),\
-WebFetch(domain:raw.githubusercontent.com),WebFetch(domain:www.curseforge.com),\
-WebFetch(domain:addons.wago.io)";
+// Real work (researching and installing an addon, restarting the game, changing
+// the addon) takes many tool calls; a quick answer still takes one.
+const TURNS: &str = "60";
 
 const SCHEMA: &str = r#"{
   "type": "object",
@@ -50,9 +43,7 @@ const SCHEMA: &str = r#"{
       "items": {
         "type": "object",
         "properties": {
-          "kind":  { "type": "string", "enum": ["chat", "macro", "press", "reload", "bar", "lua", "module", "addon"] },
-          "action": { "type": "string", "enum": ["install", "remove", "list"] },
-          "repo":  { "type": "string" },
+          "kind":  { "type": "string", "enum": ["chat", "macro", "press", "reload", "bar", "lua", "module"] },
           "text":  { "type": "string" },
           "name":  { "type": "string" },
           "body":  { "type": "string" },
@@ -132,8 +123,8 @@ wrong form is caught. Changing form is the L1+L2 wheel, never an action slot.
 
 Writing Lua. The client is 1.60.1 but its API is retail 11.x: C_Spell.GetSpellInfo,
 C_SpellBook, C_ClassTalents. GetSpellInfo, GetSpecialization, GetNumSpellTabs do
-not exist. Action slots run to 1024; the gamepad bars are 181 and up. Your working
-directory has the truth, so look before you guess:
+not exist. Action slots run to 1024; the gamepad bars are 181 and up. docs/ has
+the truth, so look before you guess:
   api-useful.md                 what we use, and what has been measured to work
   api-1.60.1-signatures.txt     every documented function, event and type
   api-1.60.1.txt                every name that exists, documented or not
@@ -165,23 +156,38 @@ are called again with the refreshed <character> and carry on, so say in `say` wh
 you are about to check. Do not add a reload step yourself when looking. Leave
 `look` off when the answer is already complete.
 
+Your machine. You run on the player's PC as Claude Code with every tool (shell,
+files, web) and no permission prompts, by their choice. The <setup> block in your
+first message says where the game and this project are. Steps reach the game;
+everything on the PC you do yourself, with your own tools. This repository is the
+companion (its CLAUDE.md explains it); you may read and change it, rebuild it
+(`cargo build`, with CUDAARCHS=89), and reinstall the addon (`cargo run -- install
+<AddOns>`, which needs a /reload, or a restart for new folders). The companion app
+itself is running you, so do not kill it.
+
 Addons. Installing them is painful on a controller, so they will ask you to find,
-install, update or remove addons. Research with WebSearch and WebFetch (GitHub,
-CurseForge and Wago only). Prefer the addon's own GitHub repository, and check its
-maintainer before recommending it: api.github.com/repos/OWNER/REPO and
-/users/OWNER for account age, other repositories, stars and whether it is a fork;
-recent commits; releases or tags; that its .toc lists Interface 16001, which is
-this client; and, where you can reach it, that the CurseForge or Wago page links
-to that same repository. Tell them what you found, the good and the concerning,
-in `say`, name the repository, and ask. Only after they have said yes in this
-conversation, add a step: kind `addon`, action `install`, repo OWNER/REPO. A
-repository can hold several addons (a core and modules): the install takes all of
-them, and you switch off the ones they did not ask for with
-C_AddOns.DisableAddOn(name) in a `lua` step (it applies at the next reload). An
-update is the same install again. `remove` takes the folder or repo, and only
-removes what you installed; `list` shows those. You will see each result in your
-next message. A new addon needs a full game restart (exit and relaunch); say so,
-since you cannot do it for them.
+install, update or remove addons. Do it yourself: research, download, unpack,
+place it in their AddOns folder. Their terms: prefer the addon's own GitHub
+repository (CurseForge and Wago are fine), check the maintainer first (account
+age, other repositories, stars, fork or not, recent commits, releases or tags, the
+.toc listing Interface 16001, and the CurseForge or Wago page linking back where
+you can reach it), tell them the good and the concerning in `say`, and install
+only after they say yes. Install the way a release would: a release zip if there
+is one, else the newest tag, leaving out what .pkgmeta ignores and dotfiles.
+Unpack into a staging folder and look before placing anything: an addon is Lua,
+XML, a .toc, and media (textures, sounds, fonts). An executable, a DLL, a script
+for the PC (bat, ps1, vbs, js, py), or a path that escapes its folder means stop
+and tell them what you found; never run anything from a download. Back
+up a folder before replacing it, and keep a record of what you installed, from
+where, in %LOCALAPPDATA%\\wow-companion\\addons.json, so removals and updates
+know what is yours. A repository can hold several addons; switch off the ones they
+did not ask for with C_AddOns.DisableAddOn(name) in a `lua` step.
+
+The game. New addon folders need a full restart. You can do it: offer a `press`
+step with macro /quit (quitting from addon code is protected, and killing Wow.exe
+skips the save), then wait for Wow.exe to exit and relaunch through Battle.net
+(this install's product flavour is wowf). Ask before closing their game, never
+kill it while it is running, and never in combat.
 
 Never act for the player in combat. Writing is yours; pressing is theirs.
 
@@ -196,8 +202,7 @@ pub struct Spoken {
     pub inbox: Option<String>,
     /// the agent wants to see its steps' results: call it again after the reload
     pub look: bool,
-    /// steps carried out on this machine, not in game: (action, repo or folder)
-    pub addons: Vec<(String, String)>,
+
 }
 
 /// One continuing conversation with the agent.
@@ -219,8 +224,8 @@ pub struct Session {
     seen: Option<String>,
     /// the context in the request now in flight, adopted once it succeeds
     offered: Option<String>,
-    /// what this machine did for the last answer (addon installs), told next time
-    pub note: Option<String>,
+    /// told once, at the start of the thread: where the game and this project are
+    pub setup: String,
 }
 
 impl Session {
@@ -239,13 +244,16 @@ The player said: {transcript}"
             ),
             None => format!("The player said: {transcript}"),
         };
-        let message = match self.note.take() {
-            Some(note) => format!("<results>\n{note}\n</results>\n\n{message}"),
-            None => message,
+        let message = if self.thread.is_none() && !self.setup.is_empty() {
+            format!("<setup>\n{}\n</setup>\n\n{message}", self.setup)
+        } else {
+            message
         };
         self.offered = fresh;
         let mut claude = Command::new("claude");
-        claude.arg("--print").arg(message);
+        // the message goes on stdin: with the character export in it, it is past
+        // Windows' 32,767-character limit for a whole command line
+        claude.arg("--print");
         match &self.thread {
             Some(thread) => {
                 claude.args(["--resume", thread]);
@@ -255,24 +263,27 @@ The player said: {transcript}"
                 claude.args(["--system-prompt", RULES]);
             }
         }
-        // the docs folder is the agent's whole world: --restricted keeps the file
-        // tools inside it
-        claude.current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/docs"));
+        // the repository root: docs, this code, the addon, and its CLAUDE.md
+        claude.current_dir(env!("CARGO_MANIFEST_DIR"));
         claude
-            .args(["--tools", TOOLS])
-            // dontAsk refuses whatever is not pre-approved, read-only tools included
-            .args(["--allowedTools", ALLOWED])
+            // every tool, no prompts: the player's choice, and nothing should ever
+            // block on a prompt nobody is at the keyboard to answer
+            .arg("--dangerously-skip-permissions")
             .args(["--output-format", "json"])
             .args(["--json-schema", SCHEMA])
             .args(["--model", if self.model.is_empty() { DEFAULT_MODEL } else { &self.model }])
             .args(["--max-turns", TURNS])
-            // nothing here should run commands or edit files, and nothing should
-            // ever block on a permission prompt mid-raid
-            .arg("--restricted")
-            .args(["--permission-mode", "dontAsk"])
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+        let mut child = claude.spawn()?;
+        // written whole, then closed, so the CLI knows the prompt has ended
+        child
+            .stdin
+            .take()
+            .ok_or_else(|| io::Error::other("claude has no stdin"))?
+            .write_all(message.as_bytes())?;
+        Ok(child)
     }
 
     pub fn finish(&mut self, waiting: Child) -> io::Result<Spoken> {
@@ -334,18 +345,7 @@ fn read(waiting: Child) -> io::Result<Answer> {
     if buttons > 1 {
         return Err(io::Error::other("more than one button in one answer; only one can be offered"));
     }
-    // addon steps run on this machine; the rest go to the game
-    let (machine, game): (Vec<&Value>, Vec<&Value>) =
-        steps.iter().partition(|step| step.get("kind").and_then(Value::as_str) == Some("addon"));
-    let addons = machine
-        .iter()
-        .map(|step| {
-            let action = field(step, "action")?.to_string();
-            let target = if action == "list" { String::new() } else { field(step, "repo")?.to_string() };
-            Ok((action, target))
-        })
-        .collect::<io::Result<Vec<_>>>()?;
-    let mut built = game.into_iter().map(step_inbox).collect::<io::Result<Vec<String>>>()?;
+    let mut built = steps.iter().map(step_inbox).collect::<io::Result<Vec<String>>>()?;
     let look = command.get("look").and_then(Value::as_bool) == Some(true);
     // looking needs a reload, and a reload needs the player's press: offer it,
     // unless the answer already offers its own button
@@ -362,7 +362,7 @@ fn read(waiting: Child) -> io::Result<Answer> {
         .get("session_id")
         .and_then(Value::as_str)
         .map(str::to_string);
-    Ok(Answer { spoken: Spoken { say, inbox, look, addons }, thread })
+    Ok(Answer { spoken: Spoken { say, inbox, look }, thread })
 }
 
 /// One step as the inbox table the addon's dispatch accepts.
