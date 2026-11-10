@@ -155,6 +155,14 @@ goes to a detached process.
   tainted. And a window the controller manages must live in the addon's own files,
   never in a module (modules run ForceTaint_Strong). Both measured on the bag
   window, 2026-11-10; it now cycles focus cleanly.
+  **Standing in for a Blizzard window works** (the bag window, 2026-11-10, the
+  player: "works exceptionally"): never close or set anything of theirs. React with
+  `EventRegistry:RegisterCallback` (dispatched through secureexecuterange) and
+  `hooksecurefunc` post-hooks (the caller stays secure); hide theirs with an alpha
+  animation of ours aimed at their frame (`anim:SetTarget`, `SetToFinalAlpha`);
+  drop it from the focus cycle with `GamepadMode.FrameControlsManager:FrameHidden`,
+  the one manager call Blizzard wraps for insecure callers. Calling their
+  `CloseAllBags` from our code, by contrast, tainted the next focus switch.
 - **Look before calling.** `docs/api-surface.md` and `.tsv` give every one of the
   10,957 names a tier and its terms (protected, press only, out of combat, secret
   results in combat, read, change, dormant, Blizzard's own Lua). `docs/wow-ui-source`

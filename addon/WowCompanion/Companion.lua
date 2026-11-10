@@ -2060,6 +2060,7 @@ function WowCompanion_Style.Prompt(parent, key, text)
 	fs:SetPoint("LEFT")
 	fs:SetText(("%s %s"):format(WowCompanion_Glyph(key), text))
 	f:SetWidth(fs:GetStringWidth() + 4)
+	f.SetPromptText = function(_, t) fs:SetText(("%s %s"):format(WowCompanion_Glyph(key), t)) end
 	return f
 end
 -- the context menu's background (common-dropdown-c-bg, as MenuStyle2 draws it)
@@ -5347,6 +5348,7 @@ local function build()
 		for i, p in ipairs({ { "PAD3", USE or "Use" }, { "PAD1", "Move" }, { "PAD4", "More" },
 			{ "PAD2", CLOSE or "Close" }, { "PADRSHOULDER", "Bag" } }) do
 			local pr = WowCompanion_Style.Prompt(f, p[1], p[2])
+			if i == 1 then f.usePrompt = pr end
 			pr:SetHeight(LEGEND_H)
 			if prev then pr:SetPoint("LEFT", prev, "RIGHT", 12, 0) else pr:SetPoint("BOTTOMLEFT", EDGE, EDGE) end
 			local w = pr:GetWidth()
@@ -5915,4 +5917,17 @@ do
 	if ToggleBackpack_Combined then hooksecurefunc("ToggleBackpack_Combined", toggled) end
 	if ToggleAllBags then hooksecurefunc("ToggleAllBags", toggled) end
 	if WCBags then WCBags.followBlizzard = true end
+end
+
+-- square sells while a vendor is open, so the legend says so (the player, 2026-11-10)
+do
+	local w = CreateFrame("Frame")
+	w:RegisterEvent("MERCHANT_SHOW")
+	w:RegisterEvent("MERCHANT_CLOSED")
+	w:SetScript("OnEvent", function(_, event)
+		local pr = WCBags and WCBags.usePrompt
+		if not (pr and pr.SetPromptText) then return end
+		pcall(pr.SetPromptText, pr, event == "MERCHANT_SHOW" and (SELL or "Sell") or (USE or "Use"))
+		if pr.RefreshInputPromptSize then pcall(pr.RefreshInputPromptSize, pr) end
+	end)
 end
