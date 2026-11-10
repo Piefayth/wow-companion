@@ -10,7 +10,16 @@ cpal = "0.18.2"
 # the cuda feature builds ggml's CUDA backend from source: hundreds of .cu files,
 # each for every architecture ggml supports. Set CUDAARCHS=89 to build for this
 # GPU alone. Nothing outside this crate's manifest can invalidate it now.
-whisper-rs = { version = "0.16.0", features = ["cuda"] }
+whisper-rs = { version = "0.16.0" }
+
+# Whisper's backend, chosen at build time (one binary per backend):
+# cuda (NVIDIA; the default, set CUDAARCHS to the card's generation), vulkan (any
+# GPU with a Vulkan driver: NVIDIA, AMD, Intel; needs the Vulkan SDK to build), or
+# neither (`--no-default-features`: CPU only, slower; pick a smaller model).
+[features]
+default = ["cuda"]
+cuda = ["whisper-rs/cuda"]
+vulkan = ["whisper-rs/vulkan"]
 
 # The Bluetooth voice-link reconnect (IKsControl on the endpoint's topology). The
 # same version cpal already builds, so this adds features, not a second copy.

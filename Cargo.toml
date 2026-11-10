@@ -13,6 +13,14 @@ publish = false
 
 [dependencies]
 wow-companion-pad = { path = "crates/pad" }
-wow-companion-voice = { path = "crates/voice" }
+wow-companion-voice = { path = "crates/voice", default-features = false }
 # the claude CLI's --output-format json envelope; not worth hand-parsing
 serde_json = "1"
+
+# Whisper's backend (crates/voice/Cargo.toml): `cargo build` is CUDA;
+# `--no-default-features --features vulkan` for other GPUs; `--no-default-features`
+# for CPU only.
+[features]
+default = ["cuda"]
+cuda = ["wow-companion-voice/cuda"]
+vulkan = ["wow-companion-voice/vulkan"]
