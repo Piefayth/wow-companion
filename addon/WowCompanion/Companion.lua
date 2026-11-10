@@ -292,7 +292,9 @@ local function buildLog()
 		frame = CreateFrame("Frame", "WowCompanionLog", UIParent)
 	end
 	frame:SetSize(560, 340)
-	frame:SetPoint("CENTER")
+	-- top left, where Blizzard docks its own left panels (the character sheet,
+	-- the spellbook); the panel manager places it there on every open
+	frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -116)
 	frame:SetFrameStrata("DIALOG")
 	frame:SetClampedToScreen(true)
 	frame:Hide()
@@ -329,6 +331,9 @@ local function buildLog()
 	if closed and close then
 		close:SetPoint("TOPRIGHT", -6, -6)
 		close:SetScript("OnClick", function() frame:Hide() end)
+		-- the controller's back button (circle) closes a focused window by clicking
+		-- its frame.CloseButton (SmartNavigation:AttemptClose), so name it that
+		frame.CloseButton = close
 	end
 
 	-- the waiting line: the agent takes seconds, and silence reads as broken
@@ -345,7 +350,24 @@ local function buildLog()
 
 	local messages = newTranscript(frame)
 	messages.scroll:SetPoint("TOPLEFT", 20, -42)
-	messages.scroll:SetPoint("BOTTOMRIGHT", -22, 34)
+	messages.scroll:SetPoint("BOTTOMRIGHT", -40, 34)
+	-- Scrolling on a controller without taking the right stick (the camera):
+	-- Blizzard's own scroll arrows on the right edge, which the cursor reaches
+	-- like any button and A presses. Each press moves most of a page.
+	local function scrollBy(pages)
+		local sc = messages.scroll
+		local step = math.max(40, (sc:GetHeight() or 200) * 0.75)
+		local range = sc:GetVerticalScrollRange()
+		sc:SetVerticalScroll(math.max(0, math.min(range, sc:GetVerticalScroll() + pages * step)))
+	end
+	for _, spec in ipairs({ { "UIPanelScrollUpButtonTemplate", -1, "TOPRIGHT", -16, -44 },
+		{ "UIPanelScrollDownButtonTemplate", 1, "BOTTOMRIGHT", -16, 36 } }) do
+		local made, arrow = pcall(CreateFrame, "Button", nil, frame, spec[1])
+		if made and arrow then
+			arrow:SetPoint(spec[3], frame, spec[3], spec[4], spec[5])
+			arrow:SetScript("OnClick", function() scrollBy(spec[2]) end)
+		end
+	end
 	frame.messages = messages
 
 	-- 1.60.1 added a SmartNavigation API for exactly this: an addon can mark its own
@@ -369,8 +391,8 @@ local function buildLog()
 	-- however the window goes away, the manager hears about it.
 	if UIPanelWindows then
 		UIPanelWindows["WowCompanionLog"] = {
-			area = "center",
-			pushable = 0,
+			area = "left",
+			pushable = 1, -- another left panel opening pushes it right, as Blizzard's do
 			whileDead = 1,
 			allowOtherPanels = 1,
 		}
@@ -381,9 +403,15 @@ local function buildLog()
 	-- such callers. Deferred a tick, so the panel is registered first.
 	frame:SetScript("OnShow", function(self)
 		C_Timer.After(0, function()
-			if SmartNavigation and SmartNavigation.SetScrollFrameForFrame and self.messages then
-				pcall(SmartNavigation.SetScrollFrameForFrame, SmartNavigation, self, self.messages.scroll)
+			-- the transcript is text, no buttons: without this flag a right-stick
+			-- scroll went looking for a button inside it, found none, and left the
+			-- cursor drawn on the close button while nothing was selected
+			-- (UpdateScrollSelection; the flag is Blizzard's, for "message text")
+			if SmartNavigation_MarkScrollFrameMaintainPreviousButtonOnScroll and self.messages then
+				pcall(SmartNavigation_MarkScrollFrameMaintainPreviousButtonOnScroll, self.messages.scroll)
 			end
+			-- not handed to SmartNavigation any more: that gave it the right stick
+			-- and took the camera away while the window had focus; the arrows scroll
 		end)
 	end)
 	frame:SetScript("OnHide", function(self)
@@ -959,23 +987,12 @@ local function safely(label, fn, ...)
 	end
 end
 
--- A tap of the ask button rings this bell instead of spending a slot on a
--- message: it only ever means "show the window".
-local SHOW_BELL = "Interface\\AddOns\\" .. ADDON .. "\\Signals\\show.wav"
-local showRang = false
 
 local function poll()
 	safely("bell poll", listen, bellPath(nextSlot), function(rang)
 		if rang then
 			safely("a message from the companion", receive)
 		end
-	end)
-	safely("window bell", listen, SHOW_BELL, function(rang)
-		-- once per ring: the bell stays rung for a moment after the tap
-		if rang and not showRang then
-			safely("showing the window", handlers.show)
-		end
-		showRang = rang
 	end)
 end
 
@@ -2710,6 +2727,14 @@ end
 
 local function sandbox(output)
 	local env = {}
+	-- C functions that take or return a vector or a color look its mixin up in
+	-- the calling code's environment directly, so the proxy below is not
+	-- enough: "unable to find mixin or metatable (Vector2DMixin)". Put the
+	-- mixins the API needs into the environment itself.
+	for _, name in ipairs({ "Vector2DMixin", "Vector3DMixin", "ColorMixin", "ItemLocationMixin",
+		"ItemTransmogInfoMixin", "PlayerLocationMixin", "TransmogLocationMixin" }) do
+		if _G[name] ~= nil then rawset(env, name, _G[name]) end
+	end
 	local wrapped = {}
 	setmetatable(env, {
 		__index = function(_, key)
@@ -3131,4 +3156,152 @@ SlashCmdList.WOWCOMPANION = function(command)
 	else
 		say("/wc log, /wc clear, /wc button, /wc gamepad, /wc api, /wc dump, /wc test, /wc chat, /wc macro, /wc sound, /wc quiet, /wc listen")
 	end
+end
+
+-- Agent pins: places the agent talks about ("they're around 72, 69"), drawn on
+-- the minimap as a dot, with a shaded disc for an area. The agent sets them from
+-- a lua step; they live in WowCompanionDB.pins, so they survive a reload.
+--   WCPins.Set({ { map = 1440, x = 72.5, y = 69.5, r = 40, label = "Outrunners" }, ... })
+--   WCPins.Add({ ... })    WCPins.Clear()
+-- map is a uiMapID, x and y are the 0-100 map coordinates players quote, r is a
+-- radius in yards (0 or nil for a dot alone), color an optional { r, g, b }.
+-- Drawn only while the player stands on the pin's map, in the open world.
+WCPins = WCPins or {}
+do
+	local DISC = "Interface\CharacterFrame\TempPortraitAlphaMask"
+	local layer, pool = nil, {}
+	local function makeLayer()
+		if layer or not Minimap then return layer end
+		layer = CreateFrame("Frame", nil, Minimap)
+		layer:SetAllPoints(Minimap)
+		layer:SetFrameLevel(Minimap:GetFrameLevel() + 5)
+		-- the minimap is round: anything past its edge is masked away
+		-- the CircleMask atlas, not the portrait file: a texture or mask made from
+		-- that file drew nothing on the minimap, while plain colour did
+		-- (measured: a red square showed, every disc did not)
+		layer.mask = layer:CreateMaskTexture()
+		layer.mask:SetAtlas("CircleMask")
+		layer.mask:SetAllPoints(Minimap)
+		return layer
+	end
+	local function piece(i)
+		local p = pool[i]
+		if p then return p end
+		-- solid colour cut to a circle by a mask: the alpha-mask file drawn as a
+		-- plain texture may come out invisible, a masked colour cannot
+		local function disc(level, sub)
+			local t = layer:CreateTexture(nil, level, nil, sub)
+			t:SetColorTexture(1, 1, 1, 1)
+			local m = layer:CreateMaskTexture()
+			m:SetAtlas("CircleMask")
+			m:SetAllPoints(t)
+			t:AddMaskTexture(m)
+			return t
+		end
+		p = {}
+		p.area = disc("ARTWORK", 0)
+		p.area:AddMaskTexture(layer.mask)
+		p.dot = disc("OVERLAY", 1)
+		p.dot:SetSize(9, 9)
+		p.edge = disc("OVERLAY", 0)
+		p.edge:SetSize(12, 12)
+		p.edge:SetVertexColor(0, 0, 0, 0.8)
+		pool[i] = p
+		return p
+	end
+	local function hideFrom(n)
+		for i = n, #pool do
+			local p = pool[i]
+			p.area:Hide(); p.dot:Hide(); p.edge:Hide()
+		end
+	end
+	local function draw()
+		local pins = WowCompanionDB and WowCompanionDB.pins
+		if not (layer and pins and #pins > 0) then hideFrom(1) return end
+		local yards = C_Minimap and C_Minimap.GetViewRadius and C_Minimap.GetViewRadius()
+		local half = Minimap:GetWidth() / 2
+		if not (yards and yards > 0 and half > 0) then hideFrom(1) return end
+		local scale = half / yards
+		local rotate = GetCVar and GetCVar("rotateMinimap") == "1"
+		local facing = rotate and GetPlayerFacing and GetPlayerFacing() or 0
+		local sin, cos = math.sin(facing), math.cos(facing)
+		local shown = 0
+		-- World yards, not map positions: GetPlayerMapPosition errors on this
+		-- client. UnitPosition and GetWorldPosFromMapPos both give (north, west),
+		-- the order HereBeDragons relies on, so the difference is the offset.
+		local pn, pw = UnitPosition("player")
+		for _, pin in ipairs(pins) do
+			local okPin, cont, world
+			if pn and pin.map then
+				okPin, cont, world = pcall(C_Map.GetWorldPosFromMapPos, pin.map,
+					CreateVector2D((pin.x or 0) / 100, (pin.y or 0) / 100))
+			end
+			WCPins.probe = { ok = okPin, cont = cont, world = type(world), pn = pn, pw = pw }
+			if okPin and world then
+				local n, wv = world:GetXY()
+				WCPins.probe.n, WCPins.probe.w = n, wv
+				local east, north = -(wv - pw), n - pn
+				local ox, oy = east * scale, north * scale
+				if rotate then ox, oy = ox * cos - oy * sin, ox * sin + oy * cos end
+				shown = shown + 1
+				local p = piece(shown)
+				local c = pin.color or { 1, 0.82, 0 }
+				local dist = math.sqrt(ox * ox + oy * oy)
+				WCPins.probe.ox, WCPins.probe.oy, WCPins.probe.half = ox, oy, half
+				-- a texture keeps only one working mask here, so the minimap's
+				-- round edge never clipped the area: keep it inside by size
+				-- instead. Off the map there is no area, only the rim dot.
+				local r = math.min((pin.r or 0) * scale, half - 2 - dist)
+				if r > 2 then
+					p.area:ClearAllPoints()
+					p.area:SetPoint("CENTER", layer, "CENTER", ox, oy)
+					p.area:SetSize(r * 2, r * 2)
+					p.area:SetVertexColor(c[1], c[2], c[3], 0.28)
+					p.area:Show()
+				else
+					p.area:Hide()
+				end
+				-- past the edge the dot sits on the rim, pointing the way
+				local limit = half - 6
+				local dx, dy = ox, oy
+				if dist > limit then dx, dy = ox / dist * limit, oy / dist * limit end
+				p.dot:ClearAllPoints(); p.dot:SetPoint("CENTER", layer, "CENTER", dx, dy)
+				p.dot:SetVertexColor(c[1], c[2], c[3], 1)
+				p.edge:ClearAllPoints(); p.edge:SetPoint("CENTER", p.dot, "CENTER")
+				p.dot:Show(); p.edge:Show()
+			end
+		end
+		hideFrom(shown + 1)
+	end
+	local ticker
+	local function start()
+		if not makeLayer() then return end
+		if ticker then ticker:Cancel() end
+		ticker = C_Timer.NewTicker(0.05, function()
+			local ok, err = pcall(draw)
+			-- kept, not printed: twenty a second would bury the window
+			WCPins.lastError = not ok and tostring(err) or nil
+			WCPins.drawn = ok
+		end)
+	end
+	function WCPins.Set(list)
+		WowCompanionDB.pins = list or {}
+		start()
+		return #WowCompanionDB.pins
+	end
+	function WCPins.Add(pin)
+		WowCompanionDB.pins = WowCompanionDB.pins or {}
+		table.insert(WowCompanionDB.pins, pin)
+		start()
+		return #WowCompanionDB.pins
+	end
+	function WCPins.Clear()
+		WowCompanionDB.pins = {}
+		hideFrom(1)
+	end
+	local boot = CreateFrame("Frame")
+	boot:RegisterEvent("PLAYER_LOGIN")
+	boot:SetScript("OnEvent", function()
+		if WowCompanionDB and WowCompanionDB.pins and #WowCompanionDB.pins > 0 then start() end
+	end)
 end

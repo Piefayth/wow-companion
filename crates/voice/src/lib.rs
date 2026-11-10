@@ -300,6 +300,18 @@ pub fn listen(
     for (role, press) in &bindings {
         println!("ready: hold {press} for {role}");
     }
+    // Started by a restart: the mic is already open (above), so the headset's
+    // hands-free link never dropped between copies. Say so, then wait for the old
+    // copy to close its mic and step away (it deletes the flag) before reading the
+    // pad, so a press is never handled twice.
+    if let Some(flag) = std::env::var_os("WOW_COMPANION_READY_FILE") {
+        let flag = std::path::PathBuf::from(flag);
+        let _ = std::fs::write(&flag, "");
+        let since = Instant::now();
+        while flag.exists() && since.elapsed() < Duration::from_secs(15) {
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
     // Feedback is rumble by default. Cues in a Bluetooth headset play over its
     // hands-free link (8 kHz, the only one this PC negotiates with AirPods Max),
     // which hisses whenever anything plays; the pad's rumble is instant, silent and

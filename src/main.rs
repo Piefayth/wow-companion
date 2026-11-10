@@ -179,8 +179,6 @@ fn install(addons: &Path) -> io::Result<()> {
     }
     fs::write(signals.join("always.wav"), silent_wav())?;
     fs::write(signals.join("never.wav"), [])?;
-    // the window's own bell (see ring_show_bell); silent until a tap rings it
-    fs::write(signals.join("show.wav"), [])?;
     for slot in 1..=SLOTS {
         let dir = addons.join(slot_name(slot));
         fs::create_dir_all(&dir)?;
@@ -648,8 +646,10 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         || vocabulary(addons),
         |role, text| match role {
             // a tap of the ask button, too short to be speech: show the window
-            // a tap rings the window's own bell: no slot spent (taps were 12 of 64)
-            "ask tap" => ring_show_bell(addons),
+            // a tap opens the window: one slot, of 512. A bell of its own (no slot)
+            // was tried and failed: the game holds a constantly polled bell open,
+            // so it could never be rung (measured: locked for 10 s straight)
+            "ask tap" => deliver("{ kind = \"show\" }".to_string()),
             // the voice loop's own news (a reconnected headset), for the window
             "notice" => deliver(log_inbox("error", text, None, None)),
             _ if role.ends_with(" tap") => Ok(()),
@@ -845,31 +845,6 @@ fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
     sent
 }
 
-/// The window's own bell, checked on every poll beside the slot bells: ringing it
-/// opens the window, and spends no slot.
-fn ring_show_bell(addons: &Path) -> io::Result<()> {
-    // The game opens this bell every half second, so it is locked more often than
-    // a slot's; a 2 s retry gave up (measured). Rung off the voice loop and kept at
-    // for up to 10 s: a tap is not urgent, but it should not be lost.
-    let bell = addons.join(ADDON).join("Signals").join("show.wav");
-    thread::spawn(move || {
-        let start = Instant::now();
-        while fs::write(&bell, silent_wav()).is_err() {
-            if start.elapsed() > Duration::from_secs(10) {
-                eprintln!("  could not ring the window bell: it stayed locked");
-                return;
-            }
-            thread::sleep(Duration::from_millis(30));
-        }
-        thread::sleep(BELL_HEARD);
-        let start = Instant::now();
-        while fs::write(&bell, []).is_err() && start.elapsed() < Duration::from_secs(10) {
-            thread::sleep(Duration::from_millis(30));
-        }
-    });
-    Ok(())
-}
-
 fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     let _one_at_a_time = SENDING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if !game_running()? {
@@ -1045,18 +1020,47 @@ fn watch_for_restart(args: Vec<String>) {
         }
         let _ = fs::remove_file(&request);
         println!("restarting onto the new build");
-        // close the mic properly first: the next copy must not open it while this
-        // one holds it, and an abandoned hands-free stream can wedge the link
+        // Overlap, never a gap. Closing the mic before the next copy opened its own
+        // left the headset's hands-free link with no stream, Windows dropped it, and
+        // the first press after every restart recorded silence (measured twice). So
+        // the next copy starts while this one keeps working, opens its mic, loads,
+        // and raises a flag; only then does this one close its mic properly (an
+        // abandoned stream can wedge the link), lower the flag, and exit.
+        let Ok(dir) = companion_dir() else { continue };
+        let flag = dir.join(format!("ready-{}.flag", std::process::id()));
+        let _ = fs::remove_file(&flag);
+        if let Err(err) = std::process::Command::new(&next)
+            .args(&args)
+            .env(SOURCE_EXE, &source)
+            .env("WOW_COMPANION_READY_FILE", &flag)
+            .spawn()
+        {
+            eprintln!("  restart failed, still running the old build: {err}");
+            continue;
+        }
+        let since = Instant::now();
+        while !flag.exists() {
+            if since.elapsed() > Duration::from_secs(120) {
+                eprintln!("  the new build never came up; still running this one");
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        if !flag.exists() {
+            continue;
+        }
+        // and not mid-request or mid-press, now that the new copy is waiting
+        while IN_FLIGHT.load(Ordering::SeqCst) > 0 || voice::HOLDING.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(100));
+        }
         voice::SHUTDOWN.store(true, Ordering::SeqCst);
         let asked = Instant::now();
         while !voice::STOPPED.load(Ordering::SeqCst) && asked.elapsed() < Duration::from_secs(3) {
             thread::sleep(Duration::from_millis(20));
         }
-        // the next generation runs as a copy already, and owns the console from here
-        match std::process::Command::new(&next).args(&args).env(SOURCE_EXE, &source).spawn() {
-            Ok(_) => std::process::exit(0),
-            Err(err) => eprintln!("  restart failed, still running the old build: {err}"),
-        }
+        let _ = fs::remove_file(&flag);
+        println!("handed over to the new build");
+        std::process::exit(0);
     }
 }
 
