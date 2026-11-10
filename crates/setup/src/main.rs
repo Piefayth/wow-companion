@@ -119,7 +119,7 @@ impl eframe::App for Setup {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.heading("Game");
                 ui.label("The game's Interface\\AddOns folder (World of Warcraft\\_forever_\\Interface\\AddOns):");
-                ui.text_edit_singleline(&mut self.addons);
+                ui.add(egui::TextEdit::singleline(&mut self.addons).desired_width(f32::INFINITY));
                 for found in self.found_addons.clone() {
                     if found != self.addons && ui.small_button(format!("use {found}")).clicked() {
                         self.addons = found;
@@ -184,7 +184,7 @@ impl eframe::App for Setup {
                 ui.separator();
                 ui.heading("Speech recognition");
                 ui.label("Whisper model file:");
-                ui.text_edit_singleline(&mut self.model);
+                ui.add(egui::TextEdit::singleline(&mut self.model).desired_width(f32::INFINITY));
                 for found in self.models.clone() {
                     if found != self.model && ui.small_button(format!("use {found}")).clicked() {
                         self.model = found;
