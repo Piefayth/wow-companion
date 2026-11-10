@@ -30,7 +30,10 @@ yes; don't reinvent what Claude Code has.
 - `crates/pad`: the controller over raw HID. A Switch pad through a switch2connect
   adapter in **DS5 mode** (`054c:0ce6`), invisible to Windows.Gaming.Input; DS5
   mode stays. Buttons: `home` byte 10/0x01, `minus` 9/0x10 (ask), and so on.
-  Rumble is DualSense output report 0x02.
+  Rumble is DualSense output report 0x02. **Xbox pads go through XInput**
+  (`pad=xinput`, `crates/pad/src/xinput.rs`): their state becomes a 4-byte report
+  so learning and names work the same; Guide (the default talk button there) via
+  `XInputGetStateEx`; rumble works. Button names follow the pad (`press_for`).
 - `crates/voice`: mic (`cpal`) and Whisper large-v3-turbo on the 4090, its own crate
   so the CUDA build is not invalidated by edits elsewhere.
   Files: `lib.rs` (the push-to-talk loop), `mic.rs`, `transcribe.rs`, `cue.rs`,

@@ -97,19 +97,20 @@ pub fn listen(
     // free for something else. `chat=` is still read, but only `chat=on:<button>`
     // brings the second button back.
     let chat = option(options, "chat").and_then(|value| value.strip_prefix("on:"));
-    let mut bindings = vec![("ask", option(options, "ask").unwrap_or("minus"))];
+    // the pad: `pad=vid:pid` or `pad=xinput` (the setup window picks it), else
+    // this setup's own; button names mean different bits on an Xbox pad
+    let (vid, pid) = match option(options, "pad") {
+        Some(id) => pad::split(id)?,
+        None => DEFAULT_PAD,
+    };
+    let mut bindings = vec![("ask", option(options, "ask").unwrap_or(pad::default_talk(vid, pid)))];
     if let Some(button) = chat {
         bindings.push(("chat", button));
     }
     let bindings: Vec<(&str, pad::Press)> = bindings
         .iter()
-        .map(|(role, name)| pad::press(name).map(|press| (*role, press)))
+        .map(|(role, name)| pad::press_for(name, vid, pid).map(|press| (*role, press)))
         .collect::<io::Result<_>>()?;
-    // the pad: `pad=vid:pid` (the setup window learns it), else this setup's own
-    let (vid, pid) = match option(options, "pad") {
-        Some(id) => pad::split(id)?,
-        None => DEFAULT_PAD,
-    };
     let wanted_mic = option(options, "mic");
     // Neither has to be there at startup: the model loads either way, and each device
     // is picked up when it appears. A mistyped `mic=` looks exactly like an unplugged
@@ -188,7 +189,10 @@ pub fn listen(
     let mut holding: Option<&str> = None;
     // Conversation slots (the player, 2026-11-10): a trigger held with the talk
     // button picks one; none is the main conversation.
-    let slots = [("l1", pad::press("l1")?), ("l2", pad::press("l2")?), ("r1", pad::press("r1")?), ("r2", pad::press("r2")?)];
+    let slots: Vec<(&str, pad::Press)> = ["l1", "l2", "r1", "r2"]
+        .iter()
+        .map(|name| pad::press_for(name, vid, pid).map(|press| (*name, press)))
+        .collect::<io::Result<_>>()?;
     let mut slot: Option<&str> = None;
     let mut pressed_at = Instant::now();
     // the opening pulse waits until a press has outlasted a tap: a tap (which

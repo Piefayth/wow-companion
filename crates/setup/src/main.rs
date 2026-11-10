@@ -268,6 +268,7 @@ impl Setup {
             _ => Status::Ready("ready"),
         };
         look::card(ui, 2, "Controller", status, |ui| {
+            let pad_before = self.pad.clone();
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt("pad")
                     .width((ui.available_width() - 90.0).max(200.0))
@@ -282,6 +283,12 @@ impl Setup {
                     self.refresh_devices();
                 }
             });
+            // a learned button is a bit in one controller's report: another
+            // controller starts from its own default
+            if self.pad != pad_before {
+                let (vid, pid) = pad::split(&self.pad).unwrap_or((0, 0));
+                self.ask = pad::default_talk(vid, pid).to_string();
+            }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Talk button").color(look::MUTED));
@@ -307,6 +314,15 @@ impl Setup {
                     ui.colored_label(look::BAD, why);
                 }
                 Learning::Idle => {
+                    if pad::split(&self.pad).ok() == Some(pad::XINPUT) && self.talk_name() == "Guide" {
+                        ui.label(
+                            RichText::new(
+                                "Windows opens Xbox Game Bar on the Guide button. Turn that off: Settings > Gaming >                                  Xbox Game Bar > \"Open Xbox Game Bar using this button on a controller\".",
+                            )
+                            .small()
+                            .color(look::WARN),
+                        );
+                    }
                     ui.label(
                         RichText::new("Hold it to talk. A trigger held with it (L1, L2, R1, R2) picks a conversation.")
                             .small()
@@ -556,8 +572,9 @@ impl Setup {
         if self.ask.is_empty() {
             return "not set".into();
         }
-        match pad::press(&self.ask) {
-            Ok(press) => match press.name(pad::split(&self.pad).map(|(vid, _)| vid).unwrap_or(0)) {
+        let (vid, pid) = pad::split(&self.pad).unwrap_or((0, 0));
+        match pad::press_for(&self.ask, vid, pid) {
+            Ok(press) => match press.name(vid, pid) {
                 Some(name) => name.to_string(),
                 None => format!("button {}", press.spec()),
             },
@@ -599,7 +616,8 @@ impl Setup {
                 if open.as_ref().is_none_or(|(was, _)| *was != id) {
                     open = pad::split(&id).ok().and_then(|(vid, pid)| pad::Pad::open(vid, pid).ok()).map(|p| (id.clone(), p));
                 }
-                let down = match (&mut open, pad::press(&ask)) {
+                let (vid, pid) = pad::split(&id).unwrap_or((0, 0));
+                let down = match (&mut open, pad::press_for(&ask, vid, pid)) {
                     (Some((_, device)), Ok(press)) => match device.refresh() {
                         Ok(()) => device.held(&press),
                         Err(_) => {
@@ -974,6 +992,7 @@ fn model_label(path: &str) -> String {
 fn pad_label(vid: u16, name: &str) -> String {
     match vid {
         0x054c => "PlayStation controller (DualSense layout)".into(),
+        0xffff => "Xbox controller".into(),
         0x045e => "Xbox controller".into(),
         0x057e => "Nintendo controller".into(),
         _ if name.trim().is_empty() => "Controller".into(),

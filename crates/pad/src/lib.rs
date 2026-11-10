@@ -16,6 +16,12 @@ use std::{
 
 use hidapi::{HidApi, HidDevice};
 
+mod xinput;
+
+/// The id the setup window and `pad=` use for an Xbox (XInput) controller,
+/// which has no HID face worth reading. Also accepted as `pad=xinput`.
+pub const XINPUT: (u16, u16) = (0xffff, 0x0001);
+
 // the pad as switch2connect presents it; `pads` lists what is actually attached
 pub const DEFAULT_PAD: (u16, u16) = (0x054c, 0x0ce6);
 
@@ -49,9 +55,10 @@ impl Press {
     /// The button's name on this kind of controller, as Windows sees it (by
     /// vendor id), or None when we don't know that layout. Only Sony's report
     /// layout is known; a pad behind an adapter is named as the adapter presents it.
-    pub fn name(&self, vid: u16) -> Option<&'static str> {
-        let known: &[(&str, usize, u8)] = match vid {
-            0x054c => &[
+    pub fn name(&self, vid: u16, pid: u16) -> Option<&'static str> {
+        let known: &[(&str, usize, u8)] = match (vid, pid) {
+            XINPUT => xinput::NAMES,
+            (0x054c, _) => &[
                 ("PS", 10, 0x01), ("touchpad", 10, 0x02), ("L1", 9, 0x01), ("R1", 9, 0x02),
                 ("L2", 9, 0x04), ("R2", 9, 0x08), ("Create", 9, 0x10), ("Options", 9, 0x20),
                 ("L3", 9, 0x40), ("R3", 9, 0x80),
@@ -101,8 +108,25 @@ pub fn press(name: &str) -> io::Result<Press> {
     Ok(Press { byte, mask })
 }
 
+/// `press` for a given controller: the companion's button names (l1, r2, minus,
+/// home...) mean different bits on an Xbox pad than in the DualSense report.
+pub fn press_for(name: &str, vid: u16, pid: u16) -> io::Result<Press> {
+    if (vid, pid) == XINPUT {
+        if let Some((byte, mask)) = xinput::named(&name.to_ascii_lowercase()) {
+            return Ok(Press { byte, mask });
+        }
+    }
+    press(name)
+}
+
+/// The talk button to assume before one is learned: minus (free in WoW) on
+/// the DualSense layout, Guide on an Xbox pad (WoW ignores it).
+pub fn default_talk(vid: u16, pid: u16) -> &'static str {
+    if (vid, pid) == XINPUT { "guide" } else { "minus" }
+}
+
 pub struct Pad {
-    device: HidDevice,
+    device: Device,
     latest: Vec<u8>,
 }
 
@@ -116,10 +140,7 @@ impl Pad {
     pub fn refresh(&mut self) -> io::Result<()> {
         let mut buffer = [0u8; REPORT];
         loop {
-            let read = self
-                .device
-                .read_timeout(&mut buffer, 0)
-                .map_err(|err| io::Error::other(err.to_string()))?;
+            let read = self.device.read(&mut buffer, 0)?;
             if read == 0 {
                 return Ok(());
             }
@@ -138,15 +159,7 @@ impl Pad {
     /// (large) motor strengths. Whether the adapter passes it on to the pad behind
     /// it is what `buzz` tests.
     pub fn rumble(&self, small: u8, large: u8) -> io::Result<()> {
-        let mut report = [0u8; 48];
-        report[0] = 0x02;
-        report[1] = 0x03;
-        report[3] = small;
-        report[4] = large;
-        self.device
-            .write(&report)
-            .map(|_| ())
-            .map_err(|err| io::Error::other(err.to_string()))
+        self.device.rumble(small, large)
     }
 }
 
@@ -156,7 +169,7 @@ impl Pad {
 /// what a pad that went away and came back looks like.
 pub struct Rumbler {
     pad: (u16, u16),
-    device: std::sync::Arc<std::sync::Mutex<Option<HidDevice>>>,
+    device: std::sync::Arc<std::sync::Mutex<Option<Device>>>,
 }
 
 impl Rumbler {
@@ -181,13 +194,8 @@ impl Rumbler {
                 if handle.is_none() {
                     *handle = open(vid, pid).ok();
                 }
-                let mut report = [0u8; 48];
-                report[0] = 0x02;
-                report[1] = 0x03;
-                report[3] = small;
-                report[4] = large;
                 if let Some(pad) = handle.as_ref() {
-                    if pad.write(&report).is_err() {
+                    if pad.rumble(small, large).is_err() {
                         *handle = None;
                     }
                 }
@@ -234,7 +242,7 @@ pub fn list() -> io::Result<()> {
 /// masking bit by bit lets the rest through forever after.
 pub fn watch(id: &str) -> io::Result<()> {
     let (vid, pid) = split(id)?;
-    let device = open(vid, pid)?;
+    let mut device = open(vid, pid)?;
     println!("watching {vid:04x}:{pid:04x}");
     println!("hands off the pad for {CALIBRATE:?} while I learn what moves on its own");
 
@@ -244,9 +252,7 @@ pub fn watch(id: &str) -> io::Result<()> {
     let mut learning = true;
     let since = Instant::now();
     loop {
-        let read = device
-            .read_timeout(&mut buffer, 100)
-            .map_err(|err| io::Error::other(err.to_string()))?;
+        let read = device.read(&mut buffer, 100)?;
         if read == 0 {
             continue;
         }
@@ -298,12 +304,17 @@ pub fn gamepads() -> io::Result<Vec<(u16, u16, String)>> {
     let api = HidApi::new().map_err(|err| io::Error::other(err.to_string()))?;
     let mut found: Vec<(u16, u16, String)> = Vec::new();
     for device in api.device_list() {
-        if device.usage_page() == 1 && matches!(device.usage(), 4 | 5) {
+        // an Xbox pad's HID face (no Guide, triggers merged): it is read by XInput
+        let shim = device.path().to_string_lossy().to_ascii_uppercase().contains("&IG_");
+        if device.usage_page() == 1 && matches!(device.usage(), 4 | 5) && !shim {
             let entry = (device.vendor_id(), device.product_id(), device.product_string().unwrap_or("?").to_string());
             if !found.iter().any(|(vid, pid, _)| (*vid, *pid) == (entry.0, entry.1)) {
                 found.push(entry);
             }
         }
+    }
+    if xinput::connected().is_some() {
+        found.push((XINPUT.0, XINPUT.1, "Xbox controller (XInput)".to_string()));
     }
     Ok(found)
 }
@@ -315,7 +326,7 @@ pub fn gamepads() -> io::Result<Vec<(u16, u16, String)>> {
 /// the bit is held, is not a button. So nobody has to keep their hands off
 /// first; the press counts when the button is let go.
 pub fn learn(vid: u16, pid: u16, wait: Duration, status: impl Fn(&str)) -> io::Result<Press> {
-    let device = open(vid, pid)?;
+    let mut device = open(vid, pid)?;
     status("press the button you want to talk with");
     // when each byte last changed, and how often it changed during a hold
     let mut moved: [Option<Instant>; REPORT] = [None; REPORT];
@@ -328,9 +339,7 @@ pub fn learn(vid: u16, pid: u16, wait: Duration, status: impl Fn(&str)) -> io::R
         if since.elapsed() > wait {
             return Err(io::Error::other("no button press seen"));
         }
-        let read = device
-            .read_timeout(&mut buffer, 100)
-            .map_err(|err| io::Error::other(err.to_string()))?;
+        let read = device.read(&mut buffer, 100)?;
         if read == 0 {
             continue;
         }
@@ -379,6 +388,9 @@ pub fn learn(vid: u16, pid: u16, wait: Duration, status: impl Fn(&str)) -> io::R
 
 /// `vid:pid` as numbers, like `054c:0ce6`.
 pub fn split(id: &str) -> io::Result<(u16, u16)> {
+    if id.eq_ignore_ascii_case("xinput") {
+        return Ok(XINPUT);
+    }
     let (vid, pid) = id
         .split_once(':')
         .ok_or_else(|| io::Error::other("expected vid:pid, like 054c:0ce6"))?;
@@ -395,7 +407,46 @@ fn hex8(text: &str) -> io::Result<u8> {
         .map_err(|_| io::Error::other(format!("{text:?} isn't a hex byte")))
 }
 
-fn open(vid: u16, pid: u16) -> io::Result<HidDevice> {
+/// A controller to read: raw HID, or XInput turned into a small report.
+enum Device {
+    Hid(HidDevice),
+    XInput(xinput::Reader),
+}
+
+impl Device {
+    fn read(&mut self, buffer: &mut [u8], timeout_ms: i32) -> io::Result<usize> {
+        match self {
+            Device::Hid(device) => device.read_timeout(buffer, timeout_ms).map_err(|err| io::Error::other(err.to_string())),
+            Device::XInput(reader) => reader.read(buffer, timeout_ms),
+        }
+    }
+
+    /// The DualSense's USB output report for HID: id 0x02, then flags 0x03
+    /// ("compatible vibration": the classic two-motor rumble rather than haptic
+    /// audio), then the right (small) and left (large) motor strengths.
+    fn rumble(&self, small: u8, large: u8) -> io::Result<()> {
+        match self {
+            Device::Hid(device) => {
+                let mut report = [0u8; 48];
+                report[0] = 0x02;
+                report[1] = 0x03;
+                report[3] = small;
+                report[4] = large;
+                device.write(&report).map(|_| ()).map_err(|err| io::Error::other(err.to_string()))
+            }
+            Device::XInput(reader) => reader.rumble(small, large),
+        }
+    }
+}
+
+fn open(vid: u16, pid: u16) -> io::Result<Device> {
+    if (vid, pid) == XINPUT {
+        return xinput::Reader::open().map(Device::XInput);
+    }
+    open_hid(vid, pid).map(Device::Hid)
+}
+
+fn open_hid(vid: u16, pid: u16) -> io::Result<HidDevice> {
     let api = HidApi::new().map_err(|err| io::Error::other(err.to_string()))?;
     // by path, not vid/pid: a pad exposes several HID interfaces and more than one
     // Sony device may be paired, so the first match is not reliably the right one
@@ -414,4 +465,24 @@ fn open(vid: u16, pid: u16) -> io::Result<HidDevice> {
     chosen
         .open_device(&api)
         .map_err(|err| io::Error::other(format!("{err} (is something holding it exclusively?)")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_mean_the_measured_bits_on_each_controller() {
+        let (vid, pid) = XINPUT;
+        let guide = press_for(default_talk(vid, pid), vid, pid).unwrap();
+        assert_eq!((guide.byte, guide.mask), (1, 0x04));
+        assert_eq!(guide.name(vid, pid), Some("Guide"));
+        let r2 = press_for("r2", vid, pid).unwrap();
+        assert_eq!(r2.name(vid, pid), Some("RT"));
+        // the same names on the DualSense layout
+        let minus = press_for(default_talk(0x054c, 0x0ce6), 0x054c, 0x0ce6).unwrap();
+        assert_eq!(minus.name(0x054c, 0x0ce6), Some("Create"));
+        assert_eq!(split("xinput").unwrap(), XINPUT);
+        assert_eq!(split("ffff:0001").unwrap(), XINPUT);
+    }
 }
