@@ -1097,6 +1097,7 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "wow-companion-pad",
+ "wow-companion-settings",
  "wow-companion-voice",
 ]
 
@@ -1106,6 +1107,10 @@ version = "0.1.0"
 dependencies = [
  "hidapi",
 ]
+
+[[package]]
+name = "wow-companion-settings"
+version = "0.1.0"
 
 [[package]]
 name = "wow-companion-voice"

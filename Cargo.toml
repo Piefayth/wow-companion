@@ -1,5 +1,8 @@
 [workspace]
-members = ["crates/pad", "crates/voice"]
+members = ["crates/pad", "crates/voice", "crates/settings"]
+# the setup window is built on its own (its GUI library is a long compile, kept
+# out of every workspace build and check): cargo build --manifest-path crates/setup/Cargo.toml
+exclude = ["crates/setup"]
 
 # Three crates rather than one with a feature flag. A feature kept CUDA out of the
 # default build but left one manifest and one fingerprint: adding a dependency for
@@ -13,6 +16,7 @@ publish = false
 
 [dependencies]
 wow-companion-pad = { path = "crates/pad" }
+wow-companion-settings = { path = "crates/settings" }
 wow-companion-voice = { path = "crates/voice", default-features = false }
 # the claude CLI's --output-format json envelope; not worth hand-parsing
 serde_json = "1"

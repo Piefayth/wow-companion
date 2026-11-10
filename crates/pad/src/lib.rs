@@ -32,6 +32,13 @@ pub struct Press {
     pub mask: u8,
 }
 
+impl Press {
+    /// As `press` reads it back: `byte:mask`, like `9:0x10`.
+    pub fn spec(&self) -> String {
+        format!("{}:{:#04x}", self.byte, self.mask)
+    }
+}
+
 impl fmt::Display for Press {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "byte {} mask {:#04x}", self.byte, self.mask)
@@ -261,7 +268,78 @@ pub fn watch(id: &str) -> io::Result<()> {
     }
 }
 
-fn split(id: &str) -> io::Result<(u16, u16)> {
+/// The game controllers attached now (HID usage joystick or gamepad): vid, pid,
+/// product name. One entry per pad, though a pad may expose several interfaces.
+pub fn gamepads() -> io::Result<Vec<(u16, u16, String)>> {
+    let api = HidApi::new().map_err(|err| io::Error::other(err.to_string()))?;
+    let mut found: Vec<(u16, u16, String)> = Vec::new();
+    for device in api.device_list() {
+        if device.usage_page() == 1 && matches!(device.usage(), 4 | 5) {
+            let entry = (device.vendor_id(), device.product_id(), device.product_string().unwrap_or("?").to_string());
+            if !found.iter().any(|(vid, pid, _)| (*vid, *pid) == (entry.0, entry.1)) {
+                found.push(entry);
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// Learn a button on any HID pad: hands off for a moment while the bytes that
+/// move on their own (counters, axes, IMU) are found, then the first bit that
+/// goes down in a still byte is the button, as `byte:mask` for `press`. Gives up
+/// after `wait`. `status` is told what to ask the player for.
+pub fn learn(vid: u16, pid: u16, wait: Duration, status: impl Fn(&str)) -> io::Result<Press> {
+    let device = open(vid, pid)?;
+    status("hands off the controller...");
+    let mut churn = [0u32; REPORT];
+    let mut previous: Option<Vec<u8>> = None;
+    let mut buffer = [0u8; REPORT];
+    let since = Instant::now();
+    let mut asked = false;
+    loop {
+        let read = device
+            .read_timeout(&mut buffer, 100)
+            .map_err(|err| io::Error::other(err.to_string()))?;
+        let learning = since.elapsed() < CALIBRATE;
+        if !learning && !asked {
+            asked = true;
+            status("now press the button you want to talk with");
+        }
+        if !learning && since.elapsed() > CALIBRATE + wait {
+            return Err(io::Error::other("no button press seen"));
+        }
+        if read == 0 {
+            continue;
+        }
+        let current = &buffer[..read];
+        if let Some(last) = &previous {
+            for (index, (before, after)) in last.iter().zip(current).enumerate() {
+                let flipped = before ^ after;
+                if flipped == 0 {
+                    continue;
+                }
+                if learning {
+                    churn[index] += 1;
+                    continue;
+                }
+                if churn[index] >= RESTLESS {
+                    continue;
+                }
+                // a button going down: the lowest bit that turned on
+                let pressed = flipped & after;
+                if pressed != 0 {
+                    let mask = pressed & pressed.wrapping_neg();
+                    return Ok(Press { byte: index, mask });
+                }
+            }
+        }
+        previous = Some(current.to_vec());
+        thread::sleep(POLL);
+    }
+}
+
+/// `vid:pid` as numbers, like `054c:0ce6`.
+pub fn split(id: &str) -> io::Result<(u16, u16)> {
     let (vid, pid) = id
         .split_once(':')
         .ok_or_else(|| io::Error::other("expected vid:pid, like 054c:0ce6"))?;

@@ -10,6 +10,7 @@ mod modules;
 
 use wow_companion_pad as pad;
 use wow_companion_voice as voice;
+use wow_companion_settings::Settings;
 
 use std::{
     env, fs, io,
@@ -101,8 +102,21 @@ fn main() {
         [command, addons, spoken] if command == "ask" => {
             ask(Path::new(addons), &mut agent::Session::default(), spoken, false).map(|_| ())
         }
+        // everything from this PC's settings file (the setup window writes it)
+        [command] if command == "run" => {
+            let settings = Settings::load();
+            match (settings.get("addons"), settings.get("model")) {
+                (Some(addons), Some(model)) => run(Path::new(addons), Path::new(model), &settings.options()),
+                _ => Err(io::Error::other(
+                    "no AddOns folder or Whisper model set: run wow-companion-setup, or give `run <AddOns> <model>`",
+                )),
+            }
+        }
+        // options given here win over the settings file's (the first one found counts)
         [command, addons, model, options @ ..] if command == "run" => {
-            run(Path::new(addons), Path::new(model), options)
+            let mut all = options.to_vec();
+            all.extend(Settings::load().options());
+            run(Path::new(addons), Path::new(model), &all)
         }
         [command, addons] if command == "bridge" => bridge(Path::new(addons)),
         [command, addons, out] if command == "api" => pull(Path::new(addons), "api", Path::new(out)),
@@ -128,6 +142,10 @@ fn main() {
         [command] if command == "reconnect" => voice::reconnect(),
         // every link of the chain, checked: is it broken, and where
         [command, addons] if command == "doctor" => doctor::run(Path::new(addons)),
+        [command] if command == "doctor" => match Settings::load().get("addons") {
+            Some(addons) => doctor::run(Path::new(addons)),
+            None => Err(io::Error::other("no AddOns folder set: run wow-companion-setup, or give `doctor <AddOns>`")),
+        },
         [command, id] if command == "pads" => pad::watch(id),
         [command] if command == "mics" => voice::microphones(),
         [command] if command == "speakers" => voice::speakers(),

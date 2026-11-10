@@ -223,7 +223,11 @@ pub fn listen(
         .iter()
         .map(|(role, name)| pad::press(name).map(|press| (*role, press)))
         .collect::<io::Result<_>>()?;
-    let (vid, pid) = DEFAULT_PAD;
+    // the pad: `pad=vid:pid` (the setup window learns it), else this setup's own
+    let (vid, pid) = match option(options, "pad") {
+        Some(id) => pad::split(id)?,
+        None => DEFAULT_PAD,
+    };
     let wanted_mic = option(options, "mic");
     // Neither has to be there at startup: the model loads either way, and each device
     // is picked up when it appears. A mistyped `mic=` looks exactly like an unplugged
