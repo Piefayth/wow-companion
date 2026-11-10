@@ -150,14 +150,12 @@ local function buildLog()
 	-- Marking may not be enough: "focus interface" cycles registered UI panels, and
 	-- a frame the addon merely shows is not one. Registering here is cheap to undo
 	-- if it turns out to be the wrong lever.
-	if UIPanelWindows then
-		UIPanelWindows["WowCompanionLog"] = {
-			area = "center",
-			pushable = 0,
-			whileDead = 1,
-			allowOtherPanels = 1,
-		}
-	end
+	-- Not registered in UIPanelWindows, and not shown with ShowUIPanel: a UI panel
+	-- puts the gamepad UI into panel mode (FrameControlsManager's fallthrough
+	-- catcher), which takes the d-pad, face buttons and triggers away from the bars
+	-- for as long as it is open, and a plain Hide never tells it the panel closed.
+	-- Measured: with the window up, PAD1-4 and the d-pad were bound to a blank
+	-- click and the form wheel would not open.
 
 	frame:SetResizable(true)
 	if frame.SetResizeBounds then
@@ -179,15 +177,8 @@ local function logFrame()
 	return logWindow
 end
 
--- Shown through the panel system when it is available, so the frame is a UI panel
--- the gamepad's focus cycle can find, rather than just a frame we made visible.
+-- A plain Show, never ShowUIPanel: see buildLog for why the panel system is out.
 local function reveal(frame)
-	if ShowUIPanel and UIPanelWindows and UIPanelWindows["WowCompanionLog"] then
-		local shown = pcall(ShowUIPanel, frame)
-		if shown and frame:IsShown() then
-			return
-		end
-	end
 	frame:Show()
 end
 

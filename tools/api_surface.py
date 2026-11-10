@@ -32,8 +32,10 @@ TIERS = [
     ("nocombat", "Callable, but only out of combat (InCombatLockdown() false)."),
     ("restricted", "Flagged HasRestrictions: some contexts refuse it, and the docs do not say which. Read Blizzard's callers first; test once, out of combat."),
     ("secret", "Callable, but its results can come back as secret values (in combat, encounters, PvP, restricted units): opaque to addon code, so no comparing, maths or string work on them; they can only be handed to display widgets."),
-    ("precondition", "Callable once its data exists (Requires...: friend list, clubs, a valid slot, a loaded cvar)."),
-    ("free", "No documented condition. Still never call blind: one such read crashed the client in C."),
+    ("precondition", "Callable once its situation holds: its data loaded (Requires...: friend list, clubs, a valid slot, a cvar), or, per the wiki, outside instances (noinstance) or in a group (grouponly)."),
+    ("read", "Reads game state, no documented condition, and Blizzard's Forever UI calls it: the safe, well-trodden part. Still never call in bulk: one read crashed the client in C."),
+    ("change", "Changes game state (Set, Add, Use, Buy, Post, Delete...), no documented condition, and Blizzard's Forever UI calls it. Usually needs a context the docs omit (a vendor, the auction house, a mailbox open). Read how Blizzard calls it first."),
+    ("dormant", "No Blizzard code that loads in Forever calls it. Either the feature is absent here (garrisons, delves, housing), or Blizzard does the same job with another function (it lists your auctions with GetOwnedAuctionInfo, not GetOwnedAuctions): use the one Blizzard calls. Also deprecated ones."),
     ("blizzard-lua", "Not engine API: a Lua function Blizzard's own interface defines (docs/wow-ui-source). Callable, but it then runs as your code, tainted. Harmless for pure helpers (MinutesToTime); for anything that shows, hides, moves or sets Blizzard's frames it is the taint that broke A and B. Read its source first."),
     ("unknown", "Undocumented by the client and untagged by the wiki: nothing says. Blizzard's own use, if any, is the evidence."),
 ]
@@ -86,13 +88,48 @@ def signatures():
     return out
 
 
+# Forever's internal game type is "camelot": Blizzard_Gamepad, its signature UI,
+# loads only there. "mainline" includes it (the garrison UI has to exclude
+# camelot explicitly), while standard, plunderstorm, cata, mists and the classic
+# flavours are other games. Inferred from the manifests, not measured.
+FOREVER_TYPES = {"mainline", "camelot"}
+OTHER_FLAVOURS = {"classic", "vanilla", "tbc", "wrath", "cata", "mists", "glue", "plunderstorm", "standard"}
+
+
+def loads_in_forever(addon_dir):
+    """does this Blizzard addon's manifest load in camelot?"""
+    tocs = [name for name in os.listdir(addon_dir) if name.lower().endswith(".toc")]
+    if not tocs:
+        return False
+    for toc in tocs:
+        text = read(os.path.join(addon_dir, toc))
+        allow = re.search(r"^## AllowLoadGameType:\s*(.+)$", text, re.M)
+        exclude = re.search(r"^## ExcludeLoadGameType:\s*(.+)$", text, re.M)
+        allowed = {part.strip().lower() for part in allow.group(1).split(",")} if allow else None
+        excluded = {part.strip().lower() for part in exclude.group(1).split(",")} if exclude else set()
+        if "camelot" in excluded:
+            continue
+        if allowed is None or allowed & FOREVER_TYPES:
+            return True
+    return False
+
+
+def live_file(path):
+    """a file inside a loading addon that is not another flavour's override"""
+    parts = {part.lower() for part in re.split(r"[\\/]", path)}
+    return not (parts & OTHER_FLAVOURS)
+
+
 def blizzard_uses():
-    """identifier -> how many times Blizzard's UI code mentions it, and the set of
-    names Blizzard's Lua itself defines"""
-    counts = collections.Counter()
-    defined = set()
-    definition = re.compile(r"^\s*(?:local\s+)?function\s+([A-Za-z_][\w.:]*)\s*\(|^\s*([A-Za-z_]\w*)\s*=\s*(?:function|[A-Za-z_][\w.:]*\s*;?\s*$)", re.M)
+    """identifier -> mentions in all of Blizzard's UI code, mentions in the code
+    that loads in Forever, and the names Blizzard's Lua itself defines"""
     source = os.path.join(DOCS, "wow-ui-source")
+    counts = collections.Counter()
+    live = collections.Counter()
+    defined = set()
+    addons = os.path.join(source, "Interface", "AddOns")
+    loading = {name for name in os.listdir(addons) if loads_in_forever(os.path.join(addons, name))}
+    definition = re.compile(r"^\s*(?:local\s+)?function\s+([A-Za-z_][\w.:]*)\s*\(|^\s*([A-Za-z_]\w*)\s*=\s*(?:function|[A-Za-z_][\w.:]*\s*;?\s*$)", re.M)
     token = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?")
     for folder, _, files in os.walk(source):
         if "APIDocumentationGenerated" in folder:
@@ -101,10 +138,14 @@ def blizzard_uses():
             if name.endswith(".lua"):
                 with open(os.path.join(folder, name), encoding="utf-8", errors="replace") as handle:
                     text = handle.read()
-                    counts.update(token.findall(text))
+                    found = token.findall(text)
+                    counts.update(found)
+                    relative = os.path.relpath(os.path.join(folder, name), addons)
+                    if relative.split(os.sep)[0] in loading and live_file(relative):
+                        live.update(found)
                     for one, two in definition.findall(text):
                         defined.add((one or two).replace(":", "."))
-    return counts, defined
+    return counts, live, defined
 
 
 def measured():
@@ -130,9 +171,29 @@ floor ceil abs exp log log10 max min mod random fastrandom time frexp ldexp deg 
 strbyte strchar strfind strlen strlower strmatch strrep strrev strsub strupper format
 gmatch gsub tinsert tremove sort wipe foreach foreachi getn""".split())
 
+# Verbs that change something: the game, the server, the UI or the player's
+# stuff. Anything else (Get, Is, Calculate, Make a key...) is taken as a read.
+CHANGE_VERBS = set("""Set Add Remove Delete Use Buy Sell Post Place Cancel Confirm Start Stop
+Send Request Query Refresh Close Open Accept Decline Clear Create Edit Pickup Learn Unlearn
+Equip Unequip Leave Join Invite Uninvite Kick Toggle Save Load Reset Apply Enable Disable
+Destroy Repair Split Swap Move Drop Release Repop Retrieve Claim Complete Abandon Select
+Click Activate Deactivate Show Hide Track Untrack Mark Report Register Unregister Ignore
+Unignore Mute Unmute Collect Purchase Bid Restore Upgrade Craft Recraft Train Rename
+Commit Respond Reply Leave Promote Demote Assign Convert Withdraw Deposit Take Give Send
+Initiate Return Dismiss Summon Spend Pay Bind Unbind Expand Collapse Sort Fire Do Play
+Mount Dismount Logout Quit Accept Ack Acknowledge Submit Vote Roll Pass Loot Interact
+Teleport Travel Queue Dequeue Lock Unlock Tag Untag Favorite Unfavorite Pin Unpin""".split())
+
+
+def reads(name):
+    leaf = name.split(".")[-1]
+    if leaf[:1].islower() or name in LUA:
+        return True
+    verb = re.match(r"[A-Z][a-z]*", leaf)
+    return not (verb and verb.group(0) in CHANGE_VERBS)
+
+
 def tier(name, flags, tags):
-    if name in LUA:
-        return "free"
     # our own measurement beats every other source
     if "protected" in ours.get(name, ""):
         return "protected"
@@ -142,15 +203,19 @@ def tier(name, flags, tags):
         return "hardware"
     if "nocombat" in tags:
         return "nocombat"
+    if "deprecated" in tags:
+        return "dormant"
     if flags.get("HasRestrictions") == "true":
         return "restricted"
     if any(key.startswith("SecretWhen") or key in ("SecretReturns", "SecretInChatMessagingLockdown", "SecretInActivePvPMatch") for key in flags):
         return "secret"
-    if any(key.startswith("Requires") or key.startswith("Require") for key in flags):
+    if any(key.startswith("Requires") or key.startswith("Require") for key in flags) or tags & {"noinstance", "grouponly"}:
         return "precondition"
     # documented, or on the wiki's list: something vouches for it existing as an API
-    if flags or name in documented_names or name in wiki:
-        return "free"
+    if flags or name in documented_names or name in wiki or name in LUA:
+        if forever_uses.get(name, 0) == 0 and name not in LUA:
+            return "dormant"
+        return "read" if reads(name) else "change"
     if name in blizzard_defined:
         return "blizzard-lua"
     return "unknown"
@@ -163,7 +228,7 @@ names = [name for name in names if name not in ("World", "of", "Warcraft", "buil
 sigs = signatures()
 documented_names = set(sigs)
 wiki = wiki_tags()
-uses, blizzard_defined = blizzard_uses()
+uses, forever_uses, blizzard_defined = blizzard_uses()
 ours = measured()
 
 rows = []
@@ -183,12 +248,13 @@ for name in sorted(set(names)):
         "conditions": " ".join(conditions),
         "secret_args": secret_args,
         "blizzard_uses": uses.get(name, 0),
+        "forever_uses": forever_uses.get(name, 0),
         "ours": ours.get(name, ""),
         "signature": line.split(" [")[0] if line else "",
     })
 
 with open(os.path.join(DOCS, "api-surface.tsv"), "w", encoding="utf-8", newline="\n") as out:
-    keys = ["name", "tier", "documented", "conditions", "secret_args", "blizzard_uses", "ours", "signature"]
+    keys = ["name", "tier", "documented", "conditions", "secret_args", "forever_uses", "blizzard_uses", "ours", "signature"]
     out.write("\t".join(keys) + "\n")
     for row in rows:
         out.write("\t".join(str(row[key]) for key in keys) + "\n")
@@ -199,7 +265,7 @@ namespace = collections.defaultdict(collections.Counter)
 for row in rows:
     space = row["name"].split(".")[0] if "." in row["name"] else "(global)"
     namespace[space][row["tier"]] += 1
-used = sum(1 for row in rows if row["blizzard_uses"] > 0)
+used = sum(1 for row in rows if row["forever_uses"] > 0)
 measured_rows = [row for row in rows if row["ours"]]
 
 md = []
@@ -209,7 +275,7 @@ md.append("Generated by `tools/api_surface.py`; do not edit by hand. Every name 
 md.append(f"**{len(rows):,} names** exist in this client (1.60.1.70862). "
           f"{len(documented_names):,} have a signature in the client's own docs; "
           f"{sum(1 for n in names if n in wiki):,} are on the wiki's list; "
-          f"Blizzard's own UI calls {used:,} of them.\n")
+          f"Blizzard's UI code that loads in Forever calls {used:,} of them.\n")
 md.append("## The tiers\n")
 md.append("Strictest first; a name lands in the first that applies.\n")
 md.append("| Tier | Names | Terms |\n|---|---:|---|")
@@ -226,6 +292,11 @@ md.append("- **Secret values.** `SecretArguments=AllowedWhenUntainted` (most fun
           "errors. `AllowedWhenTainted` functions accept them from anyone; `NotAllowed` from "
           "no one. Test with `issecretvalue(v)` / `canaccessvalue(v)` before using a result "
           "that might be secret.\n")
+md.append("- **Wiki tags** (warcraft.wiki.gg, retail-era): `protected` only secure code; "
+          "`hwevent` needs keyboard/mouse/pad input; `nocombat` not in combat; `noscript` not "
+          "from `/script` in chat, which addon code (our `lua` steps, our addons) is not; "
+          "`noinstance` not in dungeons or raids; `deprecated` probably non-functional; "
+          "`framexml` defined in Blizzard's Lua.\n")
 md.append("- **This project's own terms**, on top of the client's: configuration, not play; "
           "out of combat; chat placed for the player to send, never sent; nothing that "
           "deletes items, trades, spends gold or leaves groups (the Lua sandbox refuses these "
