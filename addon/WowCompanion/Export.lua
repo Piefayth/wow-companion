@@ -620,7 +620,9 @@ local function exportContext()
 	for _, name in ipairs(stored) do
 		if all[name].disk then
 			local _, lines = tostring(all[name].code):gsub(newline, "")
-			line(("%s: modules/%s.lua (%d lines)"):format(name, name, lines))
+			local m = WC.Get and WC.Get(name)
+			local needs = m and m.missing and (", needs " .. table.concat(m.missing, ", ")) or ""
+			line(("%s: modules/%s.lua (%d lines%s)"):format(name, name, lines, needs))
 		else
 			line(name .. ": (only in the save file, not in modules/ yet)")
 			line("    " .. (tostring(all[name].code):gsub(newline, newline .. "    ")))

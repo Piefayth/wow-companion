@@ -10,6 +10,8 @@
 Engine.lua
 Providers\Price.lua
 Providers\Nav.lua
+Providers\Gear.lua
+Providers\ItemSource.lua
 Style.lua
 Companion.lua
 Sandbox.lua

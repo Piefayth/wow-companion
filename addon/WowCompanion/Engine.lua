@@ -106,6 +106,20 @@ do
 		end
 		local function go()
 			if m.enabled or m.retired then return end
+			-- wants = { "nav" }: say what is missing instead of failing quietly;
+			-- the module still runs (it may do less), and WC.Use answers nil
+			m.missing = nil
+			for _, cap in ipairs(m.wants or {}) do
+				if not WC.Use(cap) then
+					m.missing = m.missing or {}
+					m.missing[#m.missing + 1] = cap
+				end
+			end
+			if m.missing then
+				local needs = {}
+				for _, cap in ipairs(m.missing) do needs[#needs + 1] = WC.CapabilityNeeds[cap] or ("a provider of " .. cap) end
+				pcall(WC.Board.Post, "", ("%s needs %s"):format(m.name, table.concat(needs, " and ")))
+			end
 			m.enabled = true
 			if m.Enable then
 				local ok, err = pcall(m.Enable, m)
@@ -150,7 +164,9 @@ do
 	-- name, enabled, for /wc and the agents
 	function WC.List()
 		local out = {}
-		for _, name in ipairs(order) do out[#out + 1] = { name = name, enabled = mods[name].enabled and true or false } end
+		for _, name in ipairs(order) do
+			out[#out + 1] = { name = name, enabled = mods[name].enabled and true or false, missing = mods[name].missing }
+		end
 		return out
 	end
 
@@ -161,6 +177,10 @@ do
 	--   nav:   aim(map, x, y, label) -> true | nil (x, y the 0-100 coordinates
 	--          players quote), nearest(kind) -> place { name, map, x, y }, seconds | nil,
 	--          clear()
+	--   gear:  slots(), upgrades(slotName, n)          (Providers/Gear.lua)
+	--   itemSource: sources(itemID), npcName(id), questName(id) (Providers/ItemSource.lua)
+	-- A module may declare WC.Module("Name", { wants = { "nav" } }): when nothing
+	-- provides one, the board says what it needs, and WC.List() shows it.
 	-- A provider is one file in Providers/ (WC.Provide below); one tied to an
 	-- addon counts only while that addon is loaded, checked at each call, so the
 	-- load order between us and it never matters. Every call into the other addon
@@ -173,6 +193,13 @@ do
 	-- Best first: WC.Settings("Capabilities")[cap] when it names a loaded
 	-- provider, then rank (higher first). Built-ins rank 0.
 	local providers = {}            -- capability -> { { name, impl, addon, rank } }
+	-- what to tell the player when a module wants a capability nothing provides
+	WC.CapabilityNeeds = {
+		price = "a price addon (such as Auctionator)",
+		nav = "a navigation addon (such as Polestar)",
+		gear = "a gear addon (such as GearQuest Forever)",
+		itemSource = "an item database addon (such as Polestar)",
+	}
 	function WC.Provide(cap, name, impl, opts)
 		opts = opts or {}
 		local list = providers[cap] or {}
