@@ -35,11 +35,26 @@ yes; don't reinvent what Claude Code has.
   so the CUDA build is not invalidated by edits elsewhere.
 - `src/`: the helper. `main.rs` (commands, the voice loop's wiring, slots),
   `agent.rs` (the agent and its rules), `bells.rs`, `heartbeat.rs`, `doctor.rs`.
-- `addon/WowCompanion/`: the in-game half, in .toc order: `Engine.lua` (`WC`, the
-  module engine), `Style.lua` (Blizzard look, glyphs, destroy dialog), `Companion.lua`
-  (the channel, board, log, preview, export, sandbox), `Pins.lua`, `Strip.lua`,
-  `Bags.lua`, `Status.lua` (minimap button), `Modules.lua` (generated). Files share
-  nothing local: they talk through globals. `addon/WowCompanion_Wheel/`: the wheels.
+- `addon/WowCompanion/`: the in-game half, one job per file, in .toc order
+  (split 2026-11-10 so conversations stop editing the same file; a change goes in
+  the file that owns it):
+  - `Engine.lua` `WC`, the module engine. `Style.lua` Blizzard look, glyphs,
+    destroy dialog.
+  - `Companion.lua` the core: the channel (slots, bells, polling, `receive`), the
+    message handlers' dispatch, conversations and the waiting line, the offered
+    button, `/wc`, events. It publishes what the others need as `WC.Core.<name>`
+    (at the end of the file); the others hand back functions as `WC.<File>.<name>`,
+    with one-line wrappers left in Companion.lua.
+  - `Sandbox.lua` agent code (`lua`, `module` steps, the sandbox, taint measuring).
+    `Tests.lua` taint and PlaceAction tests. `Window.lua` the Companion window and
+    its tabs. `Transcript.lua` its text and the queued mark. `Board.lua` the toast
+    and agents' board. `Chat.lua` whisper lookup, send preview, item viewer.
+    `Chords.lua` name lookups, the pad, chord learning. `Probes.lua` probes and API
+    dumps. `Export.lua` the context export. `Pins.lua`, `Strip.lua`, `Bags.lua`,
+    `Status.lua` (minimap button), `Modules.lua` (generated).
+  - Files share nothing local. `tools/split_addon.py` moves a block out of
+    Companion.lua as a pure move (anchored by text, refuses if the file changes
+    under it). `addon/WowCompanion_Wheel/`: the wheels.
 - `modules/`: the agent's modules, one `<Name>.lua` each, in git. A `module` step
   writes the file (`src/modules.rs`), which regenerates the addon's `Modules.lua`
   (gitignored, reread at every /reload) and also runs it at once. The save file's
