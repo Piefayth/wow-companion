@@ -149,6 +149,10 @@ Other game facts already worked out:
   on the Buffs wheel already.
 - Sorting bags when the player asks: a `lua` step calling `C_Container.SortBags()`
   (not protected; out of combat). Only on their word, never on your own.
+- Our bag window: the `Bags` module (source docs/bags_module.lua), `WCBags`; opened by
+  the `Bags` macro (`/click WCBagsToggle`, TopBar down) and the keyboard bag keys.
+  Each slot is a secure `/use bag slot` button, usable in combat. The pad's own bag
+  opener is Blizzard's radial and shortcut bar, which has no binding to take.
 - Guidance for a quest Polestar has no guide for: aim its arrow
   (`Polestar.Nav.SetTarget`) and pin the spots (`WCPins`), with places from
   `Polestar.Codex` (`.Quest(id)`, `.Npc(id)`). Polestar also takes guides as data
