@@ -75,7 +75,8 @@ border:SetSize(53, 53)
 border:SetPoint("TOPLEFT")
 
 local function place()
-	local angle = math.rad((WowCompanionDB and WowCompanionDB.minimapAngle) or 200)
+	-- bottom-right by default: 200 degrees sat exactly under GearQuest's button
+	local angle = math.rad((WowCompanionDB and WowCompanionDB.minimapAngle) or -45)
 	local radius = (Minimap:GetWidth() / 2) + 5
 	button:ClearAllPoints()
 	button:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
