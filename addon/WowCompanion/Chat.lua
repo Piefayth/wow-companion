@@ -208,6 +208,78 @@ local PREVIEW_CHAT_TYPES = {
 	["/e"] = "EMOTE", ["/w"] = "WHISPER", ["/r"] = "WHISPER",
 	["/1"] = "CHANNEL1", ["/2"] = "CHANNEL2", ["/4"] = "CHANNEL4",
 }
+
+-- A slash line made into what the Send press calls, or nil and why. Covers the
+-- chat channels, numbered channels, whispers, /e and the built-in emotes; any
+-- other slash command belongs in an offered button (a press step) instead.
+local CHAT_SLASH = {
+	["/g"] = "GUILD", ["/guild"] = "GUILD", ["/o"] = "OFFICER", ["/p"] = "PARTY", ["/party"] = "PARTY",
+	["/raid"] = "RAID", ["/ra"] = "RAID", ["/rw"] = "RAID_WARNING", ["/i"] = "INSTANCE_CHAT",
+	["/s"] = "SAY", ["/say"] = "SAY", ["/y"] = "YELL", ["/yell"] = "YELL",
+	["/e"] = "EMOTE", ["/em"] = "EMOTE", ["/me"] = "EMOTE", ["/emote"] = "EMOTE",
+}
+local function emoteToken(slash)
+	local want = slash:upper()
+	local i = 1
+	-- Blizzard's own list, read only (ChatFrameUtil.ImportEmoteTokensToHash)
+	while i <= (MAXEMOTEINDEX or 1000) do
+		local token = _G["EMOTE" .. i .. "_TOKEN"]
+		if not token and not _G["EMOTE" .. i .. "_CMD1"] and i > 600 then break end
+		local j = 1
+		local cmd = _G["EMOTE" .. i .. "_CMD" .. j]
+		while cmd do
+			if token and cmd:upper() == want then return token end
+			j = j + 1
+			cmd = _G["EMOTE" .. i .. "_CMD" .. j]
+		end
+		i = i + 1
+	end
+end
+local function parseLine(line)
+	local slash, rest = line:match("^(/%S+)%s*(.*)$")
+	if not slash then return nil, "not a slash line" end
+	slash = slash:lower()
+	local chatType = CHAT_SLASH[slash]
+	if chatType then
+		if rest == "" then return nil, "nothing to say" end
+		return { kind = "chat", text = rest, chatType = chatType }
+	end
+	local number = slash:match("^/(%d+)$")
+	if number then
+		if rest == "" then return nil, "nothing to say" end
+		return { kind = "chat", text = rest, chatType = "CHANNEL", target = tonumber(number) }
+	end
+	if slash == "/w" or slash == "/whisper" or slash == "/t" or slash == "/tell" then
+		-- the target can be two words (first and last name): the longest known
+		-- person the line starts with, else the first word
+		local target
+		for _, person in ipairs(people()) do
+			local t = person.target
+			if rest:sub(1, #t + 1):lower() == (t .. " "):lower() and (not target or #t > #target) then target = t end
+		end
+		target = target or rest:match("^(%S+)")
+		local text = target and rest:sub(#target + 2):gsub("^%s+", "")
+		if not target or text == "" then return nil, "no one to whisper, or nothing to say" end
+		return { kind = "chat", text = text, chatType = "WHISPER", target = target }
+	end
+	local token = emoteToken(slash)
+	if token then
+		return { kind = "emote", token = token, target = rest ~= "" and rest or nil }
+	end
+	return nil, slash .. " is not a chat line"
+end
+-- runs on the player's press only
+local function sendParsed(out)
+	if not out then return false, "nothing to send" end
+	if out.kind == "emote" then
+		-- its return reads as success in the docs and as "restricted" in
+		-- Blizzard's own caller, so it is not trusted either way
+		C_ChatInfo.PerformEmote(out.token, out.target)
+		return true
+	end
+	C_ChatInfo.SendChatMessage(out.text, out.chatType, nil, out.target)
+	return true
+end
 local preview
 local function buildPreview()
 	local made, frame = pcall(CreateFrame, "Frame", "WowCompanionPreview", UIParent, "BackdropTemplate")
@@ -236,19 +308,29 @@ local function buildPreview()
 	body:SetMaxLines(4)
 	frame.body = body
 
-	local send = CreateFrame("Button", "WowCompanionPreviewSend", frame,
-		"SecureActionButtonTemplate, UIPanelButtonTemplate")
+	-- A plain button, not a secure macro button (the player, 2026-11-10): a
+	-- secure child makes the whole window protected, so in combat it could
+	-- neither be loaded with the line nor shown. Sending chat is not protected,
+	-- only tied to a real press, so our own OnClick sends it, in combat or out.
+	local send = CreateFrame("Button", "WowCompanionPreviewSend", frame, "UIPanelButtonTemplate")
 	send:SetSize(130, 26)
 	send:SetPoint("BOTTOMRIGHT", -22, 18)
 	send:SetText("Send")
-	send:SetAttribute("type", "macro")
-	send:RegisterForClicks("AnyDown") -- the only edge that runs the macro once
-	send:SetScript("PostClick", function()
-		-- not "Sent": the press is all we know here. Macro chat is restricted only
-		-- during instance encounters (ChatConstants, RestrictedForMacroChatMessages).
-		-- A Battle.net whisper to an offline friend fails without a chat line, so
-		-- that one is reported from BN_CHAT_WHISPER_UNDELIVERABLE below.
-		toast("|cffffd100Pressed|r  check chat to see it went out", 0.8, 0.8, 0.8, 4)
+	send:RegisterForClicks("AnyDown")
+	send:SetScript("OnClick", function()
+		-- a binding left over from a fight (it cannot be cleared in combat)
+		-- must not send an old line again
+		if not frame:IsShown() then return end
+		local ok, sent, why = pcall(sendParsed, frame.out)
+		local err = ok and why or sent
+		if ok and sent then
+			-- not "Sent": the press is all we know. Chat from addons is restricted
+			-- only during instance encounters.
+			toast("|cffffd100Pressed|r  check chat to see it went out", 0.8, 0.8, 0.8, 4)
+		else
+			toast("|cffff7777Not sent|r: " .. tostring(err), 1, 0.6, 0.6, 8)
+			remember("error", "The send preview could not send that: " .. tostring(err))
+		end
 		frame:Hide()
 	end)
 	frame.send = send
@@ -258,8 +340,9 @@ local function buildPreview()
 	local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	hint:SetPoint("BOTTOMLEFT", 22, 22)
 	hint:SetText("To change it: \"edit, ...\"")
+	frame.hint = hint
 
-	local cancel = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+	local cancel = CreateFrame("Button", "WowCompanionPreviewCancel", frame, "UIPanelButtonTemplate")
 	cancel:SetSize(110, 26)
 	cancel:SetPoint("RIGHT", send, "LEFT", -10, 0)
 	cancel:SetText("Don't send")
@@ -280,19 +363,55 @@ local function buildPreview()
 		UIPanelWindows["WowCompanionPreview"] = { area = "center", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
 	end
 	frame:SetScript("OnHide", function(self)
-		if GamepadMode and GamepadMode.FrameControlsManager
-			and InputUtil and InputUtil.IsGamepadUIEnabled() then
-			GamepadMode.FrameControlsManager:FrameHidden(self)
-		end
+		if not InCombatLockdown() then ClearOverrideBindings(self) end
+		WC.FrameHidden(self)
 	end)
 	return frame
 end
 
+-- The pad reaches Send without the controller's window switching (the player,
+-- 2026-11-10: the preview showed but could not be switched to). Out of combat
+-- cross sends and circle cancels, bound straight to the buttons while it is up,
+-- as the offer button and the destroy dialog do. Bindings cannot change in
+-- combat, so a fight that starts with it up keeps them (bound just before the
+-- lockdown), and one opened mid-fight is sent by a tap of the talk button,
+-- whose binding is already in place (Companion.lua's tap calls this).
+local function bindPreview(frame)
+	if InCombatLockdown() or not frame:IsShown() then return false end
+	ClearOverrideBindings(frame)
+	SetOverrideBindingClick(frame, true, "PAD1", "WowCompanionPreviewSend", "LeftButton")
+	SetOverrideBindingClick(frame, true, "PAD2", "WowCompanionPreviewCancel", "LeftButton")
+	return true
+end
+function WowCompanion_PreviewTap()
+	if not (preview and preview:IsShown()) then return false end
+	preview.send:Click()
+	return true
+end
+do
+	local w = CreateFrame("Frame")
+	w:RegisterEvent("PLAYER_REGEN_DISABLED")
+	w:RegisterEvent("PLAYER_REGEN_ENABLED")
+	w:SetScript("OnEvent", function(_, event)
+		if not preview then return end
+		if event == "PLAYER_REGEN_DISABLED" then bindPreview(preview)
+		elseif preview:IsShown() then bindPreview(preview)
+		else ClearOverrideBindings(preview) end
+	end)
+end
+
 -- line is the full slash line ("/w Name text"); heading says where it goes
+-- Works in combat: nothing in the window is secure. Returns false and why when
+-- the line is not one the Send press can send.
 local function showPreview(line, heading, shown)
-	if InCombatLockdown() then return false end -- a secure button cannot be set in combat
+	local out, why = parseLine(line or "")
+	if not out then
+		remember("error", "The send preview cannot send that line (" .. tostring(why) .. "). Ask for a button instead.")
+		return false, why
+	end
 	preview = preview or buildPreview()
-	if not preview then return false end
+	if not preview then return false, "the preview window could not be made" end
+	preview.out = out
 	preview.title:SetText(heading)
 	preview.body:SetText(shown)
 	-- in the channel's own chat colour, read from Blizzard's ChatTypeInfo (the
@@ -305,11 +424,18 @@ local function showPreview(line, heading, shown)
 	if info and info.r then r, g, b = info.r, info.g, info.b end
 	preview.title:SetTextColor(r, g, b)
 	preview.body:SetTextColor(r, g, b)
-	preview.send:SetAttribute("macrotext", line)
-	if UIPanelWindows and UIPanelWindows["WowCompanionPreview"] then
+	-- the panel manager refuses in combat (CheckProtectedFunctionsAllowed); a
+	-- plain Show still works then
+	if not InCombatLockdown() and UIPanelWindows and UIPanelWindows["WowCompanionPreview"] then
 		ShowUIPanel(preview)
 	end
 	if not preview:IsShown() then preview:Show() end
+	local glyph = WowCompanion_Glyph or function(k) return k end
+	if bindPreview(preview) then
+		preview.hint:SetText(("%s send   %s don't send   \"edit, ...\" to change"):format(glyph("PAD1"), glyph("PAD2")))
+	else
+		preview.hint:SetText(("In combat: tap %s to send   \"edit, ...\" to change"):format(glyph(WowCompanion_TalkKey or "PADSOCIAL")))
+	end
 	return true
 end
 -- Blizzard's chat prints nothing when a Battle.net whisper cannot be delivered
@@ -380,10 +506,7 @@ local function buildViewer()
 	end
 	frame:SetScript("OnHide", function(self)
 		self.tip:Hide()
-		if GamepadMode and GamepadMode.FrameControlsManager
-			and InputUtil and InputUtil.IsGamepadUIEnabled() then
-			GamepadMode.FrameControlsManager:FrameHidden(self)
-		end
+		WC.FrameHidden(self)
 	end)
 	return frame
 end

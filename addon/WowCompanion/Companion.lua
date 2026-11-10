@@ -625,6 +625,31 @@ local CHANNEL_NAMES = {
 
 -- moved to Chat.lua
 local function showPreview(...) return WC.Chat.showPreview(...) end
+-- A slash line into the send preview, a whisper's name resolved first. Returns
+-- the outcome, or nil when the line is not one for the preview.
+local function previewLine(text, heading)
+	local slash, rest = text:match("^(/%w+)%s*(.*)$")
+	if not slash then return nil end
+	local line, shown = text, rest ~= "" and rest or text
+	heading = heading or ("Send to " .. (CHANNEL_NAMES[slash] or slash))
+	if slash == "/w" or slash == "/whisper" then
+		local target, message, label = WowCompanion_ResolveWhisper(rest)
+		if not target then
+			remember("error", "Whisper not ready: " .. message .. ".")
+			return "refused: " .. message
+		end
+		line, shown = "/w " .. target .. " " .. message, message
+		if heading:sub(1, 8) == "Send to " then heading = "Whisper to " .. label end
+	end
+	if #line <= 255 and showPreview(line, heading, shown) then
+		return ("preview: %q"):format(line)
+	end
+end
+-- the agent's `send` step: a chat line for the player to send, by the preview.
+-- Not agent code, so it is not refused in combat as a lua step is.
+function handlers.send(inbox)
+	return previewLine(inbox.text or "", inbox.label) or "refused: not a line the preview can send"
+end
 function handlers.chat(inbox)
 	-- The controller's cancel unfocuses the box but keeps its text, and dictation
 	-- appends, so a discarded line would come back glued to the next one. Clearing
@@ -638,24 +663,11 @@ function handlers.chat(inbox)
 		end
 		return "refused: no chat box to clear"
 	end
-	-- a line spoken with a channel goes to the send preview, chat box or not
-	do
-		local text = inbox.text or ""
-		local slash, rest = text:match("^(/%w+)%s+(.+)")
-		if slash and inbox.raw and inbox.raw ~= text and not InCombatLockdown() then
-			local line, heading, shown = text, "Send to " .. (CHANNEL_NAMES[slash] or slash), rest
-			if slash == "/w" or slash == "/whisper" then
-				local target, message, label = WowCompanion_ResolveWhisper(rest)
-				if not target then
-					remember("error", "Whisper not ready: " .. message .. ".")
-					return "refused: " .. message
-				end
-				line, heading, shown = "/w " .. target .. " " .. message, "Whisper to " .. label, message
-			end
-			if #line <= 255 and showPreview(line, heading, shown) then
-				return ("preview: %q"):format(line)
-			end
-		end
+	-- a line spoken with a channel goes to the send preview, chat box or not,
+	-- in combat too (the preview has nothing secure in it)
+	if inbox.raw and inbox.raw ~= (inbox.text or "") then
+		local result = previewLine(inbox.text or "")
+		if result then return result end
 	end
 	-- Any text box the player put the cursor in takes dictation: the auction
 	-- house search, a mail recipient, a search field. They focused it, so setting
@@ -807,6 +819,9 @@ local function windowOpen()
 end
 local function toggleWindow()
 	local frame = logFrame()
+	-- a send preview up takes the tap first: it sends (Chat.lua; the way to
+	-- send in combat, where its own buttons cannot be bound)
+	if WowCompanion_PreviewTap and WowCompanion_PreviewTap() then return end
 	if windowOpen() then
 		WowCompanion_HideWindow()
 	elseif combatHidden then

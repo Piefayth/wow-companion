@@ -63,7 +63,7 @@ const SCHEMA: &str = r#"{
       "items": {
         "type": "object",
         "properties": {
-          "kind":  { "type": "string", "enum": ["chat", "macro", "press", "reload", "bar", "lua", "module"] },
+          "kind":  { "type": "string", "enum": ["chat", "send", "macro", "press", "reload", "bar", "lua", "module"] },
           "text":  { "type": "string" },
           "name":  { "type": "string" },
           "body":  { "type": "string" },
@@ -101,14 +101,18 @@ for the rest. At most one `press` or `reload` per answer, since only one button
 can be offered, and put it last. Each step has a `kind`:
 - `chat`: only for typing into a text box the player has open (chat, a search
   box). It does nothing when no box is open, so it is not how to send a message.
-  To send a message for them, use a `lua` step calling
-  `WowCompanion_Preview(line, heading, shownText)`: it opens the send preview, a
-  window with a Send button the player presses. `line` is the full slash line
-  (/g, /p, /raid, /i, /s, /y, /1 General, /2 Trade, /w Name); for a whisper,
-  resolve the name first with `WowCompanion_ResolveWhisper('Name message')`, which
-  returns target, message, label (or nil and why), then send '/w '..target..' '..message.
-  In Forever every character has a first and last name ('Cecil Sorrowheart'): always
-  pass both. When it returns nil, print the reason with `WowCompanion_Recent(slot, why)`
+  To send a message for them, use a `send` step: `text` is the full slash line
+  (/g, /p, /raid, /i, /s, /y, /e, /1, /2, /w Name message, or an emote such as
+  /wave or /bow Name), `label` an optional heading. It opens the send preview, a
+  window whose Send button the player presses, and it works in combat (a `lua`
+  step does not). For a whisper the addon resolves the spoken name itself
+  (friends, Battle.net friends' characters, guild, group) and, when it cannot,
+  says why in the window. In Forever every character has a first and last name
+  ('Cecil Sorrowheart'): always pass both. Any other slash command (/roll, /cast)
+  is not chat: offer it as a `press`. From agent Lua the same window is
+  `WowCompanion_Preview(line, heading, shownText)`; resolve a whisper first with
+  `WowCompanion_ResolveWhisper('Name message')` (target, message, label, or nil
+  and why; print the why with `WowCompanion_Recent(slot, why)`)
   so the player sees it, never a silent print. Use the channel they name ('say' is /s).
   A Battle.net whisper cannot be sent from a macro: whisper the character the friend
   is playing (the resolver does this), and a friend not in WoW cannot be whispered.
@@ -172,6 +176,8 @@ or shield can be worn; gear addons' off-hand picks may ignore that. A bag in the
 a spare, not an upgrade, unless a bag slot is empty. Never advise from item data
 alone. Read professions too (GetProfessions(), then GetProfessionInfo(index) for
 name and skill): a gathering tool is never junk when its profession is known.
+Another addon's state (its SavedVariables files on disk) is as of the last reload,
+not now: read what the player is doing in it live, through its API and the strip.
 Before any advice about the character, gather the facts it rests on;
 a wrong claim that they lack something is worse than asking.
 Other game facts already worked out:
@@ -676,6 +682,14 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
 fn step_inbox(command: &Value) -> io::Result<String> {
     Ok(match field(command, "kind")? {
         "chat" => crate::chat_inbox(field(command, "text")?),
+        "send" => match command.get("label").and_then(Value::as_str) {
+            Some(label) => format!(
+                "{{ kind = \"send\", text = {}, label = {} }}",
+                crate::lua_string(field(command, "text")?),
+                crate::lua_string(label)
+            ),
+            None => format!("{{ kind = \"send\", text = {} }}", crate::lua_string(field(command, "text")?)),
+        },
         "macro" => format!(
             "{{ kind = \"macro\", name = {}, body = {} }}",
             crate::lua_string(field(command, "name")?),
