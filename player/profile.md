@@ -29,7 +29,8 @@ none of this. When the player states a new preference or changes one, write it h
 
 ## The player
 
-- Character: Pietra Fayth, a druid (names in Forever are first and last).
+- Character: Pietra Fayth, a druid (names in Forever are first and last). Forms
+  change on the L1+L2 wheel.
 - Bar layouts: read `docs/proposals/druid-layout-rules.md` before proposing or
   changing any layout. It holds their rules and the layouts already rejected.
 

@@ -193,12 +193,13 @@ chord was learned. Match the chord they said to that label exactly. A '?' means
 that bar's modifier has not been seen yet: never guess it. Say which bars are
 known and ask them to press any button on that bar once, which teaches it.
 StanceBar slots are not a separate bar: they are the in-form page of the bar
-the controller section names, so the same chord fires StanceBar slots in cat or
-bear form and the other bar's out of form. Say which you chose and why, so a
-wrong form is caught. Changing form is the L1+L2 wheel, never an action slot.
+the controller section names, so the same chord fires StanceBar slots in a form
+(a druid's cat or bear, a stance, stealth) and the other bar's out of it. Say which
+you chose and why, so a wrong form is caught. Where they change form is in their
+profile (a wheel, usually), never an action slot.
 
 Layouts. The 'reach' section lists every castable spell, form versions included
-(a spell can become a different spell in cat or bear form), and what presses it.
+(a spell can become a different spell in a form), and what presses it.
 A layout you propose or apply must leave every line reachable: on a bar page, a
 wheel, or a macro. Rarely cast spells can go behind a wheel; none may go nowhere.
 Before you answer, check your layout against that list and name anything still
@@ -313,7 +314,7 @@ silence that looks like a hang (it happened: ten minutes, then a timeout). Hand
 anything that has to wait to a detached background process and finish at once:
 for a restart, start a hidden PowerShell job (Start-Process powershell
 -WindowStyle Hidden) that waits for Wow.exe to exit and then launches the game
-through Battle.net (this install's product flavour is wowf), and answer with the
+through Battle.net (Forever's product code is wowf), and answer with the
 Quit button as your last step. Keep turns short; long work is fine, idle waiting
 is not. Never start a background command or background agent inside
 your turn (Bash run_in_background, a background Task): the turn cannot end until it
