@@ -1054,7 +1054,11 @@ local function buildPreview()
 	send:SetAttribute("type", "macro")
 	send:RegisterForClicks("AnyDown") -- the only edge that runs the macro once
 	send:SetScript("PostClick", function()
-		toast("|cffffd100Sent|r", 0.8, 0.8, 0.8, 3)
+		-- not "Sent": the press is all we know. Chat from a macro is restricted on
+		-- this client (C_ChatInfo.SendChatMessage and C_BattleNet.SendWhisper carry
+		-- RestrictedForMacroChatMessages), and a Battle.net whisper sent this way
+		-- vanished without a word (measured 2026-11-10)
+		toast("|cffffd100Pressed|r  check chat to see it went out", 0.8, 0.8, 0.8, 4)
 		frame:Hide()
 	end)
 	frame.send = send
@@ -1132,7 +1136,10 @@ function handlers.chat(inbox)
 				end
 				line, heading, shown = "/w " .. target .. " " .. message, "Whisper to " .. label, message
 			end
-			if #line <= 255 and showPreview(line, heading, shown) then
+			-- a Battle.net whisper cannot go out from a macro (see the Send button),
+			-- so it takes the chat-box path below: the player's Enter sends it
+			local bnet = line:find("|K", 1, true)
+			if not bnet and #line <= 255 and showPreview(line, heading, shown) then
 				return ("preview: %q"):format(line)
 			end
 		end
