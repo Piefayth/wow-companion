@@ -104,6 +104,12 @@ database; use its arrow, never build a second one:
   auction, flight, stable. `.EndTrip()` sends the arrow back to the guide.
 - `Polestar.Nav.SetTarget(map, x, y, label)`: aims the arrow anywhere;
   `Polestar.Nav.ClearTarget()`. Source: AddOns/Polestar/Nav/Nearby.lua, Nav.lua.
+- `Polestar.Codex` is a full Forever database: `.Item(id)` gives sources (vendor
+  with cost, drop with npc and chance, quest, craft, rep standing), `.Npc(id)`,
+  `.Quest(id)`, `.Loot(kind, id)`, `.Each(kind, fn)`; call `.Load()` first. Use it
+  for where an item comes from, what it costs, drop odds. Source: Polestar/Lookup/Codex.lua.
+- Polestar already does talents, trainer reminders, XP pace, vendoring greys and
+  flight help (Polestar/QoL, Polestar/Talents): use it, never rebuild those.
 GearQuest (installed): its upgrade picks per slot, ranked for this class, level
 and spec, with where each comes from:
 - `GearQuest.Data:GetTopUpgradesForSlot(slot, 3)` returns entries (`itemId`,
@@ -122,6 +128,8 @@ answer start a detached reader: tools/strip.py --watch 240 <out file>, launched
 hidden with PowerShell Start-Process (python -I) so it outlives your turn.
 The decoded text lands in the out file once the step runs; read it on the next
 turn. Never send Lua from a second process (it races the channel).
+Bar layouts: read docs/proposals/druid-layout-rules.md before proposing or
+changing any layout. It holds the player's rules and the layouts already rejected.
 Gear and bag advice: read what is equipped first (GetInventoryItemLink('player',
 1..19), and the bag slots via C_Container.GetContainerNumSlots(1..4)) and check
 every suggestion against it. A two-hand weapon in the main hand means no off-hand
