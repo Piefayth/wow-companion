@@ -139,6 +139,34 @@ Install all together, one game restart, once the player's research list is done.
   1.1.2 (`gq.zip`, core + one module per class: enable only DRUID), GearedForever
   1.0.1 (`gf.zip`). Awaiting the player's picks.
 
+### Restarting the game (investigated 2026-11-10)
+
+Every attempt so far failed, and now we know why. Measured, in Battle.net's own log:
+
+| Route | Result |
+|---|---|
+| `Battle.net.exe --exec="launch wowf"` | selects Forever ("Selecting game family by id: wowf"), never presses Play |
+| `--exec="launch_uid wowf"` | selects it ("Selecting game by uid"), never presses Play |
+| `--uri="battlenet://wowf"` | selects it, never presses Play |
+| `Wow.exe` directly | asks to log in |
+| `Wow.exe -launcherlogin -uid wowf` (Battle.net's own arguments) | "unable to reconnect, please log in": the login token comes only from Battle.net's launch |
+| the Agent's local API, 127.0.0.1:1120 | 401 on every path: locked to Battle.net, and not ours to work around |
+| Battle.net's accessibility tree | not exposed (CEF renders without one), so no Play button to invoke |
+| **click Play** (Battle.net to the front, click the Forever card's Play) | **launched**, with Battle.net's `-launcherlogin -uid wowf` and the login handed over |
+
+Also: the agent's detached relaunch script died mid-wait (its log stops), most likely
+ended with the agent's turn. Anything that waits for the player belongs in the
+companion, the long-running process.
+
+The one route that works is a synthetic click, so it is a last resort with rules:
+the companion owns it (a relaunch request beside `restart.request`; the agent offers
+`/quit`), it selects Forever with `--uri="battlenet://wowf"`, finds the Play button by
+looking at the window rather than a fixed position (the first time: half-scale
+window offset 776,276, full 1552,552, new layout, Forever the first card), clicks,
+and then **must verify**: `Wow.exe` with `-launcherlogin` within 30 s, or say so in
+the window. It can break when Blizzard changes the launcher; it must never fail
+quietly. Not built yet: the player's call.
+
 ### 4. Small and open
 
 - Restarting the game: the last attempt failed; worth a look when it matters.
