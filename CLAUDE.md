@@ -150,6 +150,11 @@ goes to a detached process.
   (the bag window, 2026-11-10). `ShowUIPanel` called from a secure snippet's
   `CallMethod` tainted it too (the same night): for a window opened by a secure
   button, take the pad with our own bindings, as ImprovedForever does.
+  **Never set `useCustomNavigation` or define `FocusGamepad`/`UnfocusGamepad` on
+  our frames**: the manager reads them while switching focus, so the switch runs
+  tainted. And a window the controller manages must live in the addon's own files,
+  never in a module (modules run ForceTaint_Strong). Both measured on the bag
+  window, 2026-11-10; it now cycles focus cleanly.
 - **Look before calling.** `docs/api-surface.md` and `.tsv` give every one of the
   10,957 names a tier and its terms (protected, press only, out of combat, secret
   results in combat, read, change, dormant, Blizzard's own Lua). `docs/wow-ui-source`
