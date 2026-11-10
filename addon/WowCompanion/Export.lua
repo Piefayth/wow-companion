@@ -590,6 +590,20 @@ local function exportContext()
 		line("none")
 	end
 
+	section("capabilities")
+	line("-- what other addons (and the game alone) provide, best first: call")
+	line("-- WC.Use(name).method(...), never an integration directly (Engine.lua)")
+	local okCaps, caps = pcall(function() return WC.Capabilities and WC.Capabilities() or {} end)
+	if not okCaps then
+		line("-- could not list them: " .. tostring(caps))
+	elseif #caps == 0 then
+		line("none")
+	else
+		for _, cap in ipairs(caps) do
+			line(("%s: %s"):format(cap.name, #cap.using > 0 and table.concat(cap.using, ", ") or "nothing loaded"))
+		end
+	end
+
 	section("code runs")
 	line("-- the last runs of agent code this session and before, oldest first")
 	local runs = WowCompanionDB.runs or {}

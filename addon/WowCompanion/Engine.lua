@@ -140,6 +140,91 @@ do
 		return out
 	end
 
+	-- Capabilities (the player, 2026-11-10): other addons are factored into what
+	-- they do, so a feature works with whatever is installed. A capability is a
+	-- small fixed interface named by its job:
+	--   price: auction(itemID) -> copper per item | nil, vendor(itemID) -> copper | nil
+	--   nav:   aim(map, x, y, label) -> true | nil (x, y the 0-100 coordinates
+	--          players quote), nearest(kind) -> place { name, map, x, y }, seconds | nil,
+	--          clear()
+	-- A provider is one file in Providers/ (WC.Provide below); one tied to an
+	-- addon counts only while that addon is loaded, checked at each call, so the
+	-- load order between us and it never matters. Every call into the other addon
+	-- happens inside its provider, under pcall.
+	--
+	--   local price = WC.Use("price")    -- nil when nothing provides it
+	--   price.auction(id)                -- the first provider with an answer, best first
+	--   WC.Has("price", "auction")       -- does any loaded provider do this one?
+	--   WC.Capabilities()                -- { { name, using = { provider names, best first } } }
+	-- Best first: WC.Settings("Capabilities")[cap] when it names a loaded
+	-- provider, then rank (higher first). Built-ins rank 0.
+	local providers = {}            -- capability -> { { name, impl, addon, rank } }
+	function WC.Provide(cap, name, impl, opts)
+		opts = opts or {}
+		local list = providers[cap] or {}
+		providers[cap] = list
+		for i = #list, 1, -1 do
+			if list[i].name == name then table.remove(list, i) end
+		end
+		list[#list + 1] = { name = name, impl = impl, addon = opts.addon, rank = opts.rank or 0 }
+	end
+	local function live(p)
+		if not p.addon then return true end
+		local ok, loaded = pcall(C_AddOns.IsAddOnLoaded, p.addon)
+		return ok and loaded and true or false
+	end
+	local function ranked(cap)
+		local out = {}
+		for _, p in ipairs(providers[cap] or {}) do
+			if live(p) then out[#out + 1] = p end
+		end
+		-- read, never created here: this may run before the save file is loaded
+		local saved = WowCompanionDB and WowCompanionDB.mods and WowCompanionDB.mods.Capabilities
+		local chosen = saved and saved[cap]
+		table.sort(out, function(a, b)
+			if (a.name == chosen) ~= (b.name == chosen) then return a.name == chosen end
+			return a.rank > b.rank
+		end)
+		return out
+	end
+	function WC.Has(cap, method)
+		for _, p in ipairs(ranked(cap)) do
+			if type(p.impl[method]) == "function" then return p.name end
+		end
+	end
+	-- each method asks the providers in order and returns the first answer;
+	-- a provider that errors or has no answer passes to the next
+	local facades = setmetatable({}, { __mode = "k" })
+	function WC.Use(cap)
+		if #ranked(cap) == 0 then return nil end
+		if not facades[cap] then
+			facades[cap] = setmetatable({}, { __index = function(_, method)
+				return function(...)
+					for _, p in ipairs(ranked(cap)) do
+						local fn = p.impl[method]
+						if type(fn) == "function" then
+							local r = { pcall(fn, ...) }
+							if r[1] and r[2] ~= nil then return select(2, unpack(r)) end
+						end
+					end
+				end
+			end })
+		end
+		return facades[cap]
+	end
+	function WC.Capabilities()
+		local names = {}
+		for cap in pairs(providers) do names[#names + 1] = cap end
+		table.sort(names)
+		local out = {}
+		for _, cap in ipairs(names) do
+			local using = {}
+			for _, p in ipairs(ranked(cap)) do using[#using + 1] = p.name end
+			out[#out + 1] = { name = cap, using = using }
+		end
+		return out
+	end
+
 	-- one place for what agent code may call; the old global names stay
 	-- (looked up at call time: some are defined further down this file)
 	WC.Board = { Post = function(...) return WowCompanion_Recent(...) end }

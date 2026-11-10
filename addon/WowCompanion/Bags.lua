@@ -251,21 +251,24 @@ local function build()
 		local id = C_Container.GetContainerItemID(m.bag, m.slot)
 		if id then
 			tip:SetBagItem(m.bag, m.slot)
-			-- Auctionator adds prices to GameTooltip only; ours asks its API
-			local A = Auctionator and Auctionator.API and Auctionator.API.v1
-			if A then
+			-- price addons add to GameTooltip only; ours asks the price capability
+			-- (Engine.lua: an auction addon's provider, else the game's vendor price)
+			local price = WC.Use and WC.Use("price")
+			if price then
 				local info = C_Container.GetContainerItemInfo(m.bag, m.slot)
 				local n = info and info.stackCount or 1
-				local ok, ah = pcall(A.GetAuctionPriceByItemID, "WowCompanion", id)
-				local ok2, vendor = pcall(A.GetVendorPriceByItemID, "WowCompanion", id)
+				local vendor = price.vendor(id)
 				local function money(c) return GetMoneyString and GetMoneyString(c, true) or tostring(c) end
-				if ok2 and vendor and vendor > 0 then
+				if vendor and vendor > 0 then
 					tip:AddDoubleLine("Vendor" .. (n > 1 and (" x" .. n) or ""), money(vendor * n), 1, 0.82, 0, 1, 1, 1)
 				end
-				if ok and ah and ah > 0 then
-					tip:AddDoubleLine("Auction" .. (n > 1 and (" x" .. n) or ""), money(ah * n), 1, 0.82, 0, 1, 1, 1)
-				elseif ok then
-					tip:AddLine("Auction: not seen in your scans", 0.6, 0.6, 0.6)
+				if WC.Has("price", "auction") then
+					local ah = price.auction(id)
+					if ah and ah > 0 then
+						tip:AddDoubleLine("Auction" .. (n > 1 and (" x" .. n) or ""), money(ah * n), 1, 0.82, 0, 1, 1, 1)
+					else
+						tip:AddLine("Auction: not seen in your scans", 0.6, 0.6, 0.6)
+					end
 				end
 			end
 			tip:Show()

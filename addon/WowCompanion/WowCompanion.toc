@@ -8,6 +8,8 @@
 ## AddonCompartmentFuncOnLeave: WowCompanion_OnCompartmentLeave
 
 Engine.lua
+Providers\Price.lua
+Providers\Nav.lua
 Style.lua
 Companion.lua
 Sandbox.lua

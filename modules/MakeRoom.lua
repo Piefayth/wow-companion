@@ -1,14 +1,16 @@
 -- Full bags while looting (WC module): names the cheapest thing to drop for the
 -- best thing on the corpse, on the board. Sends BAGS_FULL(worst, top).
 local M = WC.Module('MakeRoom')
-local A = Auctionator and Auctionator.API and Auctionator.API.v1
 -- never suggested: hearthstone and profession tools
 local KEEP = { [6948] = true, [7005] = true, [2901] = true, [5956] = true, [6256] = true, [6365] = true, [12225] = true, [6219] = true, [10498] = true, [7189] = true }
+-- worth: the better of a vendor's pay and an auction after the 5% cut, from the
+-- price capability (Engine.lua; an auction addon's provider when one is loaded)
 local function each(id)
-  local sell = select(11, C_Item.GetItemInfo(id)) or 0
-  local ah = 0
-  if A then local ok, p = pcall(A.GetAuctionPriceByItemID, 'WowCompanion', id) if ok and p then ah = math.floor(p * 0.95) end end
-  return math.max(sell, ah)
+  local price = WC.Use('price')
+  if not price then return select(11, C_Item.GetItemInfo(id)) or 0 end
+  local sell = price.vendor(id) or 0
+  local ah = price.auction(id)
+  return math.max(sell, ah and math.floor(ah * 0.95) or 0)
 end
 local function money(c) return GetCoinText and GetCoinText(c, ' ') or (c .. 'c') end
 local function cheapest()
