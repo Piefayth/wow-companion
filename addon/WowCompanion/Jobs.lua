@@ -248,7 +248,7 @@ refresh = function()
 end
 
 WC.Jobs = {}
-WC.Jobs.Refresh = function() pcall(refresh) end
+WC.Jobs.Refresh = function() pcall(refresh) if WC.Jobs.Chain then pcall(WC.Jobs.Chain) end end
 
 -- a log line from the companion: a request's own line carries `req`
 function WC.Jobs.Note(inbox)
@@ -376,3 +376,48 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		bound = false
 	end
 end)
+
+-- The cursor and the icon column (the player, 2026-11-10: from the scroll
+-- arrow, up did not reach Cancel). SmartNavigation picks the nearest button in
+-- the direction pressed, and the arrows sit a little right of the icons, so up
+-- from the bottom arrow went to the top arrow. Static jump overrides chain them:
+-- top arrow, the icons top to bottom, bottom arrow. Blizzard's API for this,
+-- set only out of combat (Utility.lua: "may be set without causing taint").
+local chained = ""
+function WC.Jobs.Chain()
+	if InCombatLockdown() or not SmartNavigation_AddJumpNavigationOverride then return end
+	local frame = core.logFrame and core.logFrame()
+	if not frame or not frame.chatParts then return end
+	local arrows = {}
+	for _, part in ipairs(frame.chatParts) do
+		if part.GetObjectType and part:GetObjectType() == "Button" then arrows[#arrows + 1] = part end
+	end
+	if #arrows < 2 then return end
+	table.sort(arrows, function(a, b) return (a:GetTop() or 0) > (b:GetTop() or 0) end)
+	local top, bottom = arrows[1], arrows[#arrows]
+	local icons = {}
+	for _, b in ipairs(made) do
+		if b:IsVisible() and b:GetTop() then icons[#icons + 1] = b end
+	end
+	table.sort(icons, function(a, b) return a:GetTop() > b:GetTop() end)
+	local key = {}
+	for i, b in ipairs(icons) do key[i] = tostring(b) .. math.floor(b:GetTop()) end
+	key = table.concat(key, ",")
+	if key == chained then return end
+	chained = key
+	local D = SMART_NAV_INPUT_DIRECTION
+	local column = { top }
+	for _, b in ipairs(icons) do column[#column + 1] = b end
+	column[#column + 1] = bottom
+	for i, b in ipairs(column) do
+		pcall(SmartNavigation_ClearJumpNavigationOverridesInDirection, b, D.UP)
+		pcall(SmartNavigation_ClearJumpNavigationOverridesInDirection, b, D.DOWN)
+		if i > 1 then pcall(SmartNavigation_AddJumpNavigationOverride, b, D.UP, column[i - 1]) end
+		if i < #column then pcall(SmartNavigation_AddJumpNavigationOverride, b, D.DOWN, column[i + 1]) end
+	end
+	-- nothing between the arrows: let the cursor choose as before
+	if #icons == 0 then
+		pcall(SmartNavigation_ClearJumpNavigationOverridesInDirection, top, D.DOWN)
+		pcall(SmartNavigation_ClearJumpNavigationOverridesInDirection, bottom, D.UP)
+	end
+end
