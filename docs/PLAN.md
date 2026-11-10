@@ -119,6 +119,15 @@ the player's rule). Bytes in RGB per cell, corner markers and a header with
 length and checksum, compressed payloads paged across shots; decoded by code on
 the PC at full resolution. Built beside the PC-to-game channel, never touching it.
 
+### Agent features the player picked (2026-11-10)
+
+- **Bag sorting** (a button; the sort itself is the game's own `C_Container.SortBags`).
+- **Missing buff alerts**: Thorns and Mark of the Wild off you (and a party member)
+  out of combat, as a small Blizzard-style reminder, one press to the Buffs wheel.
+- **Guidance on demand for any quest**, not only Polestar's route: read the quest
+  log over the data strip, look objectives up in Polestar's Codex (NPCs, objects,
+  coordinates, drop rates), pin and arrow them.
+
 ### Later: a custom look (the player, 2026-11-09)
 
 A separate addon (`WowCompanion_Look`), independent of the AI pipeline: one theme
