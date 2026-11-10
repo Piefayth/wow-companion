@@ -337,7 +337,7 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
     if shown {
         send_inbox(addons, "{ kind = \"progress\", text = \"thinking\" }")?;
     } else {
-        send_inbox(addons, &log_inbox("you", spoken, Some("thinking"), None))?;
+        send_inbox(addons, &log_inbox_in(Some(&session.slot), "you", spoken, Some("thinking"), None))?;
     }
     let answer = {
         // Progress goes to the spinner, newest only, at most every few seconds: each
@@ -391,7 +391,7 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
     } else {
         answer.say.clone()
     };
-    send_inbox(addons, &log_inbox("claude", &say, None, answer.inbox.as_deref()))?;
+    send_inbox(addons, &log_inbox_in(Some(&session.slot), "claude", &say, None, answer.inbox.as_deref()))?;
     if answer.look {
         println!("  waiting for the reload to look at the results");
     }
@@ -776,7 +776,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     // as dropped.
                     let queued = IN_FLIGHT.load(Ordering::SeqCst) > 0;
                     if queued {
-                        let line = log_inbox("you", &text, Some("waiting for the request before this one"), None);
+                        let line = log_inbox_in(Some(&slot), "you", &text, Some("waiting for the request before this one"), None);
                         let _ = courier.send(line);
                     }
                     // A second request waits on the session lock, so the
@@ -823,11 +823,20 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
 /// spliced `andThen` onto the end and dropped the comma, which the client reported as
 /// a Lua syntax error from inside a slot.
 fn log_inbox(who: &str, text: &str, pending: Option<&str>, also: Option<&str>) -> String {
+    log_inbox_in(None, who, text, pending, also)
+}
+
+/// A log line that belongs to one conversation ("" is the main one, "l2" a
+/// trigger slot), so the window files it there.
+fn log_inbox_in(slot: Option<&str>, who: &str, text: &str, pending: Option<&str>, also: Option<&str>) -> String {
     let mut fields = vec![
         "kind = \"log\"".to_string(),
         format!("who = {}", lua_string(who)),
         format!("text = {}", lua_string(text)),
     ];
+    if let Some(slot) = slot {
+        fields.push(format!("slot = {}", lua_string(slot)));
+    }
     if let Some(label) = pending {
         fields.push(format!("pending = {}", lua_string(label)));
     }

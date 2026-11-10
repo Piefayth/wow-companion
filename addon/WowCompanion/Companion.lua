@@ -387,6 +387,26 @@ local function buildTabs(frame, messages, pending)
 		if since > 1 then since = 0 refreshStatus() end
 	end)
 
+	-- the conversation picker, above the transcript (Chat tab only)
+	messages.scroll:SetPoint("TOPLEFT", 20, -72)
+	frame.convButtons = {}
+	local prevButton
+	for _, key in ipairs({ "", "l1", "l2", "r1", "r2" }) do
+		local made, b = pcall(CreateFrame, "Button", nil, frame, "UIPanelButtonTemplate")
+		if made and b then
+			b:SetSize(key == "" and 70 or 54, 22)
+			if prevButton then b:SetPoint("LEFT", prevButton, "RIGHT", 4, 0) else b:SetPoint("TOPLEFT", 20, -42) end
+			b:SetText(key == "" and "Main" or key:upper())
+			b:SetScript("OnClick", function() WowCompanion_SetConversation(key) end)
+			if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
+			frame.convButtons[key] = b
+			frame.chatParts = frame.chatParts or {}
+			table.insert(frame.chatParts, b)
+			prevButton = b
+		end
+	end
+	if frame.convButtons[""] then frame.convButtons[""]:LockHighlight() end
+
 	-- the tabs, hanging under the bottom edge like the character sheet's
 	for i, name in ipairs(TAB_NAMES) do
 		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTabButtonTemplate")
@@ -765,23 +785,58 @@ local function setPending(text)
 end
 
 -- Kept in SavedVariables, so it is written on /reload or logout like everything else.
-local function remember(who, text, continued)
+-- Conversations (the player, 2026-11-10): the talk button alone is the main one
+-- (""), and with a trigger held each of L1, L2, R1, R2 is its own. Every line
+-- remembers which it belongs to; the window shows one at a time, picked with the
+-- buttons above the transcript, and a slot with news it has not shown glows.
+local CONVERSATIONS = { "", "l1", "l2", "r1", "r2" }
+local viewSlot = ""
+local unread = {}
+local function paintConversations()
+	local frame = logWindow
+	if not (frame and frame.convButtons) then return end
+	for key, button in pairs(frame.convButtons) do
+		local label = key == "" and "Main" or key:upper()
+		if unread[key] then label = "|cff40ff40" .. label .. " *|r" end
+		button:SetText(label)
+		if key == viewSlot then button:LockHighlight() else button:UnlockHighlight() end
+	end
+end
+
+local function remember(who, text, continued, slot)
+	slot = slot or viewSlot
 	WowCompanionDB.log = WowCompanionDB.log or {}
 	local entries = WowCompanionDB.log
-	entries[#entries + 1] = { at = time(), who = who, text = text, continued = continued or nil }
+	entries[#entries + 1] = { at = time(), who = who, text = text, continued = continued or nil,
+		slot = slot ~= "" and slot or nil }
 	while #entries > LOG_KEEP do
 		table.remove(entries, 1)
 	end
-	showLine(who, text, continued, entries[#entries].at)
+	if slot == viewSlot then
+		showLine(who, text, continued, entries[#entries].at)
+	elseif not continued then
+		unread[slot] = true
+		paintConversations()
+	end
 end
 
 local function replayLog()
 	local messages = logFrame().messages
 	messages:Hold(true)
 	for _, entry in ipairs(WowCompanionDB.log or {}) do
-		showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at)
+		if (entry.slot or "") == viewSlot then
+			showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at)
+		end
 	end
 	messages:Hold(false)
+end
+
+function WowCompanion_SetConversation(slot)
+	viewSlot = slot or ""
+	unread[viewSlot] = nil
+	logFrame().messages:Clear()
+	replayLog()
+	paintConversations()
 end
 
 -- A button in the Companion window, retargeted on demand.
@@ -1336,15 +1391,22 @@ function handlers.log(inbox)
 	local lines = 0
 	-- `pending` starts the waiting line; any message without it clears it, so the
 	-- reply arriving is what stops the spinner
+	-- the conversation a line belongs to; lines that name none (chat lines,
+	-- notices) go to whichever is in view
+	local islot = inbox.slot or viewSlot
+	-- speaking into a conversation brings it up
+	if who == "you" and islot ~= viewSlot then
+		WowCompanion_SetConversation(islot)
+	end
 	setPending(inbox.pending)
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
 	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-		remember(who, line, lines > 0)
+		remember(who, line, lines > 0, islot)
 		lines = lines + 1
 	end
 	if lines == 0 then
-		remember(who, text)
+		remember(who, text, nil, islot)
 	end
 	-- reveal, not Show: ShowUIPanel returns at once for a frame already shown, so a
 	-- window opened by a plain Show never becomes a panel and the controller's
