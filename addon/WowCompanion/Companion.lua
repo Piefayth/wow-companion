@@ -1930,7 +1930,14 @@ local function poll()
 	if channel.heard > 0 then
 		local ahead = catchUpTurn
 		catchUpTurn = (catchUpTurn + 1) % (BELLS - 1)
+		channel.catchUpPolls = (channel.catchUpPolls or 0) + 1
 		safely("catch-up poll", listen, catchUpPath(waiting + ahead), function(rang)
+			if rang then
+				-- every ring, taken or not, so a catch-up that should have fired can be told apart
+				channel.catchUpRang = (channel.catchUpRang or 0) + 1
+				channel.lastCatchUpRang = ("c%d while waiting on %d (next %d) at %s"):format(
+					(waiting + ahead - 1) % BELLS + 1, waiting, nextSlot, date("%H:%M:%S"))
+			end
 			if rang and nextSlot == waiting then
 				channel.caughtUp = channel.caughtUp + 1
 				channel.lastCaughtUp = ("waiting on slot %d, took %d at %s"):format(waiting, ahead + 1, date("%H:%M:%S"))

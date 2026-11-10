@@ -189,24 +189,33 @@ fn install(addons: &Path) -> io::Result<()> {
     }
     let signals = addon.join("Signals");
     fs::create_dir_all(&signals)?;
-    // silence is a missing file (see bells.rs): clear any bell left from before
-    for bell in 1..=BELLS {
-        bells::empty_message(&signals.join(bell_name(bell)))?;
-    }
-    clear_catch_up(&signals)?;
-    for old in ["show.wav", "alive-a.wav", "alive-b.wav"] {
-        let _ = bells::silence(&signals.join(old));
+    // Install runs while the game plays (the agent installs its own changes), so it
+    // only creates what is missing. Emptying every inbox and bell here wiped
+    // messages the addon had not read yet: "Inbox.lua is empty", "slot 4 failed:
+    // nil" (2026-11-10). Bells and inboxes belong to the sender alone.
+    let missing = |path: &Path| !path.exists();
+    for bell in (1..=BELLS).flat_map(|bell| [bell_name(bell), catch_up_name(bell)]) {
+        let path = signals.join(bell);
+        if missing(&path) {
+            bells::empty_message(&path)?;
+        }
     }
     // the sound probe's controls: one that must play, one that must not
-    bells::ring_message(&signals.join("always.wav"))?;
-    bells::empty_message(&signals.join("never.wav"))?;
+    if missing(&signals.join("always.wav")) {
+        bells::ring_message(&signals.join("always.wav"))?;
+    }
+    if missing(&signals.join("never.wav")) {
+        bells::empty_message(&signals.join("never.wav"))?;
+    }
     for slot in 1..=SLOTS {
         let dir = addons.join(slot_name(slot));
         fs::create_dir_all(&dir)?;
         fs::write(dir.join(format!("{}.toc", slot_name(slot))), SLOT_TOC)?;
         fs::write(dir.join("Slot.xml"), SLOT_XML)?;
         // the client only knows files that exist at launch
-        fs::write(dir.join("Inbox.lua"), "")?;
+        if missing(&dir.join("Inbox.lua")) {
+            fs::write(dir.join("Inbox.lua"), "")?;
+        }
     }
     println!("installed {ADDON} and {SLOTS} slots into {}", addons.display());
     println!("fully restart the game so it sees the new folders");
