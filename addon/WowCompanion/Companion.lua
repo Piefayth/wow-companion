@@ -5303,7 +5303,11 @@ local function build()
 	-- It navigates itself (useCustomNavigation: the manager calls FocusGamepad /
 	-- UnfocusGamepad on us). In combat ShowUIPanel is refused, so the secure
 	-- snippet shows it plainly: usable, not in the focus cycle.
-	f.useCustomNavigation = true
+	-- No useCustomNavigation and no FocusGamepad / UnfocusGamepad here: the frame
+	-- manager reads those fields while switching focus, and a field this addon
+	-- wrote taints that switch, so the action bar's UpdateInteractIcons then calls
+	-- SetPreferredGamepadInteractTarget tainted: forbidden (2026-11-10, on L2 / R2).
+	-- The Companion window sets neither and switches cleanly.
 	if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, f) end
 	if UIPanelWindows then
 		UIPanelWindows["WCBags"] = { area = "right", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
@@ -5811,22 +5815,6 @@ local function build()
 			GamepadMode.FrameControlsManager:FrameHidden(self)
 		end
 	end)
-	-- focus moved to another window: give the d-pad and face buttons back to it;
-	-- focus came back: take them again
-	function f:UnfocusGamepad()
-		if InCombatLockdown() then return end
-		menu:Hide()
-		ClearOverrideBindings(self)
-		hl:Hide()
-		tip:Hide()
-	end
-	function f:FocusGamepad()
-		if InCombatLockdown() or not self:IsShown() then return end
-		ClearOverrideBindings(self)
-		self:Execute(self:GetAttribute("_onshow"))
-		holdBindings()
-	end
-
 	-- the keyboard's own bag key opens ours (the pad uses the macro)
 	local keys = CreateFrame("Frame", "WCBagsKeys")
 	for _, cmd in ipairs({ "TOGGLEBACKPACK", "OPENALLBAGS" }) do
