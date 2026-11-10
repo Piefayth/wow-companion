@@ -28,8 +28,17 @@ pub const DEFAULT_MODEL: &str = "opus";
 
 // Most requests are one turn. Writing Lua usually means looking a function up in
 // docs/ first, and each lookup is a turn, so leave room for a few.
-const TURNS: &str = "8";
-const TOOLS: &str = "Read,Grep,Glob";
+// addon research is a search plus several fetches (repo, owner, toc, the
+// CurseForge page), each a turn
+const TURNS: &str = "20";
+// Claude Code's own tools, not ours: the docs to look things up, and the web to
+// research addons. Fetching is pre-approved for the three places addons are
+// published and nowhere else; dontAsk refuses the rest.
+const TOOLS: &str = "Read,Grep,Glob,WebSearch,WebFetch";
+const ALLOWED: &str = "Read,Grep,Glob,WebSearch,\
+WebFetch(domain:github.com),WebFetch(domain:api.github.com),\
+WebFetch(domain:raw.githubusercontent.com),WebFetch(domain:www.curseforge.com),\
+WebFetch(domain:addons.wago.io)";
 
 const SCHEMA: &str = r#"{
   "type": "object",
@@ -41,7 +50,9 @@ const SCHEMA: &str = r#"{
       "items": {
         "type": "object",
         "properties": {
-          "kind":  { "type": "string", "enum": ["chat", "macro", "press", "reload", "bar", "lua", "module"] },
+          "kind":  { "type": "string", "enum": ["chat", "macro", "press", "reload", "bar", "lua", "module", "addon"] },
+          "action": { "type": "string", "enum": ["install", "remove", "list"] },
+          "repo":  { "type": "string" },
           "text":  { "type": "string" },
           "name":  { "type": "string" },
           "body":  { "type": "string" },
@@ -144,6 +155,21 @@ are called again with the refreshed <character> and carry on, so say in `say` wh
 you are about to check. Do not add a reload step yourself when looking. Leave
 `look` off when the answer is already complete.
 
+Addons. Installing them is painful on a controller, so they will ask you to find,
+install, update or remove addons. Research with WebSearch and WebFetch (GitHub,
+CurseForge and Wago only). Prefer the addon's own GitHub repository, and check its
+maintainer before recommending it: api.github.com/repos/OWNER/REPO and
+/users/OWNER for account age, other repositories, stars and whether it is a fork;
+recent commits; releases or tags; that its .toc lists Interface 16001, which is
+this client; and, where you can reach it, that the CurseForge or Wago page links
+to that same repository. Tell them what you found, the good and the concerning,
+in `say`, name the repository, and ask. Only after they have said yes in this
+conversation, add a step: kind `addon`, action `install`, repo OWNER/REPO. An
+update is the same install again. `remove` takes the folder or repo, and only
+removes what you installed; `list` shows those. You will see each result in your
+next message. A new addon needs a full game restart (exit and relaunch); say so,
+since you cannot do it for them.
+
 Never act for the player in combat. Writing is yours; pressing is theirs.
 
 Never act for the player. You write configuration; they press the button. Do not
@@ -157,6 +183,8 @@ pub struct Spoken {
     pub inbox: Option<String>,
     /// the agent wants to see its steps' results: call it again after the reload
     pub look: bool,
+    /// steps carried out on this machine, not in game: (action, repo or folder)
+    pub addons: Vec<(String, String)>,
 }
 
 /// One continuing conversation with the agent.
@@ -178,6 +206,8 @@ pub struct Session {
     seen: Option<String>,
     /// the context in the request now in flight, adopted once it succeeds
     offered: Option<String>,
+    /// what this machine did for the last answer (addon installs), told next time
+    pub note: Option<String>,
 }
 
 impl Session {
@@ -195,6 +225,10 @@ impl Session {
 The player said: {transcript}"
             ),
             None => format!("The player said: {transcript}"),
+        };
+        let message = match self.note.take() {
+            Some(note) => format!("<results>\n{note}\n</results>\n\n{message}"),
+            None => message,
         };
         self.offered = fresh;
         let mut claude = Command::new("claude");
@@ -214,7 +248,7 @@ The player said: {transcript}"
         claude
             .args(["--tools", TOOLS])
             // dontAsk refuses whatever is not pre-approved, read-only tools included
-            .args(["--allowedTools", TOOLS])
+            .args(["--allowedTools", ALLOWED])
             .args(["--output-format", "json"])
             .args(["--json-schema", SCHEMA])
             .args(["--model", if self.model.is_empty() { DEFAULT_MODEL } else { &self.model }])
@@ -287,7 +321,18 @@ fn read(waiting: Child) -> io::Result<Answer> {
     if buttons > 1 {
         return Err(io::Error::other("more than one button in one answer; only one can be offered"));
     }
-    let mut built = steps.iter().map(step_inbox).collect::<io::Result<Vec<String>>>()?;
+    // addon steps run on this machine; the rest go to the game
+    let (machine, game): (Vec<&Value>, Vec<&Value>) =
+        steps.iter().partition(|step| step.get("kind").and_then(Value::as_str) == Some("addon"));
+    let addons = machine
+        .iter()
+        .map(|step| {
+            let action = field(step, "action")?.to_string();
+            let target = if action == "list" { String::new() } else { field(step, "repo")?.to_string() };
+            Ok((action, target))
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    let mut built = game.into_iter().map(step_inbox).collect::<io::Result<Vec<String>>>()?;
     let look = command.get("look").and_then(Value::as_bool) == Some(true);
     // looking needs a reload, and a reload needs the player's press: offer it,
     // unless the answer already offers its own button
@@ -304,7 +349,7 @@ fn read(waiting: Child) -> io::Result<Answer> {
         .get("session_id")
         .and_then(Value::as_str)
         .map(str::to_string);
-    Ok(Answer { spoken: Spoken { say, inbox, look }, thread })
+    Ok(Answer { spoken: Spoken { say, inbox, look, addons }, thread })
 }
 
 /// One step as the inbox table the addon's dispatch accepts.

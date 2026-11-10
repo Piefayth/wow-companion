@@ -50,6 +50,32 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
 
 ## Decisions
 
+- **Don't reinvent what Claude Code already has.** A standing rule from the
+  player. The agent *is* Claude Code, so searching, fetching pages, reading and
+  judging are its own tools (`WebSearch`, `WebFetch`, `Read`, `Grep`); give it the
+  tool and the instructions rather than writing our own version. Write code only
+  for what Claude Code cannot do: the channel into the game, the controller, the
+  voice, and fences that must hold whatever the model decides (the install-time
+  file checks, the Lua sandbox). The first addon manager broke this with a Rust
+  GitHub search that returned Flutter widgets; the agent's own search found the
+  right addon on the first try.
+- **Voice is the last resort, not the interface.** The player would rather have a
+  controller path that works in every situation, and reach for speech only where
+  the game has none. So a chat draft is cleared by the chat setting that clears it,
+  not by saying "scratch that" (which exists, but is the fallback).
+- **The agent installs addons, on the player's terms.** GitHub first, with the
+  maintainer checked (account age, other repositories, stars, fork, commits, tags,
+  the `.toc` listing interface 16001, and the CurseForge or Wago page linking back
+  where reachable); CurseForge and Wago are fine as sources. It reports the good
+  and the concerning and installs only after the player says yes. The research is
+  the agent's (`WebFetch` pre-approved for github.com, api.github.com,
+  raw.githubusercontent.com, curseforge and wago, nowhere else). `src/addons.rs` is
+  only the disk: download with curl, unpack with Windows' tar into a staging
+  folder, drop what the addon's `.pkgmeta` ignores plus dotfiles (a source install
+  should match the release), refuse any file type an addon has no reason to ship,
+  back up what it replaces, and record it in `%LOCALAPPDATA%\wow-companion`.
+  It removes only what it installed. New folders need a full game restart.
+
 - **No game → PC channel.** t3code-wow reads an on-screen pixel strip; we skip it.
   It's the complex part and the ToS-grayest part. Context the agent needs (current
   bars, macros) comes from SavedVariables, which the game writes on `/reload` or logout.
