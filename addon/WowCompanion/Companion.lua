@@ -932,11 +932,18 @@ local function people()
 		local count = BNGetNumFriends() or 0
 		for i = 1, count do
 			local ok, info = pcall(C_BattleNet.GetFriendAccountInfo, i)
-			if ok and info and info.gameAccountInfo and info.gameAccountInfo.isOnline then
+			-- offline ones too: a whisper is how the player finds out whether a
+			-- friend is really away or only appearing offline. Resolution prefers
+			-- whoever is online (see WowCompanion_ResolveWhisper)
+			if ok and info and info.accountName then
+				local game = info.gameAccountInfo
+				local online = game and game.isOnline
 				local tag = info.battleTag and info.battleTag:match("^[^#]+")
-				local character = info.gameAccountInfo.characterName
-				add(info.accountName, (tag or "?") .. (character and (" (on " .. character .. ")") or ""),
-					tag, character)
+				local character = online and game.characterName or nil
+				add(info.accountName, (tag or "?") .. (character and (" (on " .. character .. ")") or "")
+					.. (online and "" or " (offline)"), tag, character)
+				list[#list].online = online and true or false
+				list[#list].seen = (info.lastOnlineTime or 0) > 0
 			end
 		end
 	end
@@ -987,6 +994,17 @@ function WowCompanion_ResolveWhisper(rest)
 					hits[#hits + 1] = person
 					break
 				end
+			end
+		end
+		-- several people by one name: whoever is online, else whoever has ever
+		-- been seen online (a friend who never logged in has no last-online time)
+		for _, keep in ipairs({ "online", "seen" }) do
+			if #hits > 1 then
+				local narrowed = {}
+				for _, hit in ipairs(hits) do
+					if hit[keep] ~= false then narrowed[#narrowed + 1] = hit end
+				end
+				if #narrowed >= 1 and #narrowed < #hits then hits = narrowed end
 			end
 		end
 		if #hits == 1 then
