@@ -5310,7 +5310,10 @@ local function build()
 	-- The Companion window sets neither and switches cleanly.
 	if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, f) end
 	if UIPanelWindows then
-		UIPanelWindows["WCBags"] = { area = "right", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
+		-- No area: ShowUIPanel then just shows it and tells the controller
+		-- (UIParentPanelManager.lua, the no-area branch), without the panel layout
+		-- that closed the vendor beside it (2026-11-10)
+		UIPanelWindows["WCBags"] = nil
 	end
 	function f:Open()
 		if InCombatLockdown() then self:Show() return end
