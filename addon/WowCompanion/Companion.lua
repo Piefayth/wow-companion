@@ -1136,7 +1136,7 @@ local function people()
 				local game = info.gameAccountInfo
 				local tag = info.battleTag and info.battleTag:match("^[^#]+")
 				local character = game.characterName
-				if character and character ~= "" and game.clientProgram == "WoW" then
+				if character and character ~= "" and game.realmName and game.realmName ~= "" then
 					local target = character
 					local realm = game.realmName
 					if realm and realm ~= "" and GetNormalizedRealmName and realm ~= GetNormalizedRealmName() then
