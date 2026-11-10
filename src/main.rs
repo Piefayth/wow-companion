@@ -88,7 +88,10 @@ fn main() {
         }
         [command, addons, model, options @ ..] if command == "dictate" => {
             let addons = Path::new(addons);
-            voice::listen(Path::new(model), options, || vocabulary(addons), |_, text| {
+            voice::listen(Path::new(model), options, || vocabulary(addons), |role, text| {
+                if role.ends_with(" tap") {
+                    return Ok(());
+                }
                 send_inbox(addons, &chat_inbox(text))
             })
         }
@@ -513,7 +516,8 @@ fn bridge(addons: &Path) -> io::Result<()> {
 /// continuing conversation with the agent. Hold one button to dictate into the chat
 /// box, the other to ask.
 fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
-    let mut session = agent::Session::default();
+    // the same conversation as before a restart: it remembers what you were doing
+    let mut session = agent::Session::resumed();
     if let Some(chosen) = options.iter().find_map(|option| option.strip_prefix("agent=")) {
         session.model = chosen.to_string();
     }
@@ -543,6 +547,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         options,
         || vocabulary(addons),
         |role, text| match role {
+            // a tap of the ask button, too short to be speech: show the window
+            "ask tap" => send_inbox(addons, "{ kind = \"show\" }"),
+            _ if role.ends_with(" tap") => Ok(()),
             "ask" => {
                 // a new request supersedes a look still waiting for its reload
                 *looking.lock().unwrap() = None;
@@ -705,7 +712,10 @@ fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
     // A reply or a progress line is read by handlers every version of the addon
     // has, so a stale UI can still take it. Blocking those is how a finished answer
     // sat undelivered behind "reload first" while the window spun "thinking".
-    let always_readable = inbox.starts_with("{ kind = \"log\"") || inbox.starts_with("{ kind = \"progress\"");
+    // A reload is the same: every version has it, and it is the cure for staleness.
+    let always_readable = ["log", "progress", "reload"]
+        .iter()
+        .any(|kind| inbox.starts_with(&format!("{{ kind = \"{kind}\"")));
     if !always_readable && addon_is_stale(addons)? {
         return Err(io::Error::other(
             "the addon on disk is newer than the running UI session: /reload in game first",

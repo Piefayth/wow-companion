@@ -126,6 +126,10 @@ local function buildLog()
 	messages:SetPoint("BOTTOMRIGHT", -20, 34)
 	messages:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
 	messages:SetJustifyH("LEFT")
+	-- wrapped lines indent under the text instead of running back to the edge,
+	-- as the chat frame does (ChatFrameOverrides.lua); a little air between lines
+	messages:SetIndentedWordWrap(true)
+	messages:SetSpacing(2)
 	messages:SetFading(false)
 	messages:SetMaxLines(LOG_KEEP)
 	messages:SetHyperlinksEnabled(true)
@@ -216,10 +220,26 @@ local function colouredFor(who)
 	return "|cffffe08a"
 end
 
+-- The little markdown a terminal would render, as colour codes: `code` light blue,
+-- **bold** white, "- " bullets, "# " headings gold. Lines that already carry |c
+-- codes (the offered button) pass through; none of these patterns touch them.
+local function styled(text)
+	text = text:gsub("^(%s*)[-*] ", "%1  • ")
+	text = text:gsub("^#+%s+(.+)$", "|cffffd100%1|r")
+	text = text:gsub("%*%*(.-)%*%*", "|cffffffff%1|r")
+	text = text:gsub("`([^`]+)`", "|cff9ad5ff%1|r")
+	return text
+end
+
 -- Only the first line of a reply is labelled; the rest line up underneath, or a
 -- nine-line answer says "claude" nine times and reads as nine separate replies.
 local function showLine(who, text, continued, at)
 	local messages = logFrame().messages
+	text = styled(text)
+	-- a gap before each thing you say, so a conversation reads as turns
+	if who == "you" and not continued then
+		messages:AddMessage(" ")
+	end
 	if continued then
 		messages:AddMessage("              " .. text)
 	else
@@ -429,10 +449,20 @@ function handlers.log(inbox)
 	if lines == 0 then
 		remember(who, text)
 	end
+	-- reveal, not Show: ShowUIPanel returns at once for a frame already shown, so a
+	-- window opened by a plain Show never becomes a panel and the controller's
+	-- window toggle cannot reach it until it is closed and opened again
 	if not InCombatLockdown() and not logWindow:IsShown() then
-		logWindow:Show()
+		reveal(logWindow)
 	end
 	return ("logged %d line(s)"):format(lines)
+end
+
+-- A tap of the ask button (minus) opens the window, as a panel so the
+-- controller's focus cycle reaches it. In combat it is a plain Show (see reveal).
+function handlers.show()
+	reveal(logFrame())
+	return "shown"
 end
 
 -- What the agent is doing right now, on the waiting line: "reading StanceBar.lua".

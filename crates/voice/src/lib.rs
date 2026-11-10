@@ -23,6 +23,10 @@ const WHISPER_RATE: u32 = 16_000;
 const POLL: Duration = Duration::from_millis(16);
 // below this there is no speech, just the click of the chord being released
 const MINIMUM_CLIP: Duration = Duration::from_millis(250);
+/// A press released this quickly was a tap, not speech: it is reported as the
+/// role with " tap" appended and no text, so a button can do something on a tap
+/// (minus opens the Companion window) and still be push-to-talk when held.
+const TAP: Duration = Duration::from_millis(350);
 // A sine wave at full scale is far louder than music at the same nominal level, and
 // a headset in hands-free mode has its own gain on top. Start very quiet; `volume=`
 // tunes it without a rebuild.
@@ -78,7 +82,7 @@ fn prompt(spells: &[String]) -> String {
 }
 
 /// Hold a button, speak, release. `heard` is given which binding fired and what was
-/// said, so one loop can serve dictation on one button and the agent on another.
+/// said (a quick tap arrives as "<role> tap" with no text), so one loop can serve dictation on one button and the agent on another.
 ///
 /// Both default to buttons WoW ignores — Home and minus. We cannot consume the input,
 /// so anything the game binds would fire twice: once for us, once in game.
@@ -138,6 +142,7 @@ pub fn listen(
         println!("ready: hold {press} for {role}");
     }
     let mut holding: Option<&str> = None;
+    let mut pressed_at = Instant::now();
     let mut retry_pad = Instant::now();
     let mut retry_mic = Instant::now();
     loop {
@@ -194,6 +199,7 @@ pub fn listen(
 
         match (held, holding) {
             (Some(role), None) => {
+                pressed_at = Instant::now();
                 mic.start();
                 cue(cue_device.clone(), cue_volume, &CUE_OPEN);
                 println!("listening for {role}");
@@ -203,7 +209,12 @@ pub fn listen(
                 // falling fifth on release: rising means live, falling means it has it
                 cue(cue_device.clone(), cue_volume, &CUE_SHUT);
                 let seconds = clip.len() as f32 / WHISPER_RATE as f32;
-                if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
+                if pressed_at.elapsed() < TAP {
+                    println!("tap: {role}");
+                    if let Err(err) = heard(&format!("{role} tap"), "") {
+                        eprintln!("  not delivered: {err}");
+                    }
+                } else if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
                     println!("too short, ignored");
                 } else {
                     let level = loudness(&clip);

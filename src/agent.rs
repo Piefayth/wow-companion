@@ -68,7 +68,9 @@ const RULES: &str = "\
 You turn a World of Warcraft player's spoken request into one command for an addon.
 The player is on a controller, mid-game, and reads your `say` line in a small window.
 
-`say` is always required: one short line, plain prose, no markdown. It is the only
+`say` is always required: short plain prose. The window renders only `backticks`
+(use them for spell, macro and slash-command names), **bold** sparingly, and
+lines that start with \"- \" as bullets; nothing else of markdown. It is the only
 thing the player sees, so make it the answer, not a preamble.
 
 `steps` is what to do, in order: as many as the request needs, none when it was
@@ -245,7 +247,32 @@ pub struct Session {
     pub setup: String,
 }
 
+/// Where the conversation's ID is kept, so a restart of the companion resumes
+/// the same conversation instead of starting a stranger.
+fn thread_file() -> Option<std::path::PathBuf> {
+    let base = std::env::var_os("LOCALAPPDATA")?;
+    let dir = std::path::PathBuf::from(base).join("wow-companion");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("thread.txt"))
+}
+
+fn save_thread(thread: &str) {
+    if let Some(file) = thread_file() {
+        let _ = std::fs::write(file, thread);
+    }
+}
+
 impl Session {
+    /// The conversation the companion was last in, if any; delete thread.txt to
+    /// start over.
+    pub fn resumed() -> Self {
+        let thread = thread_file()
+            .and_then(|file| std::fs::read_to_string(file).ok())
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty());
+        Session { thread, ..Session::default() }
+    }
+
     /// Start the agent without waiting for it. A request takes seconds, and the
     /// caller has its own seconds of work to do (announcing itself in game), so the
     /// two should overlap rather than queue.
@@ -271,15 +298,14 @@ The player said: {transcript}"
         // the message goes on stdin: with the character export in it, it is past
         // Windows' 32,767-character limit for a whole command line
         claude.arg("--print");
-        match &self.thread {
-            Some(thread) => {
-                claude.args(["--resume", thread]);
-            }
-            // the rules only go out on the first call; the snapshot carries them
-            None => {
-                claude.args(["--system-prompt", RULES]);
-            }
+        if let Some(thread) = &self.thread {
+            claude.args(["--resume", thread]);
         }
+        // The rules go out on every request, unrecorded. With the default snapshot
+        // a resumed conversation keeps the rules it began with and silently ignores
+        // new ones (measured), so an update would never reach a conversation that
+        // outlives a restart. Off, the memory is kept and the rules are current.
+        claude.args(["--system-prompt", RULES]).args(["--system-prompt-snapshot", "off"]);
         // the repository root: docs, this code, the addon, and its CLAUDE.md
         claude.current_dir(env!("CARGO_MANIFEST_DIR"));
         claude
@@ -312,6 +338,7 @@ The player said: {transcript}"
         let answer = read(waiting, progress)?;
         // remember the thread even on the first reply, so the next utterance resumes
         if let Some(thread) = answer.thread {
+            save_thread(&thread);
             self.thread = Some(thread);
         }
         if let Some(context) = self.offered.take() {
