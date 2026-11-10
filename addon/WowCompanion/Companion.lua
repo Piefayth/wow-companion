@@ -905,7 +905,7 @@ local function buildToast()
 	frame.title:SetText("Companion")
 	frame.hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	frame.hint:SetPoint("TOPRIGHT", -PAD - 4, -PAD - 1)
-	frame.hint:SetText("tap minus to read")
+	frame.hint:SetText(("tap %s to read"):format(WowCompanion_Glyph(WowCompanion_TalkKey)))
 	frame.rule = frame:CreateTexture(nil, "ARTWORK")
 	frame.rule:SetColorTexture(1, 0.82, 0, 0.35)
 	frame.rule:SetHeight(1)
@@ -1798,6 +1798,27 @@ WowCompanion_Preview = showPreview
 -- context menu's art (MenuStyle2Mixin, MenuTemplates.lua). Each falls back to
 -- plain art if a template is missing.
 WowCompanion_Style = WowCompanion_Style or {}
+
+-- The talk button as the game sees it. On this setup the companion's talk button
+-- (minus on a Switch pad in DS5 mode) reaches the game as the DualSense Create
+-- button, PADSOCIAL; the tap that opens the window is bound to it (bindTap).
+WowCompanion_TalkKey = "PADSOCIAL"
+
+-- A controller button drawn as the game draws it for the pad in use: the same
+-- glyph set Blizzard's prompts pick (InputDeviceIconSetManager: the active
+-- device's labelStyle, Shp shapes, Ltr letters, Rev Nintendo), from the strings
+-- SharedConstants.lua defines (KEY_ABBR_PAD1_SHP...). Never a fixed name, so any
+-- controller reads right. Falls back to the generic glyph, then the key name.
+local GLYPH_SUFFIX = { Shp = "_SHP", Ltr = "_LTR", Rev = "_REV" }
+function WowCompanion_Glyph(key)
+	local style
+	pcall(function()
+		local state = C_GamePad.GetDeviceMappedState(C_GamePad.GetActiveDeviceID())
+		style = state and state.labelStyle
+	end)
+	return _G["KEY_ABBR_" .. key .. (GLYPH_SUFFIX[style or ""] or "")] or _G["KEY_ABBR_" .. key] or key
+end
+
 function WowCompanion_Style.Dialog(frame)
 	local ok, border = pcall(CreateFrame, "Frame", nil, frame, "DialogBorderDarkTemplate")
 	if ok and border then
@@ -1824,13 +1845,11 @@ function WowCompanion_Style.Prompt(parent, key, text)
 		if fine then return p end
 		p:Hide()
 	end
-	local names = { PAD1 = "cross", PAD2 = "circle", PAD3 = "square", PAD4 = "triangle",
-		PADLSHOULDER = "L1", PADRSHOULDER = "R1" }
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetSize(120, 24)
 	local fs = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	fs:SetPoint("LEFT")
-	fs:SetText(("|cffffd100%s|r %s"):format(names[key] or key, text))
+	fs:SetText(("%s %s"):format(WowCompanion_Glyph(key), text))
 	f:SetWidth(fs:GetStringWidth() + 4)
 	return f
 end
@@ -2109,7 +2128,7 @@ end)
 local function bindTap()
 	if InCombatLockdown() or not SetOverrideBindingClick then return end
 	ClearOverrideBindings(tapButton)
-	SetOverrideBindingClick(tapButton, false, "PADSOCIAL", "WowCompanionTap", "LeftButton")
+	SetOverrideBindingClick(tapButton, false, WowCompanion_TalkKey, "WowCompanionTap", "LeftButton")
 end
 
 -- The helper's own tap message, about a second later: ignored when the game

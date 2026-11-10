@@ -30,7 +30,8 @@ end
 local function describe(tooltip)
 	tooltip:AddLine("WoW Companion")
 	if up then
-		tooltip:AddLine("Listening: hold minus to talk.", 0.4, 0.9, 0.4)
+		local talk = WowCompanion_Glyph and WowCompanion_Glyph(WowCompanion_TalkKey) or "the talk button"
+		tooltip:AddLine(("Listening: hold %s to talk."):format(talk), 0.4, 0.9, 0.4)
 	else
 		tooltip:AddLine("Off: the companion on your PC is not running, or is restarting.", 1, 0.4, 0.4)
 	end

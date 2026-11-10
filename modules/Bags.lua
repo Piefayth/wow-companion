@@ -36,7 +36,9 @@ local function build()
 	local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	hint:SetPoint("BOTTOMLEFT", PAD + 4, PAD)
 	-- the buttons Blizzard's controller bags use (ContainerFrame.lua, SetupGamepad)
-	hint:SetText("|cffffd100square|r use   |cffffd100cross|r move   |cffffd100triangle|r more   |cffffd100circle|r close   |cffffd100L1 R1|r bags")
+	local g = WowCompanion_Glyph or function(key) return key end
+	hint:SetText(("%s use   %s move   %s more   %s close   %s %s bags"):format(
+		g("PAD3"), g("PAD1"), g("PAD4"), g("PAD2"), g("PADLSHOULDER"), g("PADRSHOULDER")))
 	-- the controller legend as Blizzard draws it: the pad's own glyphs
 	if WowCompanion_Style then
 		hint:Hide()
@@ -523,7 +525,7 @@ local function build()
 
 	f:Layout()
 	f.ready = true
-	print(("bags: ready, %d slots; square uses, cross moves, triangle more, circle closes"):format(#f.order))
+	print(("bags: ready, %d slots"):format(#f.order))
 end
 
 if InCombatLockdown() then
