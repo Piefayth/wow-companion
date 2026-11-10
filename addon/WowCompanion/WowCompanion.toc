@@ -10,6 +10,7 @@
 Engine.lua
 Style.lua
 Companion.lua
+Export.lua
 Pins.lua
 Strip.lua
 Bags.lua
