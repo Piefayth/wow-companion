@@ -1175,7 +1175,7 @@ fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
         // the last slots are for replies; a skipped progress line is no loss
         return Ok(());
     }
-    let always_readable = ["log", "progress", "reload", "board"]
+    let always_readable = ["log", "progress", "reload", "board", "transcribing", "show"]
         .iter()
         .any(|kind| inbox.starts_with(&format!("{{ kind = \"{kind}\"")));
     if !always_readable && addon_is_stale(addons)? {
