@@ -292,7 +292,10 @@ for a restart, start a hidden PowerShell job (Start-Process powershell
 -WindowStyle Hidden) that waits for Wow.exe to exit and then launches the game
 through Battle.net (this install's product flavour is wowf), and answer with the
 Quit button as your last step. Keep turns short; long work is fine, idle waiting
-is not.
+is not. Never start a background command or background agent inside
+your turn (Bash run_in_background, a background Task): the turn cannot end until it
+finishes, so your answer waits on it, and its completion wakes you again after you
+have answered. Work that must outlive your turn goes to a detached process.
 
 Never act for the player in combat. Writing is yours; pressing is theirs.
 
@@ -520,7 +523,15 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
                     }
                 }
             }
-            Some("result") => envelope = Some(event),
+            // The first result is the answer to the player. A turn can wake again
+            // after it: a background command the agent started finishes, and the
+            // reply to that ("No change from my last message...") came last and
+            // replaced the real answer twice (2026-11-10). Later ones are logged.
+            Some("result") if envelope.is_none() => envelope = Some(event),
+            Some("result") => {
+                let later = event.get("result").and_then(Value::as_str).unwrap_or("");
+                println!("  a later result from the same turn, not delivered: {}", later.chars().take(160).collect::<String>());
+            }
             _ => {}
         }
     }
