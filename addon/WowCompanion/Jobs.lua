@@ -120,7 +120,17 @@ refresh = function()
 	if target and frame.pending:IsShown() then
 		statusX.job = target
 		statusX:ClearAllPoints()
-		statusX:SetPoint("LEFT", frame.pending, "LEFT", math.min(frame.pending:GetStringWidth(), frame.pending:GetWidth()) + 6, 0)
+		-- in the same column as the queued lines' icons (the player, 2026-11-10:
+		-- aligned controls are easier to reach with the cursor)
+		local scroll = frame.messages.scroll
+		local right, left = scroll:GetRight(), frame:GetLeft()
+		local _, y = frame.pending:GetCenter()
+		local bottom = frame:GetBottom()
+		if right and left and y and bottom then
+			statusX:SetPoint("RIGHT", frame, "BOTTOMLEFT", right - left - 4, y - bottom)
+		else
+			statusX:SetPoint("LEFT", frame.pending, "RIGHT", 4, 0)
+		end
 		statusX:SetFrameLevel(frame:GetFrameLevel() + 10)
 		statusX:Show()
 	else
