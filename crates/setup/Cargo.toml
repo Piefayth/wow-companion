@@ -11,3 +11,5 @@ wow-companion-pad = { path = "../pad" }
 wow-companion-settings = { path = "../settings" }
 cpal = "0.18.2"
 eframe = "0.37.0"
+ureq = "3.5.1"
+sha2 = "0.11.1"

@@ -21,9 +21,15 @@ pub const DEFAULT_PAD: (u16, u16) = (0x054c, 0x0ce6);
 
 const REPORT: usize = 128;
 const POLL: Duration = Duration::from_millis(4);
+// `watch`: hands off this long, and a byte that moves this often while untouched
+// is an axis, a counter or a timestamp
 const CALIBRATE: Duration = Duration::from_secs(3);
-// a byte that moves this often while untouched is an axis, a counter or a timestamp
 const RESTLESS: u32 = 3;
+// learning a button: how long every byte is watched before a press counts, how
+// long a byte must have been still before one, and the shortest real press
+const WARM_UP: Duration = Duration::from_millis(400);
+const QUIET: Duration = Duration::from_millis(400);
+const HOLD_MIN: Duration = Duration::from_millis(40);
 
 /// One button, as the bit it occupies in the input report.
 #[derive(PartialEq)]
@@ -36,6 +42,17 @@ impl Press {
     /// As `press` reads it back: `byte:mask`, like `9:0x10`.
     pub fn spec(&self) -> String {
         format!("{}:{:#04x}", self.byte, self.mask)
+    }
+}
+
+impl Press {
+    /// The name `press` knows it by, if it has one (the DualSense layout).
+    pub fn name(&self) -> Option<&'static str> {
+        let known = [
+            ("home", 10, 0x01), ("touchpad", 10, 0x02), ("L1", 9, 0x01), ("R1", 9, 0x02),
+            ("L2", 9, 0x04), ("R2", 9, 0x08), ("minus", 9, 0x10), ("plus", 9, 0x20),
+        ];
+        known.iter().find(|(_, byte, mask)| *byte == self.byte && *mask == self.mask).map(|(name, ..)| *name)
     }
 }
 
@@ -284,56 +301,71 @@ pub fn gamepads() -> io::Result<Vec<(u16, u16, String)>> {
     Ok(found)
 }
 
-/// Learn a button on any HID pad: hands off for a moment while the bytes that
-/// move on their own (counters, axes, IMU) are found, then the first bit that
-/// goes down in a still byte is the button, as `byte:mask` for `press`. Gives up
-/// after `wait`. `status` is told what to ask the player for.
+/// The button the player presses next, read from the raw report with no setup
+/// step: a bit that goes down, is held at least `HOLD_MIN` and comes back up,
+/// in a byte that was quiet before it. Axes, counters and timestamps flip all
+/// the time, so a byte that moved within `QUIET` of the press, or moves while
+/// the bit is held, is not a button. So nobody has to keep their hands off
+/// first; the press counts when the button is let go.
 pub fn learn(vid: u16, pid: u16, wait: Duration, status: impl Fn(&str)) -> io::Result<Press> {
     let device = open(vid, pid)?;
-    status("hands off the controller...");
-    let mut churn = [0u32; REPORT];
+    status("press the button you want to talk with");
+    // when each byte last changed, and how often it changed during a hold
+    let mut moved: [Option<Instant>; REPORT] = [None; REPORT];
     let mut previous: Option<Vec<u8>> = None;
     let mut buffer = [0u8; REPORT];
+    // the bit going down, when, and how many times its byte changed since
+    let mut down: Option<(Press, Instant, u32)> = None;
     let since = Instant::now();
-    let mut asked = false;
     loop {
+        if since.elapsed() > wait {
+            return Err(io::Error::other("no button press seen"));
+        }
         let read = device
             .read_timeout(&mut buffer, 100)
             .map_err(|err| io::Error::other(err.to_string()))?;
-        let learning = since.elapsed() < CALIBRATE;
-        if !learning && !asked {
-            asked = true;
-            status("now press the button you want to talk with");
-        }
-        if !learning && since.elapsed() > CALIBRATE + wait {
-            return Err(io::Error::other("no button press seen"));
-        }
         if read == 0 {
             continue;
         }
-        let current = &buffer[..read];
+        let current = buffer[..read].to_vec();
+        let now = Instant::now();
         if let Some(last) = &previous {
-            for (index, (before, after)) in last.iter().zip(current).enumerate() {
+            let mut fresh = None;
+            for (index, (before, after)) in last.iter().zip(&current).enumerate() {
                 let flipped = before ^ after;
                 if flipped == 0 {
                     continue;
                 }
-                if learning {
-                    churn[index] += 1;
+                let quiet = moved[index].is_none_or(|at| now - at >= QUIET);
+                moved[index] = Some(now);
+                if let Some((press, _, changes)) = &mut down {
+                    if press.byte == index {
+                        *changes += 1;
+                    }
                     continue;
                 }
-                if churn[index] >= RESTLESS {
-                    continue;
-                }
-                // a button going down: the lowest bit that turned on
+                // a button going down: the lowest bit that turned on, in a byte
+                // that had been still (a warm-up first, so every byte has a past)
                 let pressed = flipped & after;
-                if pressed != 0 {
-                    let mask = pressed & pressed.wrapping_neg();
-                    return Ok(Press { byte: index, mask });
+                if pressed != 0 && quiet && since.elapsed() >= WARM_UP && fresh.is_none() {
+                    fresh = Some(Press { byte: index, mask: pressed & pressed.wrapping_neg() });
+                }
+            }
+            if let Some(press) = fresh {
+                down = Some((press, now, 0));
+            }
+            if let Some((press, at, changes)) = &down {
+                if current.get(press.byte).is_some_and(|byte| byte & press.mask == 0) {
+                    let held = now - *at;
+                    // the release itself is one change; anything more moved under it
+                    if changes <= &1 && held >= HOLD_MIN {
+                        return Ok(Press { byte: press.byte, mask: press.mask });
+                    }
+                    down = None;
                 }
             }
         }
-        previous = Some(current.to_vec());
+        previous = Some(current);
         thread::sleep(POLL);
     }
 }

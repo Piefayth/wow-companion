@@ -11,7 +11,7 @@ What you need
 - Claude Code installed and signed in (https://claude.com/claude-code). The
   companion runs it on your own subscription.
 - A controller and a microphone.
-- About 2 GB free (the speech model is 1.6 GB).
+- About 2 GB free (the speech model, downloaded by the setup window, is up to 1.6 GB).
 
 First run
 ---------
@@ -19,10 +19,11 @@ First run
 2. Run wow-companion-setup.exe. Windows may warn that the app is unrecognised:
    it is not code-signed. "More info", then "Run anyway".
 3. In the setup window: check the game folder, pick your controller and press
-   "learn it" for your talk button, pick your mic (speak: the bar should move),
-   and press "Test speech recognition". If the GPU test fails, use the CPU
-   button it offers, with a small model (ggml-small.bin): the large one is
-   far too slow on a CPU.
+   "Set it" then the button you want to talk with, pick your mic (speak: the
+   bar should move), press "Download" for the speech model it recommends
+   (0.5 to 1.6 GB, checked before use), then hold the talk button and say
+   something: it shows what it heard. If that fails on the graphics card, use
+   the CPU button it offers; it then recommends the small model.
 4. Save, then "Save and check everything".
 5. Run wow-companion.exe install (once), then fully restart the game.
 6. Start the companion: wow-companion.exe run
