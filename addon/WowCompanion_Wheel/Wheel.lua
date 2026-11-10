@@ -1,6 +1,7 @@
 -- Radial wheels of the player's own, each opened by a bar slot whose macro is
 -- "/click WCWheel_<name> Macro" (WCWheel.Macro(name) gives the line).
--- Right stick points, the d-pad steps, R2 uses, Circle closes; the left stick
+-- Right stick points and letting it go uses; the d-pad steps and R2 uses;
+-- Circle closes; the left stick
 -- still walks. Every button is secure, so a wheel works in combat; what is on
 -- it is rebuilt out of combat only.
 --
@@ -154,6 +155,7 @@ local OPEN_SNIPPET = [[
     local key = self:GetAttribute("wc-wheel")
     if (ring:GetAttribute(key .. "-count") or 0) < 1 then return false end
     ring:SetAttribute("wc-sticky", nil)
+    ring:SetAttribute("wc-aimed", nil)
     ring:SetAttribute("wc-active", key)
     ring:Show()
     return false
@@ -169,17 +171,40 @@ local function OpenButton(name)
     return button
 end
 
--- Right stick directions (as keys): move the sticky pick.
+-- Loads slot `pick` of the open wheel onto `self` and closes the ring; the
+-- secure action then runs it. Shared by the stick release and R2.
+local LOAD_PICK = [[
+    ring:Hide()
+    for _, attribute in ipairs(newtable("spell", "item", "macro", "macrotext", "unit")) do
+        self:SetAttribute(attribute, nil)
+    end
+    self:SetAttribute(ring:GetAttribute(key .. "-attr-" .. pick), ring:GetAttribute(key .. "-value-" .. pick))
+    self:SetAttribute("type", ring:GetAttribute(key .. "-type-" .. pick))
+]]
+
+-- Right stick directions (as keys): move the sticky pick, and use it when the
+-- stick is let go. A direction key going up while the stick is still pushed
+-- is the stick turning (up to up-right, say), not a release, so it only moves
+-- the pick. The action runs on the up edge, hence useOnKeyDown false.
 local aim = SecureButton("WCWheelAim")
 aim:RegisterForClicks("AnyDown", "AnyUp")
+aim:SetAttribute("useOnKeyDown", false)
 SecureHandlerWrapScript(aim, "OnClick", aim, [[
+    self:SetAttribute("type", nil)
     local ring = self:GetFrameRef("ring")
     ring:RunAttribute("wc-take-r2")
-    if ring:IsShown() then
-        local pick = ring:RunAttribute("wc-pick", down and 0.12 or 0.5)
-        if pick then ring:SetAttribute("wc-sticky", pick) end
+    if not ring:IsShown() then return false end
+    local pick = ring:RunAttribute("wc-pick", down and 0.12 or 0.5)
+    if pick then
+        ring:SetAttribute("wc-sticky", pick)
+        ring:SetAttribute("wc-aimed", true)
+        return false
     end
-    return false
+    if down or not ring:GetAttribute("wc-aimed") then return false end
+    pick = ring:GetAttribute("wc-sticky")
+    if not pick then return false end
+    local key = ring:GetAttribute("wc-active")
+]] .. LOAD_PICK .. [[
 ]])
 
 -- D-pad: step the pick round the ring (up / left back, down / right on).
@@ -222,12 +247,7 @@ SecureHandlerWrapScript(use, "OnClick", use, [[
     local key = ring:GetAttribute("wc-active")
     local pick = ring:RunAttribute("wc-pick", 0.25) or ring:GetAttribute("wc-sticky")
     if not pick then return false end
-    ring:Hide()
-    for _, attribute in ipairs(newtable("spell", "item", "macro", "macrotext", "unit")) do
-        self:SetAttribute(attribute, nil)
-    end
-    self:SetAttribute(ring:GetAttribute(key .. "-attr-" .. pick), ring:GetAttribute(key .. "-value-" .. pick))
-    self:SetAttribute("type", ring:GetAttribute(key .. "-type-" .. pick))
+]] .. LOAD_PICK .. [[
 ]])
 
 -- Circle: close.
@@ -259,6 +279,7 @@ SecureHandlerWrapScript(ring, "OnShow", ring, [[
 SecureHandlerWrapScript(ring, "OnHide", ring, [[
     self:ClearBindings()
     self:SetAttribute("wc-waiting", nil)
+    self:SetAttribute("wc-aimed", nil)
 ]])
 
 -- Out of combat a held R2 is taken as soon as it is let go, not only at the
@@ -324,7 +345,7 @@ local selected = ring:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 selected:SetPoint("CENTER", footerBar, "CENTER", 0, 14)
 local prompts = ring:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 prompts:SetPoint("TOP", selected, "BOTTOM", 0, -6)
-prompts:SetText("R2 Use      Circle Close")
+prompts:SetText("Release stick or R2 Use      Circle Close")
 
 local slots = {}
 for index = 1, MAX_SLOTS do
