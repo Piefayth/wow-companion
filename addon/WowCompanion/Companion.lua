@@ -1696,6 +1696,81 @@ end
 -- for agent code: show a line in the send preview (line, heading, shown text)
 WowCompanion_Preview = showPreview
 
+-- Destroying an item (the player, 2026-11-10: "even as a button press?"). Agent
+-- code cannot delete (DeleteCursorItem is refused in its sandbox), but it may
+-- open this confirmation; the deletion happens only in the Destroy button's own
+-- click, which is the player's press (DeleteCursorItem needs a hardware event).
+-- Cross destroys, circle cancels, while it is shown and out of combat. The item
+-- is checked again at the press, so a sort in between cannot destroy the wrong one.
+local destroyFrame
+function WowCompanion_ConfirmDestroy(bag, slot, onClose)
+	if InCombatLockdown() then return false end
+	local info = C_Container.GetContainerItemInfo(bag, slot)
+	if not info or not info.itemID then return false end
+	local link = C_Container.GetContainerItemLink(bag, slot) or info.itemName or "?"
+	if not destroyFrame then
+		local f = CreateFrame("Frame", "WowCompanionDestroy", UIParent, "BackdropTemplate")
+		f:SetSize(360, 120)
+		f:SetPoint("CENTER", 0, 120)
+		f:SetFrameStrata("FULLSCREEN_DIALOG")
+		f:SetBackdrop({
+			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+			edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+			edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 },
+		})
+		f.text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		f.text:SetPoint("TOPLEFT", 22, -22)
+		f.text:SetPoint("TOPRIGHT", -22, -22)
+		local yes = CreateFrame("Button", "WowCompanionDestroyYes", f, "UIPanelButtonTemplate")
+		yes:SetSize(140, 26)
+		yes:SetPoint("BOTTOMRIGHT", -22, 18)
+		yes:SetText("|cffff4040Destroy|r (cross)")
+		yes:RegisterForClicks("AnyDown")
+		yes:SetScript("OnClick", function()
+			local now = C_Container.GetContainerItemInfo(f.bag, f.slot)
+			if not InCombatLockdown() and now and now.itemID == f.itemID then
+				ClearCursor()
+				C_Container.PickupContainerItem(f.bag, f.slot)
+				local kind, id = GetCursorInfo()
+				if kind == "item" and id == f.itemID then
+					DeleteCursorItem()
+					toast("|cffffd100Destroyed|r " .. (f.link or ""), 0.8, 0.8, 0.8, 3)
+				else
+					ClearCursor()
+				end
+			else
+				toast("Not destroyed: the item moved", 1, 0.5, 0.5, 3)
+			end
+			f:Hide()
+		end)
+		local no = CreateFrame("Button", "WowCompanionDestroyNo", f, "UIPanelButtonTemplate")
+		no:SetSize(120, 26)
+		no:SetPoint("RIGHT", yes, "LEFT", -10, 0)
+		no:SetText("Keep (circle)")
+		no:RegisterForClicks("AnyDown")
+		no:SetScript("OnClick", function() f:Hide() end)
+		f:SetScript("OnHide", function(self)
+			if not InCombatLockdown() then ClearOverrideBindings(self) end
+			local done = self.onClose
+			self.onClose = nil
+			if done then pcall(done) end
+		end)
+		f:RegisterEvent("PLAYER_REGEN_DISABLED")
+		f:SetScript("OnEvent", function(self) self:Hide() end)
+		f:Hide()
+		destroyFrame = f
+	end
+	local f = destroyFrame
+	f.bag, f.slot, f.itemID, f.link, f.onClose = bag, slot, info.itemID, link, onClose
+	f.text:SetText(("Destroy %s%s?\nThis cannot be undone."):format(link,
+		(info.stackCount or 1) > 1 and (" x" .. info.stackCount) or ""))
+	f:Show()
+	ClearOverrideBindings(f)
+	SetOverrideBindingClick(f, true, "PAD1", "WowCompanionDestroyYes")
+	SetOverrideBindingClick(f, true, "PAD2", "WowCompanionDestroyNo")
+	return true
+end
+
 function handlers.chat(inbox)
 	-- The controller's cancel unfocuses the box but keeps its text, and dictation
 	-- appends, so a discarded line would come back glued to the next one. Clearing

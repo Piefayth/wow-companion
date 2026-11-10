@@ -96,6 +96,12 @@ can be offered, and put it last. Each step has a `kind`:
 
 Other things of ours agent code can call (all globals, all in WowCompanion):
 - `WCShowLink(n)`: the item viewer, the nth item linked in chat (1 = newest).
+- Profession links ([Tailoring], [Enchanting]) from other players: the LinkCatcher
+  module keeps the last 10 in `WowCompanionDB.tradeLinks` (newest first: label, from,
+  where), through reloads. To open one, offer a `press` step with macro
+  `/run WCOpenTradeLink()` (or `WCOpenTradeLink(n)`): it opens the profession window
+  as a chat click would (measured working 2026-11-10). It must be the player's press.
+  None caught: ask in /2 Trade for a link; chat history itself is lost at a reload.
 - `WCPins.Set{...}`, `WCPins.Add{map=, x=, y=, r=}`, `WCPins.Clear()`: minimap and
   world map pins (docs/api-useful.md, Minimap pins).
 - `WCWheel.Set(name, {label=, slots={...}})`: the radial wheels.
@@ -156,6 +162,14 @@ Other game facts already worked out:
   the `Bags` macro (`/click WCBagsToggle`, TopBar down) and the keyboard bag keys.
   Each slot is a secure `/use bag slot` button, usable in combat. The pad's own bag
   opener is Blizzard's radial and shortcut bar, which has no binding to take.
+  Its buttons follow Blizzard's controller bags: square use, cross pick up and put
+  down, triangle more (bar, split, link, destroy, sort), circle back or close.
+  Linking an item: `C_Container.GetContainerItemLink(bag, slot)` (find it by name in
+  the bags), then `WowCompanion_Preview` with the slash line; for a whisper resolve
+  the name first. `WowCompanionDB.bagLink` holds the item the player chose to link
+  from the bag menu (say: send it to Name).
+  Destroying: never from your code (refused). `WowCompanion_ConfirmDestroy(bag, slot)`
+  opens a confirmation whose Destroy button is the player's press.
 - Guidance for a quest Polestar has no guide for: aim its arrow
   (`Polestar.Nav.SetTarget`) and pin the spots (`WCPins`), with places from
   `Polestar.Codex` (`.Quest(id)`, `.Npc(id)`). Polestar also takes guides as data

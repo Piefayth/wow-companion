@@ -37,6 +37,26 @@ local function build()
 	hlt:SetTexture("Interface\\Buttons\\CheckButtonHilight")
 	hlt:SetBlendMode("ADD")
 	hl:Hide()
+	-- the item in hand, drawn on the focused slot's corner as Blizzard's gamepad
+	-- cursor carries it
+	local carry = CreateFrame("Frame", nil, f)
+	carry:SetSize(SIZE - 4, SIZE - 4)
+	carry:SetFrameLevel(f:GetFrameLevel() + 30)
+	carry.icon = carry:CreateTexture(nil, "OVERLAY")
+	carry.icon:SetAllPoints()
+	carry:Hide()
+	function f:Carry()
+		local kind, id = GetCursorInfo()
+		local b = self.order[self.focusIndex or 1]
+		if kind == "item" and id and b then
+			carry.icon:SetTexture(C_Item.GetItemIconByID(id))
+			carry:ClearAllPoints()
+			carry:SetPoint("CENTER", b, "BOTTOMRIGHT", -4, 4)
+			carry:Show()
+		else
+			carry:Hide()
+		end
+	end
 
 	f.buttons, f.order = {}, {}
 
@@ -106,6 +126,7 @@ local function build()
 		local kind, _, link = GetCursorInfo()
 		if kind == "item" and link then held = "   |cffffffffholding|r " .. link end
 		self.title:SetText(("Bags   |cffffffff%d free of %d|r%s"):format(free, total, held))
+		self:Carry()
 		if self.focusIndex and self.order[self.focusIndex] and tip:IsShown() then self:Focus(self.focusIndex) end
 	end
 
@@ -155,6 +176,7 @@ local function build()
 		else
 			tip:Hide()
 		end
+		self:Carry()
 	end
 
 	-- secure half: the d-pad walks the grid in order, cross clicks the focused slot
@@ -296,6 +318,7 @@ local function build()
 		end
 		print("bags: no empty bar button")
 	end
+	local closeMenu
 	local function entries(b)
 		local info = C_Container.GetContainerItemInfo(b.bag, b.slot)
 		local list = {}
@@ -307,11 +330,32 @@ local function build()
 				list[#list + 1] = { "Split one off", function() split(b, 1) end }
 			end
 		end
+		local link = C_Container.GetContainerItemLink(b.bag, b.slot)
+		if link and WowCompanion_Preview then
+			-- the send preview: the player's Send press is the send
+			if IsInGroup() then
+				list[#list + 1] = { "Link to party", function() WowCompanion_Preview("/p " .. link, "Link to party") end }
+			end
+			if IsInGuild() then
+				list[#list + 1] = { "Link to guild", function() WowCompanion_Preview("/g " .. link, "Link to guild") end }
+			end
+			list[#list + 1] = { "Link to someone (say who)", function()
+				WowCompanionDB.bagLink = link
+				print("bags: say \"send it to\" and a name, and I will whisper " .. link)
+			end }
+		end
+		if info and WowCompanion_ConfirmDestroy then
+			list[#list + 1] = { "|cffff6060Destroy|r", function()
+				-- the confirmation takes cross and circle; ours come back when it closes
+				ClearOverrideBindings(f)
+				if not WowCompanion_ConfirmDestroy(b.bag, b.slot, function() closeMenu() end) then closeMenu() end
+			end }
+		end
 		list[#list + 1] = { "Sort bags", function() C_Container.SortBags() end }
 		list[#list + 1] = { "Cancel", function() end }
 		return list
 	end
-	local function closeMenu()
+	closeMenu = function()
 		menu:Hide()
 		if not InCombatLockdown() and f:IsShown() then
 			ClearOverrideBindings(f)
@@ -390,6 +434,7 @@ local function build()
 	f:RegisterEvent("ITEM_LOCK_CHANGED")
 	f:RegisterEvent("BAG_UPDATE_COOLDOWN")
 	f:RegisterEvent("PLAYER_REGEN_ENABLED")
+	pcall(f.RegisterEvent, f, "CURSOR_CHANGED")
 	f:SetScript("OnEvent", function(self, event)
 		-- fires just before the lockdown: the last moment to put the window's own
 		-- bindings back (menu keys or put-back on circle would be stuck all fight)
@@ -403,6 +448,7 @@ local function build()
 			for bag = 0, MAXBAG do n = n + (C_Container.GetContainerNumSlots(bag) or 0) end
 			if n ~= #self.order or self.layoutOwed then self:Layout() return end
 		end
+		if event == "CURSOR_CHANGED" then if self:IsShown() then self:Paint() end return end
 		if self:IsShown() or event == "BAG_UPDATE_DELAYED" then self:Paint() end
 	end)
 	f:HookScript("OnShow", function(self) self:Paint() end)
