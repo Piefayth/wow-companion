@@ -45,6 +45,14 @@ local function bellPath(n)
 	return SIGNALS .. "m" .. ((n - 1) % BELLS + 1) .. ".wav"
 end
 
+-- catch-up bells: see catch_up_name in src/main.rs
+local function catchUpPath(n)
+	return SIGNALS .. "c" .. ((n - 1) % BELLS + 1) .. ".wav"
+end
+
+-- when this UI session began, to tell this session's messages from a slot's old one
+local sessionStart = time()
+
 -- PlaySoundFile claims every file will play, even empty ones, so only IsPlaying counts
 local function listen(path, heard)
 	local _, handle = PlaySoundFile(path, "Master")
@@ -1834,15 +1842,24 @@ function handlers.batch(inbox)
 	end
 end
 
-local function receive()
+-- `catchingUp`: the slot was taken on a catch-up bell, so it must have been
+-- written this session; one left from an earlier session is skipped, not run.
+-- Returns false when the slot was not taken.
+local function receive(catchingUp)
 	local slot = nextSlot
 	nextSlot = nextSlot + 1
 	local loaded, reason = C_AddOns.LoadAddOn(slotName(slot))
 	local inbox = WowCompanion_Inbox
+	local sent = WowCompanion_Sent
 	WowCompanion_Inbox = nil
+	WowCompanion_Sent = nil
 	if not loaded or not inbox then
 		record("slot " .. slot, "failed: " .. tostring(reason))
-		return
+		return false
+	end
+	if catchingUp and (type(sent) ~= "number" or sent < sessionStart - 5) then
+		record("slot " .. slot, "catch-up found an earlier session's message; skipped")
+		return false
 	end
 	local handler = handlers[inbox.kind or ""]
 	if not handler then
@@ -1890,11 +1907,11 @@ end
 -- What the poll has seen, exported at every reload, so a stuck channel can be
 -- read from the save file instead of guessed at.
 local channel = { polls = 0, heard = 0, caughtUp = 0 }
+local catchUpTurn = 0
 
--- One bell at a time, the next slot's, as on 2026-11-09. Polling more bells at
--- once (the next one, then all eight) kept every bell file open in the game and
--- the companion could no longer write them (2026-11-10). A redesign that lets the
--- two sides resync goes through a test away from the live game first.
+-- The message bell: one at a time, the next slot's, as on 2026-11-09. Polling
+-- more message bells at once (the next one, then all eight) kept every bell file
+-- open in the game and the companion could no longer write them (2026-11-10).
 local function poll()
 	channel.polls = channel.polls + 1
 	channel.lastPoll = time()
@@ -1906,6 +1923,26 @@ local function poll()
 			safely("a message from the companion", receive)
 		end
 	end)
+	-- The catch-up bells, beside the message bells: one per poll, in turn over
+	-- this slot and the next 6 (never the 8th, which is the bell of the slot just
+	-- taken, left ringing). Only after a message has been heard this session, when
+	-- the companion has cleared the last session's catch-up bells.
+	if channel.heard > 0 then
+		local ahead = catchUpTurn
+		catchUpTurn = (catchUpTurn + 1) % (BELLS - 1)
+		safely("catch-up poll", listen, catchUpPath(waiting + ahead), function(rang)
+			if rang and nextSlot == waiting then
+				channel.caughtUp = channel.caughtUp + 1
+				channel.lastCaughtUp = ("waiting on slot %d, took %d at %s"):format(waiting, ahead + 1, date("%H:%M:%S"))
+				for _ = 0, ahead do
+					local ok, taken = pcall(receive, true)
+					if not ok or taken == false then
+						break
+					end
+				end
+			end
+		end)
+	end
 end
 
 -- Polled from OnUpdate, which WoW keeps calling whatever happened the frame

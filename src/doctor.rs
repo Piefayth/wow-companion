@@ -55,10 +55,14 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
             if !name.ends_with(".wav") || name == "always.wav" || name.starts_with("pulse-") {
                 continue;
             }
-            let ring_len = crate::bells::bell().len() as u64;
+            // message (m) and catch-up (c) bells and never.wav are empty when idle
+            // by design (bells.rs, the 2026-11-09 protocol); only a ringing one counts
+            let idle_empty = name == "never.wav"
+                || (name.len() == 6 && (name.starts_with('m') || name.starts_with('c')));
             match entry.metadata().map(|meta| meta.len()) {
+                Ok(0) if idle_empty => {}
                 Ok(len) if len < 174_763 => empty.push(name),
-                Ok(len) if len == ring_len => ringing.push(name),
+                Ok(_) => ringing.push(name),
                 _ => {}
             }
         }
@@ -68,7 +72,8 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
     } else {
         format!("{} (a small or empty bell gets cached and locked; reinstall, then /reload)", empty.join(", "))
     });
-    line(ringing.len() <= 1, "bells present", &if ringing.is_empty() {
+    // one message bell and one catch-up bell may ring at once
+    line(ringing.len() <= 2, "bells present", &if ringing.is_empty() {
         "none ringing".to_string()
     } else {
         format!("{} (more than one ringing, or old names, means a stuck file)", ringing.join(", "))

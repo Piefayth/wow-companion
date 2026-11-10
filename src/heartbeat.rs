@@ -34,7 +34,17 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
     thread::spawn(move || {
         let [a, b] = bells(&addons);
         let mut on_a = true;
+        let mut session = None;
         while BEATING.load(Ordering::SeqCst) {
+            // a new UI session (the save file was just written): clear the catch-up
+            // bells so the fresh addon is not pointed at the old session's slots
+            let began = crate::session_began(&addons);
+            if began != session {
+                session = began;
+                if let Err(err) = crate::clear_catch_up(&addons.join(crate::ADDON).join("Signals")) {
+                    eprintln!("heartbeat: {err}");
+                }
+            }
             if ready() {
                 let (show, hide) = if on_a { (&a, &b) } else { (&b, &a) };
                 // both bells at once is what made the mark flap: report, don't hide it

@@ -193,6 +193,7 @@ fn install(addons: &Path) -> io::Result<()> {
     for bell in 1..=BELLS {
         bells::empty_message(&signals.join(bell_name(bell)))?;
     }
+    clear_catch_up(&signals)?;
     for old in ["show.wav", "alive-a.wav", "alive-b.wav"] {
         let _ = bells::silence(&signals.join(old));
     }
@@ -1061,6 +1062,7 @@ fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     }
     deliver(addons, slot, inbox)?;
     println!("sent in slot {slot}: {inbox}");
+    ring_catch_up(&signals, slot);
     thread::sleep(BELL_HEARD);
     bells::empty_message(&signals.join(bell_name(slot)))?;
     Ok(())
@@ -1068,7 +1070,10 @@ fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
 
 fn deliver(addons: &Path, slot: u32, inbox: &str) -> io::Result<()> {
     let signals = addons.join(ADDON).join("Signals");
-    let lua = format!("WowCompanion_Inbox = {inbox}\n");
+    // when it was written, so a catch-up load can tell this session's message from
+    // one left in the slot by an earlier session
+    let sent = SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_secs()).unwrap_or_default();
+    let lua = format!("WowCompanion_Inbox = {inbox}\nWowCompanion_Sent = {sent}\n");
     // the inbox lands first: the bell is what tells the addon to go read it
     write_reporting(&addons.join(slot_name(slot)).join("Inbox.lua"), lua.as_bytes())?;
     bells::ring_message(&signals.join(bell_name(slot)))?;
@@ -1377,6 +1382,42 @@ fn slot_name(slot: u32) -> String {
 // fresh names the game has never opened start the channel clean
 fn bell_name(n: u32) -> String {
     format!("m{}.wav", (n - 1) % BELLS + 1)
+}
+
+// The catch-up bells, beside the message bells (CLAUDE.md, "Changing the channel").
+// A message bell rings for 2 s; a loading screen or a hitch longer than that and
+// the addon never hears it, and since it waits on that slot, every later message
+// was lost until a /reload. So the newest slot also rings its catch-up bell
+// `c<n>.wav` until the next send. The addon, once it has heard one message this
+// session, checks one catch-up bell per poll, in turn over the next 7 slots: one
+// ringing means the companion has written up to there, and it takes the slots in
+// order. The idle state is an empty file, as for the message bells. Failures here
+// are reported and never stop a send: the message bell is still the channel.
+fn catch_up_name(n: u32) -> String {
+    format!("c{}.wav", (n - 1) % BELLS + 1)
+}
+
+/// Silence every catch-up bell (a new UI session starts its cursor at 1, and a
+/// catch-up bell left from the old one would point it at stale slots).
+fn clear_catch_up(signals: &Path) -> io::Result<()> {
+    for bell in 1..=BELLS {
+        bells::empty_message(&signals.join(catch_up_name(bell)))?;
+    }
+    Ok(())
+}
+
+/// Ring `slot`'s catch-up bell, only once every other one is silent: two ringing
+/// would point the addon at two different places.
+fn ring_catch_up(signals: &Path, slot: u32) {
+    for bell in (1..=BELLS).filter(|bell| *bell != (slot - 1) % BELLS + 1) {
+        if let Err(err) = bells::empty_message(&signals.join(catch_up_name(bell))) {
+            println!("catch-up bell not rung for slot {slot}: {err}");
+            return;
+        }
+    }
+    if let Err(err) = bells::ring(&signals.join(catch_up_name(slot))) {
+        println!("catch-up bell not rung for slot {slot}: {err}");
+    }
 }
 
 
