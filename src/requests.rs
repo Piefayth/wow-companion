@@ -145,6 +145,90 @@ pub(crate) fn board_inbox(working: &[(String, String, Instant)]) -> String {
 /// Per conversation: the running agent's process id, and (stops so far, stops
 /// when its last request began), so a request queued before a stop is dropped.
 static RUNNING: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
+/// Each request's id (per message panels in the window): set on the request's
+/// own thread before it queues, read by `ask`, carried on its lines as `req`.
+static NEXT_REQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+thread_local! {
+    static REQ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+/// The running request of each conversation, and queued ones the player cancelled.
+static RUNNING_REQ: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
+static CANCELLED: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+/// Cancels of a clip still being heard: (conversation, when). A clip released
+/// before the cancel is dropped when its words arrive.
+static HEARING_CANCELLED: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
+
+/// A new request on this thread: its id, for its lines and for cancelling it.
+pub(crate) fn new_request() -> u64 {
+    let id = NEXT_REQ.fetch_add(1, Ordering::SeqCst);
+    REQ.with(|req| req.set(id));
+    id
+}
+
+/// `released`: when the clip whose words just arrived was let go.
+pub(crate) fn hearing_cancelled(slot: &str, released: Option<Instant>) -> bool {
+    let mut all = HEARING_CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    all.retain(|(_, at)| at.elapsed() < Duration::from_secs(30));
+    let hit = all.iter().position(|(at, when)| at == slot && released.is_none_or(|released| *when >= released));
+    hit.map(|i| all.remove(i)).is_some()
+}
+
+fn running_req(slot: &str) -> Option<u64> {
+    RUNNING_REQ.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter().find(|(at, _)| at == slot).map(|(_, req)| *req)
+}
+
+fn end_running(slot: &str) {
+    {
+        let mut all = INTERRUPTS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        match all.iter_mut().find(|(at, _)| at == slot) {
+            Some(entry) => entry.1 += 1,
+            None => all.push((slot.to_string(), 1)),
+        }
+    }
+    let pid = RUNNING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter().find(|(at, _)| at == slot).map(|(_, pid)| *pid);
+    if let Some(pid) = pid {
+        let mut kill = std::process::Command::new("taskkill");
+        kill.args(["/T", "/F", "/PID", &pid.to_string()]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            kill.creation_flags(0x0800_0000);
+        }
+        let _ = kill.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+    }
+}
+
+/// One message's Cancel or Send now. Cancel on the running request ends it;
+/// on a queued one, drops just that one. Send now ends the running request so
+/// the queued ones go on.
+pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool) {
+    let running = running_req(slot);
+    println!("{} [{}] request {req} (running: {running:?})", if send_now { "send now" } else { "cancel" }, if slot.is_empty() { "main" } else { slot });
+    let message = if send_now {
+        if running.is_some() {
+            let running = running.unwrap_or_default();
+            end_running(slot);
+            format!("{{ kind = \"stopped\", slot = {}, req = {running}, dropped = false, sendNow = true }}", lua_string(slot))
+        } else {
+            return;
+        }
+    } else if running == Some(req) {
+        end_running(slot);
+        format!("{{ kind = \"stopped\", slot = {}, req = {req}, dropped = false }}", lua_string(slot))
+    } else {
+        CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push(req);
+        format!("{{ kind = \"stopped\", slot = {}, req = {req}, wasQueued = true }}", lua_string(slot))
+    };
+    if let Err(err) = send_inbox(addons, &message) {
+        eprintln!("  telling the game failed: {err}");
+    }
+}
+
+pub(crate) fn cancel_hearing(addons: &Path, slot: &str) {
+    println!("cancel hearing [{}]", if slot.is_empty() { "main" } else { slot });
+    HEARING_CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((slot.to_string(), Instant::now()));
+    let _ = send_inbox(addons, &format!("{{ kind = \"stopped\", slot = {}, hearing = true }}", lua_string(slot)));
+}
 static STOPS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::new());
 /// Per conversation, how many times its running request was ended (by Stop or
 /// by Send now), so the request knows not to report a failure.
@@ -253,9 +337,16 @@ pub(crate) fn watch_commands(addons: &Path) {
         if let Some(out) = child.stdout.take() {
             for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
                 let words: Vec<&str> = line.split_whitespace().collect();
-                if let ["WCCMD", _nonce, verb @ ("stop" | "now"), slot, ..] = words.as_slice() {
-                    let slot = if *slot == "main" { "" } else { *slot };
-                    stop(addons, slot, *verb == "stop");
+                let main = |slot: &str| if slot == "main" { String::new() } else { slot.to_string() };
+                match words.as_slice() {
+                    ["WCCMD", _nonce, verb @ ("cancel" | "now"), slot, req, ..] => {
+                        if let Ok(req) = req.parse::<u64>() {
+                            cancel_request(addons, &main(slot), req, *verb == "now");
+                        }
+                    }
+                    ["WCCMD", _nonce, "hear", slot, ..] => cancel_hearing(addons, &main(slot)),
+                    ["WCCMD", _nonce, verb @ ("stop" | "now"), slot] => stop(addons, &main(slot), *verb == "stop"),
+                    _ => {}
                 }
             }
         }
@@ -276,6 +367,20 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
     set_stops(&session.slot, None, Some(stopped_before));
     let interrupted_before = interrupts(&session.slot);
     let was_stopped = |slot: &str| interrupts(slot) != interrupted_before;
+    let req = REQ.with(|req| req.get());
+    if req != 0 {
+        let mut cancelled = CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(at) = cancelled.iter().position(|id| *id == req) {
+            cancelled.remove(at);
+            println!("  dropped: cancelled while queued");
+            return Ok(false);
+        }
+        drop(cancelled);
+        let mut running = RUNNING_REQ.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        running.retain(|(at, _)| at != &session.slot);
+        running.push((session.slot.clone(), req));
+    }
+    let req_field = if req != 0 { format!(", req = {req}") } else { String::new() };
     let _working = Working(session.slot.clone());
     WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|(at, _, _)| *at != session.slot);
     set_working(&session.slot, "thinking");
@@ -298,9 +403,11 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
     if shown {
         // `started` first, so this one is not advisory: it is what ends the queued
         // mark on the request's line, and must not be dropped on a busy channel
-        send_inbox(addons, &format!("{{ started = true, kind = \"progress\", text = \"thinking\", slot = {} }}", lua_string(&session.slot)))?;
+        send_inbox(addons, &format!("{{ started = true, kind = \"progress\", text = \"thinking\", slot = {}{req_field} }}", lua_string(&session.slot)))?;
     } else {
-        send_inbox(addons, &log_inbox_in(Some(&session.slot), "you", spoken, Some("thinking"), None))?;
+        let line = log_inbox_in(Some(&session.slot), "you", spoken, Some("thinking"), None)
+            .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{req_field}"), 1);
+        send_inbox(addons, &line)?;
     }
     let answer = {
         // Progress goes to the spinner, newest only, at most every few seconds: each
@@ -372,6 +479,7 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
             };
         };
         set_running(&slot, None);
+        RUNNING_REQ.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|(at, _)| at != &slot);
         drop(tell);
         let _ = courier.join();
         if was_stopped(&slot) {

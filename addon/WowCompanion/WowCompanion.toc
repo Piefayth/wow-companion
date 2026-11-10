@@ -20,6 +20,7 @@ Tests.lua
 Window.lua
 Transcript.lua
 Board.lua
+Jobs.lua
 Chat.lua
 Chords.lua
 Probes.lua

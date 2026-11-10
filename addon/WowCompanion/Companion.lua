@@ -394,25 +394,8 @@ local function paintConversations()
 		button:SetText(label)
 		if button.selected then button.selected:SetShown(key == viewSlot) end
 	end
-	-- Stop, for the conversation in view: while it works or has requests queued
-	local stop = frame.stopButton
-	if stop then
-		local queued = queuedSlots()[viewSlot]
-		local count = queued and #queued or 0
-		local entry = working[viewSlot]
-		if entry and entry.text == "stopping" then
-			stop:SetText("Stopping...")
-			stop:Show()
-		elseif entry or count > 0 then
-			stop:SetText(count > 0 and ("Stop  (+%d queued)"):format(count) or "Stop")
-			stop:Show()
-		else
-			stop:Hide()
-		end
-		-- Send now: a request running with another waiting behind it
-		local now = frame.sendNowButton
-		if now then now:SetShown(entry ~= nil and entry.text ~= "stopping" and count > 0) end
-	end
+	-- each message's panel, with its Cancel and Send now (Jobs.lua)
+	if WC.Jobs then WC.Jobs.Refresh() end
 end
 
 paintHook = paintConversations
@@ -744,6 +727,7 @@ end
 -- A line for the conversation window. Opens it out of combat so a reply is not
 -- missed, but never steals the screen mid-fight.
 function handlers.log(inbox)
+	if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
 	local text = inbox.text or ""
 	local who = inbox.who or "claude"
 	local lines = 0
@@ -929,7 +913,10 @@ end
 -- Not logged; the reply is what stays.
 function handlers.progress(inbox)
 	-- the agent took the oldest queued request of this conversation
-	if inbox.started then unqueue(inbox.slot) end
+	if inbox.started then
+		unqueue(inbox.slot)
+		if WC.Jobs then WC.Jobs.Started(inbox.req, inbox.slot) end
+	end
 	setPending(inbox.text or "thinking", inbox.slot, inbox.since)
 	return "progress"
 end
@@ -962,8 +949,23 @@ end
 function handlers.stopped(inbox)
 	local slot = inbox.slot or ""
 	setTranscribing(slot, false)
+	if inbox.hearing then
+		remember("claude", "Cancelled before it was sent.", nil, slot)
+		return "stopped"
+	end
+	if inbox.req and inbox.wasQueued then
+		-- one queued message dropped; the running one carries on
+		unqueue(slot)
+		if WC.Jobs then WC.Jobs.Gone(inbox.req, slot) end
+		remember("claude", "Cancelled a queued message.", nil, slot)
+		return "stopped"
+	end
 	setPending(nil, slot)
-	if inbox.dropped == false then
+	if WC.Jobs then WC.Jobs.Gone(inbox.req, slot, inbox.dropped ~= false and not inbox.req) end
+	if inbox.req then
+		remember("claude", inbox.dropped == false and inbox.sendNow and "Interrupted. Sending your next message now."
+			or "Cancelled.", nil, slot)
+	elseif inbox.dropped == false then
 		remember("claude", "Interrupted. Sending your next message now.", nil, slot)
 	else
 		unqueue(slot, true)
@@ -1609,6 +1611,10 @@ WC.Core = WC.Core or {}
 WC.Core.SIGNALS = SIGNALS
 WC.Core.listen = listen
 WC.Core.logFrame = logFrame
+-- for Jobs.lua: the live tables, and Whisper's per-conversation state
+WC.Core.working = working
+WC.Core.transcribing = transcribing
+WC.Core.setTranscribing = function(...) return setTranscribing(...) end
 WC.Core.record = record
 WC.Core.results = results
 WC.Core.say = say

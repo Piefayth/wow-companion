@@ -371,6 +371,11 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             }
             r if r == "ask" || r.starts_with("ask@") => {
                 let slot = r.strip_prefix("ask@").unwrap_or("").to_string();
+                // Cancel pressed on the "hearing" panel while Whisper had the clip
+                if hearing_cancelled(&slot, *LAST_RELEASE.lock().unwrap()) {
+                    println!("  dropped: cancelled while being heard");
+                    return Ok(());
+                }
                 // Gathered, not sent at once: the player often lets go before they
                 // are finished, and a second press within GATHER of the last clip
                 // adds to the same request instead of starting another (the
@@ -406,6 +411,11 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         }
                     };
                     voice::mark("gathered");
+                    if text.trim().is_empty() || hearing_cancelled(&slot, *LAST_RELEASE.lock().unwrap()) {
+                        println!("  dropped: cancelled while being gathered");
+                        return;
+                    }
+                    let req = new_request();
                     // One button for both: a line that opens with a channel ("party,
                     // pulling now", "whisper Sage, ...") is chat, not a request, and
                     // "scratch that" alone empties the box.
@@ -467,7 +477,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                             // progress, which the waiting line used to overwrite
                             // (the player, 2026-11-10).
                             let line = log_inbox_in(Some(&slot), "you", &text, None, None)
-                                .replacen("{ kind = \"log\"", "{ kind = \"log\", queued = true", 1);
+                                .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\", queued = true, req = {req}"), 1);
                             let _ = courier.send(line);
                             // the conversation still runs one request at a time
                             (session.lock().unwrap_or_else(|poisoned| poisoned.into_inner()), true)
