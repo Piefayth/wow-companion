@@ -6,10 +6,12 @@ in the box, macros, bars, wheels, addon code, addons installed.
 
 This file is what is true now, kept short because the in-game agent reads it on
 every request. **How each thing was learned is in `docs/history.md`**; when a rule
-here looks odd, its story is there. **Get information from the API, not the screen** (the player's standing rule,
-2026-11-10): Lua in a `lua` step, and the export after a reload. A screenshot
-(`tools/shot.ps1`) only with the player's explicit permission **and** when no API
-route can get the information.
+here looks odd, its story is there. **Get information from the API first** (the player's standing rule, 2026-11-10):
+Lua in a `lua` step, and the export after a reload. **Screenshots are allowed to
+read what our own code or an addon puts on screen**, to skip a reload: draw the
+data in a frame of ours, take the shot (`tools/shot.ps1`), `Read` it. Reading the
+player's screen for anything else needs their explicit ask. Looking never becomes
+acting for them.
 
 **What we do next is `docs/PLAN.md`**, with the
 player's standing terms. Read it before starting anything sizeable.
@@ -88,7 +90,7 @@ reaches the game with two tricks, and the game reaches the PC only at a reload.
   nothing else reaches disk while playing). The export carries character, bars,
   chords, macros, spellbook, reach, code runs, Lua errors from non-Blizzard addons,
   and the channel's counts. The agent's `look` offers a Reload and resumes after
-  it. Screenshots only with permission and when the API has no way (the player's rule); no data encoded on screen.
+  it. Data our code draws on screen may be read by screenshot to skip a reload (the player's rule, 2026-11-10).
 - **The heartbeat**: while the voice loop can hear, one of two `pulse` bells exists
   and swaps every 4 s; `Status.lua` shows the minimap button in colour on a swap
   seen recently, grey with a red edge otherwise.
