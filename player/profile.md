@@ -31,6 +31,10 @@ none of this. When the player states a new preference or changes one, write it h
   their explicit permission, at minimum anything on the first page (the gamepad
   bars, slots 181-272). Offer another way (a chord, a wheel, a press) instead.
   They may extend this to other pages later.
+- **No new keybindings without agreeing first** (2026-11-10): agree on how a
+  feature should feel before building it, and never add pad bindings (d-pad,
+  face buttons) to a window or feature unasked. Chat mode lasts one minus hold,
+  never longer.
 
 ## The player
 
