@@ -97,7 +97,18 @@ do
 		slot.icon:SetSize(40, 40)
 		slot.icon:SetPoint("CENTER", ring, "CENTER", slot.dx * RADIUS, slot.dy * RADIUS)
 		slot.icon:SetTexture("Interface\\Icons\\" .. s[2])
-		slot.border = slot.border or ring:CreateTexture(nil, "OVERLAY")
+		-- the icon art's own edge cropped off, then cut round by Blizzard's
+		-- portrait mask clamped to black, as the wheels do (Wheel.lua), so only
+		-- the circle shows inside the round border
+		slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+		if not slot.mask then
+			slot.mask = ring:CreateMaskTexture()
+			slot.mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+			slot.mask:SetPoint("TOPLEFT", slot.icon, "TOPLEFT", 3, -3)
+			slot.mask:SetPoint("BOTTOMRIGHT", slot.icon, "BOTTOMRIGHT", -3, 3)
+			slot.icon:AddMaskTexture(slot.mask)
+		end
+		slot.border = slot.border or ring:CreateTexture(nil, "OVERLAY", nil, 2)
 		slot.border:SetAllPoints(slot.icon)
 		slot.label = slot.label or ring:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		slot.label:SetPoint("TOP", slot.icon, "BOTTOM", 0, -2)
