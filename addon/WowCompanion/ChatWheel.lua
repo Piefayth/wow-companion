@@ -169,9 +169,40 @@ do
 				if ring:IsShown() then
 					ring:Hide()
 					if ring.pick and ring.pick ~= current() then WCChatChannel(ring.pick) end
+					WC.ChatChannel.Waiting()
 				end
 			end
 		end)
+	end
+
+	-- From letting go of minus until the line is in the send preview: the tag
+	-- says it is on its way (the player, 2026-11-10: a slow line popped up
+	-- after they had given up and spoken another). Shown out of turn of the
+	-- Say-only rule; gone when the preview opens, or with a word after 30 s.
+	local waiting = _G["WCChatWaiting"] or CreateFrame("Frame", "WCChatWaiting")
+	waiting:Hide()
+	waiting:SetScript("OnUpdate", function(self, elapsed)
+		self.t = self.t + elapsed
+		local preview = _G["WowCompanionPreview"]
+		if preview and preview:IsShown() and self.t > 0.1 then
+			self:Hide()
+			showTag()
+			return
+		end
+		local dots = ("."):rep(math.floor(self.t * 2) % 4)
+		if self.t > 30 then
+			tag.text:SetText("Chat: |cffff7777nothing arrived|r (the line was lost or not heard)")
+			if self.t > 36 then self:Hide() showTag() end
+		else
+			tag.text:SetText(("Chat: |cffffffff%s|r  transcribing%s"):format(NAMES[current()], dots))
+		end
+		tag:Show()
+	end)
+	WC.ChatChannel.Waiting = function()
+		local preview = _G["WowCompanionPreview"]
+		if preview and preview:IsShown() then preview:Hide() end
+		waiting.t = 0
+		waiting:Show()
 	end
 
 	local boot = CreateFrame("Frame")
