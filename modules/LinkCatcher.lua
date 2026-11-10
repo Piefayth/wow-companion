@@ -37,14 +37,27 @@ function WCShowLink(n)
   print('item viewer not loaded yet: reload')
 end
 
--- opens the newest caught profession link as a chat click would; pressed by the player
+-- opens a caught profession link as a chat click would; pressed by the player.
+-- n: 1 = newest, or a name to match against who linked it or the profession
+-- ("Orihime", "Enchanting"), newest match first, so one press needs no lookup.
 function WCOpenTradeLink(n)
-  local t = WowCompanionDB.tradeLinks and WowCompanionDB.tradeLinks[n or 1]
+  local list = WowCompanionDB.tradeLinks or {}
+  local t
+  if type(n) == 'string' then
+    local want = n:lower()
+    for _, e in ipairs(list) do
+      if (e.from or ''):lower():find(want, 1, true) or (e.label or ''):lower():find(want, 1, true) then t = e break end
+    end
+    if not t then
+      print(('no profession link from or for "%s" caught (have %d): ask them to link it again'):format(n, #list))
+      for i, e in ipairs(list) do print(('  %d: %s from %s'):format(i, e.label, e.from)) end
+      return
+    end
+  else
+    t = list[n or 1]
+  end
   if not t then print('no profession link caught yet: ask them to link it again') return end
   print(('opening %s from %s (%s)'):format(t.label, t.from, t.where))
   local ok, err = pcall(SetItemRef, t.data, t.full, 'LeftButton', ChatFrame1)
-  C_Timer.After(0.5, function()
-    local s = ('trade open: %s from %s ok=%s err=%s tooltip=%s profLoaded=%s profWindow=%s'):format(t.label, t.from, tostring(ok), tostring(err), tostring(ItemRefTooltip and ItemRefTooltip:IsShown()), tostring(C_AddOns.IsAddOnLoaded('Blizzard_Professions')), tostring(ProfessionsFrame and ProfessionsFrame:IsShown()))
-    if WowCompanion_Strip then WowCompanion_Strip.Send(s .. '\nraw: ' .. t.full:gsub('|', '!'), 30) end
-  end)
+  if not ok then print('could not open it: ' .. tostring(err)) end
 end

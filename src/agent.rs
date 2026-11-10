@@ -42,7 +42,11 @@ already know (WowCompanion_Preview, WowCompanion_ResolveWhisper, bag links,
 WCOpenTradeLink, WCShowLink) without reading files first; read code only when a
 step cannot be written without it. No research, no builds, no module edits, no
 installs: if the request needs real work, say in one line to ask it on another
-trigger and stop. The export here is trimmed (no bars, spellbook or quests).";
+trigger and stop. The export here is trimmed (no bars, spellbook or quests).
+Your steps run blind and you cannot look: never run a lua step to check something
+first, and never set `look` (it offers a reload, which wipes chat). Write the one
+step that does the job. A profession link from someone: a `press` with
+`/run WCOpenTradeLink(\"Name\")`.";
 
 // Real work (researching and installing an addon, restarting the game, changing
 // the addon) takes many tool calls; a quick answer still takes one.
@@ -113,8 +117,12 @@ Other things of ours agent code can call (all globals, all in WowCompanion):
 - Profession links ([Tailoring], [Enchanting]) from other players: the LinkCatcher
   module keeps the last 10 in `WowCompanionDB.tradeLinks` (newest first: label, from,
   where), through reloads. To open one, offer a `press` step with macro
-  `/run WCOpenTradeLink()` (or `WCOpenTradeLink(n)`): it opens the profession window
-  as a chat click would (measured working 2026-11-10). It must be the player's press.
+  `/run WCOpenTradeLink()` (newest), `WCOpenTradeLink(n)`, or a name:
+  `/run WCOpenTradeLink(\"Orihime\")` matches who linked it or the profession
+  (\"Enchanting\"), newest first, and lists what it has when nothing matches. It
+  opens the profession window as a chat click would (measured working 2026-11-10).
+  It must be the player's press. Never look the link up first in a `lua` step: you
+  cannot see what it prints, so give the press directly.
   None caught: ask in /2 Trade for a link; chat history itself is lost at a reload.
 - `WCPins.Set{...}`, `WCPins.Add{map=, x=, y=, r=}`, `WCPins.Clear()`: minimap and
   world map pins (docs/api-useful.md, Minimap pins).
