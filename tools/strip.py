@@ -15,7 +15,48 @@ ROOT = os.path.dirname(HERE)
 ADDONS = r"S:/World of Warcraft/_forever_/Interface/AddOns"
 
 
+def capture_gdi(height=256, width=CELL * COLS):
+    """The corner's pixels, read in this process with GDI (BitBlt), as
+    (w, h, BGRA rows top-down). Starting PowerShell and .NET for every look cost
+    a second of CPU each, twice a second, and the game stuttered (2026-11-10)."""
+    import ctypes
+    from ctypes import wintypes as W
+    u, g = ctypes.windll.user32, ctypes.windll.gdi32
+    u.SetProcessDPIAware()  # real pixels, not 150%-scaled ones
+    sw, sh = u.GetSystemMetrics(0), u.GetSystemMetrics(1)
+    g.CreateCompatibleBitmap.restype = W.HBITMAP
+    g.CreateCompatibleDC.restype = W.HDC
+    u.GetDC.restype = W.HDC
+    screen = u.GetDC(None)
+    mem = g.CreateCompatibleDC(W.HDC(screen))
+    bmp = g.CreateCompatibleBitmap(W.HDC(screen), width, height)
+    old = g.SelectObject(W.HDC(mem), W.HGDIOBJ(bmp))
+    try:
+        g.BitBlt(W.HDC(mem), 0, 0, width, height, W.HDC(screen), sw - width, sh - height, 0x00CC0020)
+        class BIH(ctypes.Structure):
+            _fields_ = [("biSize", W.DWORD), ("biWidth", W.LONG), ("biHeight", W.LONG),
+                        ("biPlanes", W.WORD), ("biBitCount", W.WORD), ("biCompression", W.DWORD),
+                        ("biSizeImage", W.DWORD), ("biXPelsPerMeter", W.LONG), ("biYPelsPerMeter", W.LONG),
+                        ("biClrUsed", W.DWORD), ("biClrImportant", W.DWORD)]
+        bih = BIH(ctypes.sizeof(BIH), width, -height, 1, 32, 0, 0, 0, 0, 0, 0)
+        buf = ctypes.create_string_buffer(width * height * 4)
+        g.GetDIBits(W.HDC(mem), W.HBITMAP(bmp), 0, height, buf, ctypes.byref(bih), 0)
+        return width, height, buf.raw
+    finally:
+        g.SelectObject(W.HDC(mem), W.HGDIOBJ(old))
+        g.DeleteObject(W.HGDIOBJ(bmp))
+        g.DeleteDC(W.HDC(mem))
+        u.ReleaseDC(None, W.HDC(screen))
+
+
 def capture(height=256):
+    try:
+        return capture_gdi(height)
+    except Exception:
+        return capture_ps(height)
+
+
+def capture_ps(height=256):
     out = os.path.join(tempfile.gettempdir(), "wc_strip.bin")
     subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                     os.path.join(HERE, "strip_capture.ps1"), "-Out", out,
@@ -79,11 +120,18 @@ def watch(seconds, out):
     end = time.time() + seconds
     err = "nothing seen"
     while time.time() < end:
-        payload, err = decode(*capture())
-        if payload is not None:
-            open(out, "wb").write(payload)
-            return 0
-        time.sleep(0.5)
+        # a look at the bottom row only (1024x4) until the magic shows, then
+        # one capture as tall as the strip says it is
+        w, h, px = capture(CELL)
+        o = (h - 1 - CELL // 2) * w * 4 + (CELL // 2) * 4
+        if (px[o + 2], px[o + 1], px[o]) == (0xC0, 0xFF, 0xEE):
+            payload, err = decode(*capture())
+            if payload is not None:
+                open(out, "wb").write(payload)
+                return 0
+        else:
+            err = "nothing seen"
+        time.sleep(1.0)
     open(out, "w", encoding="utf-8").write("STRIP FAILED: " + err)
     return 1
 

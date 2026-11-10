@@ -592,7 +592,7 @@ fn saved_string(addons: &Path, key: &str) -> io::Result<String> {
 /// 500 lines answering questions we asked while mapping the UI, not ones the agent
 /// asks. Those stay in the file for us and out of the prompt.
 const AGENT_SECTIONS: &[&str] =
-    &["character", "action slots", "empty slots on screen", "controller", "macros", "spellbook", "reach", "modules", "code runs", "lua errors"];
+    &["character", "equipped", "bags", "skills", "quest log", "action slots", "empty slots on screen", "controller", "macros", "spellbook", "reach", "modules", "code runs", "lua errors"];
 
 fn sections<'a>(context: &'a str, wanted: &[&str]) -> Vec<(&'a str, Vec<&'a str>)> {
     let mut kept: Vec<(&str, Vec<&str>)> = Vec::new();
