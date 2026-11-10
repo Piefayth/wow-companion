@@ -79,14 +79,10 @@ do
 			button:SetAttribute("type", "macro")
 			-- only a live hostile target blocks soft interact; Blizzard turns it
 			-- back on at PLAYER_TARGET_CHANGED, then interact takes the corpse
-			-- Measured 2026-11-10: in a fight the target came straight back between
-			-- the press and the release. Blizzard's gamepad mode sets the temp CVar
-			-- TargetEnemyAttacker=1 (Blizzard_Gamepad/Core.lua): with no target, the
-			-- next mob that hits you becomes it, so soft interact is switched off
-			-- again before the second press. The press turns that off first (a
-			-- secure /console, the player's own press); it is put back when the
-			-- fight ends.
-			button:SetAttribute("macrotext", "/console TargetEnemyAttacker 0\n/cleartarget [harm,nodead]")
+			-- [@target]: without it the condition also reads the soft enemy target,
+			-- so with a live mob merely nearby Home stayed "clear" and never looted
+			-- (traced 2026-11-10: the state flipped clear/take with no target at all)
+			button:SetAttribute("macrotext", "/cleartarget [@target,harm,nodead]")
 		else
 			button:SetAttribute("type", nil)
 			button:SetAttribute("macrotext", nil)
@@ -134,6 +130,10 @@ do
 		if not key then return end
 		if newstate == "clear" then
 			self:SetBindingClick(true, key, "WCCombatInteract", "LeftButton")
+		elseif newstate == "corpse" then
+			-- the hard target is a dead mob: Blizzard keeps soft interact off for
+			-- it (UnitCanAttack is true of a corpse; traced), so interact with it
+			self:SetBinding(true, key, "INTERACTTARGET")
 		else
 			self:SetBinding(true, key, "INTERACTSOFTTARGET")
 		end
@@ -183,7 +183,7 @@ do
 		local d = db()
 		switch:SetAttribute("key", d.key)
 		UnregisterStateDriver(switch, "interact")
-		if d.key then RegisterStateDriver(switch, "interact", "[harm,nodead] clear; take") end
+		if d.key then RegisterStateDriver(switch, "interact", "[@target,harm,nodead] clear; [@target,dead] corpse; take") end
 		if d.takeKey then SetOverrideBinding(owner, false, d.takeKey, "INTERACTSOFTTARGET") end
 		applyMode()
 		return true
