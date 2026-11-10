@@ -38,6 +38,8 @@ const SLOTS_LOW: u32 = 8;
 static RELOAD_OFFERED: Mutex<String> = Mutex::new(String::new());
 // requests to the agent running right now; a restart waits for zero
 static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+/// How long after the last clip a request waits for the player to add to it.
+const GATHER: Duration = Duration::from_millis(2000);
 
 /// Counts a request out of IN_FLIGHT however its thread ends.
 struct InFlight;
@@ -651,6 +653,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     let deliver = |inbox: String| {
         courier.send(inbox).map_err(|_| io::Error::other("the courier thread has stopped"))
     };
+    // the request being gathered: its words so far, and when the last clip came
+    let gathering: Arc<Mutex<Option<(String, Instant)>>> = Arc::new(Mutex::new(None));
     voice::listen(
         model,
         options,
@@ -668,27 +672,61 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             // reads as "being worked on" and not as dropped. Not while another
             // request runs, whose own progress line is on screen (the queued line
             // follows as soon as the words are known).
+            // a second clip on its way to Whisper keeps the gather window open
+            "ask heard" if gathering.lock().unwrap().is_some() => {
+                if let Some((_, last)) = gathering.lock().unwrap().as_mut() {
+                    *last = Instant::now();
+                }
+                Ok(())
+            }
             "ask heard" if IN_FLIGHT.load(Ordering::SeqCst) == 0 => {
                 deliver("{ kind = \"progress\", text = \"got it, transcribing\" }".to_string())
             }
             _ if role.ends_with(" heard") => Ok(()),
             "ask" => {
-                // a new request supersedes a look still waiting for its reload
-                *looking.lock().unwrap() = None;
-                // A request made while another runs is shown at once, as waiting:
-                // otherwise it appears only when it starts, and reads as dropped.
-                let queued = IN_FLIGHT.load(Ordering::SeqCst) > 0;
-                if queued {
-                    let line = log_inbox("you", text, Some("waiting for the request before this one"), None);
-                    deliver(line)?;
+                // Gathered, not sent at once: the player often lets go before they
+                // are finished, and a second press within GATHER of the last clip
+                // adds to the same request instead of starting another (the
+                // player, 2026-11-10). The wait runs while minus is held, too.
+                let mut pending = gathering.lock().unwrap();
+                if let Some((words, last)) = pending.as_mut() {
+                    words.push(' ');
+                    words.push_str(text);
+                    *last = Instant::now();
+                    println!("  added to the request being gathered");
+                    return Ok(());
                 }
-                // Off the voice loop: real work takes minutes, and the pad must stay
-                // read meanwhile. A second request waits on the session lock, so
-                // the conversation still runs one request at a time.
-                let (addons, session, looking, text) =
-                    (addons.to_path_buf(), Arc::clone(&session), Arc::clone(&looking), text.to_string());
-                IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+                *pending = Some((text.to_string(), Instant::now()));
+                drop(pending);
+                let (addons, session, looking, gathering, courier) = (
+                    addons.to_path_buf(),
+                    Arc::clone(&session),
+                    Arc::clone(&looking),
+                    Arc::clone(&gathering),
+                    courier.clone(),
+                );
                 thread::spawn(move || {
+                    let text = loop {
+                        thread::sleep(Duration::from_millis(100));
+                        let mut pending = gathering.lock().unwrap();
+                        let quiet = pending.as_ref().map(|(_, last)| last.elapsed() >= GATHER).unwrap_or(true);
+                        if quiet && !voice::HOLDING.load(Ordering::Relaxed) {
+                            break pending.take().map(|(words, _)| words).unwrap_or_default();
+                        }
+                    };
+                    // a new request supersedes a look still waiting for its reload
+                    *looking.lock().unwrap() = None;
+                    // A request made while another runs is shown at once, as
+                    // waiting: otherwise it appears only when it starts, and reads
+                    // as dropped.
+                    let queued = IN_FLIGHT.load(Ordering::SeqCst) > 0;
+                    if queued {
+                        let line = log_inbox("you", &text, Some("waiting for the request before this one"), None);
+                        let _ = courier.send(line);
+                    }
+                    // A second request waits on the session lock, so the
+                    // conversation still runs one request at a time.
+                    IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
                     let _done = InFlight;
                     match ask(&addons, &mut session.lock().unwrap(), &text, queued) {
                         Ok(true) => *looking.lock().unwrap() = Some(session_began(&addons)),
