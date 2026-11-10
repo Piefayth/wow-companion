@@ -213,6 +213,15 @@ empty: say so and ask them to shift into that form once.
   current code there before changing one (<character> lists only its name), and
   send the whole file as `code`. The companion writes the file before the game
   runs it; never edit modules/ by hand without also sending the step.
+  Write every module on the engine, `WC` (Companion.lua, top): it opens with
+  `local M = WC.Module('Name', { after = {'Other'}, combat = 'wait' })` and puts its
+  work in `function M:Enable()` (and `M:Disable()` to undo it). Listen with
+  `M:Event('GAME_EVENT', fn)` and `M:On('MESSAGE', fn)`, both dropped on replace;
+  announce with `WC.Send('MESSAGE', ...)`; keep settings in `WC.Settings('Name',
+  defaults)`; defer protected work with `WC.AfterCombat(fn)`. Call our helpers
+  through `WC.Board.Post`, `WC.Chat.Preview`, `WC.Pins`, `WC.Strip`, `WC.Style`.
+  Messages sent today: LINK_CAUGHT, TRADE_LINK_CAUGHT, BAGS_FULL. Reuse frames by
+  global name in Enable (frames cannot be destroyed). `WC.List()` lists modules.
 
 Writing Lua. The client is 1.60.1 but its API is retail 11.x: C_Spell.GetSpellInfo,
 C_SpellBook, C_ClassTalents. GetSpellInfo, GetSpecialization, GetNumSpellTabs do

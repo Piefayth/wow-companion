@@ -1,3 +1,5 @@
+-- Glows the Buffs button while Mark of the Wild or Thorns is missing (WC module).
+local M = WC.Module('BuffGlow')
 local WANT = { 'Mark of the Wild', 'Thorns' }
 local glow = WCBuffGlow or CreateFrame('Frame', 'WCBuffGlow', UIParent)
 glow:SetFrameStrata('HIGH')
@@ -50,14 +52,18 @@ local function update()
   end
   if show then if not glow:IsShown() then glow:Show() glow.ag:Play() end else glow.ag:Stop() glow:Hide() end
 end
-glow:UnregisterAllEvents()
-glow:RegisterEvent('PLAYER_ENTERING_WORLD')
-glow:RegisterEvent('PLAYER_REGEN_DISABLED')
-glow:RegisterEvent('PLAYER_REGEN_ENABLED')
-glow:RegisterEvent('PLAYER_ALIVE')
-glow:RegisterEvent('PLAYER_UNGHOST')
-glow:RegisterEvent('ACTIONBAR_SLOT_CHANGED')
-glow:RegisterUnitEvent('UNIT_AURA', 'player')
-glow:SetScript('OnEvent', function() pcall(update) end)
-pcall(update)
-print('buff glow: watching Mark of the Wild and Thorns', button() and 'on your Buffs button' or '(Buffs button not found)')
+function M:Enable()
+  glow:UnregisterAllEvents()
+  for _, e in ipairs({ 'PLAYER_ENTERING_WORLD', 'PLAYER_REGEN_DISABLED', 'PLAYER_REGEN_ENABLED', 'PLAYER_ALIVE', 'PLAYER_UNGHOST', 'ACTIONBAR_SLOT_CHANGED' }) do
+    glow:RegisterEvent(e)
+  end
+  glow:RegisterUnitEvent('UNIT_AURA', 'player')
+  glow:SetScript('OnEvent', function() pcall(update) end)
+  pcall(update)
+  print('buff glow: watching Mark of the Wild and Thorns', button() and 'on your Buffs button' or '(Buffs button not found)')
+end
+function M:Disable()
+  glow:UnregisterAllEvents()
+  glow.ag:Stop()
+  glow:Hide()
+end

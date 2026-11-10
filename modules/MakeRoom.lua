@@ -1,3 +1,6 @@
+-- Full bags while looting (WC module): names the cheapest thing to drop for the
+-- best thing on the corpse, on the board. Sends BAGS_FULL(worst, top).
+local M = WC.Module('MakeRoom')
 local A = Auctionator and Auctionator.API and Auctionator.API.v1
 -- never suggested: hearthstone and profession tools
 local KEEP = { [6948] = true, [7005] = true, [2901] = true, [5956] = true, [6256] = true, [6365] = true, [12225] = true, [6219] = true, [10498] = true, [7189] = true }
@@ -42,15 +45,13 @@ local function check()
   end
   if top and top.v > worst.v * 1.5 and top.v > 0 then
     local text = ('Bags full: drop %s (%s) for %s (%s)'):format(worst.name, money(worst.v), top.name, money(top.v))
-    if WowCompanion_Recent then WowCompanion_Recent('', text) else print(text) end
+    WC.Board.Post('', text)
+    WC.Send('BAGS_FULL', worst, top)
   end
 end
-local f = WCMakeRoomFrame or CreateFrame('Frame', 'WCMakeRoomFrame')
-f:UnregisterAllEvents()
-f:RegisterEvent('LOOT_OPENED')
-f:RegisterEvent('UI_ERROR_MESSAGE')
-f:SetScript('OnEvent', function(_, event, _, msg)
-  if event == 'UI_ERROR_MESSAGE' and msg ~= ERR_INV_FULL then return end
-  pcall(check)
-end)
-print('make room: watching loot with full bags')
+function M:Enable()
+  if WCMakeRoomFrame then WCMakeRoomFrame:UnregisterAllEvents() end
+  self:Event('LOOT_OPENED', function() check() end)
+  self:Event('UI_ERROR_MESSAGE', function(_, _, msg) if msg == ERR_INV_FULL then check() end end)
+  print('make room: watching loot with full bags')
+end

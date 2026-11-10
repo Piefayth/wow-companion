@@ -23,6 +23,27 @@ on its command line means one is). Two writers on one file is how replies got lo
 
 ## Next, in order
 
+### 0. The engine: structure like the big UI packs (the player, 2026-11-10)
+
+Lessons from ElvUI-style packs: one engine table, modules with a lifecycle, a
+message bus, per-module settings, then smaller files.
+
+1. **Engine `WC`** (done 2026-11-10, Companion.lua top): `WC.Module` registry
+   with Enable/Disable and `after` order, replace-safe; `M:Event`, `M:On`,
+   `WC.Send`; `WC.Settings`; `WC.AfterCombat`; helpers under `WC.Board`, `WC.Chat`,
+   `WC.Items`, `WC.Pins`, `WC.Strip`, `WC.Style`. Old global names stay.
+2. **Small modules moved** (done 2026-11-10): ExtraButtons, LinkCatcher, MakeRoom,
+   BuffGlow. They send LINK_CAUGHT, TRADE_LINK_CAUGHT, BAGS_FULL.
+3. ~~Bags onto the engine~~: Bags left modules/ for the addon's own files (a
+   controller-managed window must not run as a module: taint).
+4. **Split Companion.lua** (~5,900 lines) into files along its seams: engine,
+   channel (slots, bells), board/toast, log window, send preview, strip, style.
+   A new file in our existing toc loads at /reload (measured 2026-11-10), so no
+   restart. Do it when no other agent is editing Companion.lua; keep the channel
+   in Companion.lua and move only pieces that talk through globals.
+5. Later: move saved data (links, tradeLinks, pins, bagLink) under
+   `WowCompanionDB.mods.<Name>` with a one-time copy; until then keep the old keys.
+
 ### 1. Make the loop tight
 
 Being built by the terminal session (the player's call, 2026-11-09). The foundation: everything after this is cheaper once requests are never lost,
