@@ -26,6 +26,11 @@ none of this. When the player states a new preference or changes one, write it h
   anything else on their screen needs their explicit ask; never input to the game
   window.
 - Clean-up (removing old files, pruning) only when they say so.
+- **Combat bars are for combat** (2026-11-10): no agent puts a non-combat entry
+  (a chat, menu or utility macro, a wheel opener) on the action bars without
+  their explicit permission, at minimum anything on the first page (the gamepad
+  bars, slots 181-272). Offer another way (a chord, a wheel, a press) instead.
+  They may extend this to other pages later.
 
 ## The player
 

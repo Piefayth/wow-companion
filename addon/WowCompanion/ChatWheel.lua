@@ -1,11 +1,14 @@
--- The chat wheel (the player, 2026-11-10): talking to people without an agent in
--- the loop. Pick a channel on the wheel (the Chat macro, L2+R2 triangle); it
--- stays picked. Hold minus with L1 and R1 together and speak: the PC sends the
--- words straight here (no agent), and they open in the send preview on that
--- channel, one press to send. A line that opens with a channel word ("trade,
--- LF enchanter") uses that channel instead, for that line only.
+-- Talking to people without an agent in the loop (the player, 2026-11-10).
+-- Hold minus with L1 and R1 together and speak: the PC sends the words straight
+-- here (no agent) and they open in the send preview, one press to send.
+-- The channel is picked on the same hold (the player: "combine the speaking
+-- trigger and the channel selection"): while the chord is held a small ring of
+-- channels shows, and the right stick points at one. Let go: that channel is
+-- kept for next time; leave the stick alone and the last one stays. A line that
+-- opens with a channel word ("trade, LF enchanter") still wins for that line.
+-- Nothing goes on the action bars (the player's rule, 2026-11-10).
 --
---   WCChatChannel("/p")         pick a channel (the wheel's slots call this)
+--   WCChatChannel("/p")         pick a channel
 --   WC.ChatChannel.Line(text)   text with the picked channel in front
 --   WC.ChatChannel.Current()    the slash command picked ("/s" until one is)
 WC = WC or {}
@@ -15,12 +18,12 @@ do
 		["/i"] = "Instance", ["/raid"] = "Raid", ["/1"] = "General", ["/2"] = "Trade",
 		["/r"] = "Reply",
 	}
-	-- the wheel, in order around it (eight at most); icons from the game's own set
+	-- the ring, from the top, clockwise; icons from the game's own set
 	local SLOTS = {
-		{ "/s", "INV_Misc_Note_01" }, { "/p", "Spell_Holy_PrayerOfHealing02" },
-		{ "/g", "INV_Shirt_GuildTabard_01" }, { "/i", "INV_Misc_Key_03" },
-		{ "/raid", "Ability_Warrior_BattleShout" }, { "/1", "INV_Misc_Map_01" },
-		{ "/2", "INV_Misc_Coin_01" }, { "/r", "INV_Letter_02" },
+		{ "/p", "Spell_Holy_PrayerOfHealing02" }, { "/i", "INV_Misc_Key_03" },
+		{ "/g", "INV_Shirt_GuildTabard_01" }, { "/raid", "Ability_Warrior_BattleShout" },
+		{ "/s", "INV_Misc_Note_01" }, { "/1", "INV_Misc_Map_01" },
+		{ "/r", "INV_Letter_02" }, { "/2", "INV_Misc_Coin_01" },
 	}
 
 	local function current()
@@ -46,7 +49,7 @@ do
 		WowCompanionDB = WowCompanionDB or {}
 		WowCompanionDB.chatChannel = slash
 		showTag()
-		print("|cffffd100Chat:|r hold minus with L1 and R1 to speak to " .. NAMES[slash])
+		print("|cffffd100Chat:|r speaking to " .. NAMES[slash])
 	end
 
 	WC.ChatChannel = {
@@ -59,29 +62,97 @@ do
 		end,
 	}
 
-	-- the wheel and its macro, made once, out of combat; never overwritten, so
-	-- an agent or the player may rearrange them
-	local function build()
-		if InCombatLockdown() then return false end
-		local wheels = WowCompanionWheelDB and WowCompanionWheelDB.wheels
-		if WCWheel and WCWheel.Set and not (wheels and wheels.chat) then
-			local slots = {}
-			for _, s in ipairs(SLOTS) do
-				slots[#slots + 1] = { macrotext = ("/run WCChatChannel(%q)"):format(s[1]),
-					label = NAMES[s[1]], icon = "Interface\\Icons\\" .. s[2] }
+	-- The ring: ours, Blizzard's gamepad slot art and fonts. Shown only while
+	-- the chord is held; it takes the right stick then, so the camera stays put.
+	local RADIUS, PICK_SQ = 92, 0.25
+	local ring = _G["WCChatRing"] or CreateFrame("Frame", "WCChatRing", UIParent)
+	ring:SetSize(2 * RADIUS + 80, 2 * RADIUS + 80)
+	ring:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
+	ring:SetFrameStrata("DIALOG")
+	ring:Hide()
+	if ring.EnableGamePadStick then
+		ring:EnableGamePadStick(true)
+		ring:SetScript("OnGamePadStick", function() end)
+	end
+	ring.title = ring.title or ring:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+	ring.title:SetPoint("CENTER")
+	ring.slots = ring.slots or {}
+	for index, s in ipairs(SLOTS) do
+		local angle = math.pi / 2 - (index - 1) * math.pi / 4
+		local slot = ring.slots[index] or {}
+		ring.slots[index] = slot
+		slot.dx, slot.dy, slot.slash = math.cos(angle), math.sin(angle), s[1]
+		slot.icon = slot.icon or ring:CreateTexture(nil, "ARTWORK")
+		slot.icon:SetSize(40, 40)
+		slot.icon:SetPoint("CENTER", ring, "CENTER", slot.dx * RADIUS, slot.dy * RADIUS)
+		slot.icon:SetTexture("Interface\\Icons\\" .. s[2])
+		slot.border = slot.border or ring:CreateTexture(nil, "OVERLAY")
+		slot.border:SetAllPoints(slot.icon)
+		slot.label = slot.label or ring:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		slot.label:SetPoint("TOP", slot.icon, "BOTTOM", 0, -2)
+		slot.label:SetText(NAMES[s[1]])
+	end
+	local function light(pick)
+		for _, slot in ipairs(ring.slots) do
+			local on = slot.slash == pick
+			pcall(slot.border.SetAtlas, slot.border, on and "gamepad-actionbar-circleslot-border-selected"
+				or "gamepad-actionbar-circleslot-border-normal")
+			slot.icon:SetDesaturated(not on)
+			slot.label:SetFontObject(on and "GameFontNormalSmall" or "GameFontHighlightSmall")
+		end
+		ring.title:SetText(NAMES[pick] or "")
+	end
+	local function stickPick()
+		local ok, state = pcall(C_GamePad.GetDeviceMappedState, C_GamePad.GetActiveDeviceID())
+		local stick = ok and state and state.sticks and state.sticks[2]
+		if not (stick and stick.x and stick.y) or stick.x * stick.x + stick.y * stick.y < PICK_SQ then return nil end
+		local best, bestDot
+		for _, slot in ipairs(ring.slots) do
+			local dot = stick.x * slot.dx + stick.y * slot.dy
+			if not bestDot or dot > bestDot then best, bestDot = slot.slash, dot end
+		end
+		return best
+	end
+	ring:SetScript("OnUpdate", function(self)
+		-- the last direction pushed is kept, so a flick and let go picks it
+		local pick = stickPick()
+		if pick and pick ~= self.pick then
+			self.pick = pick
+			light(pick)
+		end
+	end)
+
+	-- the talk button (Companion.lua's WowCompanionTap) down and up: the ring
+	-- shows once L1 and R1 are both held with it, a moment late is fine
+	local watch = _G["WCChatRingWatch"] or CreateFrame("Frame", "WCChatRingWatch")
+	watch:Hide()
+	watch:SetScript("OnUpdate", function(self, elapsed)
+		self.t = (self.t or 0) + elapsed
+		if not ring:IsShown() and WowCompanion_PadSlot and WowCompanion_PadSlot() == "say" then
+			ring.pick = current()
+			light(ring.pick)
+			ring:Show()
+		end
+		if self.t > 0.6 and not ring:IsShown() then self:Hide() end
+	end)
+	local tap = _G["WowCompanionTap"]
+	if tap and not tap.wcChatRing then
+		tap.wcChatRing = true
+		tap:HookScript("OnClick", function(_, _, down)
+			if down then
+				watch.t = 0
+				watch:Show()
+			else
+				watch:Hide()
+				if ring:IsShown() then
+					ring:Hide()
+					if ring.pick and ring.pick ~= current() then WCChatChannel(ring.pick) end
+				end
 			end
-			pcall(WCWheel.Set, "chat", { label = "Chat", slots = slots })
-		end
-		if GetMacroIndexByName("Chat") == 0 then
-			pcall(CreateMacro, "Chat", "INV_Letter_02", "/click WCWheel_chat Macro", false)
-		end
-		return true
+		end)
 	end
 
 	local boot = CreateFrame("Frame")
 	boot:RegisterEvent("PLAYER_LOGIN")
-	boot:SetScript("OnEvent", function()
-		showTag()
-		if not build() and WC.AfterCombat then WC.AfterCombat(build) end
-	end)
+	boot:SetScript("OnEvent", showTag)
 end
