@@ -6,9 +6,12 @@
 use std::{
     io,
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -40,6 +43,15 @@ const FALLBACK_SPELLS: &[&str] = &["Hearthstone", "Rejuvenation", "Moonfire", "B
 // Whisper keeps only the last ~224 tokens of a prompt; stay well inside that, or
 // the cut falls on the spell names, which are the point
 const PROMPT_CHARS: usize = 700;
+// A Bluetooth pad sleeps and a headset drops its hands-free link; either used to end
+// the app. Now a lost device is reopened on this cadence until it comes back.
+const RETRY: Duration = Duration::from_secs(2);
+// Whisper fills silence with the endings of the videos it was trained on. These only
+// count as heard when the clip had real sound in it.
+const PHANTOMS: &[&str] = &["thank you", "thanks for watching", "you", "bye", "thank you for watching"];
+// RMS of a clip with nobody talking; speech sits well above it. Printed with every
+// clip, so it can be tuned from the log rather than guessed.
+const SILENCE: f32 = 0.01;
 
 fn prompt(spells: &[String]) -> String {
     let mut prompt = String::from("World of Warcraft. Spells and macros: ");
@@ -88,8 +100,26 @@ pub fn listen(
         .map(|(role, name)| pad::press(name).map(|press| (*role, press)))
         .collect::<io::Result<_>>()?;
     let (vid, pid) = DEFAULT_PAD;
-    let mut controller = Pad::open(vid, pid)?;
-    let microphone = Microphone::open(option(options, "mic"))?;
+    let wanted_mic = option(options, "mic");
+    // Neither has to be there at startup: the model loads either way, and each device
+    // is picked up when it appears. A mistyped `mic=` looks exactly like an unplugged
+    // headset from here, so the wait names the inputs it can see; a typo shows up
+    // as a name missing from that list.
+    let mut controller = match Pad::open(vid, pid) {
+        Ok(opened) => Some(opened),
+        Err(err) => {
+            println!("controller not found ({err}); will pick it up when it connects");
+            None
+        }
+    };
+    let mut microphone = match Microphone::open(wanted_mic) {
+        Ok(opened) => Some(opened),
+        Err(err) => {
+            println!("{err}; will pick it up when it connects");
+            println!("  inputs I can see now: {}", input_names().join(", "));
+            None
+        }
+    };
     // A Bluetooth headset holding HFP for the mic has its A2DP render endpoint
     // switched off, so the cue has to name the hands-free one or it plays into a
     // dead device. Nothing is audible and nothing errors.
@@ -108,32 +138,82 @@ pub fn listen(
         println!("ready: hold {press} for {role}");
     }
     let mut holding: Option<&str> = None;
+    let mut retry_pad = Instant::now();
+    let mut retry_mic = Instant::now();
     loop {
-        controller.refresh()?;
+        // a dead stream is replaced between presses, never during one
+        if holding.is_none() && microphone.as_ref().is_some_and(Microphone::broken) {
+            eprintln!("microphone lost; waiting for it to come back");
+            microphone = None;
+            retry_mic = Instant::now();
+        }
+        if microphone.is_none() && Instant::now() >= retry_mic {
+            retry_mic = Instant::now() + RETRY;
+            // open prints the device it found, which doubles as "it's back"
+            if let Ok(opened) = Microphone::open(wanted_mic) {
+                microphone = Some(opened);
+            }
+        }
+        let Some(pad) = controller.as_mut() else {
+            if Instant::now() >= retry_pad {
+                retry_pad = Instant::now() + RETRY;
+                if let Ok(opened) = Pad::open(vid, pid) {
+                    println!("controller back");
+                    controller = Some(opened);
+                }
+            }
+            thread::sleep(POLL);
+            continue;
+        };
+        if let Err(err) = pad.refresh() {
+            eprintln!("controller lost ({err}); waiting for it to come back");
+            controller = None;
+            retry_pad = Instant::now() + RETRY;
+            // a clip cut off by the pad vanishing is not a request
+            if holding.take().is_some() {
+                if let Some(mic) = &microphone {
+                    mic.stop();
+                }
+                println!("  discarded the clip in progress");
+            }
+            continue;
+        }
         // first match wins, so holding both does one thing rather than two
         let held = bindings
             .iter()
-            .find(|(_, press)| controller.held(press))
+            .find(|(_, press)| pad.held(press))
             .map(|(role, _)| *role);
+        let Some(mic) = &microphone else {
+            if held.is_some() && holding.is_none() {
+                println!("no microphone yet; still waiting for it");
+            }
+            holding = held;
+            thread::sleep(POLL);
+            continue;
+        };
 
         match (held, holding) {
             (Some(role), None) => {
-                microphone.start();
+                mic.start();
                 cue(cue_device.clone(), cue_volume, &CUE_OPEN);
                 println!("listening for {role}");
             }
             (None, Some(role)) => {
-                let clip = microphone.stop();
+                let clip = mic.stop();
                 // falling fifth on release: rising means live, falling means it has it
                 cue(cue_device.clone(), cue_volume, &CUE_SHUT);
                 let seconds = clip.len() as f32 / WHISPER_RATE as f32;
                 if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
                     println!("too short, ignored");
                 } else {
+                    let level = loudness(&clip);
                     match transcribe(&whisper, &clip, &prompt(&vocabulary())) {
-                        Ok(text) if text.is_empty() => println!("heard nothing"),
+                        Ok(text) if text.is_empty() => println!("heard nothing (level {level:.4})"),
+                        Ok(text) if level < SILENCE && phantom(&text) => {
+                            println!("heard only silence (level {level:.4}); ignored {text:?}")
+                        }
                         Ok(text) => {
-                            println!("heard ({seconds:.1}s, {role}): {text}");
+                            println!("heard ({seconds:.1}s, {role}, level {level:.4}): {text}");
                             // a failed delivery must not kill the loop: the game may
                             // be closed, or every slot spent until the next reload
                             if let Err(err) = heard(role, &text) {
@@ -149,6 +229,22 @@ pub fn listen(
         holding = held;
         thread::sleep(POLL);
     }
+}
+
+fn loudness(clip: &[f32]) -> f32 {
+    if clip.is_empty() {
+        return 0.0;
+    }
+    (clip.iter().map(|sample| sample * sample).sum::<f32>() / clip.len() as f32).sqrt()
+}
+
+fn phantom(text: &str) -> bool {
+    let plain: String = text
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect::<String>()
+        .to_lowercase();
+    PHANTOMS.contains(&plain.trim())
 }
 
 fn transcribe(whisper: &WhisperContext, clip: &[f32], prompt: &str) -> io::Result<String> {
@@ -185,6 +281,8 @@ struct Microphone {
     capture: Arc<Mutex<Capture>>,
     rate: u32,
     channels: u16,
+    // set from the stream's error callback when the device is gone, not merely late
+    dead: Arc<AtomicBool>,
 }
 
 impl Microphone {
@@ -232,7 +330,18 @@ impl Microphone {
             samples: Vec::new(),
         }));
         let sink = Arc::clone(&capture);
-        let fail = |err| eprintln!("microphone error: {err}");
+        let dead = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&dead);
+        // An underrun is a hiccup and the stream carries on; anything else means the
+        // device went away (a headset dropping hands-free reports DeviceNotAvailable)
+        // and the stream will never deliver again.
+        let fail = move |err: cpal::Error| {
+            if !matches!(err.kind(), cpal::ErrorKind::Xrun | cpal::ErrorKind::DeviceChanged) {
+                if !flag.swap(true, Ordering::Relaxed) {
+                    eprintln!("microphone error: {err}");
+                }
+            }
+        };
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => device.build_input_stream(
                 config.config(),
@@ -253,7 +362,11 @@ impl Microphone {
         .map_err(|err| io::Error::other(err.to_string()))?;
         stream.play().map_err(|err| io::Error::other(err.to_string()))?;
 
-        Ok(Self { _stream: stream, capture, rate, channels })
+        Ok(Self { _stream: stream, capture, rate, channels, dead })
+    }
+
+    fn broken(&self) -> bool {
+        self.dead.load(Ordering::Relaxed)
     }
 
     fn start(&self) {
@@ -369,6 +482,13 @@ fn chime(wanted: Option<&str>, volume: f32, notes: &[f32]) -> io::Result<()> {
     // hold the stream open until the notes have actually come out
     thread::sleep(Duration::from_millis(CUE_NOTE * count + 80));
     Ok(())
+}
+
+fn input_names() -> Vec<String> {
+    let Ok(devices) = cpal::default_host().input_devices() else { return Vec::new() };
+    devices
+        .filter_map(|device| device.description().ok().map(|d| d.name().to_string()))
+        .collect()
 }
 
 fn option<'a>(options: &'a [String], key: &str) -> Option<&'a str> {

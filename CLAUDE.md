@@ -79,6 +79,13 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
   So chat delivery no longer opens anything: it writes only into a box **the player
   opened**, and refuses with a hint when none is open. A box opened by real input
   keeps the secure focus path intact; we only set its text.
+  Dictation appends, and the controller's cancel unfocuses the box without
+  emptying it, so a discarded line used to come back glued to the next. Saying
+  "scratch that" (or clear, cancel, never mind) empties it, focused or not, by
+  `SetText("")` alone. A clip that opens with a channel ("party, ...", "to guild
+  ...", "slash g ...") is sent as that slash command, since neither Whisper nor a
+  controller can produce "/p". Whispering a player by name is not mapped: names
+  are first and last here, and where a spoken name ends is a guess.
 - **The agent writes Lua; the client is the fence.** This replaced "the model never
   writes Lua". Insecure code cannot cast, target or move — that is what protection
   means — so agent code can do no more for the player than any installed addon.
@@ -162,6 +169,29 @@ Three things the real client taught us that a Mac couldn't:
   are all hidden. Anything that loops `1, 120` is looking at the wrong bars. Measured
   by walking every frame (`EnumerateFrames`) for an `action` field or attribute; the
   export now labels each filled slot with the bar that draws it.
+- **Chords are not bindings.** `GetBindingKey` on a gamepad button's
+  `bindingAction` (`ACTIONBUTTON189`) returns nothing, and no frame field names the
+  trigger that brings a bar up. Each button's `SlotArt` atlas does name its base
+  input, identically on every bar: 1–4 d-pad left/up/right/down, 5–8 square,
+  triangle, circle, cross (PS icons, because the pad is in DS5 mode). The modifier
+  is learned: a watcher reads `C_GamePad.GetDeviceMappedState` and, when a bar
+  button enters its `PUSHED` state, credits that bar with the modifiers held. Keyed
+  by bar, since forms page the slots under the same buttons. `state.buttons` counts
+  from 1 and `ButtonIndexToBinding` from 0, so it is `index - 1`; the first version
+  missed that and learned L2 as "R2" and R2 as "PADLSTICKUP". Measured on this pad:
+  top bar no modifier, left L2, right R2, bottom L2+R2. The "StanceBar" frames
+  learned R2 as well, and the player explained why: they are not a bar but the
+  in-form page of the bar `GamepadStanceBarOverride` names, set here to the R2 bar.
+  Switching forms is the L1+L2 wheel. The export prints the form and that setting,
+  and the agent says which page it picked and why. The export's
+  "controller" section shows what is learned and how many presses lit a button,
+  and the agent is told never to guess a `?`.
+- **Names are first and last.** The character is "Pietra Fayth", and
+  `UnitName("player")` returns only "Pietra": a whisper addressed by it came back
+  "No player named Pietra is currently playing". The API knows surnames
+  (`C_PlayerInfo.ShouldDisplaySurname`, `C_NameUtil.ReplaceSurnameSeparatorWithLinkSeparator`,
+  so the full name carries its own separator). Which form a whisper accepts is not
+  yet measured; until it is, nothing addresses a player by name.
 - **One client per install.** Two running at once both load slots, both consume bells,
   and both write the same SavedVariables file, so the last to reload wins and the
   measurements quietly lie. Diagnosed the hard way.
@@ -225,9 +255,9 @@ gamepad UI reading that state is how A and B break. So attribution *is* reachabl
 from Lua after all, a variable at a time; it was only the logs that were dead.
 
 Measured: `pickup`; `PlaceAction` into an undrawn slot (4); `PlaceAction` into a
-slot the gamepad UI draws (189, left bar 5); and `C_ActionBar.PutActionInSlot` into
-another (202, bottom bar 2): each taints **nothing** and raises no blocked-action
-notice. So the old claim that placing actions taints the UI was wrong, and bar
+slot the gamepad UI draws (189, left bar 5); `C_ActionBar.PutActionInSlot` into
+another (202, bottom bar 2); and a move (`PickupAction` 181, place in 13, and back):
+each taints **nothing** and raises no blocked-action notice. So the old claim that placing actions taints the UI was wrong, and bar
 placement is now an agent command (`bar`: slot, spell/macro/item/empty, name). Taint lives until `/reload`, so the harness allows one variant per
 session; the first run did several in one, and every hand check after `chatopen`
 was judging `chatopen`'s taint. `DisplayInterfaceActionBlockedMessage` is hooked
@@ -245,8 +275,14 @@ not in `Cargo.toml`. Needs libclang for bindgen — `C:\Program Files\LLVM` here
 ## The agent
 
 `claude -p` headless, not the API: no key to manage, it draws on the signed-in
-subscription, and `--json-schema` constrains it to one of the shapes the addon's
-dispatch table already accepts, so the model never writes Lua. `session_id` from the
+subscription, and `--json-schema` constrains it to `say` plus a list of `steps`,
+each one of the shapes the addon's dispatch table accepts. Several steps travel as
+one `batch` message (one bell), run in order, and each step's result shows in the
+window; at most one `press`/`reload`, since only one button can be offered. The
+first version allowed one command per answer and told the player to "ask again for
+each one", which nobody wants. The model is **Opus** (`run ... agent=sonnet` to
+trade back): Sonnet got chords and multi-step requests wrong often enough that
+the player noticed. A four-change request takes about 9.5 s on Opus. `session_id` from the
 first reply plus `--resume` keeps one thread, which is what makes "put it on the other
 bar instead" mean anything. Startup is seconds per utterance — a deliberate trade, and
 the reason the agent is spawned *before* the in-game "thinking" announcement, so the
@@ -267,12 +303,19 @@ Open:
   agent the five sections it reasons with (~2.5 KB), once per change, and Whisper's
   prompt is the spellbook and macro names, rebuilt per clip. `cargo run -- context
   <AddOns>` prints exactly what both receive.
-- **Isolate `PlaceAction`.** Our one test *succeeded* (`action 4 now holds macro`), and
-  the claim that it taints gamepad targeting was a guess, never isolated. `/wc place`
-  runs the variants one per fresh session: `none`, `chatopen` (control), `pickup`,
-  `hidden`, `visible`, `put` (`C_ActionBar.PutActionInSlot`), `move`, then `clean`.
-  `/wc verdict ok|broken` records the hand check; results live in
-  `WowCompanionDB.placeTests`. If it is clean, bar rearranging is back on the table.
+- **`PlaceAction` is isolated, and clean.** Every `/wc place` variant except the
+  `chatopen` control tainted nothing (see "Where we are"), so bar rearranging is an
+  agent command. What the scan cannot see is a hand check under real play: no
+  `/wc verdict` has been recorded yet, so the first "Interface action failed" after
+  a `bar` command is worth a look at `taint.log`.
+- **Devices come and go.** A pad that sleeps or a headset that drops hands-free used
+  to end `run`. Now a failed HID read, or a mic stream error other than an underrun
+  (`DeviceNotAvailable` is what WASAPI reports), is waited out and reopened every 2 s;
+  a clip in progress when the pad vanishes is discarded. Neither has to be present
+  at startup either; a missing mic prints the inputs it can see, so a mistyped
+  `mic=` is visible as a name absent from that list. Whisper's silence phantoms
+  ("Thank you.") are dropped when the clip's RMS is under 0.01, and every clip prints
+  its level so that floor can be tuned from real numbers.
 - **A game → PC channel, maybe.** The `bridge` command probes `LoggingChat`: the game
   writes chat to a log file we can read, which would be a real return path without
   reading pixels. Built, never run.

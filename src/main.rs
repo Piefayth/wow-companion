@@ -309,7 +309,7 @@ fn saved_string(addons: &Path, key: &str) -> io::Result<String> {
 /// 500 lines answering questions we asked while mapping the UI, not ones the agent
 /// asks. Those stay in the file for us and out of the prompt.
 const AGENT_SECTIONS: &[&str] =
-    &["character", "action slots", "empty slots on screen", "macros", "spellbook", "modules", "code runs"];
+    &["character", "action slots", "empty slots on screen", "controller", "macros", "spellbook", "modules", "code runs"];
 
 fn sections<'a>(context: &'a str, wanted: &[&str]) -> Vec<(&'a str, Vec<&'a str>)> {
     let mut kept: Vec<(&str, Vec<&str>)> = Vec::new();
@@ -431,13 +431,30 @@ fn bridge(addons: &Path) -> io::Result<()> {
 /// box, the other to ask.
 fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     let mut session = agent::Session::default();
+    if let Some(chosen) = options.iter().find_map(|option| option.strip_prefix("agent=")) {
+        session.model = chosen.to_string();
+    }
+    println!(
+        "agent: claude -p --model {}",
+        if session.model.is_empty() { agent::DEFAULT_MODEL } else { &session.model }
+    );
     voice::listen(
         model,
         options,
         || vocabulary(addons),
         |role, text| match role {
             "ask" => ask(addons, &mut session, text),
-            _ => send_inbox(addons, &chat_inbox(text)),
+            _ if discards(text) => {
+                println!("  clearing the chat box");
+                send_inbox(addons, "{ kind = \"chat\", clear = true }")
+            }
+            _ => {
+                let routed = channeled(text);
+                if routed != text {
+                    println!("  as: {routed}");
+                }
+                send_inbox(addons, &chat_inbox(&routed))
+            }
         },
     )
 }
@@ -458,6 +475,89 @@ fn log_inbox(who: &str, text: &str, pending: Option<&str>, also: Option<&str>) -
         fields.push(format!("andThen = {inbox}"));
     }
     format!("{{ {} }}", fields.join(", "))
+}
+
+// Spoken channel names, and the slash command each stands for. Whisper will never
+// write "/p", and a controller cannot type it, so a clip that opens with "party"
+// (or "to party", or "slash p") becomes "/p ..." -- which the chat box routes when
+// the player presses send, exactly as if they had typed it. Whispering a player is
+// not here: names are first and last on this client and the spoken boundary of a
+// name is a guess (ask the agent instead).
+const CHANNELS: &[(&str, &str)] = &[
+    ("party", "/p"),
+    ("group", "/p"),
+    ("guild", "/g"),
+    ("officer", "/o"),
+    ("raid", "/raid"),
+    ("raid warning", "/rw"),
+    ("instance", "/i"),
+    ("say", "/s"),
+    ("yell", "/y"),
+    ("reply", "/r"),
+    ("emote", "/e"),
+];
+
+/// The whole clip is a request to throw the line away. Whole clip only: "cancel
+/// the pull" is a message.
+fn discards(text: &str) -> bool {
+    let plain: String = text
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect::<String>()
+        .to_lowercase();
+    matches!(
+        plain.trim(),
+        "clear" | "clear chat" | "clear that" | "cancel" | "cancel that" | "never mind"
+            | "nevermind" | "scratch that" | "delete that" | "erase that"
+    )
+}
+
+/// "Party, on my way." -> "/p on my way." Only the opening words count, so a
+/// sentence that merely mentions the guild goes out unchanged.
+fn channeled(text: &str) -> String {
+    let trimmed = text.trim();
+    let lowered = trimmed.to_lowercase();
+    let mut rest_at = 0;
+    let mut spoken = lowered.as_str();
+    for lead in ["to ", "in ", "on "] {
+        if let Some(after) = spoken.strip_prefix(lead) {
+            rest_at += lead.len();
+            spoken = after;
+            break;
+        }
+    }
+    // "slash p hello" -> "/p hello"; Whisper spells the shortcut out when it is said
+    let mut found: Option<(String, usize)> = None;
+    if let Some(after) = spoken.strip_prefix("slash ") {
+        let word: String = after.chars().take_while(|c| c.is_alphanumeric()).collect();
+        if !word.is_empty() && word.len() <= 5 {
+            found = Some((format!("/{word}"), "slash ".len() + word.len()));
+        }
+    }
+    if found.is_none() {
+        // longest first, so "raid warning" is not read as "raid"
+        let mut channels: Vec<&(&str, &str)> = CHANNELS.iter().collect();
+        channels.sort_by_key(|(word, _)| std::cmp::Reverse(word.len()));
+        for (word, slash) in channels {
+            if let Some(after) = spoken.strip_prefix(word) {
+                // the word must end there: "partying" is not "party"
+                if after.is_empty() || after.starts_with(|c: char| !c.is_alphanumeric()) {
+                    found = Some((slash.to_string(), word.len()));
+                    break;
+                }
+            }
+        }
+    }
+    let Some((slash, used)) = found else {
+        return trimmed.to_string();
+    };
+    let message = trimmed[rest_at + used..]
+        .trim_start_matches(|c: char| c == ',' || c == ':' || c == '.' || c == '-' || c.is_whitespace());
+    if message.is_empty() {
+        // "party." alone is more likely a word than a command with nothing to say
+        return trimmed.to_string();
+    }
+    format!("{slash} {message}")
 }
 
 fn chat_inbox(text: &str) -> String {
@@ -669,4 +769,27 @@ fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::channeled;
+
+    #[test]
+    fn spoken_channels_become_slash_commands() {
+        assert_eq!(channeled("Party, on my way."), "/p on my way.");
+        assert_eq!(channeled("To guild: anyone selling bags?"), "/g anyone selling bags?");
+        assert_eq!(channeled("Slash P hello there"), "/p hello there");
+        assert_eq!(channeled("Raid warning, stack on me"), "/rw stack on me");
+        assert_eq!(channeled("raid pull in ten"), "/raid pull in ten");
+        assert_eq!(channeled("Reply, sure thing"), "/r sure thing");
+    }
+
+    #[test]
+    fn ordinary_sentences_are_left_alone() {
+        assert_eq!(channeled("Hello everyone."), "Hello everyone.");
+        assert_eq!(channeled("Partying is fun"), "Partying is fun");
+        assert_eq!(channeled("my guild is great"), "my guild is great");
+        assert_eq!(channeled("Party."), "Party.");
+    }
 }

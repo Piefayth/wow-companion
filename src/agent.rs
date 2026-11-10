@@ -22,7 +22,10 @@ use std::{
 
 use serde_json::Value;
 
-const MODEL: &str = "sonnet";
+// Opus by default: Sonnet was quick and got chords, bars and multi-step requests
+// wrong often enough that the player noticed. `run ... agent=sonnet` trades back.
+pub const DEFAULT_MODEL: &str = "opus";
+
 // Most requests are one turn. Writing Lua usually means looking a function up in
 // docs/ first, and each lookup is a turn, so leave room for a few.
 const TURNS: &str = "8";
@@ -32,18 +35,28 @@ const SCHEMA: &str = r#"{
   "type": "object",
   "properties": {
     "say":   { "type": "string" },
-    "kind":  { "type": "string", "enum": ["chat", "macro", "press", "reload", "bar", "lua", "module", "none"] },
-    "text":  { "type": "string" },
-    "name":  { "type": "string" },
-    "body":  { "type": "string" },
-    "label": { "type": "string" },
-    "macro": { "type": "string" },
-    "slot":  { "type": "integer" },
-    "what":  { "type": "string", "enum": ["spell", "macro", "item", "empty"] },
-    "code":  { "type": "string" },
-    "remove": { "type": "boolean" }
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind":  { "type": "string", "enum": ["chat", "macro", "press", "reload", "bar", "lua", "module"] },
+          "text":  { "type": "string" },
+          "name":  { "type": "string" },
+          "body":  { "type": "string" },
+          "label": { "type": "string" },
+          "macro": { "type": "string" },
+          "slot":  { "type": "integer" },
+          "what":  { "type": "string", "enum": ["spell", "macro", "item", "empty"] },
+          "code":  { "type": "string" },
+          "remove": { "type": "boolean" }
+        },
+        "required": ["kind"],
+        "additionalProperties": false
+      }
+    }
   },
-  "required": ["say", "kind"],
+  "required": ["say", "steps"],
   "additionalProperties": false
 }"#;
 
@@ -54,7 +67,10 @@ The player is on a controller, mid-game, and reads your `say` line in a small wi
 `say` is always required: one short line, plain prose, no markdown. It is the only
 thing the player sees, so make it the answer, not a preamble.
 
-Pick one `kind`:
+`steps` is what to do, in order: as many as the request needs, none when it was
+a question. Do everything they asked in one answer; never tell them to ask again
+for the rest. At most one `press` or `reload` per answer, since only one button
+can be offered, and put it last. Each step has a `kind`:
 - `chat`: they want to say something. `text` goes into the chat box exactly as if
   they had typed it, so begin it with the channel's slash command when they mean a
   channel other than say: /p for party, /r raid, /g guild, /i instance.
@@ -65,7 +81,7 @@ Pick one `kind`:
   both and press it themselves, so write the macro to do exactly what was asked and
   nothing more. Good for equipping, /console settings, leaving a group.
 - `reload`: they asked to reload the UI. A `press` with /reload, named for convenience.
-- `none`: they asked a question, or nothing needs to change in game. Answer in `say`.
+- no steps: they asked a question, or nothing needs to change in game. Answer in `say`.
 
 A message may open with <character>: their level, class, action slots, macros and
 spellbook as exported at their last UI reload. Later messages without it mean
@@ -73,12 +89,22 @@ nothing changed since. Use it: name their real spells, check a macro exists befo
 editing it, and know that anything they did since the last reload is not in it.
 They play on a controller, so the bars they see are the gamepad bars, slots 181
 and up; slots marked on screen are the ones they can see and press.
+They name buttons by chord, like 'R2 + right' or 'L2 + circle'. Each on-screen
+slot carries its chord in brackets, and the controller section says how each bar's
+chord was learned. Match the chord they said to that label exactly. A '?' means
+that bar's modifier has not been seen yet: never guess it. Say which bars are
+known and ask them to press any button on that bar once, which teaches it.
+StanceBar slots are not a separate bar: they are the in-form page of the bar
+the controller section names, so the same chord fires StanceBar slots in cat or
+bear form and the other bar's out of form. Say which you chose and why, so a
+wrong form is caught. Changing form is the L1+L2 wheel, never an action slot.
 
 - `bar`: put something on an action bar slot, or empty one. `slot` is the slot
   number; `what` is spell, macro, item or empty; `name` is the spell, macro or item
   name exactly as in <character> (a spell or item ID also works). One slot per
-  request: for a swap, do one and say what comes next. Whatever the slot held
-  leaves the bar but not the spellbook or macro list, so name it in `say`.
+  step, so a swap or a rearrangement is several `bar` steps, applied in order.
+  Whatever a slot held leaves the bar but not the spellbook or macro list, so
+  name it in `say`.
   Prefer slots marked on screen, and empty ones unless they asked to replace.
   The bars are only re-exported at a reload, so after placing something, trust the
   conversation over <character> for that slot.
@@ -134,6 +160,8 @@ pub struct Spoken {
 /// this thread last saw, which is once per reload rather than once per utterance.
 #[derive(Default)]
 pub struct Session {
+    /// the `--model` to ask for; empty means DEFAULT_MODEL
+    pub model: String,
     thread: Option<String>,
     /// the context this thread has already been given
     seen: Option<String>,
@@ -178,7 +206,7 @@ The player said: {transcript}"
             .args(["--allowedTools", TOOLS])
             .args(["--output-format", "json"])
             .args(["--json-schema", SCHEMA])
-            .args(["--model", MODEL])
+            .args(["--model", if self.model.is_empty() { DEFAULT_MODEL } else { &self.model }])
             .args(["--max-turns", TURNS])
             // nothing here should run commands or edit files, and nothing should
             // ever block on a permission prompt mid-raid
@@ -236,33 +264,58 @@ fn read(waiting: Child) -> io::Result<Answer> {
     };
 
     let say = field(&command, "say")?.to_string();
-    let inbox = match field(&command, "kind")? {
-        "chat" => Some(crate::chat_inbox(field(&command, "text")?)),
-        "macro" => Some(format!(
+    let steps = match command.get("steps") {
+        Some(Value::Array(steps)) => steps.as_slice(),
+        None => &[],
+        Some(other) => return Err(io::Error::other(format!("steps isn't a list: {other}"))),
+    };
+    let buttons = steps
+        .iter()
+        .filter(|step| matches!(step.get("kind").and_then(Value::as_str), Some("press" | "reload")))
+        .count();
+    if buttons > 1 {
+        return Err(io::Error::other("more than one button in one answer; only one can be offered"));
+    }
+    let mut built = steps.iter().map(step_inbox).collect::<io::Result<Vec<String>>>()?;
+    // several steps still ride in one message: one bell, applied in order
+    let inbox = match built.len() {
+        0 => None,
+        1 => built.pop(),
+        _ => Some(format!("{{ kind = \"batch\", steps = {{ {} }} }}", built.join(", "))),
+    };
+    let thread = envelope
+        .get("session_id")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    Ok(Answer { spoken: Spoken { say, inbox }, thread })
+}
+
+/// One step as the inbox table the addon's dispatch accepts.
+fn step_inbox(command: &Value) -> io::Result<String> {
+    Ok(match field(command, "kind")? {
+        "chat" => crate::chat_inbox(field(command, "text")?),
+        "macro" => format!(
             "{{ kind = \"macro\", name = {}, body = {} }}",
-            crate::lua_string(field(&command, "name")?),
-            crate::lua_string(field(&command, "body")?)
-        )),
-        "press" => Some(format!(
+            crate::lua_string(field(command, "name")?),
+            crate::lua_string(field(command, "body")?)
+        ),
+        "press" => format!(
             "{{ kind = \"press\", label = {}, macro = {} }}",
-            crate::lua_string(field(&command, "label")?),
-            crate::lua_string(field(&command, "macro")?)
-        )),
-        "reload" => Some("{ kind = \"reload\" }".to_string()),
-        "lua" => Some(format!(
-            "{{ kind = \"lua\", code = {} }}",
-            crate::lua_string(field(&command, "code")?)
-        )),
+            crate::lua_string(field(command, "label")?),
+            crate::lua_string(field(command, "macro")?)
+        ),
+        "reload" => "{ kind = \"reload\" }".to_string(),
+        "lua" => format!("{{ kind = \"lua\", code = {} }}", crate::lua_string(field(command, "code")?)),
         "module" => {
-            let name = field(&command, "name")?;
+            let name = field(command, "name")?;
             if command.get("remove").and_then(Value::as_bool) == Some(true) {
-                Some(format!("{{ kind = \"module\", name = {}, remove = true }}", crate::lua_string(name)))
+                format!("{{ kind = \"module\", name = {}, remove = true }}", crate::lua_string(name))
             } else {
-                Some(format!(
+                format!(
                     "{{ kind = \"module\", name = {}, code = {} }}",
                     crate::lua_string(name),
-                    crate::lua_string(field(&command, "code")?)
-                ))
+                    crate::lua_string(field(command, "code")?)
+                )
             }
         }
         "bar" => {
@@ -271,22 +324,16 @@ fn read(waiting: Child) -> io::Result<Answer> {
                 .and_then(Value::as_u64)
                 .filter(|slot| (1..=1024).contains(slot))
                 .ok_or_else(|| io::Error::other(format!("no usable slot in {command}")))?;
-            let what = field(&command, "what")?;
-            let name = if what == "empty" { "" } else { field(&command, "name")? };
-            Some(format!(
+            let what = field(command, "what")?;
+            let name = if what == "empty" { "" } else { field(command, "name")? };
+            format!(
                 "{{ kind = \"bar\", slot = {slot}, what = {}, name = {} }}",
                 crate::lua_string(what),
                 crate::lua_string(name)
-            ))
+            )
         }
-        "none" => None,
         other => return Err(io::Error::other(format!("unknown kind {other:?}"))),
-    };
-    let thread = envelope
-        .get("session_id")
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    Ok(Answer { spoken: Spoken { say, inbox }, thread })
+    })
 }
 
 fn field<'a>(command: &'a Value, name: &str) -> io::Result<&'a str> {

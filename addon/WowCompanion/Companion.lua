@@ -285,12 +285,6 @@ local function offer(label, macro)
 		actionButton:SetAttribute("type", "macro")
 		actionButton:RegisterForClicks("AnyDown")
 
-		-- kept while this is still being pinned down: without it a failure is
-		-- indistinguishable from the click never arriving
-		actionButton:SetScript("PreClick", function(_, button)
-			say(("clicked %s, about to run %q"):format(
-				tostring(button), tostring(actionButton:GetAttribute("macrotext"))))
-		end)
 		-- make the cursor able to land on it, and tell SmartNavigation this frame is
 		-- where the window's focusable button lives
 		if SmartNavigation_MarkFrameFocusable then
@@ -358,6 +352,18 @@ local handlers = {}
 -- stays intact and we only set text on it. Refuses rather than opening one, because
 -- opening one is the thing that broke the controller.
 function handlers.chat(inbox)
+	-- The controller's cancel unfocuses the box but keeps its text, and dictation
+	-- appends, so a discarded line would come back glued to the next one. Clearing
+	-- reaches the box whether or not it still has focus, and only sets its text:
+	-- showing or hiding Blizzard's frame is what broke A and B.
+	if inbox.clear then
+		local box = activeEditBox() or LAST_ACTIVE_CHAT_EDIT_BOX or ChatFrame1EditBox
+		if box and box.SetText then
+			box:SetText("")
+			return "chat box cleared"
+		end
+		return "refused: no chat box to clear"
+	end
 	local box = activeEditBox()
 	if not box or not box:IsVisible() then
 		say("no chat box open, so nothing was written -- open chat first, then speak")
@@ -428,11 +434,11 @@ function handlers.bridge(inbox)
 	if DEFAULT_CHAT_FRAME then
 		DEFAULT_CHAT_FRAME:AddMessage(("WCBRIDGE-frame %s"):format(nonce))
 	end
-	-- a real chat event, addressed to nobody: the only kind the log certainly keeps.
-	-- Echoed back to us alone, so it is not a message sent on the player's behalf.
-	if C_ChatInfo and C_ChatInfo.SendAddonMessage then
-		C_ChatInfo.SendAddonMessage("WowCompanion", nonce, "WHISPER", UnitName("player"))
-	end
+	-- There was a self-whisper here, addressed by UnitName("player"). Names on this
+	-- client are first and last ("Pietra Fayth"); UnitName gives only the first,
+	-- and the server answered "No player named Pietra is currently playing".
+	-- Addressing a player needs the full name in a form not yet measured
+	-- (C_NameUtil mentions a surname separator), so the whisper is gone.
 	return ("logging on: %s, marked %s"):format(tostring(LoggingChat()), nonce)
 end
 
@@ -458,6 +464,32 @@ end
 function handlers.probe(inbox)
 	WowCompanionDB.probe.received = (WowCompanionDB.probe.received or 0) + 1
 	return ("message %d, %ds after the helper wrote it"):format(inbox.n, time() - inbox.sent)
+end
+
+-- What a step did, in the window, so a refusal ("in combat", "no macro named")
+-- is seen rather than silently dropped. Only kinds whose result is news: chat,
+-- lua and press already show themselves.
+local REPORTED = { bar = true, macro = true, module = true }
+local function report(step, ok, outcome)
+	if not ok then
+		remember("error", ("%s failed: %s"):format(tostring(step.kind), tostring(outcome)))
+	elseif REPORTED[step.kind] and type(outcome) == "string" then
+		remember(outcome:find("^refused") and "error" or "game", outcome)
+	end
+end
+
+-- Several steps from one answer, in order, each reported. One failing does not
+-- stop the rest: they were asked for together, but each stands on its own, and
+-- the report says which landed.
+function handlers.batch(inbox)
+	for _, step in ipairs(inbox.steps or {}) do
+		local handler = handlers[step.kind or ""]
+		if not handler or step.kind == "batch" then
+			report(step, false, "unknown kind")
+		else
+			report(step, pcall(handler, step))
+		end
+	end
 end
 
 local function receive()
@@ -489,6 +521,7 @@ local function receive()
 		if not done then
 			record("slot " .. slot .. " follow-up", "error: " .. tostring(outcome))
 		end
+		report(following, done, outcome)
 	end
 end
 
@@ -951,6 +984,244 @@ local function barLabel(name)
 		:gsub("^%a-CenteredAnchor", ""):gsub("ActionButton(%d+)$", " %1"))
 end
 
+-- Which chord fires which button.
+--
+-- Not in the bindings: GetBindingKey("ACTIONBUTTON189") is empty for every gamepad
+-- button, and no frame field names the trigger. What is measurable is each button's
+-- icon -- its SlotArt atlas names the base input, the same eight on every bar
+-- (1-4 the d-pad left, up, right, down; 5-8 the face buttons) -- and, by watching,
+-- which modifiers are held when a button goes into its pushed state. So the base
+-- comes from the art and the modifier is learned from play, keyed by bar position
+-- rather than slot, because druid forms page the slots under the same buttons.
+local GAMEPAD_BARS = {
+	{ "TopCenteredAnchorTopBar", 4 },
+	{ "LeftCenteredAnchorLeftBar", 8 },
+	{ "RightCenteredAnchorRightBar", 8 },
+	{ "BottomCenteredAnchorBottomBar", 8 },
+	{ "TopCenteredAnchorStanceBar", 8 },
+}
+local ART_INPUT = {
+	dpadleft = "left", dpadup = "up", dpadright = "right", dpaddown = "down",
+	["ps%-square"] = "square", ["ps%-triangle"] = "triangle",
+	["ps%-circle"] = "circle", ["ps%-cross"] = "cross",
+}
+
+-- { frame, label = "LeftBar 3", bar = "LeftBar", base = "right" } for each button
+local padButtons
+local function gamepadButtons()
+	if padButtons then
+		return padButtons
+	end
+	padButtons = {}
+	for _, bar in ipairs(GAMEPAD_BARS) do
+		for i = 1, bar[2] do
+			local name = "GamepadMainActionBarFramePageUnit" .. bar[1] .. "ActionButton" .. i
+			local button = _G[name]
+			if button then
+				local art = button.SlotArt and button.SlotArt.GetAtlas and button.SlotArt:GetAtlas() or ""
+				local base
+				for pattern, input in pairs(ART_INPUT) do
+					if art:find(pattern) then
+						base = input
+					end
+				end
+				local label = barLabel(name)
+				padButtons[#padButtons + 1] = {
+					frame = button, label = label, bar = label:gsub(" %d+$", ""), base = base,
+				}
+			end
+		end
+	end
+	return padButtons
+end
+
+-- The pad as the client maps it: modifiers held (triggers, shoulders, sticks,
+-- sorted) and the d-pad and face buttons held. nil when there is no pad to read.
+local function padState()
+	if not (C_GamePad and C_GamePad.GetDeviceMappedState and C_GamePad.ButtonIndexToBinding) then
+		return nil
+	end
+	local ok, state = pcall(C_GamePad.GetDeviceMappedState)
+	if not ok or type(state) ~= "table" or type(state.buttons) ~= "table" then
+		return nil
+	end
+	local modifiers, bases = {}, {}
+	for index, down in pairs(state.buttons) do
+		if down then
+			-- state.buttons is a Lua array, from 1; ButtonIndexToBinding counts from 0.
+			-- Measured: without the -1, L2 read as R2 and R2 as PADLSTICKUP.
+			local name = C_GamePad.ButtonIndexToBinding(index - 1)
+			if name then
+				if name:find("^PADD") or name:find("^PAD%d") then
+					bases[name] = true
+				else
+					modifiers[#modifiers + 1] = name
+				end
+			end
+		end
+	end
+	table.sort(modifiers)
+	return modifiers, bases
+end
+
+-- WowCompanionDB.chords[bar] = { [modifier] = presses }. chordStats counts every
+-- d-pad or face press and how many lit an action button within a few frames: if
+-- "lit" stays at zero, the pushed state is the wrong signal, and the export says so
+-- instead of quietly learning nothing.
+local CHORD_WINDOW = 0.25
+
+-- The first learner read every button one place off (see padState). Its record is
+-- still good once renamed: what it called R2 was L2, and PADLSTICKUP was R2.
+local function fixFirstChords()
+	if not WowCompanionDB.chords or WowCompanionDB.chordsFixed then
+		WowCompanionDB.chordsFixed = true
+		return
+	end
+	local renamed = { PADRTRIGGER = "PADLTRIGGER", PADLSTICKUP = "PADRTRIGGER" }
+	for bar, seen in pairs(WowCompanionDB.chords) do
+		local fixed = {}
+		for chord, count in pairs(seen) do
+			local parts = {}
+			for part in chord:gmatch("[^+]+") do
+				parts[#parts + 1] = renamed[part] or part
+			end
+			table.sort(parts)
+			local key = table.concat(parts, "+")
+			fixed[key] = (fixed[key] or 0) + count
+		end
+		WowCompanionDB.chords[bar] = fixed
+	end
+	WowCompanionDB.chordsFixed = true
+end
+
+-- every pushed button the UI has, by name: what lit when none of ours did
+local function pushedElsewhere()
+	local found = {}
+	local frame, walked = EnumerateFrames(), 0
+	while frame and walked < 50000 and #found < 4 do
+		walked = walked + 1
+		if frame.GetButtonState then
+			local ok, state = pcall(frame.GetButtonState, frame)
+			if ok and state == "PUSHED" then
+				local named = frame.GetName and frame:GetName()
+				found[#found + 1] = ("%s (action %s)"):format(tostring(named or frame:GetDebugName()), tostring(frame.action))
+			end
+		end
+		frame = EnumerateFrames(frame)
+	end
+	return #found > 0 and table.concat(found, ", ") or "nothing pushed"
+end
+
+-- the presses that taught nothing, newest last, so the next reload shows why
+local function missedChord(press)
+	-- a face button alone is jump or interact, never a bar; twenty jumps would
+	-- push out the one miss worth reading
+	if press.chord == "none" and tostring(press.base):find("^PAD%d") then
+		return
+	end
+	WowCompanionDB.chordMisses = WowCompanionDB.chordMisses or {}
+	local misses = WowCompanionDB.chordMisses
+	local form = GetShapeshiftForm and GetShapeshiftForm() or "?"
+	misses[#misses + 1] = ("%s + %s, form %s, page %s: %s"):format(press.chord, press.base,
+		tostring(form), tostring(C_ActionBar and C_ActionBar.GetActionBarPage and C_ActionBar.GetActionBarPage()),
+		press.scanned or "not scanned")
+	while #misses > 20 do
+		table.remove(misses, 1)
+	end
+end
+
+local function learnChords()
+	fixFirstChords()
+	local watcher = CreateFrame("Frame")
+	local was, wasBase = {}, {}
+	local pending -- the modifiers of the last base press, until a button lights or it expires
+	watcher:SetScript("OnUpdate", function()
+		local modifiers, bases = padState()
+		if not modifiers then
+			return
+		end
+		WowCompanionDB.chordStats = WowCompanionDB.chordStats or { presses = 0, lit = 0 }
+		local stats = WowCompanionDB.chordStats
+		for name in pairs(bases) do
+			if not wasBase[name] then
+				stats.presses = stats.presses + 1
+				pending = {
+					chord = #modifiers > 0 and table.concat(modifiers, "+") or "none",
+					base = name, at = GetTime(), frames = 0,
+				}
+			end
+		end
+		wasBase = bases
+		if pending then
+			pending.frames = pending.frames + 1
+			-- two frames and none of our buttons lit: look at everything once, while
+			-- whatever did light is still held down
+			-- (13,000 frames is a visible hitch; never in combat, and a jump is a miss too)
+			if pending.frames == 3 and not pending.scanned and not InCombatLockdown() then
+				pending.scanned = pushedElsewhere()
+			end
+			if GetTime() - pending.at > CHORD_WINDOW then
+				missedChord(pending)
+				pending = nil
+			end
+		end
+		for _, entry in ipairs(gamepadButtons()) do
+			local ok, state = pcall(entry.frame.GetButtonState, entry.frame)
+			local pushed = ok and state == "PUSHED"
+			if pushed and not was[entry.label] and pending then
+				stats.lit = stats.lit + 1
+				WowCompanionDB.chords = WowCompanionDB.chords or {}
+				local bar = WowCompanionDB.chords[entry.bar] or {}
+				bar[pending.chord] = (bar[pending.chord] or 0) + 1
+				WowCompanionDB.chords[entry.bar] = bar
+				pending = nil
+			end
+			was[entry.label] = pushed
+		end
+	end)
+end
+
+-- "L2+R2" from "PADLTRIGGER+PADRTRIGGER": the words the player says
+local PAD_WORDS = {
+	PADLTRIGGER = "L2", PADRTRIGGER = "R2", PADLSHOULDER = "L1", PADRSHOULDER = "R1",
+	PADLSTICK = "L3", PADRSTICK = "R3",
+}
+local function spoken(chord)
+	if chord == "none" then
+		return "no modifier"
+	end
+	return (chord:gsub("PAD%u+", function(name) return PAD_WORDS[name] or name end))
+end
+
+-- bar -> modifier words, from the most-seen chord, or nil while none is learned
+local function barModifier(bar)
+	local seen = WowCompanionDB.chords and WowCompanionDB.chords[bar]
+	if not seen then
+		return nil
+	end
+	local best, most = nil, 0
+	for chord, count in pairs(seen) do
+		if count > most then
+			best, most = chord, count
+		end
+	end
+	return best and spoken(best), most
+end
+
+-- "L2+R2 + right", or "? + right" while the bar's modifier is unlearned
+local function chordFor(label)
+	for _, entry in ipairs(gamepadButtons()) do
+		if entry.label == label then
+			local modifier = barModifier(entry.bar)
+			if modifier == "no modifier" then
+				return entry.base or "?"
+			end
+			return ("%s + %s"):format(modifier or "?", entry.base or "?")
+		end
+	end
+	return nil
+end
+
 -- slot -> { visible = bool, label = "LeftBar 3" } for every slot some frame draws.
 -- The label is the first visible frame's, since several frames (edit mode, the
 -- hidden classic bars) can point at the same slot.
@@ -1058,6 +1329,10 @@ local function exportContext()
 				local drawn = frames[slot]
 				if drawn and drawn.visible then
 					what = what .. " -- on screen: " .. tostring(drawn.label)
+					local chord = chordFor(drawn.label)
+					if chord then
+						what = what .. " (" .. chord .. ")"
+					end
 				end
 				line(("%3d: %s"):format(slot, what))
 			end
@@ -1070,10 +1345,58 @@ local function exportContext()
 		for slot = 1, LAST_ACTION_SLOT do
 			local drawn = frames[slot]
 			if drawn and drawn.visible and not slotHas(slot) then
-				open[#open + 1] = ("%d (%s)"):format(slot, tostring(drawn.label))
+				local chord = chordFor(drawn.label)
+				open[#open + 1] = ("%d (%s%s)"):format(slot, tostring(drawn.label),
+					chord and (", " .. chord) or "")
 			end
 		end
 		line(#open > 0 and table.concat(open, ", ") or "none")
+
+		section("controller")
+		line("-- the chord for each bar. Buttons 1-4 are the d-pad left, up, right, down;")
+		line("-- 5-8 the face buttons square, triangle, circle, cross (from each button's")
+		line("-- icon). The modifier is learned by watching which triggers are held when a")
+		line("-- button fires; '?' means not seen yet, and is not to be guessed")
+		for _, bar in ipairs(GAMEPAD_BARS) do
+			local name = barLabel(bar[1] .. "ActionButton1"):gsub(" 1$", "")
+			local modifier, presses = barModifier(name)
+			line(("%s: %s"):format(name, modifier and ("%s (seen %d times)"):format(modifier, presses) or "?"))
+		end
+		-- Measured, and corrected by the player: the frames named StanceBar are not
+		-- a bar of their own. They are the in-form page of whichever bar the
+		-- GamepadStanceBarOverride setting names (here the R2 bar), which is why they
+		-- learn the same chord. Switching forms is the L1+L2 wheel, not a slot.
+		local byModifier = {}
+		for _, bar in ipairs(GAMEPAD_BARS) do
+			local name = barLabel(bar[1] .. "ActionButton1"):gsub(" 1$", "")
+			local modifier = barModifier(name)
+			if modifier then
+				byModifier[modifier] = byModifier[modifier] or {}
+				table.insert(byModifier[modifier], name)
+			end
+		end
+		for modifier, names in pairs(byModifier) do
+			if #names > 1 then
+				line(("-- %s is shared by %s: StanceBar is that bar's page while in a form"
+					.. " (cat, bear); out of form it is the other"):format(modifier, table.concat(names, " and ")))
+			end
+		end
+		local form = GetShapeshiftForm and GetShapeshiftForm() or 0
+		line(("form at export: %s"):format(form == 0 and "none (caster)" or ("%d"):format(form)))
+		line(("GamepadStanceBarOverride: %s (the setting that picks which bar shows form actions)")
+			:format(tostring(cvar("GamepadStanceBarOverride"))))
+		line("-- changing form is the L1+L2 wheel, not an action slot")
+		local stats = WowCompanionDB.chordStats
+		if stats then
+			line(("-- %d d-pad/face presses watched, %d lit a bar button"):format(stats.presses, stats.lit))
+		end
+		local misses = WowCompanionDB.chordMisses
+		if misses and #misses > 0 then
+			line("-- presses that lit none of these bars, newest last:")
+			for _, miss in ipairs(misses) do
+				line("--   " .. (miss:gsub("PAD%u+", function(name) return PAD_WORDS[name] or name end)))
+			end
+		end
 	else
 		line("-- HasAction/GetActionInfo unavailable")
 	end
@@ -1840,6 +2163,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		probeSound()
 		-- after login settles: modules may build frames on top of Blizzard's
 		C_Timer.After(2, loadModules)
+		-- read-only: polls the pad and the buttons' pushed state, hooks nothing
+		pcall(learnChords)
 		ticker = C_Timer.NewTicker(0.5, poll)
 	elseif event == "PLAYER_LOGOUT" then
 		-- a failed export must not cost the rest of the save
