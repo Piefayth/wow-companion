@@ -22,7 +22,8 @@ Guidance for a quest Polestar has no guide for: aim its arrow
   `Polestar.Codex` (`.Quest(id)`, `.Npc(id)`). Polestar also takes guides as data
   (`Polestar.Import`, its import strings), a route not built yet.
 
-The route the player is on, live: `local E = Polestar.Engine`; `E.GetGuide()` (the
+The route the player is on, live: `WC.Use("guide").current()` (title, step, steps,
+stepTitle) and `.upcoming(n)`; under it, `local E = Polestar.Engine`; `E.GetGuide()` (the
 active guide: `.id`, `.title`, `.steps`, each step with `.title`), `E.GetStepIndex()`,
 `E.GetStepCount()`, `E.GetTabs()`. Read them in a `lua` step through the data strip,
 not from Polestar's SavedVariables (as of the last reload). **Name a guide by its

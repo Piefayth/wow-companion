@@ -179,6 +179,7 @@ do
 	--          clear()
 	--   gear:  slots(), upgrades(slotName, n)          (Providers/Gear.lua)
 	--   itemSource: sources(itemID), npcName(id), questName(id) (Providers/ItemSource.lua)
+	--   guide: current() -> { title, step, steps, stepTitle }, upcoming(n) (Providers/Guide.lua)
 	-- A module may declare WC.Module("Name", { wants = { "nav" } }): when nothing
 	-- provides one, the board says what it needs, and WC.List() shows it.
 	-- A provider is one file in Providers/ (WC.Provide below); one tied to an
@@ -199,6 +200,7 @@ do
 		nav = "a navigation addon (such as Polestar)",
 		gear = "a gear addon (such as GearQuest Forever)",
 		itemSource = "an item database addon (such as Polestar)",
+		guide = "a levelling guide addon (such as Polestar)",
 	}
 	function WC.Provide(cap, name, impl, opts)
 		opts = opts or {}
