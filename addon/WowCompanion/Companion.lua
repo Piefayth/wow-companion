@@ -89,7 +89,7 @@ local function newTranscript(parent)
 	end)
 	-- wrapping depends on width, so a resize lays everything out again
 	scroll:SetScript("OnSizeChanged", function() t:Layout() end)
-	scroll:SetScript("OnShow", function() t:Layout(); t:ToBottom() end)
+	scroll:SetScript("OnShow", function() t:Layout() end)
 	return t
 end
 
@@ -120,10 +120,19 @@ function Transcript:Place(row, y, width)
 	return y + height
 end
 
+-- A resize rewraps every line, so the content gets shorter or taller under a
+-- scroll offset measured against the old height: widening left the offset past
+-- the new end and the window showed nothing. So keep the reader's place by
+-- fraction, and stay pinned to the bottom if that is where they were.
 function Transcript:Layout()
 	if self.holding then return end
 	local width = self:Width()
 	if not width then return end
+	local scroll = self.scroll
+	local range = scroll:GetVerticalScrollRange()
+	local offset = scroll:GetVerticalScroll()
+	local following = range <= 0 or offset >= range - 4
+	local fraction = range > 0 and offset / range or 1
 	self.content:SetWidth(width)
 	local y = 0
 	for _, row in ipairs(self.rows) do
@@ -131,6 +140,12 @@ function Transcript:Layout()
 	end
 	self.height = y
 	self.content:SetHeight(math.max(y, 1))
+	scroll:UpdateScrollChildRect()
+	if following then
+		self:ToBottom()
+	else
+		scroll:SetVerticalScroll(math.floor(scroll:GetVerticalScrollRange() * fraction))
+	end
 end
 
 function Transcript:ToBottom()
@@ -2617,9 +2632,18 @@ local function measureOnce(label, action)
 		table.sort(fresh)
 		WowCompanionDB.pathTaint = WowCompanionDB.pathTaint or {}
 		WowCompanionDB.pathTaint[label] = #fresh == 0 and "none" or table.concat(fresh, "; ")
-		if #fresh > 0 then
+		-- the chat frames' fade clock is written by every line any addon prints to
+		-- chat, and nothing protected reads it; it stays in pathTaint for the
+		-- export, but is not worth a red line in the window every session
+		local shown = {}
+		for _, entry in ipairs(fresh) do
+			if not entry:find("%.oldestFadingLineTimestamp ") then
+				shown[#shown + 1] = entry
+			end
+		end
+		if #shown > 0 then
 			remember("error", ("%s tainted %d variable(s): %s -- /reload clears it"):format(
-				label, #fresh, table.concat(fresh, "; ", 1, math.min(#fresh, 4))))
+				label, #shown, table.concat(shown, "; ", 1, math.min(#shown, 4))))
 		end
 	end)
 end
