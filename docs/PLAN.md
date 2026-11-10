@@ -110,6 +110,15 @@ the bars once, cause not yet reproduced).
   reads Home, so opening a wheel needs a press the game can see: likely a binding
   on the game side, measured first.
 
+### Next up: a game-to-PC data strip (the player, 2026-11-10)
+
+Data the PC needs without a reload, read by screenshot (the player allowed it).
+Not text: a tight strip of solid colour cells in the **very bottom-right corner**,
+shown only for the moment of the shot and gone right after (no lingering cards:
+the player's rule). Bytes in RGB per cell, corner markers and a header with
+length and checksum, compressed payloads paged across shots; decoded by code on
+the PC at full resolution. Built beside the PC-to-game channel, never touching it.
+
 ### Later: a custom look (the player, 2026-11-09)
 
 A separate addon (`WowCompanion_Look`), independent of the AI pipeline: one theme
