@@ -33,7 +33,7 @@ const CALIBRATE: Duration = Duration::from_secs(3);
 const RESTLESS: u32 = 3;
 // learning a button: how long every byte is watched before a press counts, how
 // long a byte must have been still before one, and the shortest real press
-const WARM_UP: Duration = Duration::from_millis(400);
+const WARM_UP: Duration = Duration::from_millis(200);
 const QUIET: Duration = Duration::from_millis(400);
 const HOLD_MIN: Duration = Duration::from_millis(40);
 
@@ -327,6 +327,10 @@ pub fn gamepads() -> io::Result<Vec<(u16, u16, String)>> {
 /// first; the press counts when the button is let go.
 pub fn learn(vid: u16, pid: u16, wait: Duration, status: impl Fn(&str)) -> io::Result<Press> {
     let mut device = open(vid, pid)?;
+    // XInput's report holds only buttons, nothing that moves on its own: no
+    // warm-up, and the press counts as it goes down
+    let clean = matches!(device, Device::XInput(_));
+    let warm_up = if clean { Duration::ZERO } else { WARM_UP };
     status("press the button you want to talk with");
     // when each byte last changed, and how often it changed during a hold
     let mut moved: [Option<Instant>; REPORT] = [None; REPORT];
@@ -363,11 +367,14 @@ pub fn learn(vid: u16, pid: u16, wait: Duration, status: impl Fn(&str)) -> io::R
                 // a button going down: the lowest bit that turned on, in a byte
                 // that had been still (a warm-up first, so every byte has a past)
                 let pressed = flipped & after;
-                if pressed != 0 && quiet && since.elapsed() >= WARM_UP && fresh.is_none() {
+                if pressed != 0 && quiet && since.elapsed() >= warm_up && fresh.is_none() {
                     fresh = Some(Press { byte: index, mask: pressed & pressed.wrapping_neg() });
                 }
             }
             if let Some(press) = fresh {
+                if clean {
+                    return Ok(press);
+                }
                 down = Some((press, now, 0));
             }
             if let Some((press, at, changes)) = &down {
