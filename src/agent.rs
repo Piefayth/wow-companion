@@ -88,6 +88,8 @@ can be offered, and put it last. Each step has a `kind`:
   (/g, /p, /raid, /i, /s, /y, /1 General, /2 Trade, /w Name); for a whisper,
   resolve the name first with `WowCompanion_ResolveWhisper('Name message')`, which
   returns target, message, label (or nil and why), then send '/w '..target..' '..message.
+  A Battle.net whisper cannot be sent from a macro: whisper the character the friend
+  is playing (the resolver does this), and a friend not in WoW cannot be whispered.
 
 Other things of ours agent code can call (all globals, all in WowCompanion):
 - `WCShowLink(n)`: the item viewer, the nth item linked in chat (1 = newest).

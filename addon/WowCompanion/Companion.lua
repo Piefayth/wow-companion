@@ -448,7 +448,15 @@ local function buildTabs(frame, messages, pending)
 		text:SetPoint("RIGHT", -8, 0)
 		text:SetJustifyH("LEFT")
 		b:SetFontString(text)
-		b:SetText(LABELS[key])
+		-- news kept across a reload shows from the start
+		local kept = type(WowCompanionDB) == "table" and WowCompanionDB.unread
+		-- Main is the one in view after a reload, so its news is being read
+		if kept and key == "" then kept[""] = nil end
+		if kept and kept[key] then
+			b:SetText("|cff40ff40" .. LABELS[key] .. "  new|r")
+		else
+			b:SetText(LABELS[key])
+		end
 		b:SetScript("OnClick", function() WowCompanion_SetConversation(key) end)
 		if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
 		frame.convButtons[key] = b
@@ -900,7 +908,14 @@ end
 -- buttons above the transcript, and a slot with news it has not shown glows.
 local CONVERSATIONS = { "", "l1", "l2", "r1", "r2" }
 local viewSlot = ""
-local unread = {}
+-- which conversations have news not yet looked at, kept in SavedVariables so a
+-- reload does not forget a reply waiting in another conversation (the player,
+-- 2026-11-10). Read through this, since WowCompanionDB exists only once loaded.
+local function unreadSet()
+	if type(WowCompanionDB) ~= "table" then return {} end
+	WowCompanionDB.unread = WowCompanionDB.unread or {}
+	return WowCompanionDB.unread
+end
 local function paintConversations()
 	local frame = logWindow
 	if not (frame and frame.convButtons) then return end
@@ -915,7 +930,7 @@ local function paintConversations()
 			label = label .. "  |cff9ad5ffhearing " .. math.floor(GetTime() - heard) .. "s|r"
 		elseif entry then
 			label = label .. "  |cffb0b0b0" .. math.floor(GetTime() - entry.since) .. "s|r"
-		elseif unread[key] then
+		elseif unreadSet()[key] then
 			label = "|cff40ff40" .. label .. "  new|r"
 		end
 		button:SetText(label)
@@ -937,7 +952,7 @@ local function remember(who, text, continued, slot)
 	if slot == viewSlot then
 		showLine(who, text, continued, entries[#entries].at)
 	elseif not continued and who ~= "you" then
-		unread[slot] = true
+		unreadSet()[slot] = true
 		paintConversations()
 	end
 end
@@ -957,7 +972,7 @@ function WowCompanion_ViewSlot() return viewSlot end
 
 function WowCompanion_SetConversation(slot)
 	viewSlot = slot or ""
-	unread[viewSlot] = nil
+	unreadSet()[viewSlot] = nil
 	if renderPending then renderPending() end
 	logFrame().messages:Clear()
 	replayLog()
@@ -1114,18 +1129,21 @@ local function people()
 		local count = BNGetNumFriends() or 0
 		for i = 1, count do
 			local ok, info = pcall(C_BattleNet.GetFriendAccountInfo, i)
-			-- offline ones too: a whisper is how the player finds out whether a
-			-- friend is really away or only appearing offline. Resolution prefers
-			-- whoever is online (see WowCompanion_ResolveWhisper)
-			if ok and info and info.accountName then
+			-- A Battle.net whisper cannot go out from a macro (the player,
+			-- 2026-11-10): the send preview has to whisper the character the
+			-- friend is on, by name and realm. Not in WoW means no whisper.
+			if ok and info and info.gameAccountInfo and info.gameAccountInfo.isOnline then
 				local game = info.gameAccountInfo
-				local online = game and game.isOnline
 				local tag = info.battleTag and info.battleTag:match("^[^#]+")
-				local character = online and game.characterName or nil
-				add(info.accountName, (tag or "?") .. (character and (" (on " .. character .. ")") or "")
-					.. (online and "" or " (offline)"), tag, character)
-				list[#list].online = online and true or false
-				list[#list].seen = (info.lastOnlineTime or 0) > 0
+				local character = game.characterName
+				if character and character ~= "" and game.clientProgram == "WoW" then
+					local target = character
+					local realm = game.realmName
+					if realm and realm ~= "" and GetNormalizedRealmName and realm ~= GetNormalizedRealmName() then
+						target = character .. "-" .. realm
+					end
+					add(target, (tag or "?") .. " (on " .. character .. ")", tag, character)
+				end
 			end
 		end
 	end
