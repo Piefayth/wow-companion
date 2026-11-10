@@ -111,7 +111,13 @@ local function buildLog()
 
 	-- the waiting line: the agent takes seconds, and silence reads as broken
 	local pending = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	-- A fixed box, text pinned left and never wrapping: with one anchor the region
+	-- resized to its text on every tick, so the dots coming and going made the
+	-- line jump. Now only the dots move.
 	pending:SetPoint("BOTTOMLEFT", 18, 16)
+	pending:SetPoint("BOTTOMRIGHT", -180, 16)
+	pending:SetJustifyH("LEFT")
+	pending:SetWordWrap(false)
 	pending:Hide()
 	frame.pending = pending
 
