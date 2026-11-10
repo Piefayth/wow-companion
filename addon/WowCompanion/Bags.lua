@@ -330,9 +330,12 @@ local function build()
 	function f:Mirror(blizz)
 		self.mirror = blizz and true or nil
 		if blizz then mirrorBagButtons() else for _, t in pairs(bagIcons) do t:Hide() end end
-		-- our legend names our own buttons; over theirs the game's controller
-		-- drives (its own legend), and ours sat on their bottom row
-		for _, pr in ipairs(self.prompts) do pr:SetShown(not blizz) end
+		-- The legend stays (the player, 2026-11-10: no prompts in combat looked
+		-- broken): Blizzard's controller bags use the same buttons as ours
+		-- (square use, cross move, triangle more, circle close), and their own
+		-- legend is on their invisible frame. Below their slots, not on them; the
+		-- bag-jump prompt is ours alone.
+		for i, pr in ipairs(self.prompts) do pr:SetShown(not blizz or i < 5) end
 		if not blizz then
 			self:ClearAllPoints()
 			self:SetPoint(unpack(self.home))
@@ -356,7 +359,7 @@ local function build()
 		if l then
 			local k = blizz:GetEffectiveScale() / self:GetEffectiveScale()
 			self:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", l * k - EDGE, t * k + EDGE + TITLE_H + GAP_V)
-			self:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMLEFT", r * k + EDGE, bm * k - EDGE)
+			self:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMLEFT", math.max(r * k + EDGE, l * k - EDGE + EDGE * 2 + (self.legendW or 0)), bm * k - EDGE - GAP_V - LEGEND_H)
 		else
 			self:SetPoint("TOPLEFT", blizz, "TOPLEFT", -6, 6)
 			self:SetPoint("BOTTOMRIGHT", blizz, "BOTTOMRIGHT", 6, -6)
