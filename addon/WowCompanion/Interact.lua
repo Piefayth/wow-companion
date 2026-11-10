@@ -120,7 +120,45 @@ do
 		else
 			self:SetBinding(true, key, "INTERACTSOFTTARGET")
 		end
+		self:CallMethod("Trace", "state " .. tostring(newstate))
 	]])
+
+	-- Trace (the player, 2026-11-10: in combat the second press does not loot).
+	-- What the second press depends on, each time it may change: the key's
+	-- state, the target, Blizzard's SoftTargetInteract, and whether a lootable
+	-- soft interact target exists and is in range. Kept in
+	-- WowCompanionDB.interact.trace (newest last, 60 lines), read from disk on
+	-- the PC after a reload. Insecure, read only, everything under pcall.
+	local function snap()
+		local function v(fn, ...) local ok, r = pcall(fn, ...) return ok and tostring(r) or "err" end
+		return ("combat=%s tgt=%s harm=%s dead=%s cvar=%s soft=%s obj=%s range=%s loot=%s name=%s"):format(
+			v(InCombatLockdown), v(UnitExists, "target"), v(UnitCanAttack, "player", "target"),
+			v(UnitIsDead, "target"), v(C_CVar.GetCVar, "SoftTargetInteract"),
+			v(UnitExists, "softinteract"), v(UnitIsGameObject, "softinteract"),
+			v(UnitIsInInteractRange, "softinteract"), v(UnitHasLootInteraction, "softinteract"),
+			v(UnitName, "softinteract"))
+	end
+	local function trace(what)
+		pcall(function()
+			local d = db()
+			d.trace = d.trace or {}
+			d.trace[#d.trace + 1] = ("%s.%03d %s | %s"):format(date("%H:%M:%S"),
+				math.floor((GetTime() % 1) * 1000), what, snap())
+			while #d.trace > 60 do table.remove(d.trace, 1) end
+		end)
+	end
+	function switch:Trace(what) trace(what) end
+	local tracer = _G["WCCombatInteractTrace"] or CreateFrame("Frame", "WCCombatInteractTrace")
+	tracer:UnregisterAllEvents()
+	for _, e in ipairs({ "PLAYER_TARGET_CHANGED", "PLAYER_SOFT_INTERACT_CHANGED", "PLAYER_REGEN_DISABLED",
+		"PLAYER_REGEN_ENABLED", "UI_ERROR_MESSAGE", "LOOT_OPENED", "CVAR_UPDATE" }) do
+		pcall(tracer.RegisterEvent, tracer, e)
+	end
+	tracer:SetScript("OnEvent", function(_, event, a, b)
+		if event == "CVAR_UPDATE" and a ~= "SoftTargetInteract" then return end
+		trace(event .. (a and (" " .. tostring(a)) or "") .. (b and (" " .. tostring(b)) or ""))
+	end)
+	button:HookScript("OnClick", function(_, _, down) trace("Home clicked (clear) " .. (down and "down" or "up")) end)
 
 	local function bindAll()
 		if InCombatLockdown() then return false end
