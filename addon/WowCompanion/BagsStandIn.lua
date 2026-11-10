@@ -28,19 +28,29 @@ do
 	local function theirs() return ContainerFrameCombinedBags end
 	local function on() return WowCompanionDB.standInBags ~= false and WCBags and WCBags.ready end
 
+	local function restore()
+		local blizz = theirs()
+		if blizz then showAnim:SetTarget(blizz) showGroup:Play() end
+	end
+	-- In combat Blizzard's bags are the bags (the player, 2026-11-10: "our bag
+	-- mod doesn't let us open our bags during combat"). Theirs open in combat
+	-- because ContainerFrameCombinedBags holds nothing secure of an addon's: their
+	-- item buttons are Blizzard's own code, trusted to use items, so the frame is
+	-- not protected and ToggleAllBags may show it any time. Ours must use secure
+	-- /use buttons (our code is not trusted to use items), which makes WCBags
+	-- protected: Show from this hook is refused in combat (only a secure press,
+	-- the Bags macro, may open it then). So in a fight we leave theirs visible and
+	-- in charge, and hand back to ours when the fight ends.
 	local function standIn()
 		local blizz = theirs()
 		if not on() or not blizz or not blizz:IsShown() then return end
+		if InCombatLockdown() then restore() return end
 		hideAnim:SetTarget(blizz)
 		hideGroup:Play()
 		if GamepadMode and GamepadMode.FrameControlsManager and InputUtil and InputUtil.IsGamepadUIEnabled() then
 			pcall(GamepadMode.FrameControlsManager.FrameHidden, GamepadMode.FrameControlsManager, blizz)
 		end
 		if not WCBags:IsShown() then WCBags:Open() end
-	end
-	local function restore()
-		local blizz = theirs()
-		if blizz then showAnim:SetTarget(blizz) showGroup:Play() end
 	end
 	-- no flicker (the player, 2026-11-10): their frame stays at alpha 0 between
 	-- opens while the stand-in is on, so it is already invisible when it shows.
@@ -71,11 +81,35 @@ do
 		if not on() then return end
 		C_Timer.After(0, function()
 			local blizz = theirs()
+			if InCombatLockdown() then
+				-- theirs, visible and in the controller's focus cycle
+				if blizz and blizz:IsShown() then restore() end
+				return
+			end
 			if blizz and blizz:IsShown() then standIn()
 			elseif WCBags:IsShown() then WCBags:Shut()
 			else WCBags:Open() end
 		end)
 	end
+	-- a fight starting: their frame, held at alpha 0 between opens, is made
+	-- visible again so an open in combat shows; the fight over, it is hidden
+	-- again, and theirs still open hands over to ours
+	local combat = CreateFrame("Frame")
+	combat:RegisterEvent("PLAYER_REGEN_DISABLED")
+	combat:RegisterEvent("PLAYER_REGEN_ENABLED")
+	combat:SetScript("OnEvent", function(_, event)
+		if not on() then return end
+		local blizz = theirs()
+		if not blizz then return end
+		if event == "PLAYER_REGEN_DISABLED" then
+			if not (WCBags and WCBags:IsShown()) then restore() end
+		elseif blizz:IsShown() then
+			standIn()
+		else
+			hideAnim:SetTarget(blizz)
+			hideGroup:Play()
+		end
+	end)
 	if ToggleBackpack_Combined then hooksecurefunc("ToggleBackpack_Combined", toggled) end
 	if ToggleAllBags then hooksecurefunc("ToggleAllBags", toggled) end
 	if WCBags then WCBags.followBlizzard = true end
