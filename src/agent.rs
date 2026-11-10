@@ -122,6 +122,12 @@ answer start a detached reader: tools/strip.py --watch 240 <out file>, launched
 hidden with PowerShell Start-Process (python -I) so it outlives your turn.
 The decoded text lands in the out file once the step runs; read it on the next
 turn. Never send Lua from a second process (it races the channel).
+Gear and bag advice: read what is equipped first (GetInventoryItemLink('player',
+1..19), and the bag slots via C_Container.GetContainerNumSlots(1..4)) and check
+every suggestion against it. A two-hand weapon in the main hand means no off-hand
+or shield can be worn; GearQuest's off-hand picks ignore that. A bag in the bags is
+a spare, not an upgrade, unless a bag slot is empty. Never advise from item data
+alone.
 Other game facts already worked out:
 - Items linked in chat are kept in `WowCompanionDB.links` (newest first: link,
   from, where); `WowCompanion_ShowItem(n or link)` opens the item viewer.
