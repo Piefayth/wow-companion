@@ -5849,7 +5849,10 @@ end
 -- WowCompanionDB.suppressBlizzardBags = false turns it off if it ever taints.
 do
 	local function swap()
-		if WowCompanionDB.suppressBlizzardBags == false or InCombatLockdown() then return end
+		-- Off by default: our CloseAllBags ran Blizzard's bag code tainted (it writes
+		-- FRAME_THAT_OPENED_BAGS and fires CloseBag into the frame manager), and the
+		-- next focus switch at the vendor was forbidden (2026-11-10). On only if set.
+		if WowCompanionDB.suppressBlizzardBags ~= true or InCombatLockdown() then return end
 		if not (WCBags and WCBags.ready) then return end
 		C_Timer.After(0, function()
 			if InCombatLockdown() then return end
