@@ -1102,6 +1102,8 @@ local function showPreview(line, heading, shown)
 	if not preview:IsShown() then preview:Show() end
 	return true
 end
+-- for agent code: show a line in the send preview (line, heading, shown text)
+WowCompanion_Preview = showPreview
 
 function handlers.chat(inbox)
 	-- The controller's cancel unfocuses the box but keeps its text, and dictation
