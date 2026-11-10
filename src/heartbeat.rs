@@ -40,6 +40,10 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
             // bells so the fresh addon is not pointed at the old session's slots
             let began = crate::session_began(&addons);
             if began != session {
+                // not the first look: that is the companion starting, not a reload
+                if session.is_some() {
+                    crate::resync(&addons);
+                }
                 session = began;
                 if let Err(err) = crate::clear_catch_up(&addons.join(crate::ADDON).join("Signals")) {
                     eprintln!("heartbeat: {err}");

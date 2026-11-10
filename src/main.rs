@@ -26,8 +26,10 @@ const ADDON: &str = "WowCompanion";
 // request at most: every update spends one of the session's 64 slots
 // Measured: progress lines were 29 of a session's 64 slots, nearly half. The
 // window's seconds count already shows the agent is alive, so two will do.
-const PROGRESS_EVERY: Duration = Duration::from_secs(12);
-const PROGRESS_LIMIT: u32 = 2;
+// a long turn (a build, a research run) went quiet after two lines and read as
+// stuck; with 512 slots a line every 15 s is affordable
+const PROGRESS_EVERY: Duration = Duration::from_secs(15);
+const PROGRESS_LIMIT: u32 = 16;
 // at this many slots used, offer the Reload button once, while slots remain
 // Margins below the slots the game knows (see known_slots): offer Reload at 16
 // left, stop progress lines at 14 left, and from 8 left every reply says so.
@@ -348,9 +350,93 @@ fn watch_for_looks(addons: &Path, session: &Mutex<agent::Session>, looking: &Mut
     }
 }
 
+/// What each conversation is doing ("" is the main one), with when it began. The
+/// game keeps its spinners and board only in memory, so a /reload wiped them while
+/// the agents worked on; `resync` tells the fresh UI session again.
+static WORKING: Mutex<Vec<(String, String, Instant)>> = Mutex::new(Vec::new());
+
+fn set_working(slot: &str, doing: &str) {
+    let mut working = WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    match working.iter_mut().find(|(at, _, _)| at == slot) {
+        Some(entry) => entry.1 = doing.to_string(),
+        None => working.push((slot.to_string(), doing.to_string(), Instant::now())),
+    }
+}
+
+/// Clears a conversation's entry in WORKING however its request ends.
+struct Working(String);
+impl Drop for Working {
+    fn drop(&mut self) {
+        WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|(at, _, _)| *at != self.0);
+    }
+}
+
+/// Replies sent lately: when, their first line, and the message itself. A reply
+/// sent while the game was reloading reached a UI session that was going away.
+static REPLIES: Mutex<Vec<(SystemTime, String, String)>> = Mutex::new(Vec::new());
+
+/// A new UI session began (the save file was just written). After the addon has
+/// loaded: send again every reply from the 10 minutes before the save that the
+/// save's log does not hold, then each conversation's current state.
+fn resync(addons: &Path) {
+    let addons = addons.to_path_buf();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_secs(8));
+        let saved_at = session_began(&addons).unwrap_or_default();
+        let saved = saved_variables_text(&addons).unwrap_or_default();
+        let replies = REPLIES.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+        for (sent, first, inbox) in replies {
+            let millis = sent.duration_since(UNIX_EPOCH).map(|at| at.as_millis()).unwrap_or_default();
+            if millis > saved_at || saved_at - millis > 600_000 {
+                continue;
+            }
+            // the save writes strings escaped; a prefix is enough to recognise one
+            let escaped: String = first.replace('\\', "\\\\").replace('"', "\\\"").chars().take(60).collect();
+            if !escaped.is_empty() && !saved.contains(&escaped) {
+                println!("resync: a reply the game never logged, sent again: {first}");
+                if let Err(err) = send_inbox(&addons, &inbox) {
+                    eprintln!("  resync: {err}");
+                }
+            }
+        }
+        let working = WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+        for (slot, doing, since) in working {
+            // `resync` first: a status line is advisory (dropped when the channel is
+            // busy) only when it opens with its kind, and this one must arrive
+            let inbox = format!(
+                "{{ resync = true, kind = \"progress\", text = {}, slot = {}, since = {} }}",
+                lua_string(&doing),
+                lua_string(&slot),
+                since.elapsed().as_secs()
+            );
+            if let Err(err) = send_inbox(&addons, &inbox) {
+                eprintln!("  resync: {err}");
+            }
+        }
+    });
+}
+
+/// The addon's save file, as text.
+fn saved_variables_text(addons: &Path) -> Option<String> {
+    let accounts = addons.parent()?.parent()?.join("WTF").join("Account");
+    let mut newest: Option<(u128, PathBuf)> = None;
+    for account in fs::read_dir(accounts).ok()?.flatten() {
+        let saved = account.path().join("SavedVariables").join(format!("{ADDON}.lua"));
+        if let Some(millis) = modified_millis(&saved) {
+            if newest.as_ref().is_none_or(|(best, _)| millis > *best) {
+                newest = Some((millis, saved));
+            }
+        }
+    }
+    fs::read_to_string(newest?.1).ok()
+}
+
 /// Returns whether the agent wants to look at the results before it is done.
 fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -> io::Result<bool> {
     println!("asking: {spoken}");
+    let _working = Working(session.slot.clone());
+    WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|(at, _, _)| *at != session.slot);
+    set_working(&session.slot, "thinking");
     // start the agent before announcing ourselves: the announcement costs a bell
     // wait, the agent costs several seconds, and they may as well run together
     let waiting = session.start(spoken, agent_context(addons))?;
@@ -384,8 +470,10 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
                 }
             })
         };
+        let slot = session.slot.clone();
         let answer = session.finish(waiting, |doing| {
             println!("  ... {doing}");
+            set_working(&slot, doing);
             let _ = tell.send(doing.to_string());
         });
         drop(tell);
@@ -413,7 +501,15 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
     } else {
         answer.say.clone()
     };
-    send_inbox(addons, &log_inbox_in(Some(&session.slot), "claude", &say, None, answer.inbox.as_deref()))?;
+    let reply = log_inbox_in(Some(&session.slot), "claude", &say, None, answer.inbox.as_deref());
+    {
+        let first = say.lines().find(|line| !line.trim().is_empty()).unwrap_or_default().to_string();
+        let mut replies = REPLIES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        replies.push((SystemTime::now(), first, reply.clone()));
+        let excess = replies.len().saturating_sub(20);
+        replies.drain(..excess);
+    }
+    send_inbox(addons, &reply)?;
     if answer.look {
         println!("  waiting for the reload to look at the results");
     }
@@ -830,6 +926,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         Ok(guard) => (guard, false),
                         Err(std::sync::TryLockError::Poisoned(poisoned)) => (poisoned.into_inner(), false),
                         Err(std::sync::TryLockError::WouldBlock) => {
+                            set_working(&slot, "waiting for the request before this one");
                             let line = log_inbox_in(Some(&slot), "you", &text, Some("waiting for the request before this one"), None);
                             let _ = courier.send(line);
                             // the conversation still runs one request at a time

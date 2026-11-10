@@ -1005,10 +1005,12 @@ local function setTranscribing(slot, on)
 	end
 	if renderPending then renderPending() end
 end
-local function setPending(text, slot)
+-- `age`: seconds the work has already run, when the companion retells it after a
+-- reload, so the board shows the real time instead of starting over at 0
+local function setPending(text, slot, age)
 	slot = slot or ""
 	if text then
-		local entry = working[slot] or { since = GetTime() }
+		local entry = working[slot] or { since = GetTime() - (tonumber(age) or 0) }
 		entry.text = text
 		working[slot] = entry
 	else
@@ -1882,7 +1884,7 @@ end
 -- What the agent is doing right now, on the waiting line: "reading StanceBar.lua".
 -- Not logged; the reply is what stays.
 function handlers.progress(inbox)
-	setPending(inbox.text or "thinking", inbox.slot)
+	setPending(inbox.text or "thinking", inbox.slot, inbox.since)
 	return "progress"
 end
 
@@ -2054,6 +2056,7 @@ end
 -- What the poll has seen, exported at every reload, so a stuck channel can be
 -- read from the save file instead of guessed at.
 local channel = { polls = 0, heard = 0, caughtUp = 0 }
+local loadedAt = GetTime()
 local catchUpTurn = 0
 
 -- The message bell: one at a time, the next slot's, as on 2026-11-09. Polling
@@ -2073,8 +2076,11 @@ local function poll()
 	-- The catch-up bells, beside the message bells: one per poll, in turn over
 	-- this slot and the next 6 (never the 8th, which is the bell of the slot just
 	-- taken, left ringing). Only after a message has been heard this session, when
-	-- the companion has cleared the last session's catch-up bells.
-	if channel.heard > 0 then
+	-- the companion has cleared the last session's catch-up bells (its heartbeat
+	-- does within 4 s of the save), or 10 s after loading: messages sent during a
+	-- loading screen often miss their 2 s bell, and waiting for a first one heard
+	-- left those lost.
+	if channel.heard > 0 or GetTime() - loadedAt > 10 then
 		local ahead = catchUpTurn
 		catchUpTurn = (catchUpTurn + 1) % (BELLS - 1)
 		channel.catchUpPolls = (channel.catchUpPolls or 0) + 1
