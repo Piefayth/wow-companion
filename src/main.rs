@@ -1358,8 +1358,11 @@ fn slot_name(slot: u32) -> String {
     format!("{ADDON}_S{slot:03}")
 }
 
+// "m" names since 2026-11-10: the plain 1.wav to 8.wav were left as valid
+// sounds by a failed experiment, which the polling game then held open for good;
+// fresh names the game has never opened start the channel clean
 fn bell_name(n: u32) -> String {
-    format!("{}.wav", (n - 1) % BELLS + 1)
+    format!("m{}.wav", (n - 1) % BELLS + 1)
 }
 
 

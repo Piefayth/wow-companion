@@ -40,8 +40,9 @@ local function slotName(n)
 	return ("%s_S%03d"):format(ADDON, n)
 end
 
+-- "m" names: see bell_name in src/main.rs
 local function bellPath(n)
-	return SIGNALS .. ((n - 1) % BELLS + 1) .. ".wav"
+	return SIGNALS .. "m" .. ((n - 1) % BELLS + 1) .. ".wav"
 end
 
 -- PlaySoundFile claims every file will play, even empty ones, so only IsPlaying counts
