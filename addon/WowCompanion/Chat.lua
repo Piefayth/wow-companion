@@ -358,10 +358,8 @@ local function buildPreview()
 
 	if SmartNavigation_MarkFrameFocusable then
 		pcall(SmartNavigation_MarkFrameFocusable, frame)
-		-- the buttons are not focus targets: cross is bound to Send while the
-		-- preview is up, so cross on a focused "Don't send" sent the line (the
-		-- player, 2026-11-10). Cross sends and circle cancels, wherever focus is;
-		-- the labels carry the glyphs.
+		pcall(SmartNavigation_MarkFrameFocusable, send)
+		pcall(SmartNavigation_MarkFrameFocusable, cancel)
 	end
 	if UIPanelWindows then
 		UIPanelWindows["WowCompanionPreview"] = { area = "center", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
@@ -383,8 +381,9 @@ end
 local function bindPreview(frame)
 	if InCombatLockdown() or not frame:IsShown() then return false end
 	ClearOverrideBindings(frame)
-	SetOverrideBindingClick(frame, true, "PAD1", "WowCompanionPreviewSend", "LeftButton")
-	SetOverrideBindingClick(frame, true, "PAD2", "WowCompanionPreviewCancel", "LeftButton")
+	-- No pad bindings (the player, 2026-11-10): the window takes the controller's
+	-- focus, so confirm presses whichever button is selected and circle closes.
+	-- Binding cross to Send made "Don't send" send.
 	return true
 end
 function WowCompanion_PreviewTap()
@@ -438,8 +437,6 @@ function showPreview(line, heading, shown, dictated)
 	if not preview:IsShown() then preview:Show() end
 	local glyph = WowCompanion_Glyph or function(k) return k end
 	if bindPreview(preview) then
-		preview.send:SetText(glyph("PAD1") .. " Send")
-		preview.cancelButton:SetText(glyph("PAD2") .. " Don't send")
 		preview.hint:SetText("")
 	else
 		preview.hint:SetText(("In combat: tap %s to send   \"edit, ...\" to change"):format(glyph(WowCompanion_TalkKey or "PADSOCIAL")))
