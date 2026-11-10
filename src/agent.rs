@@ -189,6 +189,12 @@ Other game facts already worked out:
   the bags), then `WowCompanion_Preview` with the slash line; for a whisper resolve
   the name first. `WowCompanionDB.bagLink` holds the item the player chose to link
   from the bag menu (say: send it to Name).
+  Swapping in a bigger bag: `WCSwapBag(what, into, dry)` (modules/BagSwap.lua)
+  empties the bag it replaces into the other bags, equips the new one, and puts the
+  old one where it was; it says when there is not room. `what` a name or item ID
+  (nil: the biggest spare), `into` bag slot 1-4 (nil: an empty slot, else the
+  smallest), `dry` true only says what it would do. Offer it as a `press`
+  (`/run WCSwapBag('Name')`); out of combat. Also on the bag menu (triangle).
   Destroying: never from your code (refused). `WowCompanion_ConfirmDestroy(bag, slot)`
   opens a confirmation whose Destroy button is the player's press.
 The player. The request's `== player profile ==` section (player/profile.md) is

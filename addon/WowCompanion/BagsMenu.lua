@@ -63,6 +63,10 @@ function WC.BagsMenu.Build(f, holdBindings, MAXBAG)
 				list[#list + 1] = { "Split one off", function() split(b, 1) end }
 			end
 		end
+		-- a spare bag: swap it in, emptying the bag it replaces (modules/BagSwap.lua)
+		if info and WCSwapBag and select(4, C_Item.GetItemInfoInstant(info.itemID)) == "INVTYPE_BAG" then
+			list[#list + 1] = { "Equip this bag", function() WCSwapBag(info.itemID) end }
+		end
 		-- linking is by voice (\"link X to Y\"), not a menu entry (the player, 2026-11-10)
 		if info and WowCompanion_ConfirmDestroy then
 			list[#list + 1] = { "|cffff6060Destroy|r", function()
