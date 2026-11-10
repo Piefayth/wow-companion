@@ -21,3 +21,11 @@ Guidance for a quest Polestar has no guide for: aim its arrow
   (`Polestar.Nav.SetTarget`) and pin the spots (`WCPins`), with places from
   `Polestar.Codex` (`.Quest(id)`, `.Npc(id)`). Polestar also takes guides as data
   (`Polestar.Import`, its import strings), a route not built yet.
+
+The route the player is on, live: `local E = Polestar.Engine`; `E.GetGuide()` (the
+active guide: `.id`, `.title`, `.steps`, each step with `.title`), `E.GetStepIndex()`,
+`E.GetStepCount()`, `E.GetTabs()`. Read them in a `lua` step through the data strip,
+not from Polestar's SavedVariables (as of the last reload). **Name a guide by its
+`.title`, never its id**: ids are file slugs and can mislead
+(`forever/horde/05-stonetalon-mountains` is titled "Ashenvale & Silverpine Forest";
+calling it Stonetalon was wrong, 2026-11-10). Source: Polestar/Core/Engine.lua.
