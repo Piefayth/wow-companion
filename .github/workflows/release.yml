@@ -28,33 +28,34 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            . -> target
-            crates/setup -> target
       - name: Vulkan SDK (build only; players need just their graphics driver)
         uses: jakoch/install-vulkan-sdk-action@v1
         with:
           vulkan_version: 1.3.296.0
           cache: true
+      # Short build folders: ggml's Vulkan shader generator nests a CMake project
+      # deep inside the build tree, and under target/vulkan/release/build/... the
+      # paths passed Windows' 260-character limit (MSBuild FTK1011, run 42807670697).
       - name: Build (Vulkan)
         run: cargo build --release --no-default-features --features vulkan
         env:
-          CARGO_TARGET_DIR: target/vulkan
+          CARGO_TARGET_DIR: C:	v
       - name: Build (CPU fallback)
         run: cargo build --release --no-default-features
         env:
-          CARGO_TARGET_DIR: target/cpu
+          CARGO_TARGET_DIR: C:	c
       - name: Build (setup window)
         run: cargo build --release
         working-directory: crates/setup
+        env:
+          CARGO_TARGET_DIR: C:	s
       - name: Package
         shell: pwsh
         run: >
           ./packaging/package.ps1
-          -Exe target/vulkan/release/wow-companion.exe
-          -CpuExe target/cpu/release/wow-companion.exe
-          -Setup crates/setup/target/release/wow-companion-setup.exe
+          -Exe C:/tv/release/wow-companion.exe
+          -CpuExe C:/tc/release/wow-companion.exe
+          -Setup C:/ts/release/wow-companion-setup.exe
           -Name wow-companion-windows
       - uses: actions/upload-artifact@v4
         with:
@@ -82,21 +83,24 @@ jobs:
         run: cargo build --release
         env:
           CUDAARCHS: "75;80;86;89;90"
+          CARGO_TARGET_DIR: C:	g
       - name: Build (CPU fallback)
         run: cargo build --release --no-default-features
         env:
-          CARGO_TARGET_DIR: target/cpu
+          CARGO_TARGET_DIR: C:	c
       - name: Build (setup window)
         run: cargo build --release
         working-directory: crates/setup
+        env:
+          CARGO_TARGET_DIR: C:	s
       - name: Package
         shell: pwsh
         run: |
           $bin = Join-Path "${{ steps.cuda.outputs.CUDA_PATH }}" "bin"
           ./packaging/package.ps1 `
-            -Exe target/release/wow-companion.exe `
-            -CpuExe target/cpu/release/wow-companion.exe `
-            -Setup crates/setup/target/release/wow-companion-setup.exe `
+            -Exe C:/tg/release/wow-companion.exe `
+            -CpuExe C:/tc/release/wow-companion.exe `
+            -Setup C:/ts/release/wow-companion-setup.exe `
             -Extra (Join-Path $bin "cudart64_12.dll"), (Join-Path $bin "cublas64_12.dll"), (Join-Path $bin "cublasLt64_12.dll") `
             -Name wow-companion-windows-cuda
       - uses: actions/upload-artifact@v4
