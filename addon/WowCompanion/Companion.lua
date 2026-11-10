@@ -809,6 +809,12 @@ local working = {}
 local SLOT_ORDER = { "", "l1", "l2", "r1", "r2" }
 local function slotLabel(slot) return slot == "" and "Main" or slot:upper() end
 local renderPending
+-- the last reply or error per conversation, shown in its row for a while
+local recent, RECENT_FOR = {}, 12
+function WowCompanion_Recent(slot, text)
+	recent[slot or ""] = { text = text, at = GetTime() }
+	if renderPending then renderPending() end
+end
 local paintHook -- the conversation list's painter, set once it exists
 local function setPending(text, slot)
 	slot = slot or ""
@@ -827,8 +833,14 @@ renderPending = function()
 	local lines, view = {}, nil
 	turn = turn + 1
 	local dots = ("."):rep(turn % 4)
+	local now = GetTime()
 	for _, slot in ipairs(SLOT_ORDER) do
 		local entry = working[slot]
+		local done = recent[slot]
+		if done and now - done.at > RECENT_FOR then recent[slot] = nil done = nil end
+		if not entry and done then
+			lines[#lines + 1] = ("|cffffd100%s|r  %s"):format(slotLabel(slot), done.text)
+		end
 		if entry then
 			local line = ("%s%s  %ds"):format(entry.text, dots, GetTime() - entry.since)
 			lines[#lines + 1] = ("|cffffd100%s|r  %s"):format(slotLabel(slot), line)
@@ -1513,10 +1525,12 @@ function handlers.log(inbox)
 		local first = text:match("^%s*([^\n]+)") or ""
 		first = first:gsub("%*%*", ""):gsub("`", "")
 		if #first > 110 then first = first:sub(1, 107) .. "..." end
+		-- a row of its own in the toast, under its conversation's label, so
+		-- the other agents' rows stay visible beside it
 		if who == "claude" and first ~= "" then
-			toast(("|cffffd100Claude|r  %s  |cff808080(minus to read)|r"):format(first), 0.9, 0.9, 0.9, 10)
-		elseif who == "error" then
-			toast("|cffff7777" .. first .. "|r", 1, 0.5, 0.5, 10)
+			WowCompanion_Recent(islot, first .. "  |cff808080(minus to read)|r")
+		elseif who == "error" and first ~= "" then
+			WowCompanion_Recent(islot, "|cffff7777" .. first .. "|r")
 		end
 	end
 	return ("logged %d line(s)"):format(lines)
