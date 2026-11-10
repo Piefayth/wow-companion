@@ -730,6 +730,7 @@ local function toast(text, r, g, b, hold)
 		toastFrame.text:SetPoint("RIGHT", -12, 0)
 		toastFrame.text:SetJustifyH("LEFT")
 		toastFrame.text:SetWordWrap(false)
+		toastFrame.text:SetSpacing(3)
 		toastFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 		toastFrame:SetScript("OnEvent", function()
 			if toastHeld then
@@ -749,6 +750,9 @@ local function toast(text, r, g, b, hold)
 		return
 	end
 	toastFrame.text:SetText(text)
+	-- one row per line: several agents at work show one each
+	local rows = select(2, text:gsub("\n", "")) + 1
+	toastFrame:SetHeight(20 + rows * 14 + (rows - 1) * 3)
 	toastFrame.text:SetTextColor(r or 1, g or 1, b or 1)
 	toastFrame:SetAlpha(1)
 	toastFrame:Show()
@@ -787,34 +791,56 @@ end
 -- when the current wait began: kept across progress updates, so the count is the
 -- whole request, not the time since the last "reading ..."
 local pendingSince
-local function setPending(text)
+-- One waiting line per conversation (the player, 2026-11-10): several agents can
+-- work at once, and one shared line muddled them. Each slot keeps its own text
+-- and start time; the toast shows a labelled line for every one at work, and
+-- the window's line shows the conversation in view.
+local working = {}
+local SLOT_ORDER = { "", "l1", "l2", "r1", "r2" }
+local function slotLabel(slot) return slot == "" and "Main" or slot:upper() end
+local renderPending
+local function setPending(text, slot)
+	slot = slot or ""
+	if text then
+		local entry = working[slot] or { since = GetTime() }
+		entry.text = text
+		working[slot] = entry
+	else
+		working[slot] = nil
+	end
+	renderPending()
+end
+local turn = 0
+renderPending = function()
 	local frame = logFrame()
-	if pendingTicker then
-		pendingTicker:Cancel()
-		pendingTicker = nil
-	end
-	if not text then
-		pendingSince = nil
-		frame.pendingShown = false
-		frame.pending:Hide()
-		if toastFrame and toastFrame:IsShown() and not toastTimer then toast(nil) end
-		return
-	end
-	-- the seconds count is the "is it stuck?" answer: counting means working
-	pendingSince = pendingSince or GetTime()
-	local turn, since = 0, pendingSince
-	local function spin()
-		turn = turn + 1
-		local line = ("%s%s  %ds"):format(text, ("."):rep(turn % 4), GetTime() - since)
-		frame.pending:SetText(line)
-		if not frame:IsShown() then
-			toast("|cffffd100Claude|r  " .. line, 0.8, 0.8, 0.8)
+	local lines, view = {}, nil
+	turn = turn + 1
+	local dots = ("."):rep(turn % 4)
+	for _, slot in ipairs(SLOT_ORDER) do
+		local entry = working[slot]
+		if entry then
+			local line = ("%s%s  %ds"):format(entry.text, dots, GetTime() - entry.since)
+			lines[#lines + 1] = ("|cffffd100%s|r  %s"):format(slotLabel(slot), line)
+			if slot == (WowCompanion_ViewSlot and WowCompanion_ViewSlot() or "") then view = line end
 		end
 	end
-	spin()
-	frame.pendingShown = true
-	if (frame.currentTab or 1) == 1 then frame.pending:Show() end
-	pendingTicker = C_Timer.NewTicker(0.4, spin)
+	pendingSince = view and GetTime() or nil
+	frame.pendingShown = view ~= nil
+	if view then
+		frame.pending:SetText(view)
+		if (frame.currentTab or 1) == 1 then frame.pending:Show() end
+	else
+		frame.pending:Hide()
+	end
+	if #lines > 0 then
+		if not frame:IsShown() then
+			toast(table.concat(lines, "\n"), 0.8, 0.8, 0.8)
+		end
+		if not pendingTicker then pendingTicker = C_Timer.NewTicker(0.4, function() renderPending() end) end
+	else
+		if pendingTicker then pendingTicker:Cancel() pendingTicker = nil end
+		if toastFrame and toastFrame:IsShown() and not toastTimer then toast(nil) end
+	end
 end
 
 -- Kept in SavedVariables, so it is written on /reload or logout like everything else.
@@ -864,9 +890,12 @@ local function replayLog()
 	messages:Hold(false)
 end
 
+function WowCompanion_ViewSlot() return viewSlot end
+
 function WowCompanion_SetConversation(slot)
 	viewSlot = slot or ""
 	unread[viewSlot] = nil
+	if renderPending then renderPending() end
 	logFrame().messages:Clear()
 	replayLog()
 	paintConversations()
@@ -1437,7 +1466,16 @@ function handlers.log(inbox)
 	if who == "you" and islot ~= viewSlot then
 		WowCompanion_SetConversation(islot)
 	end
-	setPending(inbox.pending)
+	-- `pending` starts this conversation's waiting line; a line without it ends it
+	if inbox.slot or inbox.pending then setPending(inbox.pending, islot) end
+	-- "got it, transcribing" has no conversation yet: whatever line comes next
+	-- (the request in its slot, a chat line, a dropped-clip notice) ends it
+	if islot ~= "" or not inbox.slot then
+		local early = working[""]
+		if early and early.text == "got it, transcribing" and not (inbox.slot == "" and inbox.pending) then
+			setPending(nil, "")
+		end
+	end
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
 	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
@@ -1515,7 +1553,7 @@ end
 -- What the agent is doing right now, on the waiting line: "reading StanceBar.lua".
 -- Not logged; the reply is what stays.
 function handlers.progress(inbox)
-	setPending(inbox.text or "thinking")
+	setPending(inbox.text or "thinking", inbox.slot)
 	return "progress"
 end
 

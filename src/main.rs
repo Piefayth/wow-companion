@@ -346,7 +346,7 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
     let waiting = session.start(spoken, agent_context(addons))?;
     // a queued request already showed its words; now it only starts thinking
     if shown {
-        send_inbox(addons, "{ kind = \"progress\", text = \"thinking\" }")?;
+        send_inbox(addons, &format!("{{ kind = \"progress\", text = \"thinking\", slot = {} }}", lua_string(&session.slot)))?;
     } else {
         send_inbox(addons, &log_inbox_in(Some(&session.slot), "you", spoken, Some("thinking"), None))?;
     }
@@ -357,6 +357,7 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
         let (tell, heard) = std::sync::mpsc::channel::<String>();
         let courier = {
             let addons = addons.to_path_buf();
+            let slot = session.slot.clone();
             thread::spawn(move || {
                 let mut sent = 0;
                 while let Ok(mut latest) = heard.recv() {
@@ -365,7 +366,7 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
                         latest = newer;
                     }
                     if sent < PROGRESS_LIMIT {
-                        let inbox = format!("{{ kind = \"progress\", text = {} }}", lua_string(&latest));
+                        let inbox = format!("{{ kind = \"progress\", text = {}, slot = {} }}", lua_string(&latest), lua_string(&slot));
                         if send_inbox(&addons, &inbox).is_ok() {
                             sent += 1;
                         }
