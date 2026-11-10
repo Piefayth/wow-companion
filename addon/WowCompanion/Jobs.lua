@@ -265,6 +265,23 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	local mgr = GamepadMode and GamepadMode.FrameControlsManager
 	local window = core.logFrame and core.logFrame()
 	local focused = mgr and mgr.isUIFocused and window and mgr.focusedFrame == window and window:IsShown() or false
+	-- the legend: what square and triangle do right now, shown only while
+	-- they work (the player, 2026-11-10: "no input legend")
+	if window then
+		if not window.jobsLegend then
+			local fs = window:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+			fs:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -24, 14)
+			fs:SetJustifyH("RIGHT")
+			window.jobsLegend = fs
+		end
+		local parts = {}
+		if focused then
+			if newest() then parts[#parts + 1] = WowCompanion_Glyph("PAD3") .. " " .. (CANCEL or "Cancel") end
+			if newest("queued") then parts[#parts + 1] = WowCompanion_Glyph("PAD4") .. " Send now" end
+		end
+		window.jobsLegend:SetText(table.concat(parts, "    "))
+		window.jobsLegend:SetShown(#parts > 0)
+	end
 	if focused and not bound then
 		SetOverrideBindingClick(keyOwner, true, "PAD3", "WCJobsCancelKey")
 		SetOverrideBindingClick(keyOwner, true, "PAD4", "WCJobsNowKey")
