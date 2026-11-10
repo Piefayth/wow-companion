@@ -87,6 +87,42 @@ pub fn quiet() -> Vec<u8> {
     wav
 }
 
+/// The message bell, as it worked all of 2026-11-09: 10 s of 22,050 Hz mono
+/// silence (441,044 bytes), polled by the addon one slot at a time and emptied to
+/// silence it. Its file lock clears in about 200 ms of retries. Every change to
+/// it on 2026-11-10 (shorter bells, deleting, quiet bells, polling more bells at
+/// once) broke delivery, so the message channel keeps this until a redesign has
+/// been tested away from the live game. The heartbeat uses `ring`/`silence`.
+pub fn message_bell() -> Vec<u8> {
+    let rate = 22_050u32;
+    let data = 10 * rate * 2;
+    let mut wav = Vec::with_capacity(44 + data as usize);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&rate.to_le_bytes());
+    wav.extend_from_slice(&(rate * 2).to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data.to_le_bytes());
+    wav.resize(44 + data as usize, 0);
+    wav
+}
+
+/// Ring a message bell (see `message_bell`).
+pub fn ring_message(path: &Path) -> io::Result<()> {
+    patiently(path, "ring", || fs::write(path, message_bell()))
+}
+
+/// Silence a message bell: empty it, as on 2026-11-09.
+pub fn empty_message(path: &Path) -> io::Result<()> {
+    patiently(path, "silence", || fs::write(path, []))
+}
+
 /// Ring: half a second of sound, still playing when the addon checks.
 pub fn ring(path: &Path) -> io::Result<()> {
     patiently(path, "ring", || fs::write(path, bell()))

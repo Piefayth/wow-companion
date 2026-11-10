@@ -191,14 +191,14 @@ fn install(addons: &Path) -> io::Result<()> {
     fs::create_dir_all(&signals)?;
     // silence is a missing file (see bells.rs): clear any bell left from before
     for bell in 1..=BELLS {
-        bells::silence(&signals.join(bell_name(bell)))?;
+        bells::empty_message(&signals.join(bell_name(bell)))?;
     }
     for old in ["show.wav", "alive-a.wav", "alive-b.wav"] {
         let _ = bells::silence(&signals.join(old));
     }
     // the sound probe's controls: one that must play, one that must not
-    bells::ring(&signals.join("always.wav"))?;
-    bells::silence(&signals.join("never.wav"))?;
+    bells::ring_message(&signals.join("always.wav"))?;
+    bells::empty_message(&signals.join("never.wav"))?;
     for slot in 1..=SLOTS {
         let dir = addons.join(slot_name(slot));
         fs::create_dir_all(&dir)?;
@@ -239,7 +239,7 @@ fn probe(addons: &Path) -> io::Result<()> {
     }
     // the bells still ringing are the last few; earlier ones were silenced as we went
     for slot in used.iter().rev().take(BELL_LINGER as usize) {
-        bells::silence(&signals.join(bell_name(*slot)))?;
+        bells::empty_message(&signals.join(bell_name(*slot)))?;
     }
     if !game_running()? {
         println!("warning: the game closed partway through, so the run is incomplete");
@@ -1043,12 +1043,12 @@ fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     // long enough to be heard, then silence it. The addon polls every 0.5 s.
     let signals = addons.join(ADDON).join("Signals");
     for bell in 1..=BELLS {
-        bells::silence(&signals.join(bell_name(bell)))?;
+        bells::empty_message(&signals.join(bell_name(bell)))?;
     }
     deliver(addons, slot, inbox)?;
     println!("sent in slot {slot}: {inbox}");
     thread::sleep(BELL_HEARD);
-    bells::silence(&signals.join(bell_name(slot)))?;
+    bells::empty_message(&signals.join(bell_name(slot)))?;
     Ok(())
 }
 
@@ -1057,11 +1057,11 @@ fn deliver(addons: &Path, slot: u32, inbox: &str) -> io::Result<()> {
     let lua = format!("WowCompanion_Inbox = {inbox}\n");
     // the inbox lands first: the bell is what tells the addon to go read it
     write_reporting(&addons.join(slot_name(slot)).join("Inbox.lua"), lua.as_bytes())?;
-    bells::ring(&signals.join(bell_name(slot)))?;
+    bells::ring_message(&signals.join(bell_name(slot)))?;
     // a bell is reused every BELLS sends, so silence it well before then or the
     // addon hears a stale ring and reads a slot we haven't written yet
     if slot > BELL_LINGER {
-        bells::silence(&signals.join(bell_name(slot - BELL_LINGER)))?;
+        bells::empty_message(&signals.join(bell_name(slot - BELL_LINGER)))?;
     }
     Ok(())
 }

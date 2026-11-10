@@ -1861,33 +1861,21 @@ end
 -- read from the save file instead of guessed at.
 local channel = { polls = 0, heard = 0, caughtUp = 0 }
 
--- Each message's bell rings for about two seconds, and only the newest rings:
--- the companion silences the rest before each send. So all BELLS bells are
--- listened to, and whichever rings says how far ahead the companion is: the slots
--- up to it (still on disk, never loaded) are taken in order. Falling behind for
--- any reason (a missed ring, messages sent while the game was still loading)
--- corrects itself, up to BELLS slots behind. Checking only the next slot or two
--- left the addon waiting forever on a slot that had already rung.
+-- One bell at a time, the next slot's, as on 2026-11-09. Polling more bells at
+-- once (the next one, then all eight) kept every bell file open in the game and
+-- the companion could no longer write them (2026-11-10). A redesign that lets the
+-- two sides resync goes through a test away from the live game first.
 local function poll()
 	channel.polls = channel.polls + 1
 	channel.lastPoll = time()
 	channel.waitingOn = nextSlot
 	local waiting = nextSlot
-	for ahead = 0, BELLS - 1 do
-		safely("bell poll", listen, bellPath(waiting + ahead), function(rang)
-			if rang and nextSlot == waiting then
-				if ahead == 0 then
-					channel.heard = channel.heard + 1
-				else
-					channel.caughtUp = channel.caughtUp + 1
-					channel.lastCaughtUp = ("%d slot(s) behind at slot %d, caught up at %s"):format(ahead, waiting, date("%H:%M:%S"))
-				end
-				for _ = 0, ahead do
-					safely("a message from the companion", receive)
-				end
-			end
-		end)
-	end
+	safely("bell poll", listen, bellPath(waiting), function(rang)
+		if rang and nextSlot == waiting then
+			channel.heard = channel.heard + 1
+			safely("a message from the companion", receive)
+		end
+	end)
 end
 
 -- Polled from OnUpdate, which WoW keeps calling whatever happened the frame
