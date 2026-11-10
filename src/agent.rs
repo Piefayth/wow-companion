@@ -34,7 +34,7 @@ pub const DEFAULT_MODEL: &str = "opus";
 /// chat, links, profession links, a button to press. A faster model at low
 /// effort, few turns, a trimmed export, and this on top of the rules.
 pub const QUICK_SLOT: &str = "quick";
-const QUICK_MODEL: &str = "haiku";
+const QUICK_MODEL: &str = "sonnet";
 const QUICK_TURNS: &str = "12";
 const QUICK_RULES: &str = "QUICK MODE. This is the quick conversation: the player wants speed above all.
 Answer in one or two short sentences. Do the obvious thing with the helpers you
