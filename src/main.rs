@@ -6,6 +6,7 @@ mod agent;
 mod bells;
 mod doctor;
 mod heartbeat;
+mod modules;
 
 use wow_companion_pad as pad;
 use wow_companion_voice as voice;
@@ -178,6 +179,8 @@ fn main() {
 
 fn install(addons: &Path) -> io::Result<()> {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("addon").join(ADDON);
+    // Modules.lua is built from modules/, never edited by hand
+    modules::regenerate(None)?;
     let addon = addons.join(ADDON);
     copy_dir(&source, &addon)?;
     // the suite's other addons (WowCompanion_Wheel...), placed as they are
@@ -510,6 +513,12 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
     } else {
         answer.say.clone()
     };
+    // modules go into git before they go into the game (src/modules.rs)
+    for (name, code) in &answer.modules {
+        if let Err(err) = modules::save(addons, name, code.as_deref()) {
+            eprintln!("  module {name} not saved to modules/: {err}");
+        }
+    }
     let reply = log_inbox_in(Some(&session.slot), "claude", &say, None, answer.inbox.as_deref());
     {
         let first = say.lines().find(|line| !line.trim().is_empty()).unwrap_or_default().to_string();

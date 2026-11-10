@@ -158,7 +158,7 @@ Other game facts already worked out:
   on the Buffs wheel already.
 - Sorting bags when the player asks: a `lua` step calling `C_Container.SortBags()`
   (not protected; out of combat). Only on their word, never on your own.
-- Our bag window: the `Bags` module (source docs/bags_module.lua), `WCBags`; opened by
+- Our bag window: the `Bags` module (modules/Bags.lua), `WCBags`; opened by
   the `Bags` macro (`/click WCBagsToggle`, TopBar down) and the keyboard bag keys.
   Each slot is a secure `/use bag slot` button, usable in combat. The pad's own bag
   opener is Blizzard's radial and shortcut bar, which has no binding to take.
@@ -228,7 +228,11 @@ empty: say so and ask them to shift into that form once.
 - `module`: Lua that stays. `name` is letters, digits and underscores; `code` runs
   now and again at every login. This is how you build them something lasting: a
   frame, a slash command, an event handler. Same name replaces it; `remove: true`
-  deletes it (what it already built stays until a reload).
+  deletes it (what it already built stays until a reload). Every module is
+  `modules/<Name>.lua` in this repository, the source of truth and in git: read the
+  current code there before changing one (<character> lists only its name), and
+  send the whole file as `code`. The companion writes the file before the game
+  runs it; never edit modules/ by hand without also sending the step.
 
 Writing Lua. The client is 1.60.1 but its API is retail 11.x: C_Spell.GetSpellInfo,
 C_SpellBook, C_ClassTalents. GetSpellInfo, GetSpecialization, GetNumSpellTabs do
@@ -323,6 +327,9 @@ pub struct Spoken {
     pub inbox: Option<String>,
     /// the agent wants to see its steps' results: call it again after the reload
     pub look: bool,
+    /// `module` steps, stored in modules/ before sending: name, and code or None
+    /// to remove (src/modules.rs)
+    pub modules: Vec<(String, Option<String>)>,
 
 }
 
@@ -572,6 +579,16 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
         return Err(io::Error::other("more than one button in one answer; only one can be offered"));
     }
     let mut built = steps.iter().map(step_inbox).collect::<io::Result<Vec<String>>>()?;
+    let modules = steps
+        .iter()
+        .filter(|step| step.get("kind").and_then(Value::as_str) == Some("module"))
+        .filter_map(|step| {
+            let name = step.get("name").and_then(Value::as_str)?.to_string();
+            let removed = step.get("remove").and_then(Value::as_bool) == Some(true);
+            let code = if removed { None } else { step.get("code").and_then(Value::as_str).map(str::to_string) };
+            Some((name, code))
+        })
+        .collect();
     let look = command.get("look").and_then(Value::as_bool) == Some(true);
     // looking needs a reload, and a reload needs the player's press: offer it,
     // unless the answer already offers its own button
@@ -588,7 +605,7 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
         .get("session_id")
         .and_then(Value::as_str)
         .map(str::to_string);
-    Ok(Answer { spoken: Spoken { say, inbox, look }, thread })
+    Ok(Answer { spoken: Spoken { say, inbox, look, modules }, thread })
 }
 
 /// One step as the inbox table the addon's dispatch accepts.

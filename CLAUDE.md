@@ -35,6 +35,10 @@ before restarting the game. The whole game, not one system.
   `agent.rs` (the agent and its rules), `bells.rs`, `heartbeat.rs`, `doctor.rs`.
 - `addon/WowCompanion/`: the in-game half (`Companion.lua`, `Status.lua` for the
   minimap button), `addon/WowCompanion_Wheel/`: the radial wheels.
+- `modules/`: the agent's modules, one `<Name>.lua` each, in git. A `module` step
+  writes the file (`src/modules.rs`), which regenerates the addon's `Modules.lua`
+  (gitignored, reread at every /reload) and also runs it at once. The save file's
+  copy is only a fallback; the file wins.
 
 Build with `CUDAARCHS=89` (8.9 is the 4090; it skips most of ggml's CUDA build);
 libclang is in `C:\Program Files\LLVM`. No Lua here: check addon files with

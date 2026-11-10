@@ -57,6 +57,21 @@ end
 -- when this UI session began, to tell this session's messages from a slot's old one
 local sessionStart = time()
 
+-- Every module to run, name -> { code, disk }. modules/<Name>.lua in the repo is
+-- the source of truth, reaching the game as Modules.lua (WowCompanion_DiskModules,
+-- reread at every /reload); WowCompanionDB.modules is the old store, kept for a
+-- module sent before its file landed. The file wins (the player, 2026-11-10).
+local function effectiveModules()
+	local all = {}
+	for name, entry in pairs(WowCompanionDB and WowCompanionDB.modules or {}) do
+		if type(entry) == "table" and entry.code then all[name] = { code = entry.code } end
+	end
+	for name, code in pairs(type(WowCompanion_DiskModules) == "table" and WowCompanion_DiskModules or {}) do
+		if type(code) == "string" then all[name] = { code = code, disk = true } end
+	end
+	return all
+end
+
 -- PlaySoundFile claims every file will play, even empty ones, so only IsPlaying counts
 local function listen(path, heard)
 	local _, handle = PlaySoundFile(path, "Master")
@@ -395,7 +410,7 @@ local function buildTabs(frame, messages, pending)
 		table.sort(wheels)
 		add("Wheels", #wheels > 0 and table.concat(wheels, ", ") or "none")
 		local modules = {}
-		for name in pairs(WowCompanionDB.modules or {}) do modules[#modules + 1] = name end
+		for name in pairs(effectiveModules()) do modules[#modules + 1] = name end
 		table.sort(modules)
 		add("My modules", #modules > 0 and table.concat(modules, ", ") or "none")
 		add("Combat", InCombatLockdown() and "|cffff6060yes|r " .. grey .. "(changes wait until it ends)|r" or "no")
@@ -3678,15 +3693,22 @@ local function exportContext()
 	end
 
 	section("modules")
-	line("-- Lua the agent stored; each runs at every login")
+	line("-- Lua the agent stored; each runs at every login. A module from a file is")
+	line("-- modules/<Name>.lua in the repo: read it there, it is the current code")
+	local all = effectiveModules()
 	local stored = {}
-	for name in pairs(WowCompanionDB.modules or {}) do
+	for name in pairs(all) do
 		stored[#stored + 1] = name
 	end
 	table.sort(stored)
 	for _, name in ipairs(stored) do
-		line(name .. ":")
-		line("    " .. (tostring(WowCompanionDB.modules[name].code):gsub(newline, newline .. "    ")))
+		if all[name].disk then
+			local _, lines = tostring(all[name].code):gsub(newline, "")
+			line(("%s: modules/%s.lua (%d lines)"):format(name, name, lines))
+		else
+			line(name .. ": (only in the save file, not in modules/ yet)")
+			line("    " .. (tostring(all[name].code):gsub(newline, newline .. "    ")))
+		end
 	end
 	if #stored == 0 then
 		line("none")
@@ -4305,13 +4327,14 @@ end
 
 -- at login: every stored module, in name order so the order is stable
 local function loadModules()
+	local all = effectiveModules()
 	local names = {}
-	for name in pairs(WowCompanionDB.modules or {}) do
+	for name in pairs(all) do
 		names[#names + 1] = name
 	end
 	table.sort(names)
 	for _, name in ipairs(names) do
-		runCode("module " .. name, WowCompanionDB.modules[name].code, true)
+		runCode("module " .. name, all[name].code, true)
 	end
 end
 
