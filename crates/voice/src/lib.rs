@@ -61,6 +61,30 @@ const SILENCE: f32 = 0.01;
 // ("Commands: the first one."), which then went to the agent as a request. Such
 // a clip is dropped whatever the transcript says.
 const NOTHING: f32 = 0.004;
+// hold mode: how long after the mic closes to wait for the headset to be back in
+// stereo before the closing cue (`return=` tunes it, in ms)
+const RETURN_MS: u64 = 1000;
+
+/// The stereo output of the headset whose hands-free mic is `mic`: "Headset
+/// (AirPods Max Hands-Free AG Audio)" -> "Headphones (AirPods Max Stereo)".
+fn stereo_twin(mic: &str) -> Option<String> {
+    let inner = mic.split_once('(')?.1.trim_end_matches(')');
+    let base = inner.split(" Hands-Free").next()?.trim().to_ascii_lowercase();
+    if base.is_empty() {
+        return None;
+    }
+    let host = cpal::default_host();
+    let outputs = host.output_devices().ok()?;
+    for device in outputs {
+        let Ok(described) = device.description() else { continue };
+        let name = described.name().to_string();
+        let lowered = name.to_ascii_lowercase();
+        if lowered.contains(&base) && !lowered.contains("hands-free") {
+            return Some(name);
+        }
+    }
+    None
+}
 
 fn prompt(spells: &[String]) -> String {
     let mut prompt = String::from("World of Warcraft. Spells and macros: ");
@@ -136,10 +160,37 @@ pub fn listen(
     // A Bluetooth headset holding HFP for the mic has its A2DP render endpoint
     // switched off, so the cue has to name the hands-free one or it plays into a
     // dead device. Nothing is audible and nothing errors.
-    let cue_device = option(options, "cue").map(str::to_string);
+    let mut cue_device = option(options, "cue").map(str::to_string);
     let cue_volume = option(options, "volume")
         .and_then(|given| given.parse().ok())
         .unwrap_or(CUE_VOLUME);
+
+    // Hold mode. A Bluetooth headset's mic only works in the hands-free (phone
+    // call) profile, which is 8 kHz both ways and hisses whenever anything plays;
+    // stereo cannot run alongside it (a protocol limit, not a driver one). Keeping
+    // the mic open all session pinned the headset in hands-free, so every cue
+    // hissed. In hold mode the mic is open only while a button is held: the rest of
+    // the time the headset is in stereo, the cues play there cleanly, and each cue
+    // finishes before the profile switches (the player's condition).
+    let hands_free = microphone.as_ref().is_some_and(|mic| mic.name.to_ascii_lowercase().contains("hands-free"));
+    // Measured on AirPods Max: after the mic stream opened (8 ms), no audio at all
+    // arrived during a whole press, so the switch into hands-free takes longer
+    // than a press, let alone the 250 ms cue. Off unless asked for.
+    let _ = hands_free;
+    let hold_mode = option(options, "mic-mode") == Some("hold");
+    let return_after = Duration::from_millis(
+        option(options, "return").and_then(|given| given.parse().ok()).unwrap_or(RETURN_MS),
+    );
+    if hold_mode {
+        if let Some(stereo) = microphone.as_ref().and_then(|mic| stereo_twin(&mic.name)) {
+            println!("hold mode: mic opens only while held; cues on {stereo}");
+            cue_device = Some(stereo);
+        } else {
+            println!("hold mode: mic opens only while held; no stereo output found, cues stay on {:?}", cue_device);
+        }
+        // closed until a button is held, so the headset can go back to stereo
+        microphone = None;
+    }
 
     // loading the model is the slow part, so do it once and keep it resident
     let path = model.to_str().ok_or_else(|| io::Error::other("model path isn't UTF-8"))?;
@@ -156,12 +207,12 @@ pub fn listen(
     let mut retry_mic = Instant::now();
     loop {
         // a dead stream is replaced between presses, never during one
-        if holding.is_none() && microphone.as_ref().is_some_and(Microphone::broken) {
+        if !hold_mode && holding.is_none() && microphone.as_ref().is_some_and(Microphone::broken) {
             eprintln!("microphone lost; waiting for it to come back");
             microphone = None;
             retry_mic = Instant::now();
         }
-        if microphone.is_none() && Instant::now() >= retry_mic {
+        if !hold_mode && microphone.is_none() && Instant::now() >= retry_mic {
             retry_mic = Instant::now() + RETRY;
             // open prints the device it found, which doubles as "it's back"
             if let Ok(opened) = Microphone::open(wanted_mic) {
@@ -197,12 +248,29 @@ pub fn listen(
             .iter()
             .find(|(_, press)| pad.held(press))
             .map(|(role, _)| *role);
+        // hold mode: a press plays the opening cue to its end on stereo, and only
+        // then opens the mic, which is what switches the headset into hands-free
+        if hold_mode && held.is_some() && holding.is_none() && microphone.is_none() {
+            if cue_volume > 0.0 {
+                if let Err(err) = chime(cue_device.as_deref(), cue_volume, &CUE_OPEN) {
+                    eprintln!("cue failed: {err}");
+                }
+            }
+            let opening = Instant::now();
+            match Microphone::open_quietly(wanted_mic, true) {
+                Ok(opened) => {
+                    println!("  mic opened in {} ms", opening.elapsed().as_millis());
+                    microphone = Some(opened);
+                }
+                Err(err) => eprintln!("microphone unavailable: {err}"),
+            }
+        }
         let Some(mic) = &microphone else {
             if held.is_some() && holding.is_none() {
                 println!("no microphone yet; still waiting for it");
             }
             holding = held;
-        HOLDING.store(held.is_some(), Ordering::Relaxed);
+            HOLDING.store(held.is_some(), Ordering::Relaxed);
             thread::sleep(POLL);
             continue;
         };
@@ -211,13 +279,35 @@ pub fn listen(
             (Some(role), None) => {
                 pressed_at = Instant::now();
                 mic.start();
-                cue(cue_device.clone(), cue_volume, &CUE_OPEN);
+                // in hold mode the opening cue has already played, before the switch
+                if !hold_mode {
+                    cue(cue_device.clone(), cue_volume, &CUE_OPEN);
+                }
                 println!("listening for {role}");
             }
             (None, Some(role)) => {
                 let clip = mic.stop();
-                // falling fifth on release: rising means live, falling means it has it
-                cue(cue_device.clone(), cue_volume, &CUE_SHUT);
+                if hold_mode {
+                    match mic.lag() {
+                        Some(lag) => println!("  first audio {} ms after the mic opened", lag.as_millis()),
+                        None => println!("  no audio arrived while held"),
+                    }
+                    // Closing the mic lets the headset go back to stereo; the closing
+                    // cue waits for that, then plays there, clean.
+                    microphone = None;
+                    let (device, volume) = (cue_device.clone(), cue_volume);
+                    thread::spawn(move || {
+                        thread::sleep(return_after);
+                        if volume > 0.0 {
+                            if let Err(err) = chime(device.as_deref(), volume, &CUE_SHUT) {
+                                eprintln!("cue failed: {err}");
+                            }
+                        }
+                    });
+                } else {
+                    // falling fifth on release: rising means live, falling means it has it
+                    cue(cue_device.clone(), cue_volume, &CUE_SHUT);
+                }
                 let seconds = clip.len() as f32 / WHISPER_RATE as f32;
                 if pressed_at.elapsed() < TAP {
                     println!("tap: {role}");
@@ -302,6 +392,10 @@ fn transcribe(whisper: &WhisperContext, clip: &[f32], prompt: &str) -> io::Resul
 struct Capture {
     recording: bool,
     samples: Vec<f32>,
+    // when start() was called, and when the first samples after it arrived: the
+    // gap is how long the headset took to switch into hands-free and deliver
+    started: Option<Instant>,
+    first: Option<Instant>,
 }
 
 struct Microphone {
@@ -312,12 +406,17 @@ struct Microphone {
     channels: u16,
     // set from the stream's error callback when the device is gone, not merely late
     dead: Arc<AtomicBool>,
+    name: String,
 }
 
 impl Microphone {
     // One stream open for the whole session, gated by a flag. Opening a stream takes
     // long enough that doing it per press would clip the first word.
     fn open(wanted: Option<&str>) -> io::Result<Self> {
+        Self::open_quietly(wanted, false)
+    }
+
+    fn open_quietly(wanted: Option<&str>, quiet: bool) -> io::Result<Self> {
         let host = cpal::default_host();
         let device = match wanted {
             // match on a fragment: full device names are long and awkward to type
@@ -347,16 +446,20 @@ impl Microphone {
             .description()
             .map(|described| described.name().to_string())
             .unwrap_or_else(|_| "unknown".into());
-        println!("microphone: {name} at {rate} Hz, {channels} channel(s)");
+        if !quiet {
+            println!("microphone: {name} at {rate} Hz, {channels} channel(s)");
+        }
         // Whisper is trained on 16 kHz. Below that there is nothing to resample from:
         // Bluetooth hands-free runs at 8 kHz and costs real accuracy.
-        if rate < WHISPER_RATE {
+        if rate < WHISPER_RATE && !quiet {
             println!("  warning: {rate} Hz is below Whisper's {WHISPER_RATE} Hz; expect misreadings");
         }
 
         let capture = Arc::new(Mutex::new(Capture {
             recording: false,
             samples: Vec::new(),
+            started: None,
+            first: None,
         }));
         let sink = Arc::clone(&capture);
         let dead = Arc::new(AtomicBool::new(false));
@@ -391,7 +494,7 @@ impl Microphone {
         .map_err(|err| io::Error::other(err.to_string()))?;
         stream.play().map_err(|err| io::Error::other(err.to_string()))?;
 
-        Ok(Self { _stream: stream, capture, rate, channels, dead })
+        Ok(Self { _stream: stream, capture, rate, channels, dead, name })
     }
 
     fn broken(&self) -> bool {
@@ -402,6 +505,14 @@ impl Microphone {
         let mut capture = self.capture.lock().unwrap();
         capture.samples.clear();
         capture.recording = true;
+        capture.started = Some(Instant::now());
+        capture.first = None;
+    }
+
+    /// How long after start() the first audio arrived, if it has.
+    fn lag(&self) -> Option<Duration> {
+        let capture = self.capture.lock().unwrap();
+        Some(capture.first?.saturating_duration_since(capture.started?))
     }
 
     fn stop(&self) -> Vec<f32> {
@@ -416,7 +527,11 @@ impl Microphone {
 fn push(capture: &Arc<Mutex<Capture>>, samples: impl Iterator<Item = f32>) {
     let mut capture = capture.lock().unwrap();
     if capture.recording {
+        let before = capture.samples.len();
         capture.samples.extend(samples);
+        if capture.first.is_none() && capture.samples.len() > before {
+            capture.first = Some(Instant::now());
+        }
     }
 }
 
@@ -545,6 +660,44 @@ pub fn speakers() -> io::Result<()> {
     }
     println!("\n* is the current default. A Bluetooth headset held in hands-free mode for");
     println!("  its mic cannot play through its stereo endpoint: name the hands-free one.");
+    Ok(())
+}
+
+/// Every format each device matching `fragment` accepts: for a Bluetooth headset
+/// this says whether its hands-free link can do 16 kHz (wideband speech, mSBC)
+/// or only 8 kHz (CVSD, which hisses).
+pub fn formats(fragment: &str) -> io::Result<()> {
+    let host = cpal::default_host();
+    let lowered = fragment.to_ascii_lowercase();
+    let named = |device: &cpal::Device| {
+        device.description().map(|d| d.name().to_string()).unwrap_or_default()
+    };
+    for device in host.input_devices().map_err(|err| io::Error::other(err.to_string()))? {
+        let name = named(&device);
+        if !name.to_ascii_lowercase().contains(&lowered) {
+            continue;
+        }
+        println!("input  {name}");
+        if let Ok(configs) = device.supported_input_configs() {
+            for config in configs {
+                println!("    {:?} {} ch, {}..{} Hz", config.sample_format(), config.channels(),
+                    config.min_sample_rate(), config.max_sample_rate());
+            }
+        }
+    }
+    for device in host.output_devices().map_err(|err| io::Error::other(err.to_string()))? {
+        let name = named(&device);
+        if !name.to_ascii_lowercase().contains(&lowered) {
+            continue;
+        }
+        println!("output {name}");
+        if let Ok(configs) = device.supported_output_configs() {
+            for config in configs {
+                println!("    {:?} {} ch, {}..{} Hz", config.sample_format(), config.channels(),
+                    config.min_sample_rate(), config.max_sample_rate());
+            }
+        }
+    }
     Ok(())
 }
 

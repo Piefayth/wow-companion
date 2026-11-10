@@ -103,6 +103,7 @@ fn main() {
         [command, id] if command == "pads" => pad::watch(id),
         [command] if command == "mics" => voice::microphones(),
         [command] if command == "speakers" => voice::speakers(),
+        [command, fragment] if command == "formats" => voice::formats(fragment),
         [command, model, options @ ..] if command == "voice" => {
             voice::listen(Path::new(model), options, Vec::new, |_, _| Ok(()))
         }
