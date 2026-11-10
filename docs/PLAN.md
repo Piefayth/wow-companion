@@ -124,6 +124,14 @@ the PC at full resolution. Built beside the PC-to-game channel, never touching i
 - **Bag sorting** (a button; the sort itself is the game's own `C_Container.SortBags`).
 - **Missing buff alerts**: Thorns and Mark of the Wild off you (and a party member)
   out of combat, as a small Blizzard-style reminder, one press to the Buffs wheel.
+- **Bag management** (the player, 2026-11-10), read live over the data strip:
+  - **Evaluate**: keep / vendor / auction (Auctionator price vs vendor) / use now,
+    checked against equipped gear, bag slots and professions first.
+  - **Sort**: the game's own `C_Container.SortBags`, as a button or wheel slot.
+  - **Make room**: what to destroy first when space runs out (least value, not a
+    quest item, not a tool for a known profession).
+  - **Trade for space**: built as the `MakeRoom` module: loot with full bags names
+    the cheapest bag item to drop for the most valuable loot.
 - **Guidance on demand for any quest**, not only Polestar's route: read the quest
   log over the data strip, look objectives up in Polestar's Codex (NPCs, objects,
   coordinates, drop rates), pin and arrow them.
