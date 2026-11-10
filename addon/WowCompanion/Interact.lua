@@ -88,6 +88,14 @@ do
 			button:SetAttribute("macrotext", nil)
 		end
 	end
+	-- Which unit each press really asked for (the bound INTERACT* actions call
+	-- this; a post-hook leaves the caller secure). Hooked once per UI session.
+	if not WCCombatInteractHooked then
+		WCCombatInteractHooked = true
+		pcall(hooksecurefunc, C_PlayerInteractionManager, "InteractUnit", function(unit)
+			trace("InteractUnit " .. tostring(unit))
+		end)
+	end
 	button:HookScript("OnClick", function(_, _, down)
 		if db().mode == "clear" or InCombatLockdown() then return end
 		held = down and true or false
@@ -159,8 +167,9 @@ do
 		pcall(function()
 			local d = db()
 			d.trace = d.trace or {}
-			d.trace[#d.trace + 1] = ("%s.%03d %s | %s"):format(date("%H:%M:%S"),
-				math.floor((GetTime() % 1) * 1000), what, snap())
+			-- GetTime for ordering: its fraction does not line up with date()'s seconds
+			d.trace[#d.trace + 1] = ("%s %.3f %s | %s"):format(date("%H:%M:%S"),
+				GetTime(), what, snap())
 			while #d.trace > 60 do table.remove(d.trace, 1) end
 		end)
 	end
@@ -168,13 +177,21 @@ do
 	local tracer = _G["WCCombatInteractTrace"] or CreateFrame("Frame", "WCCombatInteractTrace")
 	tracer:UnregisterAllEvents()
 	for _, e in ipairs({ "PLAYER_TARGET_CHANGED", "PLAYER_SOFT_INTERACT_CHANGED", "PLAYER_REGEN_DISABLED",
-		"PLAYER_REGEN_ENABLED", "UI_ERROR_MESSAGE", "LOOT_OPENED", "CVAR_UPDATE" }) do
+		"PLAYER_REGEN_ENABLED", "UI_ERROR_MESSAGE", "LOOT_READY", "LOOT_OPENED", "LOOT_CLOSED", "CVAR_UPDATE" }) do
 		pcall(tracer.RegisterEvent, tracer, e)
 	end
 	tracer:SetScript("OnEvent", function(_, event, a, b)
 		if event == "CVAR_UPDATE" and a ~= "SoftTargetInteract" then return end
 		trace(event .. (a and (" " .. tostring(a)) or "") .. (b and (" " .. tostring(b)) or ""))
 	end)
+	-- Which unit each press really asked for (the bound INTERACT* actions call
+	-- this; a post-hook leaves the caller secure). Hooked once per UI session.
+	if not WCCombatInteractHooked then
+		WCCombatInteractHooked = true
+		pcall(hooksecurefunc, C_PlayerInteractionManager, "InteractUnit", function(unit)
+			trace("InteractUnit " .. tostring(unit))
+		end)
+	end
 	button:HookScript("OnClick", function(_, _, down) trace("Home clicked (clear) " .. (down and "down" or "up")) end)
 
 	local function bindAll()
