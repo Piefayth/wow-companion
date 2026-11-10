@@ -129,3 +129,21 @@ How it draws (every 0.05 s, one frame child of `Minimap` at its level + 5):
   is no area, only the dot clamped to the rim, pointing the way.
 
 Not done yet: world map pins, labels, clearing a pin automatically on arrival.
+
+## Looting in combat on the gamepad (measured 2026-11-10, Interact.lua)
+
+- Blizzard sets the secure CVar `SoftTargetInteract` to 0 while in combat with an
+  attackable target (TargetLogic.lua). Addon code cannot change it in combat, and
+  `/console` cannot either, because it calls `forceinsecure()`.
+- Targeting yourself (`/target player`) makes Blizzard turn it back on. The corpse
+  became the soft interact target 0.1 s later.
+- The gamepad's auto-retarget puts the enemy back about 1 s later, so the loot has
+  to happen within one press.
+- Blizzard's gamepad interact button (`GamepadMainActionBarFrame`, top bar
+  `Right.ActionButton1`) can be pressed from a macro with `/click <name> LeftButton
+  true|false`. It decides on release, or at 0.5 s held, and takes a lootable soft
+  interact target first.
+- So Home is one secure button. A wrap script picks the down or up macro.
+  - Down: focus the enemy, target yourself, press Blizzard's button down.
+  - Up: release it, then target the focus again.
+  - The player measured it working.
