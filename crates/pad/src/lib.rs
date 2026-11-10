@@ -95,6 +95,80 @@ impl Pad {
     pub fn held(&self, press: &Press) -> bool {
         self.latest.get(press.byte).is_some_and(|byte| byte & press.mask != 0)
     }
+
+    /// Set the two rumble motors (0 stops them). The DualSense's USB output
+    /// report: id 0x02, then flags 0x03 ("compatible vibration": the classic
+    /// two-motor rumble rather than haptic audio), then the right (small) and left
+    /// (large) motor strengths. Whether the adapter passes it on to the pad behind
+    /// it is what `buzz` tests.
+    pub fn rumble(&self, small: u8, large: u8) -> io::Result<()> {
+        let mut report = [0u8; 48];
+        report[0] = 0x02;
+        report[1] = 0x03;
+        report[3] = small;
+        report[4] = large;
+        self.device
+            .write(&report)
+            .map(|_| ())
+            .map_err(|err| io::Error::other(err.to_string()))
+    }
+}
+
+/// Rumble patterns on a handle of their own, played on their own thread, so a
+/// pattern keeps its timing while the caller is busy (transcribing, say). The
+/// handle is opened when first needed and again after a failed write, which is
+/// what a pad that went away and came back looks like.
+pub struct Rumbler {
+    pad: (u16, u16),
+    device: std::sync::Arc<std::sync::Mutex<Option<HidDevice>>>,
+}
+
+impl Rumbler {
+    pub fn new(vid: u16, pid: u16) -> Self {
+        Rumbler { pad: (vid, pid), device: Default::default() }
+    }
+
+    /// Play `steps` of (milliseconds from now, small motor, large motor), in
+    /// order, ending with the motors off whatever the steps say.
+    pub fn play(&self, steps: &[(u64, u8, u8)]) {
+        let (vid, pid) = self.pad;
+        let device = std::sync::Arc::clone(&self.device);
+        let steps = steps.to_vec();
+        thread::spawn(move || {
+            let mut handle = device.lock().unwrap();
+            let start = Instant::now();
+            for &(at, small, large) in steps.iter().chain([(steps.last().map_or(0, |s| s.0), 0, 0)].iter()) {
+                let due = start + Duration::from_millis(at);
+                if let Some(wait) = due.checked_duration_since(Instant::now()) {
+                    thread::sleep(wait);
+                }
+                if handle.is_none() {
+                    *handle = open(vid, pid).ok();
+                }
+                let mut report = [0u8; 48];
+                report[0] = 0x02;
+                report[1] = 0x03;
+                report[3] = small;
+                report[4] = large;
+                if let Some(pad) = handle.as_ref() {
+                    if pad.write(&report).is_err() {
+                        *handle = None;
+                    }
+                }
+            }
+        });
+    }
+}
+
+/// One short pulse on the pad, to see whether rumble reaches it at all.
+pub fn buzz() -> io::Result<()> {
+    let (vid, pid) = DEFAULT_PAD;
+    let pad = Pad::open(vid, pid)?;
+    pad.rumble(0xc0, 0xc0)?;
+    thread::sleep(Duration::from_millis(250));
+    pad.rumble(0, 0)?;
+    println!("sent a 250 ms rumble; did the controller buzz?");
+    Ok(())
 }
 
 pub fn list() -> io::Result<()> {

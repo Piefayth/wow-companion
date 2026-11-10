@@ -61,6 +61,8 @@ const SILENCE: f32 = 0.01;
 // ("Commands: the first one."), which then went to the agent as a request. Such
 // a clip is dropped whatever the transcript says.
 const NOTHING: f32 = 0.004;
+// rumble strength for the listening pulses, of 255 (the test buzz was 192)
+const PULSE: u8 = 160;
 // hold mode: how long after the mic closes to wait for the headset to be back in
 // stereo before the closing cue (`return=` tunes it, in ms)
 const RETURN_MS: u64 = 1000;
@@ -201,6 +203,15 @@ pub fn listen(
     for (role, press) in &bindings {
         println!("ready: hold {press} for {role}");
     }
+    // Feedback is rumble by default. Cues in a Bluetooth headset play over its
+    // hands-free link (8 kHz, the only one this PC negotiates with AirPods Max),
+    // which hisses whenever anything plays; the pad's rumble is instant, silent and
+    // in the player's hands (the player's choice). `feedback=beep` or `both`.
+    let feedback = option(options, "feedback").unwrap_or("rumble");
+    let rumbles = feedback == "rumble" || feedback == "both";
+    let beeps = feedback == "beep" || feedback == "both";
+    // its own handle and thread, so a pulse keeps time while this loop transcribes
+    let rumbler = pad::Rumbler::new(vid, pid);
     let mut holding: Option<&str> = None;
     let mut pressed_at = Instant::now();
     let mut retry_pad = Instant::now();
@@ -280,8 +291,12 @@ pub fn listen(
                 pressed_at = Instant::now();
                 mic.start();
                 // in hold mode the opening cue has already played, before the switch
-                if !hold_mode {
+                if !hold_mode && beeps {
                     cue(cue_device.clone(), cue_volume, &CUE_OPEN);
+                }
+                if rumbles {
+                    // one firm pulse: listening
+                    rumbler.play(&[(0, PULSE, PULSE), (120, 0, 0)]);
                 }
                 println!("listening for {role}");
             }
@@ -304,9 +319,13 @@ pub fn listen(
                             }
                         }
                     });
-                } else {
+                } else if beeps {
                     // falling fifth on release: rising means live, falling means it has it
                     cue(cue_device.clone(), cue_volume, &CUE_SHUT);
+                }
+                if rumbles {
+                    // two quick pulses: got it
+                    rumbler.play(&[(0, PULSE, PULSE), (70, 0, 0), (140, PULSE, PULSE), (210, 0, 0)]);
                 }
                 let seconds = clip.len() as f32 / WHISPER_RATE as f32;
                 if pressed_at.elapsed() < TAP {

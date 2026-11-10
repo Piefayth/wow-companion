@@ -100,6 +100,7 @@ fn main() {
             Ok(())
         }
         [command] if command == "pads" => pad::list(),
+        [command] if command == "buzz" => pad::buzz(),
         [command, id] if command == "pads" => pad::watch(id),
         [command] if command == "mics" => voice::microphones(),
         [command] if command == "speakers" => voice::speakers(),
