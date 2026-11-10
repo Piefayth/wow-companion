@@ -641,35 +641,44 @@ local function buildLog()
 		groove:SetPoint("TOPLEFT", 3, 0)
 		groove:SetPoint("BOTTOMRIGHT", -3, 0)
 		groove:SetColorTexture(0, 0, 0, 0.45)
-		-- The thumb in three pieces, as Blizzard's WowTrimScrollBar draws it
-		-- (TrimScrollBar.xml): end caps at their own size and a centre made to
-		-- stretch between them, so a long thumb keeps its rounded ends instead of
-		-- stretching one picture (the player, 2026-11-10). The old single knob is
-		-- the fallback if this client lacks the atlases.
+		-- Nothing is stretched (the player, 2026-11-10). The thumb is drawn as
+		-- Blizzard's WowTrimScrollBar thumb is (TrimScrollBar.xml and .lua): the
+		-- round end caps at their own size, and the centre *tiled*: its texture
+		-- coordinate runs past 1 by the height over the art's own height, so the
+		-- art repeats instead of growing. Without those atlases the old knob is
+		-- shown at one fixed size, which only moves.
 		local thumb = CreateFrame("Frame", nil, track)
 		thumb:SetWidth(math.min(18, track:GetWidth()))
-		local function piece(atlas)
-			local t = thumb:CreateTexture(nil, "ARTWORK")
-			local known = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas)
-			if not known then return nil end
+		local function piece(atlas, layer)
+			local info = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas)
+			if not info then return nil end
+			local t = thumb:CreateTexture(nil, layer or "ARTWORK")
 			t:SetAtlas(atlas, true)
+			t.info = info
 			return t
 		end
-		local top = piece("UI-ScrollBar-Knob-EndCap-Top")
-		local bottom = top and piece("UI-ScrollBar-Knob-EndCap-Bottom")
+		local top = piece("UI-ScrollBar-Knob-EndCap-Top", "OVERLAY")
+		local bottom = top and piece("UI-ScrollBar-Knob-EndCap-Bottom", "OVERLAY")
 		local middle = bottom and piece("UI-ScrollBar-Knob-Center")
-		if middle then
-			top:SetPoint("TOP")
-			bottom:SetPoint("BOTTOM")
-			middle:SetPoint("TOPLEFT", top, "BOTTOMLEFT")
-			middle:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT")
+		if middle and middle.info.height and middle.info.height > 0 then
+			-- Blizzard's anchors: caps at the ends, the centre inset 5 under them
+			top:SetPoint("TOPLEFT")
+			bottom:SetPoint("BOTTOMLEFT")
+			middle:SetPoint("TOPLEFT", 0, -5)
+			middle:SetPoint("TOPRIGHT", 0, -5)
 			thumb:SetWidth(math.max(top:GetWidth(), middle:GetWidth()))
-			thumb.minSize = top:GetHeight() + bottom:GetHeight() + 2
+			thumb.minSize = 23 -- Blizzard's minThumbExtent
+			thumb.tile = function(height)
+				local h = math.max(1, height - 10)
+				middle:SetHeight(h)
+				middle:SetTexCoord(0, 1, 0, h / middle.info.height)
+			end
 		else
 			local knob = thumb:CreateTexture(nil, "ARTWORK")
 			knob:SetAllPoints()
 			knob:SetTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
 			knob:SetTexCoord(0.20, 0.80, 0.125, 0.875)
+			thumb.fixed = 24
 		end
 		table.insert(frame.chatParts, track)
 		local function paintThumb()
@@ -678,11 +687,12 @@ local function buildLog()
 			local view = sc:GetHeight() or 0
 			local room = track:GetHeight() or 0
 			if range <= 1 or view <= 0 or room <= 0 then thumb:Hide() return end
-			local size = math.max(thumb.minSize or 23, room * view / (view + range))
+			local size = thumb.fixed or math.max(thumb.minSize or 23, room * view / (view + range))
 			local offset = (room - size) * math.min(1, (sc:GetVerticalScroll() or 0) / range)
 			thumb:ClearAllPoints()
 			thumb:SetPoint("TOP", track, "TOP", 0, -offset)
 			thumb:SetHeight(size)
+			if thumb.tile then thumb.tile(size) end
 			thumb:Show()
 		end
 		messages.scroll:HookScript("OnVerticalScroll", paintThumb)
