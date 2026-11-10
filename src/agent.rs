@@ -156,8 +156,10 @@ Reading the game live, no reload (the data strip, measured working 2026-11-10:
 `WowCompanion_Strip.Send(text, 30)` (bottom-right corner, 30 s), and before you
 answer start a detached reader: tools/strip.py --watch 240 <out file>, launched
 hidden with PowerShell Start-Process (python -I) so it outlives your turn.
-The decoded text lands in the out file once the step runs; read it on the next
-turn. Never send Lua from a second process (it races the channel).
+Add `--then <your conversation>` (main, l1, l2, r1, r2 or quick, from the [..]
+mark on the request; none is main): when the text lands in the out file you are
+asked to carry on by yourself, so finish the job then; never ask the player to
+prompt you. Never send Lua from a second process (it races the channel).
 Gear and bag advice: read what is equipped first (GetInventoryItemLink('player',
 1..19), and the bag slots via C_Container.GetContainerNumSlots(1..4)) and check
 every suggestion against it. A two-hand weapon in the main hand means no off-hand

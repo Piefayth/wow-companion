@@ -114,9 +114,32 @@ def send_lua(code):
                    stdout=subprocess.DEVNULL)
 
 
-def watch(seconds, out):
+def follow_up(slot, out, ok):
+    """Wake the conversation that started this watch (the player, 2026-11-10:
+    the agent should remind itself, not wait to be asked): a typed request,
+    which the running companion takes as if spoken into that slot."""
+    import time as _t
+    base = os.environ.get("LOCALAPPDATA")
+    if not base:
+        return
+    d = os.path.join(base, "wow-companion", "typed")
+    os.makedirs(d, exist_ok=True)
+    slot = "" if slot.lower() in ("", "main") else slot.lower()
+    what = "arrived" if ok else "failed"
+    text = ("(automatic: the data strip you started has %s, in %s. Read it and "
+            "finish what was asked; the player has not said anything new.)") % (what, out)
+    stamp = int(_t.time() * 1000)
+    part = os.path.join(d, "%d.part" % stamp)
+    with open(part, "w", encoding="utf-8") as f:
+        f.write(slot + "\n" + text + "\n")
+    os.replace(part, os.path.join(d, "%d.txt" % stamp))
+
+
+def watch(seconds, out, then=None):
     """Poll the corner for up to `seconds`; write the payload (or the last
-    error) to `out`. Run detached, beside an answer whose lua step draws it."""
+    error) to `out`. Run detached, beside an answer whose lua step draws it.
+    With `then` (a conversation: main, l1, l2, r1, r2, quick), that
+    conversation is asked to carry on once the result is in."""
     end = time.time() + seconds
     err = "nothing seen"
     while time.time() < end:
@@ -128,18 +151,23 @@ def watch(seconds, out):
             payload, err = decode(*capture())
             if payload is not None:
                 open(out, "wb").write(payload)
+                if then is not None:
+                    follow_up(then, out, True)
                 return 0
         else:
             err = "nothing seen"
         time.sleep(1.0)
     open(out, "w", encoding="utf-8").write("STRIP FAILED: " + err)
+    if then is not None:
+        follow_up(then, out, False)
     return 1
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
     if args[:1] == ["--watch"]:
-        sys.exit(watch(float(args[1]), args[2]))
+        then = args[args.index("--then") + 1] if "--then" in args else None
+        sys.exit(watch(float(args[1]), args[2], then))
     if args[:1] == ["--send"]:
         send_lua(args[1])
         time.sleep(float(args[2]) if len(args) > 2 else 2.5)
