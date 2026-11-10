@@ -55,17 +55,18 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
             if !name.ends_with(".wav") || name == "always.wav" || name.starts_with("pulse-") {
                 continue;
             }
+            let ring_len = crate::bells::bell().len() as u64;
             match entry.metadata().map(|meta| meta.len()) {
-                Ok(0) => empty.push(name),
-                Ok(_) => ringing.push(name),
-                Err(_) => {}
+                Ok(len) if len < 174_763 => empty.push(name),
+                Ok(len) if len == ring_len => ringing.push(name),
+                _ => {}
             }
         }
     }
-    line(empty.is_empty(), "empty bells", &if empty.is_empty() {
+    line(empty.is_empty(), "small bells", &if empty.is_empty() {
         "none".to_string()
     } else {
-        format!("{} (an empty polled bell gets cached and locked; reinstall after a /reload)", empty.join(", "))
+        format!("{} (a small or empty bell gets cached and locked; reinstall, then /reload)", empty.join(", "))
     });
     line(ringing.len() <= 1, "bells present", &if ringing.is_empty() {
         "none ringing".to_string()

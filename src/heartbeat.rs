@@ -2,11 +2,10 @@
 //! listening before they speak into it.
 //!
 //! The only thing an addon can learn from the PC is whether a sound file plays.
-//! So while the companion is ready, exactly one of two silent bells exists, and
-//! which one swaps every few seconds. The addon (Status.lua) checks both: a swap
+//! So while the companion is ready, exactly one of two bells rings (the other is
+//! the quiet bell), and which one swaps every few seconds. The addon (Status.lua) checks both: a swap
 //! seen recently means up; no swap for a while, or neither file, means down. A
-//! crash freezes the swapping, so it reads as down within seconds; a clean exit
-//! removes both at once.
+//! crash freezes the swapping, so it reads as down within seconds.
 //!
 //! The bells follow bells.rs: short, over the cache threshold, created to ring
 //! and deleted to silence.

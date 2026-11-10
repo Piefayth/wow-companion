@@ -11,8 +11,12 @@
 //! 2. **Below 174,762 bytes the game caches a sound** and holds the cached file.
 //!    An empty bell polled constantly was locked for good (the window bell). So a
 //!    bell is never small: 192,044 bytes, at 96 kHz stereo.
-//! 3. **Silence is a missing file, never an empty one.** A file that does not
-//!    exist cannot be cached or held, and playing it just fails.
+//! 3. **A bell file always exists, and is always large.** Silence was first an
+//!    empty file (cached and locked for good), then a missing one: the game
+//!    remembers a missing sound, so a bell created later was never heard (223
+//!    polls, 0 heard, 2026-11-10). So silence is a *quiet* bell: 10 ms of sound,
+//!    over with by the addon's 0.15 s check, padded with a RIFF `JUNK` chunk
+//!    (which players skip) to stay over the cache threshold.
 //! 4. **Every write and delete is retried and checked**, and a failure names the
 //!    file. A retry that gave up quietly is how a stuck bell looked like nothing.
 //!
@@ -54,17 +58,43 @@ pub fn bell() -> Vec<u8> {
     wav
 }
 
-/// Ring: make the bell exist.
+/// The silent bell: 10 ms of sound, finished long before the addon asks at
+/// 0.15 s, padded with a `JUNK` chunk to the same size as a ringing bell so it is
+/// never cached and never missing.
+pub fn quiet() -> Vec<u8> {
+    let bits = 16u16;
+    let block = u32::from(CHANNELS) * u32::from(bits / 8);
+    let data = RATE * block / 100;
+    // RIFF header 12, fmt chunk 24, JUNK header 8 + padding, data header 8 + data
+    let padding = 192_044u32.saturating_sub(12 + 24 + 8 + 8 + data) & !1;
+    let mut wav = Vec::with_capacity(192_044);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(4 + 24 + 8 + padding + 8 + data).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&CHANNELS.to_le_bytes());
+    wav.extend_from_slice(&RATE.to_le_bytes());
+    wav.extend_from_slice(&(RATE * block).to_le_bytes());
+    wav.extend_from_slice(&(block as u16).to_le_bytes());
+    wav.extend_from_slice(&bits.to_le_bytes());
+    wav.extend_from_slice(b"JUNK");
+    wav.extend_from_slice(&padding.to_le_bytes());
+    wav.resize(wav.len() + padding as usize, 0);
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data.to_le_bytes());
+    wav.resize(wav.len() + data as usize, 0);
+    wav
+}
+
+/// Ring: half a second of sound, still playing when the addon checks.
 pub fn ring(path: &Path) -> io::Result<()> {
     patiently(path, "ring", || fs::write(path, bell()))
 }
 
-/// Silence: make the bell not exist. Already missing is already silent.
+/// Silence: the quiet bell, never a missing or empty file (rule 3).
 pub fn silence(path: &Path) -> io::Result<()> {
-    patiently(path, "silence", || match fs::remove_file(path) {
-        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
-        done => done,
-    })
+    patiently(path, "silence", || fs::write(path, quiet()))
 }
 
 fn patiently(path: &Path, what: &str, mut attempt: impl FnMut() -> io::Result<()>) -> io::Result<()> {
@@ -97,6 +127,18 @@ fn patiently(path: &Path, what: &str, mut attempt: impl FnMut() -> io::Result<()
 #[cfg(test)]
 mod tests {
     use super::bell;
+
+    #[test]
+    fn the_quiet_bell_is_big_short_and_well_formed() {
+        let wav = super::quiet();
+        assert!(wav.len() > 174_762, "{} bytes would be cached", wav.len());
+        assert_eq!(&wav[..4], b"RIFF");
+        let riff = u32::from_le_bytes(wav[4..8].try_into().unwrap()) as usize;
+        assert_eq!(riff + 8, wav.len(), "RIFF size must match the file");
+        // 10 ms of 16-bit stereo at RATE, after its data header
+        let data = (super::RATE * 2 * 2 / 100) as usize;
+        assert_eq!(&wav[wav.len() - data - 8..wav.len() - data - 4], b"data");
+    }
 
     #[test]
     fn a_bell_is_over_the_cache_threshold_and_short() {
