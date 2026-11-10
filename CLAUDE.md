@@ -159,6 +159,10 @@ All of it now confirmed on Windows against a live client (see "Where we are"):
   `frame:Hide()`: a programmatic `HideUIPanel` from a click handler is a known taint
   path on this client. Measured working, after three wrong guesses that could have
   been one search.
+  A plain Hide leaves the frame in `FrameControlsManager.shownFrames`, so its
+  fallthrough catcher keeps the d-pad and face buttons off the bars **after the
+  window is closed**. So `OnHide` calls `GamepadMode.FrameControlsManager:FrameHidden(self)`,
+  as Blizzard's ColorPickerFrame does (it is SecureHelper-wrapped for such callers).
 - **Never leave a bell ringing.** `/reload` puts the addon's cursor back at slot 1, so
   a bell still ringing from the last send is heard again and the command runs a second
   time. That is how the chat taint above turned into A and B staying broken across

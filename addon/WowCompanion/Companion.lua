@@ -147,15 +147,33 @@ local function buildLog()
 	if SmartNavigation_MarkFrameFocusable then
 		pcall(SmartNavigation_MarkFrameFocusable, frame)
 	end
-	-- Marking may not be enough: "focus interface" cycles registered UI panels, and
-	-- a frame the addon merely shows is not one. Registering here is cheap to undo
-	-- if it turns out to be the wrong lever.
-	-- Not registered in UIPanelWindows, and not shown with ShowUIPanel: a UI panel
-	-- puts the gamepad UI into panel mode (FrameControlsManager's fallthrough
-	-- catcher), which takes the d-pad, face buttons and triggers away from the bars
-	-- for as long as it is open, and a plain Hide never tells it the panel closed.
-	-- Measured: with the window up, PAD1-4 and the d-pad were bound to a blank
-	-- click and the form wheel would not open.
+	-- A real UI panel, so the controller's focus-cycle button reaches it like any
+	-- of the game's own windows: that cycle walks the panels FrameControlsManager
+	-- was told about, and ShowUIPanel is what tells it.
+	--
+	-- The catch, read in Blizzard_GamepadSharedUtility/FrameControlsManager.lua: a
+	-- shown panel turns on the "fallthrough catcher" binding group, which takes the
+	-- d-pad and face buttons away from the bars, and only FrameHidden turns it off.
+	-- HideUIPanel sends that; a plain Hide (our close button, /wc log) does not, so
+	-- the manager kept a closed window in its list and the bars stayed dead after
+	-- it was gone. That is why it broke with the window shut. Blizzard's own
+	-- non-panel windows (ColorPickerFrame, BuffFrame) call FrameHidden from OnHide,
+	-- and it is wrapped by SecureHelper for exactly such callers, so we do the same:
+	-- however the window goes away, the manager hears about it.
+	if UIPanelWindows then
+		UIPanelWindows["WowCompanionLog"] = {
+			area = "center",
+			pushable = 0,
+			whileDead = 1,
+			allowOtherPanels = 1,
+		}
+	end
+	frame:SetScript("OnHide", function(self)
+		if GamepadMode and GamepadMode.FrameControlsManager
+			and InputUtil and InputUtil.IsGamepadUIEnabled() then
+			GamepadMode.FrameControlsManager:FrameHidden(self)
+		end
+	end)
 
 	frame:SetResizable(true)
 	if frame.SetResizeBounds then
@@ -177,9 +195,16 @@ local function logFrame()
 	return logWindow
 end
 
--- A plain Show, never ShowUIPanel: see buildLog for why the panel system is out.
+-- ShowUIPanel, so the window joins the controller's focus cycle (see buildLog).
+-- It is refused in combat, where a plain Show at least puts the text in front of
+-- them; the manager is not told, so nothing is left for it to forget.
 local function reveal(frame)
-	frame:Show()
+	if not InCombatLockdown() and UIPanelWindows and UIPanelWindows["WowCompanionLog"] then
+		ShowUIPanel(frame)
+	end
+	if not frame:IsShown() then
+		frame:Show()
+	end
 end
 
 local function colouredFor(who)
@@ -2332,7 +2357,8 @@ SlashCmdList.WOWCOMPANION = function(command)
 		local frame = logFrame()
 		if frame:IsShown() then
 			-- plain Hide, not HideUIPanel: a programmatic HideUIPanel from a click
-			-- handler is the exact path that taints gamepad navigation on this client
+			-- handler is the exact path that taints gamepad navigation on this client.
+			-- OnHide tells the gamepad manager, which is what Hide alone never did.
 			frame:Hide()
 		else
 			reveal(frame)
