@@ -56,7 +56,7 @@ libclang is in `C:\Program Files\LLVM`. No Lua here: check addon files with
   the agent; `chat=on:home` brings back a separate dictation button)
   **Conversation slots**: a trigger (L1, L2, R1, R2) held with minus sends the
   request to that slot's own conversation (`thread-l2.txt`…), shown as "[L2] …";
-  slots run side by side. Saying "start over" alone in a conversation begins it
+  slots run side by side. **L2+R2 together is Quick** (`agent::QUICK_SLOT`): Haiku at low effort, 12 turns, a trimmed export, for chat, links and buttons. Saying "start over" alone in a conversation begins it
   fresh. Home is free. Only the main conversation can `look`.
   starts the companion. It runs from a copy in `%LOCALAPPDATA%\wow-companion\bin`,
   so `cargo build` works while it runs.

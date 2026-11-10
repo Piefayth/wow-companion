@@ -472,7 +472,8 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
     set_working(&session.slot, "thinking");
     // start the agent before announcing ourselves: the announcement costs a bell
     // wait, the agent costs several seconds, and they may as well run together
-    let waiting = session.start(spoken, agent_context(addons))?;
+    voice::mark(&format!("agent starting [{}]", session.slot));
+    let waiting = session.start(spoken, agent_context_for(addons, &session.slot))?;
     // a queued request already showed its words; now it only starts thinking
     if shown {
         // `started` first, so this one is not advisory: it is what ends the queued
@@ -507,6 +508,7 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
         };
         let slot = session.slot.clone();
         let answer = session.finish(waiting, |doing| {
+            voice::mark(&format!("agent: {}", doing.chars().take(60).collect::<String>()));
             println!("  ... {doing}");
             set_working(&slot, doing);
             let _ = tell.send(doing.to_string());
@@ -515,6 +517,7 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
         let _ = courier.join();
         answer?
     };
+    voice::mark("agent answered");
     println!("claude: {}", answer.say);
     // One message, not two: the reply and the action it describes arrive together,
     // so there is no second bell and no two-second gap between reading the answer
@@ -560,7 +563,7 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
 fn think(addons: &Path, spoken: &str) -> io::Result<()> {
     let mut session = agent::Session::default();
     let started = Instant::now();
-    let waiting = session.start(spoken, agent_context(addons))?;
+    let waiting = session.start(spoken, agent_context_for(addons, &session.slot))?;
     let answer = session.finish(waiting, |doing| println!("  ... {doing}"))?;
     println!("({:.1}s) say: {}", started.elapsed().as_secs_f32(), answer.say);
     println!("would send: {}", answer.inbox.as_deref().unwrap_or("nothing"));
@@ -653,11 +656,20 @@ fn sections<'a>(context: &'a str, wanted: &[&str]) -> Vec<(&'a str, Vec<&'a str>
     kept
 }
 
+/// The quick conversation's export: what chat, links and buttons need, so the
+/// prompt is a fraction of the size and the answer comes sooner.
+const QUICK_SECTIONS: &[&str] = &["character", "bags", "skills", "macros", "lua errors"];
+
 fn agent_context(addons: &Path) -> Option<String> {
+    agent_context_for(addons, "")
+}
+
+fn agent_context_for(addons: &Path, slot: &str) -> Option<String> {
     let context = saved_string(addons, "context").ok()?;
     let stamp = context.lines().next().unwrap_or_default();
     let mut out = vec![stamp.to_string()];
-    for (name, lines) in sections(&context, AGENT_SECTIONS) {
+    let wanted = if slot == agent::QUICK_SLOT { QUICK_SECTIONS } else { AGENT_SECTIONS };
+    for (name, lines) in sections(&context, wanted) {
         out.push(format!("== {name} =="));
         out.extend(lines.iter().map(|line| line.to_string()));
     }
@@ -945,19 +957,18 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             // the voice loop's own news (a reconnected headset), for the window
             "notice" => deliver(log_inbox("error", text, None, None)),
             _ if role.ends_with(" tap") => Ok(()),
-            // released and on its way to Whisper: show it at once, so a long clip
-            // reads as "being worked on" and not as dropped. Every clip shows as "transcribing" in its own conversation's row
-            // (the player, 2026-11-10), even while another request runs: that one
-            // keeps its own progress line, and this sits beside it. The addon ends
-            // it when the words arrive as a line.
             r if r.starts_with("ask") && r.ends_with(" heard") => {
                 *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
                 // a second clip on its way to Whisper keeps the gather window open
                 if let Some((_, last, _)) = gathering.lock().unwrap().as_mut() {
                     *last = Instant::now();
                 }
-                let slot = r.trim_end_matches(" heard").strip_prefix("ask@").unwrap_or("");
-                deliver(format!("{{ kind = \"transcribing\", slot = {} }}", lua_string(slot)))
+                // Not sent any more (2026-11-10): the addon hears minus come up
+                // and shows "transcribing" itself, at once. Sending it held the
+                // channel for the bell's 2 s just as the words arrived, so the
+                // request's own line waited behind it (the player: "4 seconds
+                // for a short transcription").
+                Ok(())
             }
             _ if role.ends_with(" heard") => {
                 *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
@@ -989,6 +1000,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     courier.clone(),
                 );
                 thread::spawn(move || {
+                    voice::mark("request thread up");
                     let session = find_session(&slot);
                     let text = loop {
                         thread::sleep(Duration::from_millis(100));
@@ -998,6 +1010,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                             break pending.take().map(|(words, _, _)| words).unwrap_or_default();
                         }
                     };
+                    voice::mark("gathered");
                     // One button for both: a line that opens with a channel ("party,
                     // pulling now", "whisper Sage, ...") is chat, not a request, and
                     // "scratch that" alone empties the box.
@@ -1261,6 +1274,7 @@ fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
 }
 
 fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
+    voice::mark(&format!("send asked: {}", inbox.chars().take(50).collect::<String>()));
     // Status updates (progress, "transcribing") are advisory: they go out only when
     // the channel is free, and are dropped when it is busy, since a newer one or
     // the reply itself follows. Every send holds the channel for the bell's 2 s,
@@ -1301,6 +1315,7 @@ fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
             "the addon on disk is newer than the running UI session: /reload in game first",
         ));
     }
+    voice::mark("send has the channel");
     let slot = next_slot(addons)?;
     // A bell left ringing is a command that fires again on every /reload: the addon's
     // cursor goes back to slot 1, hears the old bell, and redelivers. So ring it only
@@ -1312,6 +1327,7 @@ fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     deliver(addons, slot, inbox)?;
     println!("sent in slot {slot}: {inbox}");
     ring_catch_up(&signals, slot);
+    voice::mark(&format!("bell rung, slot {slot}"));
     thread::sleep(BELL_HEARD);
     bells::empty_message(&signals.join(bell_name(slot)))?;
     Ok(())

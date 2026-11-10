@@ -30,6 +30,20 @@ use serde_json::Value;
 // wrong often enough that the player noticed. `run ... agent=sonnet` trades back.
 pub const DEFAULT_MODEL: &str = "opus";
 
+/// The quick conversation (L2+R2 with the talk button, the player, 2026-11-10):
+/// chat, links, profession links, a button to press. A faster model at low
+/// effort, few turns, a trimmed export, and this on top of the rules.
+pub const QUICK_SLOT: &str = "quick";
+const QUICK_MODEL: &str = "haiku";
+const QUICK_TURNS: &str = "12";
+const QUICK_RULES: &str = "QUICK MODE. This is the quick conversation: the player wants speed above all.
+Answer in one or two short sentences. Do the obvious thing with the helpers you
+already know (WowCompanion_Preview, WowCompanion_ResolveWhisper, bag links,
+WCOpenTradeLink, WCShowLink) without reading files first; read code only when a
+step cannot be written without it. No research, no builds, no module edits, no
+installs: if the request needs real work, say in one line to ask it on another
+trigger and stop. The export here is trimmed (no bars, spellbook or quests).";
+
 // Real work (researching and installing an addon, restarting the game, changing
 // the addon) takes many tool calls; a quick answer still takes one.
 const TURNS: &str = "60";
@@ -154,7 +168,7 @@ The player. The request's `== player profile ==` section (player/profile.md) is
 this player's own terms, preferences and setup: follow it. These rules are the
 same for every player, so when they state a new preference or change one, write it
 in player/profile.md (short, dated), never in these rules or CLAUDE.md.
-You may be one of several conversations (Main, or L1, L2, R1, R2, marked [L2] in
+You may be one of several conversations (Main, L1, L2, R1, R2, or Quick on L2+R2, marked [L2] in
 the request); the others run beside you and share the game. When you build
 something other agents should call, add it to this list (src/agent.rs, RULES) so
 every conversation learns it.
@@ -425,6 +439,10 @@ The player said: {transcript}"
         // new ones (measured), so an update would never reach a conversation that
         // outlives a restart. Off, the memory is kept and the rules are current.
         claude.args(["--system-prompt", RULES]).args(["--system-prompt-snapshot", "off"]);
+        let quick = self.slot == QUICK_SLOT;
+        if quick {
+            claude.args(["--append-system-prompt", QUICK_RULES]).args(["--effort", "low"]);
+        }
         // the repository root: docs, this code, the addon, and its CLAUDE.md
         claude.current_dir(env!("CARGO_MANIFEST_DIR"));
         claude
@@ -435,8 +453,8 @@ The player said: {transcript}"
             // the same result the plain json format would have printed
             .args(["--output-format", "stream-json", "--verbose"])
             .args(["--json-schema", SCHEMA])
-            .args(["--model", if self.model.is_empty() { DEFAULT_MODEL } else { &self.model }])
-            .args(["--max-turns", TURNS])
+            .args(["--model", if quick { QUICK_MODEL } else if self.model.is_empty() { DEFAULT_MODEL } else { &self.model }])
+            .args(["--max-turns", if quick { QUICK_TURNS } else { TURNS }])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

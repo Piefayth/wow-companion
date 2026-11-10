@@ -519,8 +519,8 @@ local function buildTabs(frame, messages, pending)
 		frame.chatParts[2]:SetFrameLevel(chatWell:GetFrameLevel() + 3)
 	end
 	frame.convButtons = {}
-	local LABELS = { [""] = "Main", l1 = "L1", l2 = "L2", r1 = "R1", r2 = "R2" }
-	for i, key in ipairs({ "", "l1", "l2", "r1", "r2" }) do
+	local LABELS = { [""] = "Main", l1 = "L1", l2 = "L2", r1 = "R1", r2 = "R2", quick = "Quick" }
+	for i, key in ipairs({ "", "l1", "l2", "r1", "r2", "quick" }) do
 		local b = CreateFrame("Button", nil, well)
 		b:SetSize(WELL - 10, 24)
 		b:SetPoint("TOP", well, "TOP", 0, -6 - (i - 1) * 26)
@@ -1137,8 +1137,8 @@ local pendingSince
 -- and start time; the toast shows a labelled line for every one at work, and
 -- the window's line shows the conversation in view.
 local working = {}
-local SLOT_ORDER = { "", "l1", "l2", "r1", "r2" }
-local function slotLabel(slot) return slot == "" and "Main" or slot:upper() end
+local SLOT_ORDER = { "", "l1", "l2", "r1", "r2", "quick" }
+local function slotLabel(slot) return slot == "" and "Main" or slot == "quick" and "Quick" or slot:upper() end
 local renderPending
 -- the last reply or error per conversation, shown in its row for a while
 local recent, RECENT_FOR = {}, 30
@@ -1244,7 +1244,7 @@ end
 -- (""), and with a trigger held each of L1, L2, R1, R2 is its own. Every line
 -- remembers which it belongs to; the window shows one at a time, picked with the
 -- buttons above the transcript, and a slot with news it has not shown glows.
-local CONVERSATIONS = { "", "l1", "l2", "r1", "r2" }
+local CONVERSATIONS = { "", "l1", "l2", "r1", "r2", "quick" }
 local viewSlot = ""
 -- which conversations have news not yet looked at, kept in SavedVariables so a
 -- reload does not forget a reply waiting in another conversation (the player,
@@ -1258,7 +1258,7 @@ local function paintConversations()
 	local frame = logWindow
 	if not (frame and frame.convButtons) then return end
 	for key, button in pairs(frame.convButtons) do
-		local label = key == "" and "Main" or key:upper()
+		local label = slotLabel(key)
 		-- each conversation shows its own progress in the list (the player,
 		-- 2026-11-10): the seconds while its agent works, "new" once it answered
 		local entry = working[key]
@@ -1341,7 +1341,7 @@ local function buildActionButton()
 		actionButton = button
 		-- at the foot of the conversation list, the list's width, under its
 		-- buttons (the player, 2026-11-10): it belongs to the conversation in view
-		local last = frame.convButtons and frame.convButtons.r2
+		local last = frame.convButtons and (frame.convButtons.quick or frame.convButtons.r2)
 		if last then
 			actionButton:SetSize(last:GetWidth(), 24)
 			actionButton:SetPoint("TOP", last, "BOTTOM", 0, -10)
@@ -1440,7 +1440,7 @@ local function offer(label, macro, slot)
 	end
 	slot = slot or offerSlot or viewSlot
 	offers[slot] = { label = label, macro = macro }
-	local where = slot == "" and "Main" or slot:upper()
+	local where = slotLabel(slot)
 	if slot ~= viewSlot then
 		-- the view never jumps on its own: the button waits in its conversation
 		remember("claude", ("button |cffffffff%s|r runs |cff9ad5ff%s|r — it waits in this conversation")
@@ -2851,6 +2851,8 @@ function WowCompanion_PadSlot()
 	for _, name in ipairs(modifiers) do
 		if SLOT_BY_MODIFIER[name] then held[SLOT_BY_MODIFIER[name]] = true end
 	end
+	-- L2 and R2 together are the quick conversation, as on the PC
+	if held.l2 and held.r2 then return "quick" end
 	for _, slot in ipairs({ "l1", "l2", "r1", "r2" }) do
 		if held[slot] then return slot end
 	end

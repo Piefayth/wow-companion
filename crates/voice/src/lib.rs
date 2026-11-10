@@ -185,6 +185,19 @@ fn prompt(spells: &[String]) -> String {
 /// are in the prompt without restarting.
 /// True while a push-to-talk button is held: a restart waits for the release, so
 /// no clip is cut off halfway.
+/// One line in %LOCALAPPDATA%\wow-companion	iming.log: milliseconds since the
+/// epoch and what happened, so the gap from release to words on screen can be
+/// split into its parts (the player, 2026-11-10: "still takes four seconds").
+pub fn mark(what: &str) {
+    use std::io::Write;
+    let Some(base) = std::env::var_os("LOCALAPPDATA") else { return };
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let path = std::path::PathBuf::from(base).join("wow-companion").join("timing.log");
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{ms} {what}");
+    }
+}
+
 pub static HOLDING: AtomicBool = AtomicBool::new(false);
 
 /// Set by a restart: the voice loop closes the mic properly and returns, and only
@@ -266,7 +279,9 @@ pub fn listen(
         let (outbox, results) = std::sync::mpsc::channel::<Done>();
         std::thread::spawn(move || {
             for job in inbox {
+                mark(&format!("whisper start ({:.1}s of audio, prompt {} chars)", job.seconds, job.prompt.len()));
                 let result = transcribe(&whisper, &job.clip, &job.prompt);
+                mark("whisper done");
                 let done = Done { role: job.role, level: job.level, seconds: job.seconds, result };
                 if outbox.send(done).is_err() {
                     break;
@@ -339,6 +354,7 @@ pub fn listen(
                             ));
                         }
                         Ok(text) => {
+                            mark("transcript reached the voice loop");
                             // Whisper sometimes glues its prompt onto real speech
                             // ("Commands: and, uh, ..."): keep the speech
                             let text = without_echo(&text);
@@ -434,7 +450,13 @@ pub fn listen(
             .iter()
             .find(|(_, press)| pad.held(press))
             .map(|(role, _)| *role);
-        let modifier = slots.iter().find(|(_, press)| pad.held(press)).map(|(name, _)| *name);
+        // L2 and R2 together are the quick conversation (the player, 2026-11-10):
+        // a fast agent for chat, links and buttons
+        let modifier = if pad.held(&slots[1].1) && pad.held(&slots[3].1) {
+            Some("quick")
+        } else {
+            slots.iter().find(|(_, press)| pad.held(press)).map(|(name, _)| *name)
+        };
         let Some(mic) = &microphone else {
             if held.is_some() && holding.is_none() {
                 println!("no microphone yet; still waiting for it");
@@ -457,6 +479,7 @@ pub fn listen(
                 println!("listening for {role}");
             }
             (None, Some(role)) => {
+                mark(&format!("released {role}"));
                 let clip = mic.stop();
                 if beeps {
                     // falling fifth on release: rising means live, falling means it has it
@@ -496,12 +519,18 @@ pub fn listen(
                     // live: slipping back onto the button while this clip is
                     // transcribed starts the next one at once (the player,
                     // 2026-11-10). Results come back in order, below.
-                    let _ = jobs.send(Job { role: tagged, clip, prompt: prompt(&vocabulary()), level, seconds });
+                    let prompt = prompt(&vocabulary());
+                    mark("prompt built");
+                    let _ = jobs.send(Job { role: tagged, clip, prompt, level, seconds });
                 }
             }
             (Some(role), Some(_)) => {
                 // a trigger pulled just after the talk button still counts
                 if role == "ask" && slot.is_none() {
+                    slot = modifier;
+                }
+                // the second trigger of L2+R2 pulled a moment after the first
+                if role == "ask" && modifier == Some("quick") && matches!(slot, Some("l2") | Some("r2")) {
                     slot = modifier;
                 }
                 if rumbles && !pulsed && pressed_at.elapsed() >= TAP {
