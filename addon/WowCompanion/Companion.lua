@@ -335,7 +335,13 @@ local function buildTabs(frame, messages, pending)
 		frame.reloadButton = b
 	end
 	makeReload()
-	button("Window size", "Step through small, medium and large.", function() frame.CycleSize() end)
+	local sizeButton = button("Size: " .. ({ "Small", "Medium", "Large" })[WowCompanionDB.windowSize or 2],
+		"The size the window opens at. The corner grip changes it just for now.")
+	if sizeButton then
+		sizeButton:SetScript("OnClick", function(self)
+			self:SetText("Size: " .. frame.CycleDefaultSize())
+		end)
+	end
 	button("Clear map pins", "Remove every pin I put on your minimap and world map.", function()
 		if WCPins and WCPins.Clear then WCPins.Clear() end
 		frame.SelectTab(3)
@@ -649,15 +655,11 @@ local function buildLog()
 		sizeBefore = nil
 		frame.CycleSize()
 	end)
-	function frame.CycleSize()
-		local width = frame:GetWidth()
-		local pick = SIZES[1]
-		for _, size in ipairs(SIZES) do
-			if size[1] > width + 10 then
-				pick = size
-				break
-			end
-		end
+	-- The corner grip steps the size for now; the Tools tab's button sets the
+	-- default the window opens at, kept in WowCompanionDB.windowSize (the player,
+	-- 2026-11-10: medium unless they pick otherwise).
+	local function applySize(index)
+		local pick = SIZES[index] or SIZES[2]
 		-- grow from the top-left corner, so the window stays where it is
 		local left, top = frame:GetLeft(), frame:GetTop()
 		frame:SetSize(pick[1], pick[2])
@@ -666,6 +668,25 @@ local function buildLog()
 			frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
 		end
 	end
+	function frame.CycleSize()
+		local width = frame:GetWidth()
+		local index = 1
+		for i, size in ipairs(SIZES) do
+			if size[1] > width + 10 then
+				index = i
+				break
+			end
+		end
+		applySize(index)
+	end
+	frame.SIZE_NAMES = { "Small", "Medium", "Large" }
+	function frame.CycleDefaultSize()
+		local index = ((WowCompanionDB.windowSize or 2) % #SIZES) + 1
+		WowCompanionDB.windowSize = index
+		applySize(index)
+		return frame.SIZE_NAMES[index]
+	end
+	applySize(WowCompanionDB.windowSize or 2)
 
 	buildTabs(frame, messages, pending)
 	return frame
