@@ -72,7 +72,9 @@ yes; don't reinvent what Claude Code has.
 Build with `CUDAARCHS` set to the GPU's generation (the profile says which; one
 generation skips most of ggml's CUDA build);
 libclang is in `C:\Program Files\LLVM`. No Lua here: check addon files with
-`python -I tools/luacheck.py <file>`. Tests: `cargo test --workspace`.
+`python -I tools/luacheck.py <file>` (syntax) and `python -I tools/luaglobals.py`
+(globals nothing defines: a local used above its line, a misspelt API name).
+Tests: `cargo test --workspace`.
 
 ## Running it
 

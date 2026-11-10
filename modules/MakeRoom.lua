@@ -12,7 +12,7 @@ local function each(id)
   local ah = price.auction(id)
   return math.max(sell, ah and math.floor(ah * 0.95) or 0)
 end
-local function money(c) return GetCoinText and GetCoinText(c, ' ') or (c .. 'c') end
+local function money(c) return C_CurrencyInfo and C_CurrencyInfo.GetCoinText and C_CurrencyInfo.GetCoinText(c, ' ') or (c .. 'c') end
 local function cheapest()
   local best
   for b = 0, 4 do
