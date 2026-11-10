@@ -3168,7 +3168,8 @@ end
 -- Drawn only while the player stands on the pin's map, in the open world.
 WCPins = WCPins or {}
 do
-	local DISC = "Interface\CharacterFrame\TempPortraitAlphaMask"
+	-- Agent pins: dots and areas on the minimap at coordinates from the
+	-- conversation. How it works and what went wrong: docs/api-useful.md, "Minimap pins".
 	local layer, pool = nil, {}
 	local function makeLayer()
 		if layer or not Minimap then return layer end

@@ -93,3 +93,39 @@ The modern API, not Classic: `GetSpellInfo`, `GetSpecialization`, `GetNumSpellTa
 |---|---|
 | `ReloadUI` | measured protected (`ADDON_ACTION_BLOCKED … Reload()`); `/reload` on a secure button works |
 | `C_Macro.RunMacroText`, anything that casts, targets or moves | not ours to call, by rule |
+
+## Minimap pins (measured working, 2026-11-09)
+
+The agent can mark places on the minimap: a dot plus a shaded area, at map
+coordinates from the conversation ("kill Outrunners at 72.5, 69.5"). Built into
+`Companion.lua` (`WCPins`), kept in `WowCompanionDB.pins`, so pins survive reloads.
+
+From a `lua` step:
+
+```lua
+WCPins.Set({ { map = 1440, x = 72.5, y = 69.5, r = 60, color = {1, 0.3, 0.2} } })
+WCPins.Add({ map = 1440, x = 75.6, y = 70.3, r = 45 })   -- append one
+WCPins.Clear()                                           -- remove all
+```
+
+`map` is a uiMapID (`C_Map.GetBestMapForUnit("player")` for the current zone),
+`x`/`y` the 0-100 coordinates players quote, `r` the area radius in yards (0 for a
+dot only), `color` optional (default gold).
+
+How it draws (every 0.05 s, one frame child of `Minimap` at its level + 5):
+
+- **World yards, not map positions.** `C_Map.GetPlayerMapPosition` errors on this
+  client. `UnitPosition("player")` and `C_Map.GetWorldPosFromMapPos(map, vec)` both
+  give (north, west); the difference times `Minimap:GetWidth()/2 /
+  C_Minimap.GetViewRadius()` is the pixel offset (east = -(west difference)).
+  Rotate by `GetPlayerFacing()` when the `rotateMinimap` CVar is 1.
+- **Vector APIs need the mixins in the sandbox.** C functions that take or return a
+  vector look up `Vector2DMixin` raw in the caller's environment; the sandbox
+  rawsets the common mixins in (the error was "unable to find mixin or metatable").
+- **Circles are `SetColorTexture` plus a `CircleMask` atlas mask.** Texture files
+  (`TempPortraitAlphaMask`) drew nothing on the minimap.
+- **A texture honours one mask here**, so the minimap's round edge never clipped
+  the area: its radius is capped at `half - 2 - distance` instead. Off the map there
+  is no area, only the dot clamped to the rim, pointing the way.
+
+Not done yet: world map pins, labels, clearing a pin automatically on arrival.

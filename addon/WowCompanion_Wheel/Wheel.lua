@@ -1,6 +1,6 @@
 -- Radial wheels of the player's own, each opened by a bar slot whose macro is
 -- "/click WCWheel_<name> Macro" (WCWheel.Macro(name) gives the line).
--- Right stick points and letting it go uses; the d-pad steps and R2 uses;
+-- Right stick points and letting it go uses; R2 uses; the d-pad keeps its bar actions;
 -- Circle closes; the left stick
 -- still walks. Every button is secure, so a wheel works in combat; what is on
 -- it is rebuilt out of combat only.
@@ -16,7 +16,7 @@
 --       { emote = "WAVE" }, { macrotext = "/sit", label = "Sit", icon = 134400 } } })
 --   WCWheel.Remove("buffs")   WCWheel.List()
 -- A slot may carry `label` and `icon` to override what is looked up.
--- A slot { rule = "items" } fills itself: every usable bag item and quest item.
+-- A slot { rule = "items" } or { rule = "quest" } fills itself from the bags.
 
 WCWheel = WCWheel or {}
 local W = WCWheel
@@ -24,7 +24,7 @@ local W = WCWheel
 local MAX_SLOTS = 8
 local WHEEL_WIDTH, WHEEL_HEIGHT = 540, 541 -- Forever's GamepadRadial, measured by Improved Forever
 local SLOT_RADIUS = 150
-local ICON_SIZE = 38
+local ICON_SIZE = 45 -- Blizzard's segment icon size
 local PICK_LENGTH_SQ = 0.25
 local AXIS_CVAR = "GamePadStickAxisButtons"
 local MODIFIERS_LUA = [[newtable("", "SHIFT-", "CTRL-", "ALT-", "CTRL-SHIFT-", "ALT-SHIFT-", "CTRL-ALT-", "CTRL-ALT-SHIFT-")]]
@@ -148,11 +148,13 @@ ring:SetAttribute("wc-take-r2", [[
 local OPEN_SNIPPET = [[
     if button ~= "Macro" and not down then return false end
     local ring = self:GetFrameRef("ring")
-    if ring:IsShown() then
-        ring:Hide()
-        return false
-    end
     local key = self:GetAttribute("wc-wheel")
+    -- the same wheel's button closes it; another wheel's switches to that one
+    if ring:IsShown() then
+        local same = ring:GetAttribute("wc-active") == key
+        ring:Hide()
+        if same then return false end
+    end
     if (ring:GetAttribute(key .. "-count") or 0) < 1 then return false end
     ring:SetAttribute("wc-sticky", nil)
     ring:SetAttribute("wc-aimed", nil)
@@ -194,7 +196,24 @@ SecureHandlerWrapScript(aim, "OnClick", aim, [[
     local ring = self:GetFrameRef("ring")
     ring:RunAttribute("wc-take-r2")
     if not ring:IsShown() then return false end
-    local pick = ring:RunAttribute("wc-pick", down and 0.12 or 0.5)
+    -- On the up edge only a stick still pushed well out is a turn between
+    -- directions; at 0.5 a normal release, read as the key lets go near that
+    -- same threshold, was taken for a turn and nothing was used.
+    local pick = ring:RunAttribute("wc-pick", down and 0.12 or 0.8)
+    -- A fast flick can be over before the stick state shows it: the key goes
+    -- down while GetGamePadState still reads the centre, and nothing was aimed,
+    -- so the release did nothing. The key itself names a direction; aim there.
+    if down and not pick then
+        local dx, dy = 0, 0
+        if button == "PADRSTICKUP" then dy = 1 elseif button == "PADRSTICKDOWN" then dy = -1
+        elseif button == "PADRSTICKLEFT" then dx = -1 elseif button == "PADRSTICKRIGHT" then dx = 1 end
+        local key = ring:GetAttribute("wc-active")
+        local bestDot
+        for index = 1, ring:GetAttribute(key .. "-count") or 0 do
+            local dot = dx * ring:GetAttribute(key .. "-dx-" .. index) + dy * ring:GetAttribute(key .. "-dy-" .. index)
+            if not bestDot or dot > bestDot then pick, bestDot = index, dot end
+        end
+    end
     if pick then
         ring:SetAttribute("wc-sticky", pick)
         ring:SetAttribute("wc-aimed", true)
@@ -258,15 +277,14 @@ SecureHandlerWrapScript(close, "OnClick", close, [[
     return false
 ]])
 
--- While the ring is up it owns R2, Circle, the d-pad and both sticks'
+-- While the ring is up it owns R2, Circle and both sticks'
 -- directions, whatever modifier the held triggers emulate.
 SecureHandlerWrapScript(ring, "OnShow", ring, [[
     self:RunAttribute("wc-take-r2", true)
     for _, modifier in ipairs(]] .. MODIFIERS_LUA .. [[) do
         self:SetBindingClick(true, modifier .. "PAD2", "WCWheelClose", "LeftButton")
-        for _, key in ipairs(newtable("PADDUP", "PADDDOWN", "PADDLEFT", "PADDRIGHT")) do
-            self:SetBindingClick(true, modifier .. key, "WCWheelStep", key)
-        end
+        -- the d-pad is left alone: it keeps its bar actions, so another
+        -- wheel's button opens that wheel from inside this one
         for _, key in ipairs(newtable("PADRSTICKUP", "PADRSTICKDOWN", "PADRSTICKLEFT", "PADRSTICKRIGHT")) do
             self:SetBindingClick(true, modifier .. key, "WCWheelAim", key)
         end
@@ -352,14 +370,41 @@ for index = 1, MAX_SLOTS do
     local slot = {}
     slot.icon = ring:CreateTexture(nil, "OVERLAY")
     slot.icon:SetSize(ICON_SIZE, ICON_SIZE)
+    -- round: Blizzard's portrait circle mask, clamped to black outside so
+    -- nothing past the circle shows (Blizzard_ArtifactPowerButton.xml does
+    -- exactly this). The CircleMask atlas without the clamp cut corners off
+    -- instead of rounding them. A drop shadow sits behind.
+    local mask = ring:CreateMaskTexture()
+    mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetPoint("TOPLEFT", slot.icon, "TOPLEFT", 3, -3)
+    mask:SetPoint("BOTTOMRIGHT", slot.icon, "BOTTOMRIGHT", -3, 3)
+    slot.icon:AddMaskTexture(mask)
+    -- the gamepad bar's own round frame over the masked icon, the same size as
+    -- the icon (ActionBarButton.lua: SetNormalAtlas on a button the icon fills)
+    slot.border = ring:CreateTexture(nil, "OVERLAY", nil, 2)
+    Atlas(slot.border, "gamepad-actionbar-circleslot-border-normal")
+    slot.border:SetAllPoints(slot.icon)
+    slot.shadow = ring:CreateTexture(nil, "OVERLAY", nil, -1)
+    Atlas(slot.shadow, "gamepad-actionbar-circleslot-dropshadow")
+    slot.shadow:SetPoint("TOPLEFT", slot.icon, "TOPLEFT", -4, 4)
+    slot.shadow:SetPoint("BOTTOMRIGHT", slot.icon, "BOTTOMRIGHT", 4, -4)
     slot.label = ring:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    slot.label:SetWidth(110)
+    slot.label:SetSize(80, 40)
+    slot.label:SetWordWrap(true)
+    -- two lines at most, ending in "..." past that: a long name wrapped on and
+    -- spilled out of its triangle
+    slot.label:SetMaxLines(2)
+    slot.label:SetJustifyH("CENTER")
+    slot.label:SetJustifyV("MIDDLE")
     slots[index] = slot
 end
 
--- Slot i of n: the first at the top, then clockwise, evenly spread.
-local function Direction(index, count)
-    local angle = math.pi / 2 - (index - 1) * 2 * math.pi / count
+-- Slot i sits in the art's segment i: the native wheel is always eight
+-- triangles centred on the cardinals and diagonals (GamepadRadial.xml), so a
+-- wheel of three still uses three of the eight, starting at the top and going
+-- clockwise. Spreading n slots evenly put icons across the triangle edges.
+local function Direction(index)
+    local angle = math.pi / 2 - (index - 1) * math.pi / 4
     return math.cos(angle), math.sin(angle), angle
 end
 
@@ -368,16 +413,28 @@ local function LayOut(entries)
         local entry = entries[index]
         if entry then
             local dx, dy = entry.dx, entry.dy
+            -- Blizzard draws a segment's icon 20 in from its centre (GetIconOffset)
             local reach = SLOT_RADIUS - 20
             slot.icon:SetPoint("CENTER", ring, "CENTER", dx * reach, dy * reach)
             slot.icon:SetTexture(entry.icon or 134400)
+            -- and its label outward from the icon, in an 80x40 box that wraps
+            -- (textAnchorData, GamepadRadial.xml): 60 out on a cardinal,
+            -- (30, 45) on a diagonal, which keeps it inside the triangle
+            local lx, ly
+            if math.abs(dx) < 0.1 then lx, ly = 0, dy > 0 and 60 or -60
+            elseif math.abs(dy) < 0.1 then lx, ly = dx > 0 and 60 or -60, 0
+            else lx, ly = dx > 0 and 30 or -30, dy > 0 and 45 or -45 end
             slot.label:ClearAllPoints()
-            slot.label:SetPoint("CENTER", slot.icon, "CENTER", dx * 60, dy * 45 + (dy < -0.3 and -5 or 0))
+            slot.label:SetPoint("CENTER", slot.icon, "CENTER", lx, ly)
             slot.label:SetText(entry.label)
             slot.icon:Show()
+            slot.shadow:Show()
+            slot.border:Show()
             slot.label:Show()
         else
             slot.icon:Hide()
+            slot.shadow:Hide()
+            slot.border:Hide()
             slot.label:Hide()
         end
     end
@@ -399,6 +456,9 @@ local function Highlight(pick, entries)
     end
     for index, slot in ipairs(slots) do
         if index == pick then slot.label:SetTextColor(1, 1, 1) else slot.label:SetTextColor(1, 0.82, 0) end
+        -- the picked one wears the bar's "selected" frame, as a focused button does
+        Atlas(slot.border, index == pick and "gamepad-actionbar-circleslot-border-selected"
+            or "gamepad-actionbar-circleslot-border-normal")
     end
 end
 
@@ -463,11 +523,14 @@ local function Resolve(slot)
     return nil, "empty slot"
 end
 
--- Rules fill themselves, out of combat, each time the wheel is rebuilt.
--- "items": every usable thing in the bags -- anything with a Use: (food,
--- drink, potions, scrolls, usable quest items) -- once per item, in bag order.
+-- Rules fill themselves, out of combat, each time the wheel is rebuilt. Each
+-- takes bag items that have a Use: effect, once per item, in bag order:
+--   "items"  everything usable from the bags but quest items and gear: food,
+--            drink, potions, scrolls, the Hearthstone
+--   "quest"  quest items only
 local RULES = {}
-function RULES.items()
+local QUEST_CLASS, CONSUMABLE_CLASS = 12, 0
+local function BagUsable(keep)
     local found, seen = {}, {}
     for bag = 0, 4 do
         local count = C_Container.GetContainerNumSlots(bag) or 0
@@ -475,9 +538,12 @@ function RULES.items()
             local info = C_Container.GetContainerItemInfo(bag, index)
             local id = info and info.itemID
             if id and not seen[id] then
-                -- only what has a Use: effect, quest items included; a quest
-                -- item you only carry has no spell and stays off
-                if C_Item.GetItemSpell(id) ~= nil then
+                -- only what has a Use: effect; a quest item you only carry has
+                -- no spell and stays off
+                local classID = select(6, C_Item.GetItemInfoInstant(id))
+                local quest = C_Container.GetContainerItemQuestInfo(bag, index)
+                local isQuest = classID == QUEST_CLASS or (quest and (quest.isQuestItem or quest.questID)) and true or false
+                if C_Item.GetItemSpell(id) ~= nil and keep(isQuest, classID) then
                     seen[id] = true
                     found[#found + 1] = { item = id }
                 end
@@ -486,6 +552,10 @@ function RULES.items()
     end
     return found
 end
+-- not only consumables: the Hearthstone is "miscellaneous" (15). Weapons (2)
+-- and armour (4) with a Use: only work worn, so they stay off.
+function RULES.items() return BagUsable(function(isQuest, classID) return not isQuest and classID ~= 2 and classID ~= 4 end) end
+function RULES.quest() return BagUsable(function(isQuest) return isQuest end) end
 
 -- a wheel's slots with every rule replaced by what it finds now
 local function Expand(slots)

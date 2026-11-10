@@ -22,6 +22,12 @@ These outrank any item below.
 - **Addons are vetted before install** (maintainer, files, the `.toc`), and installed
   only after a yes.
 - **Ask before restarting the game; restart the companion only between requests.**
+- **All UI we build looks like Blizzard's** (the player, 2026-11-09): the game's own
+  borders, backings, fonts and atlases (tooltip border, dialog background, the
+  gamepad art), never flat colour boxes. Read how Blizzard builds the nearest
+  equivalent in `docs/wow-ui-source` and copy it.
+- **Nothing of ours opens itself.** The Companion window opens only when the player
+  asks (minus tap, `/wc log`); news goes to the bottom-left toast.
 
 ## Who does what
 
@@ -53,6 +59,13 @@ never invisible and never slow for no reason.
 5. **Dictation into any focused text box** (done), not only chat: the auction house
    search, a mail recipient, any search field. The player focused it, so setting
    its text is the same as chat. It turns voice into typing everywhere.
+7. **Cancel a misspoken request** (the player, 2026-11-09, after several garbled
+   clips went through). Controller first: (a) while the talk button is held, a
+   second button (circle, or capture) throws the clip away before it is
+   transcribed; (b) while the agent is thinking, a Cancel button in the Companion
+   window stops the request in flight (kill that `claude` child, drop its reply,
+   keep the thread). "Never mind" by voice stays as the fallback. Show the
+   transcript first in the window, so a misheard line is visible before it acts.
 6. **Measured by use.** Each agent Lua run records which API names it called and
    whether it errored; `tools/api_surface.py` promotes those from inferred to
    measured. The map gets truer as the agent works, at no extra cost.
@@ -74,11 +87,35 @@ In the player's order (2026-11-09). From `docs/api-surface.md`, all live in Fore
 - **Roles**: talents, equipment sets and bars per role, swapped with one press.
 - **Auction house**: search, price and prepare; the player presses post or buy.
 
+### Later: a custom look (the player, 2026-11-09)
+
+A separate addon (`WowCompanion_Look`), independent of the AI pipeline: one theme
+file, one file per UI part, Blizzard-style art. The ambitious part is a fork of
+Blizzard's controller action bars (source in `docs/wow-ui-source/Interface/AddOns/
+Blizzard_GamepadActionBars`), rebuilt on secure templates and state drivers so
+paging and modifiers still work in combat, then styled our own way. Also: the
+experience bar, which floats at the bottom out of keeping with everything else.
+Start from the three things on screen that bother the player most.
+
 ### 3. Decided
 
 - **No live pixel channel** (2026-11-09): reloads stay the return path. Screenshots
   could carry data live, but that is the ToS-grey pixel strip; the player said no.
 - **Opus for everything** (2026-11-09): smarts over speed, even for quick requests.
+
+### Addon installs waiting for one restart (the player, 2026-11-09)
+
+Install all together, one game restart, once the player's research list is done.
+- **Polestar 0.3.5**: vetted and approved. GitHub fitzforge/polestar, release zip
+  `Polestar-0.3.5.zip` (SHA256 ef9184e6...16d36c), staged at `target/vet/`.
+  Addon only, not the desktop client. Turn party-chat progress off after install.
+- **Undying 0.28.3**: vetted (closed source, no "next upgrade" finder yet); the
+  player has not decided.
+- **UpQuest Forever**: rejected for now (51-60 paywalled, closed, 187 downloads).
+- Downloaded and file-checked in `target/vet/` (Lua, XML, toc, media only, no
+  escaping paths): BuddiesQuestForever 1.0.32 (`bqf.zip`), GearQuest Forever
+  1.1.2 (`gq.zip`, core + one module per class: enable only DRUID), GearedForever
+  1.0.1 (`gf.zip`). Awaiting the player's picks.
 
 ### 4. Small and open
 
@@ -94,3 +131,6 @@ In the player's order (2026-11-09). From `docs/api-surface.md`, all live in Fore
   channels by voice, drafts cleared on cancel; addon vetting; Blizzard's UI source
   for this build; the API surface and its terms; Lua errors exported; conversations
   that survive restarts; wheels (the agent's, and the player's favourite).
+- 2026-11-09: minimap pins the agent draws from coordinates in conversation
+  (`WCPins`; how and why in `docs/api-useful.md`, "Minimap pins"). The player:
+  "we're really going to want that feature in the future." Next: world map pins.
