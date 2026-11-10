@@ -115,12 +115,16 @@ pub(crate) fn resync(addons: &Path) {
         // One `board` message, always, even with nothing working: the addon shows
         // the board it saved at the reload and this is what corrects it, so a
         // conversation that finished during the loading screen stops spinning.
-        let working = WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
-        if let Err(err) = send_inbox(&addons, &board_inbox(&working)) {
+        // read who is working only once the channel is ours (send_inbox_once):
+        // a list read here went out after replies that finished meanwhile
+        if let Err(err) = send_inbox(&addons, BOARD_NOW) {
             eprintln!("  resync: {err}");
         }
     });
 }
+
+/// Stands for the board as it is when the channel is free to send it.
+pub(crate) const BOARD_NOW: &str = "{ kind = \"board\", now = true }";
 
 /// Every conversation still working, for the addon's `board` handler.
 pub(crate) fn board_inbox(working: &[(String, String, Instant)]) -> String {
@@ -652,6 +656,12 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         replies.push((SystemTime::now(), first, reply.clone()));
         let excess = replies.len().saturating_sub(20);
         replies.drain(..excess);
+    }
+    // done before the reply goes out, so a board sent after it can't say
+    // "thinking" again (a resync's board landed just after L1's reply and kept
+    // it spinning, 2026-11-10); a `look` keeps working until after the reload
+    if !answer.look {
+        WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|(at, _, _)| *at != session.slot);
     }
     send_inbox(addons, &reply)?;
     if answer.look {

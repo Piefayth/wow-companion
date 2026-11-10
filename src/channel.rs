@@ -80,6 +80,15 @@ pub(crate) fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     } else {
         SENDING.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     };
+    // the board is read now, with the channel held: nothing finishing while we
+    // waited for it can be undone by an older list
+    let board;
+    let inbox = if inbox == BOARD_NOW {
+        board = board_inbox(&WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone());
+        board.as_str()
+    } else {
+        inbox
+    };
     if !game_running()? {
         // a conversation line waits in the save file for the next login
         if crate::offline::keep(addons, inbox)? {
