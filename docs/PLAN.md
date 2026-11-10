@@ -37,20 +37,20 @@ on its command line means one is). Two writers on one file is how replies got lo
 Being built by the terminal session (the player's call, 2026-11-09). The foundation: everything after this is cheaper once requests are never lost,
 never invisible and never slow for no reason.
 
-1. **Safe self-restart.** `run` checks for a restart request (a file), finishes the
+1. **Safe self-restart.** (Done, 2026-11-09: `wow-companion restart`.) `run` checks for a restart request (a file), finishes the
    request in flight, and exits; a small loop relaunches the new build. Then the
    agent can rebuild and restart the companion without ever losing a reply, and
    nobody has to kill anything.
-2. **A visible queue.** A request made while another runs shows at once in the
+2. **A visible queue.** (Done.) A request made while another runs shows at once in the
    window as "waiting", not only when it starts.
-3. **The slot budget.** 64 messages per UI session, and progress lines spend them.
+3. **The slot budget.** (Done: progress stops at 50, replies warn from 56.) 64 messages per UI session, and progress lines spend them.
    Warn in the window at about 50, offer Reload at the limit, and stop progress
    lines before replies run out. Today running out fails silently.
 4. **A lighter CLAUDE.md.** It is ~28 KB, read on every request, and partly history
    ("we skip a game-to-PC channel", superseded designs). Split it into a short file
    of what is true now and `docs/history.md` for how we got here. Every request
    gets faster and stops reading claims that are no longer true.
-5. **Dictation into any focused text box**, not only chat: the auction house
+5. **Dictation into any focused text box** (done), not only chat: the auction house
    search, a mail recipient, any search field. The player focused it, so setting
    its text is the same as chat. It turns voice into typing everywhere.
 6. **Measured by use.** Each agent Lua run records which API names it called and

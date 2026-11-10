@@ -89,6 +89,10 @@ fn prompt(spells: &[String]) -> String {
 ///
 /// `vocabulary` is asked afresh for every clip, so names learned at the last reload
 /// are in the prompt without restarting.
+/// True while a push-to-talk button is held: a restart waits for the release, so
+/// no clip is cut off halfway.
+pub static HOLDING: AtomicBool = AtomicBool::new(false);
+
 pub fn listen(
     model: &Path,
     options: &[String],
@@ -193,6 +197,7 @@ pub fn listen(
                 println!("no microphone yet; still waiting for it");
             }
             holding = held;
+        HOLDING.store(held.is_some(), Ordering::Relaxed);
             thread::sleep(POLL);
             continue;
         };
@@ -238,6 +243,7 @@ pub fn listen(
             _ => {}
         }
         holding = held;
+        HOLDING.store(held.is_some(), Ordering::Relaxed);
         thread::sleep(POLL);
     }
 }

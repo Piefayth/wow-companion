@@ -596,12 +596,24 @@ function handlers.chat(inbox)
 		end
 		return "refused: no chat box to clear"
 	end
-	local box = activeEditBox()
+	-- Any text box the player put the cursor in takes dictation: the auction
+	-- house search, a mail recipient, a search field. They focused it, so setting
+	-- its text is what typing would do, as with chat. Other boxes get the words
+	-- as said; only chat gets them as a slash command ("guild bank" stays that in
+	-- a search box, and becomes /g bank only in chat).
+	local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+	local chatBox = activeEditBox()
+	if focused and focused ~= chatBox and focused.SetText and focused.GetText
+		and focused.IsObjectType and focused:IsObjectType("EditBox") and focused:IsVisible() then
+		focused:SetText((focused:GetText() or "") .. (inbox.raw or inbox.text or ""))
+		return ("%s holds %q"):format(tostring(focused:GetName() or "a text box"), focused:GetText())
+	end
+	local box = chatBox
 	if not box or not box:IsVisible() then
 		-- in the window, where it is seen: opening the box ourselves is what broke
 		-- A and B, so the player opens it and speaks again
-		remember("error", "No chat box open, so nothing was written. Open chat, then speak.")
-		return "refused: no chat box open"
+		remember("error", "No text box open, so nothing was written. Open chat or click into a search box, then speak.")
+		return "refused: no text box open"
 	end
 	-- append, so speaking twice builds a line instead of replacing it. Not echoed
 	-- into the window: that is the conversation with the agent, and dictation is

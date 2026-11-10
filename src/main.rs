@@ -10,7 +10,10 @@ use wow_companion_voice as voice;
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -20,6 +23,21 @@ const ADDON: &str = "WowCompanion";
 // request at most: every update spends one of the session's 64 slots
 const PROGRESS_EVERY: Duration = Duration::from_secs(6);
 const PROGRESS_LIMIT: u32 = 8;
+// Of the 64 slots a UI session has: progress lines stop at PROGRESS_STOP so the
+// rest go to replies, and from SLOTS_LOW every reply says to reload soon.
+const PROGRESS_STOP: u32 = 50;
+const SLOTS_LOW: u32 = 56;
+// requests to the agent running right now; a restart waits for zero
+static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+/// Counts a request out of IN_FLIGHT however its thread ends.
+struct InFlight;
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 const SLOTS: u32 = 64;
 const BELLS: u32 = 8;
 // the addon only checks the next bell, so a rung bell stays rung for this many sends
@@ -49,13 +67,15 @@ fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let result = match args.as_slice() {
         [command, addons] if command == "install" => install(Path::new(addons)),
+        // ask the running companion to move onto the newest build once it is idle
+        [command] if command == "restart" => request_restart(),
         [command, addons] if command == "probe" => probe(Path::new(addons)),
         [command, addons, rest @ ..] if command == "send" => send(Path::new(addons), rest),
         // the agent's answer, printed and never delivered: for trying the agent
         // without a game to send into
         [command, addons, spoken] if command == "think" => think(Path::new(addons), spoken),
         [command, addons, spoken] if command == "ask" => {
-            ask(Path::new(addons), &mut agent::Session::default(), spoken).map(|_| ())
+            ask(Path::new(addons), &mut agent::Session::default(), spoken, false).map(|_| ())
         }
         [command, addons, model, options @ ..] if command == "run" => {
             run(Path::new(addons), Path::new(model), options)
@@ -272,7 +292,9 @@ fn watch_for_looks(addons: &Path, session: &Mutex<agent::Session>, looking: &Mut
         thread::sleep(Duration::from_secs(4));
         let note = "(I reloaded so you can look. Your steps' results are in <character>, \
                     under code runs and the slots; carry on with what I asked.)";
-        match ask(addons, &mut session.lock().unwrap(), note) {
+        IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+        let _done = InFlight;
+        match ask(addons, &mut session.lock().unwrap(), note, false) {
             Ok(true) => *looking.lock().unwrap() = Some(session_began(addons)),
             Ok(false) => {}
             Err(err) => {
@@ -284,12 +306,17 @@ fn watch_for_looks(addons: &Path, session: &Mutex<agent::Session>, looking: &Mut
 }
 
 /// Returns whether the agent wants to look at the results before it is done.
-fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<bool> {
+fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -> io::Result<bool> {
     println!("asking: {spoken}");
     // start the agent before announcing ourselves: the announcement costs a bell
     // wait, the agent costs several seconds, and they may as well run together
     let waiting = session.start(spoken, agent_context(addons))?;
-    send_inbox(addons, &log_inbox("you", spoken, Some("thinking"), None))?;
+    // a queued request already showed its words; now it only starts thinking
+    if shown {
+        send_inbox(addons, "{ kind = \"progress\", text = \"thinking\" }")?;
+    } else {
+        send_inbox(addons, &log_inbox("you", spoken, Some("thinking"), None))?;
+    }
     let answer = {
         // Progress goes to the spinner, newest only, at most every few seconds: each
         // update costs a slot, and there are 64 per UI session. Its own thread, so
@@ -326,7 +353,13 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str) -> io::Result<
     // so there is no second bell and no two-second gap between reading the answer
     // and being offered the button. This one carries no `pending`, which stops the
     // spinner.
-    send_inbox(addons, &log_inbox("claude", &answer.say, None, answer.inbox.as_deref()))?;
+    // near the end of the session's slots, say so while a reply can still arrive
+    let say = if slots_used(addons) >= SLOTS_LOW {
+        format!("{}\n(Messages are running low for this session: press Reload soon.)", answer.say)
+    } else {
+        answer.say.clone()
+    };
+    send_inbox(addons, &log_inbox("claude", &say, None, answer.inbox.as_deref()))?;
     if answer.look {
         println!("  waiting for the reload to look at the results");
     }
@@ -516,6 +549,14 @@ fn bridge(addons: &Path) -> io::Result<()> {
 /// continuing conversation with the agent. Hold one button to dictate into the chat
 /// box, the other to ask.
 fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
+    // run from a copy, so `cargo build` can replace the real one while we run
+    if let Some(handed_over) = run_from_copy()? {
+        return handed_over;
+    }
+    {
+        let args: Vec<String> = env::args().skip(1).collect();
+        thread::spawn(move || watch_for_restart(args));
+    }
     // the same conversation as before a restart: it remembers what you were doing
     let mut session = agent::Session::resumed();
     if let Some(chosen) = options.iter().find_map(|option| option.strip_prefix("agent=")) {
@@ -553,13 +594,24 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             "ask" => {
                 // a new request supersedes a look still waiting for its reload
                 *looking.lock().unwrap() = None;
+                // A request made while another runs is shown at once, as waiting:
+                // otherwise it appears only when it starts, and reads as dropped.
+                let queued = IN_FLIGHT.load(Ordering::SeqCst) > 0;
+                if queued {
+                    let line = log_inbox("you", text, Some("waiting for the request before this one"), None);
+                    if let Err(err) = send_inbox(addons, &line) {
+                        eprintln!("  could not show the queued request: {err}");
+                    }
+                }
                 // Off the voice loop: real work takes minutes, and the pad must stay
                 // read meanwhile. A second request waits on the session lock, so
                 // the conversation still runs one request at a time.
                 let (addons, session, looking, text) =
                     (addons.to_path_buf(), Arc::clone(&session), Arc::clone(&looking), text.to_string());
+                IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
                 thread::spawn(move || {
-                    match ask(&addons, &mut session.lock().unwrap(), &text) {
+                    let _done = InFlight;
+                    match ask(&addons, &mut session.lock().unwrap(), &text, queued) {
                         Ok(true) => *looking.lock().unwrap() = Some(session_began(&addons)),
                         Ok(false) => {}
                         Err(err) => {
@@ -579,7 +631,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 if routed != text {
                     println!("  as: {routed}");
                 }
-                send_inbox(addons, &chat_inbox(&routed))
+                send_inbox(addons, &dictation_inbox(text, &routed))
             }
         },
     )
@@ -695,6 +747,16 @@ fn tell_failure(addons: &Path, err: &io::Error) {
     }
 }
 
+/// Dictation: `text` as chat should get it (a channel turned into its slash
+/// command), `raw` as it was said, for any other text box the player is in.
+fn dictation_inbox(raw: &str, routed: &str) -> String {
+    format!(
+        "{{ kind = \"chat\", text = {}, raw = {} }}",
+        lua_string(routed),
+        lua_string(raw.trim())
+    )
+}
+
 fn chat_inbox(text: &str) -> String {
     format!("{{ kind = \"chat\", text = {} }}", lua_string(text))
 }
@@ -713,6 +775,10 @@ fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
     // has, so a stale UI can still take it. Blocking those is how a finished answer
     // sat undelivered behind "reload first" while the window spun "thinking".
     // A reload is the same: every version has it, and it is the cure for staleness.
+    if inbox.starts_with("{ kind = \"progress\"") && slots_used(addons) >= PROGRESS_STOP {
+        // the last slots are for replies; a skipped progress line is no loss
+        return Ok(());
+    }
     let always_readable = ["log", "progress", "reload"]
         .iter()
         .any(|kind| inbox.starts_with(&format!("{{ kind = \"{kind}\"")));
@@ -775,6 +841,112 @@ fn next_slot(addons: &Path) -> io::Result<u32> {
     }
     fs::write(&state, format!("{}\n{}\n", cursor + 1, stamp))?;
     Ok(cursor)
+}
+
+/// Slots spent in the running UI session (0 after a reload), without spending one.
+fn slots_used(addons: &Path) -> u32 {
+    let state = addons.join(ADDON).join(STATE);
+    let stamp = saved_variables_stamp(addons).unwrap_or_default();
+    let Ok(text) = fs::read_to_string(&state) else { return 0 };
+    let mut lines = text.lines();
+    let cursor: u32 = lines.next().and_then(|line| line.trim().parse().ok()).unwrap_or(1);
+    if lines.next().unwrap_or_default().trim() != stamp {
+        return 0;
+    }
+    cursor.saturating_sub(1)
+}
+
+// --- restarts that never cut a request off
+//
+// Windows will not let a running .exe be replaced, so `cargo build` failed while
+// the companion ran, and the only way onto a new build was to kill it, losing any
+// reply in flight. So `run` executes from a copy in %LOCALAPPDATA%, leaving the
+// real one free to rebuild; `restart` leaves a request, and the running copy acts
+// on it only when no request is in flight and no button is held: it starts the
+// newest build (which copies itself in turn) and exits.
+
+fn companion_dir() -> io::Result<PathBuf> {
+    let base = env::var_os("LOCALAPPDATA").ok_or_else(|| io::Error::other("no LOCALAPPDATA"))?;
+    let dir = PathBuf::from(base).join("wow-companion");
+    fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+fn restart_request() -> io::Result<PathBuf> {
+    Ok(companion_dir()?.join("restart.request"))
+}
+
+fn request_restart() -> io::Result<()> {
+    fs::write(restart_request()?, "")?;
+    println!("asked the companion to restart onto the newest build once it is idle");
+    Ok(())
+}
+
+// set on the copy, naming the build it came from
+const SOURCE_EXE: &str = "WOW_COMPANION_SOURCE_EXE";
+
+/// Started from the build itself: copy it aside, run the copy, and step away.
+/// Returns Some when this process handed over and should exit.
+fn run_from_copy() -> io::Result<Option<io::Result<()>>> {
+    if env::var_os(SOURCE_EXE).is_some() {
+        // a copy: the generations before it are done (each is 180 MB in debug);
+        // a predecessor still exiting is locked and goes next time
+        let me = env::current_exe().ok();
+        if let Ok(entries) = fs::read_dir(companion_dir()?.join("bin")) {
+            for entry in entries.flatten() {
+                if Some(entry.path()) != me {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+        return Ok(None);
+    }
+    let source = env::current_exe()?;
+    let bin = companion_dir()?.join("bin");
+    fs::create_dir_all(&bin)?;
+    // earlier copies: whichever are not running can go
+    if let Ok(entries) = fs::read_dir(&bin) {
+        for entry in entries.flatten() {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+    let copy = bin.join(format!("companion-{}.exe", std::process::id()));
+    fs::copy(&source, &copy)?;
+    // Not waited on: a launcher that waited would itself be the running build,
+    // holding the lock this exists to free. The copy inherits the console, so its
+    // output still lands where the companion was started.
+    std::process::Command::new(&copy)
+        .args(env::args_os().skip(1))
+        .env(SOURCE_EXE, &source)
+        .spawn()?;
+    println!("running as {} (the build itself stays free to rebuild)", copy.display());
+    Ok(Some(Ok(())))
+}
+
+fn watch_for_restart(args: Vec<String>) {
+    let (Ok(request), Some(source)) = (restart_request(), env::var_os(SOURCE_EXE)) else { return };
+    loop {
+        thread::sleep(Duration::from_secs(1));
+        if !request.exists() || IN_FLIGHT.load(Ordering::SeqCst) > 0 || voice::HOLDING.load(Ordering::Relaxed) {
+            continue;
+        }
+        // copy the new build now; if it is mid-build the copy fails, so try again
+        let bin = match companion_dir() {
+            Ok(dir) => dir.join("bin"),
+            Err(_) => continue,
+        };
+        let next = bin.join(format!("companion-next-{}.exe", std::process::id()));
+        if fs::copy(&source, &next).is_err() {
+            continue;
+        }
+        let _ = fs::remove_file(&request);
+        println!("restarting onto the new build");
+        // the next generation runs as a copy already, and owns the console from here
+        match std::process::Command::new(&next).args(&args).env(SOURCE_EXE, &source).spawn() {
+            Ok(_) => std::process::exit(0),
+            Err(err) => eprintln!("  restart failed, still running the old build: {err}"),
+        }
+    }
 }
 
 fn saved_variables_stamp(addons: &Path) -> Option<String> {
