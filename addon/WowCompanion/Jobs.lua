@@ -179,9 +179,9 @@ refresh = function()
 	local following = scroll:GetVerticalScroll() >= scroll:GetVerticalScrollRange() - 30
 	-- a scroll frame only redraws its child's new area when told (the
 	-- player, 2026-11-10: "doesn't update till I move my cursor")
-	if transcript0.jobsHeight ~= y then
-		transcript0.jobsHeight = y
-		transcript0.content:SetHeight(math.max(y, base, 1))
+	local want = math.max(y, base, 1)
+	if math.abs((transcript0.content:GetHeight() or 0) - want) > 0.5 then
+		transcript0.content:SetHeight(want)
 		scroll:UpdateScrollChildRect()
 		if following and y > base then scroll:SetVerticalScroll(scroll:GetVerticalScrollRange()) end
 	end
