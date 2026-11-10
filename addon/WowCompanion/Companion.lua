@@ -409,6 +409,9 @@ local function paintConversations()
 		else
 			stop:Hide()
 		end
+		-- Send now: a request running with another waiting behind it
+		local now = frame.sendNowButton
+		if now then now:SetShown(entry ~= nil and entry.text ~= "stopping" and count > 0) end
 	end
 end
 
@@ -418,11 +421,12 @@ paintHook = paintConversations
 -- cannot write to the PC while it runs, so the request is drawn on the data
 -- strip, which the companion watches (strip.py --serve); it ends the agent,
 -- drops what was queued, and answers with a `stopped` message.
-function WowCompanion_Stop(slot)
+-- `sendNow`: end only the running request; the next queued one starts at once.
+function WowCompanion_Stop(slot, sendNow)
 	slot = slot or viewSlot
 	if not (WowCompanion_Strip and WowCompanion_Strip.Send) then return end
-	WowCompanion_Strip.Send(("WCCMD %d%04d stop %s"):format(time(), math.random(0, 9999),
-		slot ~= "" and slot or "main"), 2.5)
+	WowCompanion_Strip.Send(("WCCMD %d%04d %s %s"):format(time(), math.random(0, 9999),
+		sendNow and "now" or "stop", slot ~= "" and slot or "main"), 2.5)
 	setPending("stopping", slot)
 end
 
@@ -957,10 +961,14 @@ end
 -- words arrive.
 function handlers.stopped(inbox)
 	local slot = inbox.slot or ""
-	unqueue(slot, true)
 	setTranscribing(slot, false)
 	setPending(nil, slot)
-	remember("claude", "Stopped. Anything queued behind it was dropped.", nil, slot)
+	if inbox.dropped == false then
+		remember("claude", "Interrupted. Sending your next message now.", nil, slot)
+	else
+		unqueue(slot, true)
+		remember("claude", "Stopped. Anything queued behind it was dropped.", nil, slot)
+	end
 	return "stopped"
 end
 function handlers.transcribing(inbox)

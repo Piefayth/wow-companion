@@ -261,6 +261,15 @@ local function buildTabs(frame, messages, pending)
 	if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, stop) end
 	stop:Hide()
 	frame.stopButton = stop
+	-- Send now: ends only the running request, so the next queued one starts
+	local now = CreateFrame("Button", nil, well, "UIPanelButtonTemplate")
+	now:SetSize(WELL - 10, 24)
+	now:SetPoint("BOTTOM", stop, "TOP", 0, 4)
+	now:SetText("Send now")
+	now:SetScript("OnClick", function() if WowCompanion_Stop then WowCompanion_Stop(nil, true) end end)
+	if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, now) end
+	now:Hide()
+	frame.sendNowButton = now
 
 	-- the tabs, hanging under the bottom edge like the character sheet's
 	for i, name in ipairs(TAB_NAMES) do

@@ -146,6 +146,13 @@ pub(crate) fn board_inbox(working: &[(String, String, Instant)]) -> String {
 /// when its last request began), so a request queued before a stop is dropped.
 static RUNNING: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
 static STOPS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::new());
+/// Per conversation, how many times its running request was ended (by Stop or
+/// by Send now), so the request knows not to report a failure.
+static INTERRUPTS: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
+
+fn interrupts(slot: &str) -> u64 {
+    INTERRUPTS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter().find(|(at, _)| at == slot).map_or(0, |(_, n)| *n)
+}
 
 fn stops(slot: &str) -> (u64, u64) {
     let all = STOPS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -175,9 +182,20 @@ fn set_running(slot: &str, pid: Option<u32>) {
     }
 }
 
-pub(crate) fn stop(addons: &Path, slot: &str) {
-    let (count, _) = stops(slot);
-    set_stops(slot, Some(count + 1), None);
+/// `drop_queue`: Stop ends the running request and drops the queue; Send now
+/// (false) ends only the running one, so the next queued request starts at once.
+pub(crate) fn stop(addons: &Path, slot: &str, drop_queue: bool) {
+    if drop_queue {
+        let (count, _) = stops(slot);
+        set_stops(slot, Some(count + 1), None);
+    }
+    {
+        let mut all = INTERRUPTS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        match all.iter_mut().find(|(at, _)| at == slot) {
+            Some(entry) => entry.1 += 1,
+            None => all.push((slot.to_string(), 1)),
+        }
+    }
     let pid = RUNNING
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -200,7 +218,8 @@ pub(crate) fn stop(addons: &Path, slot: &str) {
         }
         let _ = kill.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
     }
-    if let Err(err) = send_inbox(addons, &format!("{{ kind = \"stopped\", slot = {} }}", lua_string(slot))) {
+    let message = format!("{{ kind = \"stopped\", slot = {}, dropped = {} }}", lua_string(slot), drop_queue);
+    if let Err(err) = send_inbox(addons, &message) {
         eprintln!("  telling the game it stopped failed: {err}");
     }
 }
@@ -234,9 +253,9 @@ pub(crate) fn watch_commands(addons: &Path) {
         if let Some(out) = child.stdout.take() {
             for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
                 let words: Vec<&str> = line.split_whitespace().collect();
-                if let ["WCCMD", _nonce, "stop", slot, ..] = words.as_slice() {
+                if let ["WCCMD", _nonce, verb @ ("stop" | "now"), slot, ..] = words.as_slice() {
                     let slot = if *slot == "main" { "" } else { *slot };
-                    stop(addons, slot);
+                    stop(addons, slot, *verb == "stop");
                 }
             }
         }
@@ -255,7 +274,8 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         return Ok(false);
     }
     set_stops(&session.slot, None, Some(stopped_before));
-    let was_stopped = |slot: &str| stops(slot).0 != stopped_before;
+    let interrupted_before = interrupts(&session.slot);
+    let was_stopped = |slot: &str| interrupts(slot) != interrupted_before;
     let _working = Working(session.slot.clone());
     WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|(at, _, _)| *at != session.slot);
     set_working(&session.slot, "thinking");
