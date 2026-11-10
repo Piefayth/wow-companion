@@ -1015,7 +1015,21 @@ fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
 }
 
 fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
-    let _one_at_a_time = SENDING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    // Status updates (progress, "transcribing") are advisory: they go out only when
+    // the channel is free, and are dropped when it is busy, since a newer one or
+    // the reply itself follows. Every send holds the channel for the bell's 2 s,
+    // and status updates were 40 of 66 sends, so replies queued behind half a
+    // minute of them (measured 2026-11-10).
+    let advisory = inbox.starts_with("{ kind = \"progress\"") || inbox.starts_with("{ kind = \"transcribing\"");
+    let _one_at_a_time = if advisory {
+        match SENDING.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return Ok(()),
+        }
+    } else {
+        SENDING.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    };
     if !game_running()? {
         return Err(io::Error::other("Wow.exe isn't running, so nothing would read this"));
     }
