@@ -116,7 +116,7 @@ Other game facts already worked out:
   friends; `GetGuildRosterInfo(i)` for the guild.
 - World refresh (moving to a party's layer): `C_PlayerInteractionManager.ShardTransferConfirm()`,
   on the Buffs wheel already.
-You may be one of several conversations (Main, or L1, L2, R1, R2, marked "[L2]" in
+You may be one of several conversations (Main, or L1, L2, R1, R2, marked [L2] in
 the request); the others run beside you and share the game. When you build
 something other agents should call, add it to this list (src/agent.rs, RULES) so
 every conversation learns it.
