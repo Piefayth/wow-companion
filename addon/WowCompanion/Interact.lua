@@ -79,7 +79,14 @@ do
 			button:SetAttribute("type", "macro")
 			-- only a live hostile target blocks soft interact; Blizzard turns it
 			-- back on at PLAYER_TARGET_CHANGED, then interact takes the corpse
-			button:SetAttribute("macrotext", "/cleartarget [harm,nodead]")
+			-- Measured 2026-11-10: in a fight the target came straight back between
+			-- the press and the release. Blizzard's gamepad mode sets the temp CVar
+			-- TargetEnemyAttacker=1 (Blizzard_Gamepad/Core.lua): with no target, the
+			-- next mob that hits you becomes it, so soft interact is switched off
+			-- again before the second press. The press turns that off first (a
+			-- secure /console, the player's own press); it is put back when the
+			-- fight ends.
+			button:SetAttribute("macrotext", "/console TargetEnemyAttacker 0\n/cleartarget [harm,nodead]")
 		else
 			button:SetAttribute("type", nil)
 			button:SetAttribute("macrotext", nil)
@@ -94,6 +101,16 @@ do
 	-- Blizzard resets the CVar on these; while held, ours wins (run after theirs:
 	-- the frame's own events fire after EventRegistry's frame-event callbacks
 	-- registered earlier, and a reset still lands next frame at worst)
+	-- the fight is over: Blizzard's own auto-target-attacker comes back
+	local restore = _G["WCCombatInteractRestore"] or CreateFrame("Frame", "WCCombatInteractRestore")
+	restore:UnregisterAllEvents()
+	restore:RegisterEvent("PLAYER_REGEN_ENABLED")
+	restore:SetScript("OnEvent", function()
+		if C_CVar.GetCVar("TargetEnemyAttacker") == "0" then
+			pcall(C_CVar.SetTempCVar, "TargetEnemyAttacker", "1")
+		end
+	end)
+
 	local watch = _G["WCCombatInteractWatch"] or CreateFrame("Frame", "WCCombatInteractWatch")
 	watch:UnregisterAllEvents()
 	for _, e in ipairs({ "PLAYER_TARGET_CHANGED", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" }) do
