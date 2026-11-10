@@ -1,0 +1,13 @@
+[package]
+name = "wow-companion-setup"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The setup window: a binary of its own, so a GUI library never touches the
+# companion's (or Whisper's) build.
+[dependencies]
+wow-companion-pad = { path = "../pad" }
+wow-companion-settings = { path = "../settings" }
+cpal = "0.18.2"
+eframe = "0.37.0"
