@@ -272,7 +272,7 @@ local paintHook -- the conversation list's painter, set once it exists
 -- progress. Started by a `transcribing` message the moment the pad is released;
 -- ended by what the words became (the request's own line, a chat line, a
 -- dropped-clip notice), or after TRANSCRIBE_FOR in case that line never comes.
-local transcribing, TRANSCRIBE_FOR = {}, 60
+local transcribing, TRANSCRIBE_FOR = {}, 15 -- Whisper takes 1-3 s; a dropped clip should not linger
 local function setTranscribing(slot, on)
 	if slot then
 		transcribing[slot] = on and (transcribing[slot] or GetTime()) or nil
