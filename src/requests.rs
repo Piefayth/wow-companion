@@ -297,8 +297,34 @@ pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool
     }
 }
 
+/// The newest request each conversation made from a clip, and when.
+static LAST_REQ: Mutex<Vec<(String, u64, Instant)>> = Mutex::new(Vec::new());
+
+pub(crate) fn note_request(slot: &str, req: u64) {
+    let mut all = LAST_REQ.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    all.retain(|(at, _, _)| at != slot);
+    all.push((slot.to_string(), req, Instant::now()));
+}
+
 pub(crate) fn cancel_hearing(addons: &Path, slot: &str) {
     println!("cancel hearing [{}]", if slot.is_empty() { "main" } else { slot });
+    // Too late to drop the words (the player, 2026-11-10: "if I cancelled a
+    // transcription but it sent it, it should cancel the message instead"):
+    // when the newest clip has already become a request, cancel that request.
+    let released = *super::LAST_RELEASE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let newest = LAST_REQ
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .find(|(at, _, _)| at == slot)
+        .map(|(_, req, when)| (*req, *when));
+    if let Some((req, made)) = newest {
+        if made.elapsed() < Duration::from_secs(60) && released.is_none_or(|released| made >= released) {
+            println!("  the clip already became request {req}: cancelling that");
+            cancel_request(addons, slot, req, false);
+            return;
+        }
+    }
     HEARING_CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((slot.to_string(), Instant::now()));
     let _ = send_inbox(addons, &format!("{{ kind = \"stopped\", slot = {}, hearing = true }}", lua_string(slot)));
 }

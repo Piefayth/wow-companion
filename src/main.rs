@@ -430,6 +430,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         return;
                     }
                     let req = new_request();
+                    note_request(&slot, req);
                     // One button for both: a line that opens with a channel ("party,
                     // pulling now", "whisper Sage, ...") is chat, not a request, and
                     // "scratch that" alone empties the box.
