@@ -46,12 +46,19 @@ impl Press {
 }
 
 impl Press {
-    /// The name `press` knows it by, if it has one (the DualSense layout).
-    pub fn name(&self) -> Option<&'static str> {
-        let known = [
-            ("home", 10, 0x01), ("touchpad", 10, 0x02), ("L1", 9, 0x01), ("R1", 9, 0x02),
-            ("L2", 9, 0x04), ("R2", 9, 0x08), ("minus", 9, 0x10), ("plus", 9, 0x20),
-        ];
+    /// The button's name on this kind of controller, as Windows sees it (by
+    /// vendor id), or None when we don't know that layout. Only Sony's report
+    /// layout is known; a pad behind an adapter is named as the adapter presents it.
+    pub fn name(&self, vid: u16) -> Option<&'static str> {
+        let known: &[(&str, usize, u8)] = match vid {
+            0x054c => &[
+                ("PS", 10, 0x01), ("touchpad", 10, 0x02), ("L1", 9, 0x01), ("R1", 9, 0x02),
+                ("L2", 9, 0x04), ("R2", 9, 0x08), ("Create", 9, 0x10), ("Options", 9, 0x20),
+                ("L3", 9, 0x40), ("R3", 9, 0x80),
+                ("Square", 8, 0x10), ("Cross", 8, 0x20), ("Circle", 8, 0x40), ("Triangle", 8, 0x80),
+            ],
+            _ => &[],
+        };
         known.iter().find(|(_, byte, mask)| *byte == self.byte && *mask == self.mask).map(|(name, ..)| *name)
     }
 }

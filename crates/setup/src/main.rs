@@ -557,7 +557,7 @@ impl Setup {
             return "not set".into();
         }
         match pad::press(&self.ask) {
-            Ok(press) => match press.name() {
+            Ok(press) => match press.name(pad::split(&self.pad).map(|(vid, _)| vid).unwrap_or(0)) {
                 Some(name) => name.to_string(),
                 None => format!("button {}", press.spec()),
             },
