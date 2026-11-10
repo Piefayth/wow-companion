@@ -103,6 +103,12 @@ the bars once, cause not yet reproduced).
 - **Several conversations** (the player, 2026-11-10, an idea): separate threads,
   each its own agent session, picked from a side list in the window.
 
+- **Home as a wheel button** (the player, 2026-11-10, an idea): Home tap, or Home
+  with a modifier, opens a wheel. Home + trigger and Home held already start a
+  conversation over, so a tap and the remaining chords are what is free. The PC
+  reads Home, so opening a wheel needs a press the game can see: likely a binding
+  on the game side, measured first.
+
 ### Later: a custom look (the player, 2026-11-09)
 
 A separate addon (`WowCompanion_Look`), independent of the AI pipeline: one theme
