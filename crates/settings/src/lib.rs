@@ -10,6 +10,8 @@
 //! GPU one), and the run options: `pad` (vid:pid), `ask` (the talk button: a
 //! name or byte:mask), `chat`, `mic`, `cue`, `volume`, `agent`.
 
+pub mod changes;
+
 use std::{fs, io, path::PathBuf};
 
 /// The run options a settings file may carry, in the order they are written.

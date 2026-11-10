@@ -135,7 +135,9 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
 
     // the mic: is audio actually arriving?
     println!("checking the mic for 2 s (say nothing, or anything)...");
-    if let Err(err) = crate::voice::miccheck(Some("airpods"), None) {
+    // the mic the setup window chose (settings.toml), else the default input
+    let settings = wow_companion_settings::Settings::load();
+    if let Err(err) = crate::voice::miccheck(settings.get("mic"), None) {
         line(false, "mic", &err.to_string());
     }
     Ok(())

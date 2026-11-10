@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       cuda:
-        description: "Also build the CUDA variant (slow: every NVIDIA generation)"
+        description: "Also build the CUDA variant (slow: GTX 10 to RTX 50)"
         type: boolean
         default: false
 
@@ -79,16 +79,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Jimver/cuda-toolkit@v0.2.19
+      # 12.9: the last CUDA that still builds for Pascal (13.0 drops it) and the
+      # first line that builds for Blackwell (the RTX 50 series, 12.0)
+      - uses: Jimver/cuda-toolkit@v0.2.35
         id: cuda
         with:
-          cuda: "12.4.1"
+          cuda: "12.9.1"
           method: network
           sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "visual_studio_integration"]'
-      - name: Build (CUDA, Turing to Hopper)
+      # Every GeForce generation since 2016, one binary each: GTX 10 (6.1), GTX 16
+      # and RTX 20 (7.5), RTX 30 (8.6), RTX 40 (8.9), RTX 50 (12.0). The plain
+      # "120" adds PTX too, which the driver compiles for any later card.
+      - name: Build (CUDA, GTX 10 to RTX 50)
         run: cargo build --release
         env:
-          CUDAARCHS: "75;80;86;89;90"
+          CUDAARCHS: "61-real;75-real;86-real;89-real;120"
           CARGO_TARGET_DIR: C:/tg
       - name: Build (CPU fallback)
         run: cargo build --release --no-default-features

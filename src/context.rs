@@ -108,7 +108,7 @@ pub(crate) fn agent_context_for(addons: &Path, slot: &str) -> Option<String> {
     }
     out.push("== player profile ==".to_string());
     out.push(
-        fs::read_to_string(crate::home().join("player").join("profile.md"))
+        fs::read_to_string(profile())
             .unwrap_or_else(|_| "(none yet: player/profile.md does not exist)".to_string()),
     );
     out.push("== integrations ==".to_string());
@@ -216,4 +216,16 @@ pub(crate) fn live_chat(addons: &Path) -> Option<String> {
     let text = fs::read_to_string(&out).ok()?;
     let _ = fs::remove_file(&out);
     (status.success() && !text.starts_with("STRIP FAILED")).then_some(text)
+}
+
+/// The player's profile. A release ships only `profile.template.md`, so unzipping
+/// an update over an install never overwrites what the agent wrote: the profile
+/// is made from the template the first time it is wanted.
+pub(crate) fn profile() -> PathBuf {
+    let dir = crate::home().join("player");
+    let path = dir.join("profile.md");
+    if !path.exists() {
+        let _ = fs::copy(dir.join("profile.template.md"), &path);
+    }
+    path
 }

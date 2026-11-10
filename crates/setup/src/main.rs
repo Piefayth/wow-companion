@@ -23,7 +23,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui::{self, RichText};
 use look::Status;
 use wow_companion_pad as pad;
-use wow_companion_settings::Settings;
+use wow_companion_settings::{Settings, changes::Changes};
 
 /// Child processes (claude, the companion, tasklist) open no console window.
 const NO_WINDOW: u32 = 0x0800_0000;
@@ -90,6 +90,13 @@ struct Setup {
     saved: bool,
     download: Arc<Mutex<models::Download>>,
     cancel: Arc<AtomicBool>,
+    /// what uninstall would remove, looked up when that section opens
+    changes: Option<Changes>,
+    remove_agent_addons: bool,
+    confirm_uninstall: bool,
+    uninstalled: Option<Vec<String>>,
+    /// the game and the companion running, when the changes were looked up
+    running: (bool, bool),
 }
 
 #[derive(Clone, Default)]
@@ -141,6 +148,11 @@ impl Setup {
             saved: false,
             download: Arc::default(),
             cancel: Arc::default(),
+            changes: None,
+            remove_agent_addons: false,
+            confirm_uninstall: false,
+            uninstalled: None,
+            running: (false, false),
         };
         setup.refresh_devices();
         if setup.addons.is_empty() {
@@ -220,6 +232,16 @@ impl eframe::App for Setup {
                             self.microphone(ui);
                             self.speech(ui);
                             self.agent(ui);
+                            ui.add_space(6.0);
+                            let header = egui::CollapsingHeader::new(
+                                RichText::new("What this put on your PC, and uninstall").color(look::MUTED),
+                            )
+                            .id_salt("changes")
+                            .show(ui, |ui| self.what_changed(ui));
+                            if header.body_returned.is_none() {
+                                // looked up again each time it opens
+                                self.changes = None;
+                            }
                         },
                     );
                 });
@@ -255,6 +277,15 @@ impl Setup {
             ));
             if !self.addons.is_empty() && !exists {
                 ui.colored_label(look::BAD, "That folder does not exist.");
+            }
+            if exists {
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Install the addon into the game").clicked() {
+                        self.install();
+                    }
+                    ui.label(RichText::new("Then fully restart the game: a reload does not see new addons.").color(look::MUTED));
+                });
             }
         });
     }
@@ -551,6 +582,139 @@ impl Setup {
             });
         }
     }
+}
+
+// installing, and what it changed (crates/settings/src/changes.rs)
+impl Setup {
+    fn install(&mut self) {
+        let addons = self.addons.clone();
+        let report = Arc::clone(&self.report);
+        *report.lock().unwrap() = "Installing...".into();
+        thread::spawn(move || {
+            let out = companion().map(|exe| Command::new(exe).arg("install").arg(&addons).creation_flags(NO_WINDOW).output());
+            *report.lock().unwrap() = match out {
+                Some(Ok(out)) => format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)),
+                Some(Err(err)) => format!("Could not run the install: {err}"),
+                None => "wow-companion.exe was not found next to this window.".into(),
+            };
+        });
+    }
+
+    fn what_changed(&mut self, ui: &mut egui::Ui) {
+        let addons = Some(Path::new(&self.addons)).filter(|path| path.is_dir());
+        let muted = |ui: &mut egui::Ui, text: String| {
+            ui.label(RichText::new(text).color(look::MUTED));
+        };
+        if let Some(failed) = &self.uninstalled {
+            if failed.is_empty() {
+                ui.colored_label(look::GOOD, "Removed. To finish, close this window and delete its folder:");
+            } else {
+                ui.colored_label(look::BAD, "Some things could not be removed (close what holds them and try again):");
+                for line in failed {
+                    muted(ui, line.clone());
+                }
+                ui.label("The rest is gone. The program folder is yours to delete:");
+            }
+            muted(ui, program_folder());
+            return;
+        }
+        if self.changes.is_none() {
+            // looked up once per opening, not every frame
+            self.running = (game_running(), companion_running());
+        }
+        let changes = self.changes.get_or_insert_with(|| Changes::find(addons));
+
+        if changes.is_empty() {
+            muted(ui, "Nothing of the companion's is installed outside this folder.".into());
+        }
+        if !changes.folders.is_empty() {
+            let names: Vec<String> =
+                changes.folders.iter().filter_map(|f| f.file_name()).map(|n| n.to_string_lossy().to_string()).collect();
+            let slots = names.iter().filter(|name| name.starts_with("WowCompanion_S")).count();
+            let mut named: Vec<String> = names.into_iter().filter(|name| !name.starts_with("WowCompanion_S")).collect();
+            if slots > 0 {
+                named.push(format!("{slots} message slots (WowCompanion_S001...)"));
+            }
+            ui.label("Addons in the game's AddOns folder");
+            muted(ui, named.join(", "));
+        }
+        if !changes.saved.is_empty() {
+            let n = changes.saved.len();
+            ui.label("Our addon's saved data in the game's WTF folder");
+            muted(ui, format!("{n} file{} (WowCompanion*.lua)", if n == 1 { "" } else { "s" }));
+        }
+        if !changes.agent_addons.is_empty() {
+            ui.label("Addons the agent installed for you (kept unless you tick the box)");
+            let list: Vec<&str> = changes.agent_addons.iter().map(|(name, _)| name.as_str()).collect();
+            muted(ui, list.join(", "));
+            ui.checkbox(&mut self.remove_agent_addons, "Remove these too");
+        }
+        if let Some(data) = &changes.data {
+            ui.label("Settings, conversations, logs and backups");
+            muted(ui, data.display().to_string());
+        }
+        ui.label("This program's folder (and a speech model downloaded into it)");
+        muted(ui, format!("{}  (delete it yourself afterwards)", program_folder()));
+        muted(ui, "Nothing in the registry, no services, nothing starts with Windows.".into());
+        if changes.is_empty() {
+            return;
+        }
+
+        ui.add_space(6.0);
+        let (game, companion) = self.running;
+        if game || companion {
+            ui.colored_label(
+                look::WARN,
+                match (game, companion) {
+                    (true, true) => "Close the game and stop the companion to uninstall.",
+                    (true, false) => "Close the game to uninstall: it holds these files.",
+                    _ => "Stop the companion to uninstall.",
+                },
+            );
+            if ui.small_button("Look again").clicked() {
+                self.changes = None;
+            }
+            return;
+        }
+        if !self.confirm_uninstall {
+            if ui.button("Uninstall...").clicked() {
+                self.confirm_uninstall = true;
+            }
+            return;
+        }
+        ui.colored_label(
+            look::BAD,
+            "This deletes everything listed above, your conversations and settings too. It can't be undone.",
+        );
+        let mut remove = false;
+        ui.horizontal(|ui| {
+            let button = egui::Button::new(RichText::new("Remove it all").color(look::TEXT)).fill(look::BAD.gamma_multiply(0.6));
+            remove = ui.add(button).clicked();
+            if ui.button("Cancel").clicked() {
+                self.confirm_uninstall = false;
+            }
+        });
+        if remove {
+            let failed = changes.remove(self.remove_agent_addons);
+            self.uninstalled = Some(failed);
+            self.confirm_uninstall = false;
+        }
+    }
+}
+
+/// The folder this window runs from (the unzipped release).
+fn program_folder() -> String {
+    std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.display().to_string())).unwrap_or_default()
+}
+
+/// Whether World of Warcraft is running.
+fn game_running() -> bool {
+    Command::new("tasklist")
+        .args(["/FI", "IMAGENAME eq Wow.exe", "/NH"])
+        .creation_flags(NO_WINDOW)
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).to_lowercase().contains("wow.exe"))
+        .unwrap_or(false)
 }
 
 // the pad: its name, the talk button, learning one

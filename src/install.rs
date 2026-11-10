@@ -15,12 +15,15 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     modules::regenerate(None)?;
     let addon = addons.join(ADDON);
     copy_dir(&source, &addon)?;
+    // the ledger the setup window's uninstall works from
+    let mut written = vec![addon.clone()];
     // the suite's other addons (WowCompanion_Wheel...), placed as they are
     for entry in fs::read_dir(source.parent().unwrap())? {
         let entry = entry?;
         let name = entry.file_name();
         if entry.file_type()?.is_dir() && name != ADDON {
             copy_dir(&entry.path(), &addons.join(&name))?;
+            written.push(addons.join(&name));
             println!("installed {}", name.to_string_lossy());
         }
     }
@@ -47,12 +50,16 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     for slot in 1..=SLOTS {
         let dir = addons.join(slot_name(slot));
         fs::create_dir_all(&dir)?;
+        written.push(dir.clone());
         fs::write(dir.join(format!("{}.toc", slot_name(slot))), SLOT_TOC)?;
         fs::write(dir.join("Slot.xml"), SLOT_XML)?;
         // the client only knows files that exist at launch
         if missing(&dir.join("Inbox.lua")) {
             fs::write(dir.join("Inbox.lua"), "")?;
         }
+    }
+    if let Err(err) = wow_companion_settings::changes::record_folders(&written) {
+        println!("warning: could not record what was installed, for uninstall: {err}");
     }
     println!("installed {ADDON} and {SLOTS} slots into {}", addons.display());
     println!("fully restart the game so it sees the new folders");

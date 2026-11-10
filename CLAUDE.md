@@ -27,14 +27,14 @@ yes; don't reinvent what Claude Code has.
 
 ## Shape
 
-- `crates/pad`: the controller over raw HID. A Switch pad through a switch2connect
-  adapter in **DS5 mode** (`054c:0ce6`), invisible to Windows.Gaming.Input; DS5
-  mode stays. Buttons: `home` byte 10/0x01, `minus` 9/0x10 (ask), and so on.
-  Rumble is DualSense output report 0x02. **Xbox pads go through XInput**
+- `crates/pad`: the controller over raw HID (DualSense and other HID pads;
+  rumble is DualSense output report 0x02). Which pad this player has is in their
+  profile. Buttons are named by byte and mask (`home` byte 10/0x01, `minus` 9/0x10
+  on a DualSense), or learned in the setup window. **Xbox pads go through XInput**
   (`pad=xinput`, `crates/pad/src/xinput.rs`): their state becomes a 4-byte report
   so learning and names work the same; Guide (the default talk button there) via
   `XInputGetStateEx`; rumble works. Button names follow the pad (`press_for`).
-- `crates/voice`: mic (`cpal`) and Whisper large-v3-turbo on the 4090, its own crate
+- `crates/voice`: mic (`cpal`) and Whisper (the model and GPU backend the setup window chose), its own crate
   so the CUDA build is not invalidated by edits elsewhere.
   Files: `lib.rs` (the push-to-talk loop), `mic.rs`, `transcribe.rs`, `cue.rs`,
   `bluetooth.rs` (the hands-free reconnect).
@@ -69,13 +69,15 @@ yes; don't reinvent what Claude Code has.
   (gitignored, reread at every /reload) and also runs it at once. The save file's
   copy is only a fallback; the file wins.
 
-Build with `CUDAARCHS=89` (8.9 is the 4090; it skips most of ggml's CUDA build);
+Build with `CUDAARCHS` set to the GPU's generation (the profile says which; one
+generation skips most of ggml's CUDA build);
 libclang is in `C:\Program Files\LLVM`. No Lua here: check addon files with
 `python -I tools/luacheck.py <file>`. Tests: `cargo test --workspace`.
 
 ## Running it
 
-- `cargo run -- run <AddOns> models/ggml-large-v3-turbo.bin ask=minus mic=airpods cue=hands-free`
+- `wow-companion run` (options from `settings.toml`, written by the setup window;
+  `run <AddOns> <model> ask=minus mic=<name>` overrides them)
   (one talk button: a line opening with a channel word goes to chat, the rest to
   the agent; `chat=on:home` brings back a separate dictation button)
   **Conversation slots**: a trigger (L1, L2, R1, R2) held with minus sends the
@@ -87,7 +89,7 @@ libclang is in `C:\Program Files\LLVM`. No Lua here: check addon files with
 - **Never kill it.** `wow-companion restart` asks it to move onto the newest build:
   it waits for no request in flight and no button held, starts the new copy, which
   opens its mic and loads, and only then closes its own mic and exits. Killing it
-  loses the reply in flight and has wedged the AirPods' voice link.
+  loses the reply in flight and has wedged a Bluetooth headset's voice link.
 - `wow-companion doctor <AddOns>` checks the whole chain in seconds: game,
   companion, restart, agent, slots, bells, heartbeat, mic. Run it first when
   something seems broken.
@@ -123,7 +125,7 @@ reaches the game with two tricks, and the game reaches the PC only at a reload.
   nothing else reaches disk while playing). The export carries character, bars,
   chords, macros, spellbook, reach, code runs, Lua errors from non-Blizzard addons,
   and the channel's counts. The agent's `look` offers a Reload and resumes after
-  it. Data our code draws on screen may be read by screenshot to skip a reload (the player's rule, 2026-11-10). **The data strip** does it for kilobytes: `WowCompanion_Strip.Send(text)` draws colour cells in the bottom-right corner, `tools/strip.py --watch <s> <file>` decodes them (DPI-aware; the screen is 3840x2160 at 150%). Measured 7.8 KB in one shot.
+  it. Data our code draws on screen may be read by screenshot to skip a reload (the player's rule, 2026-11-10). **The data strip** does it for kilobytes: `WowCompanion_Strip.Send(text)` draws colour cells in the bottom-right corner, `tools/strip.py --watch <s> <file>` decodes them (DPI-aware). Measured 7.8 KB in one shot.
 - **The heartbeat**: while the voice loop can hear, one of two `pulse` bells exists
   and swaps every 4 s; `Status.lua` shows the minimap button in colour on a swap
   seen recently, grey with a red edge otherwise.
@@ -207,23 +209,22 @@ goes to a detached process.
   (deleting items, sending chat, trading, gold, leaving groups) and is followed by
   an `issecurevariable` taint diff. `PlaceAction` was measured clean.
 
-## Facts about this setup
+## Facts about the game and this kind of setup
 
 - **Gamepad bars are slots 181–272**: top 181–184 (d-pad alone), left 185–192 (L2),
   right 193–200 (R2), bottom 201–208 (L2+R2), the in-form page 265–272 on R2
   (`GamepadStanceBarOverride` = 3), extra action 397. On every bar, buttons 1–4 are
-  d-pad left/up/right/down and 5–8 square/triangle/circle/cross. Forms change on
-  the L1+L2 wheel.
-- **The headset is AirPods Max**, whose hands-free link with this PC is 8 kHz
-  CVSD (an Intel adapter, a current driver, Windows 10): it hisses whenever audio
-  plays, so push-to-talk feedback is rumble (one firm pulse on press, one soft on
-  release), and beeps are off. Switching to hands-free outlasts a press, so the mic
-  stays open. A mic that delivers nothing for 1.5 s is reconnected in place
+  d-pad left/up/right/down and 5–8 the face buttons (square/triangle/circle/cross;
+  X/Y/B/A on an Xbox pad).
+- **The headset is in the profile.** A Bluetooth headset's hands-free link can be
+  8 kHz and hiss whenever audio plays; push-to-talk feedback is rumble (one firm
+  pulse on press, one soft on release), with beeps off (`cue=hands-free`), and the
+  mic stays open since switching to hands-free outlasts a press. A mic that delivers nothing for 1.5 s is reconnected in place
   (`KSPROPERTY_ONESHOT_RECONNECT`, as Sound settings' Connect does) and the window
   says so.
 - **Every dropped clip says why in the window**: too little audio, nothing heard,
   only Whisper echoing its prompt (cut off when it prefixes real speech).
-- **Names are first and last** ("Pietra Fayth"; `UnitName` gives "Pietra"). The
+- **Names are first and last** ("First Last"; `UnitName` gives only "First"). The
   addon resolves a spoken name for whispers.
 - **Other addons are integrations, optional**: `integrations/<AddOn folder>.md`
   holds what we know of each (API, terms); the agent is given only those whose

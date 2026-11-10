@@ -25,13 +25,20 @@ foreach ($dir in "addon", "modules", "integrations", "assets", "tools") {
     Copy-Item -Recurse (Join-Path $root $dir) (Join-Path $stage $dir)
 }
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $stage "tools\__pycache__")
+# modules made for this repo's own player (their class, their bindings): another
+# player's agent makes their own
+foreach ($personal in "BuffGlow.lua", "ExtraButtons.lua") {
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $stage "modules\$personal")
+}
 # the generated module bundle is rebuilt by install
 Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $stage "addon\WowCompanion\Modules.lua")
 New-Item -ItemType Directory -Force (Join-Path $stage "docs") | Out-Null
 Get-ChildItem (Join-Path $root "docs") -File | Where-Object { $_.Name -notin "PLAN.md", "history.md" } | Copy-Item -Destination (Join-Path $stage "docs")
 Copy-Item (Join-Path $root "CLAUDE.md") $stage
 New-Item -ItemType Directory -Force (Join-Path $stage "player") | Out-Null
-Copy-Item (Join-Path $PSScriptRoot "profile.template.md") (Join-Path $stage "player\profile.md")
+# only the template: unzipping an update over an install must not overwrite the
+# profile the agent keeps (the companion makes profile.md from it when missing)
+Copy-Item (Join-Path $PSScriptRoot "profile.template.md") (Join-Path $stage "player\profile.template.md")
 Copy-Item (Join-Path $PSScriptRoot "README.txt") $stage
 New-Item -ItemType Directory -Force (Join-Path $stage "models") | Out-Null
 
