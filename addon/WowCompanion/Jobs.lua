@@ -309,6 +309,28 @@ refresh = function()
 		pairsPool[i].x:Hide()
 		pairsPool[i].go:Hide()
 	end
+	-- an icon scrolled out of the view is clipped but still a button: the
+	-- cursor went to Xs drawn below the window (the player, 2026-11-10).
+	-- Hide what lies outside the visible part, so the cursor can't reach it
+	local top, bottom = scroll:GetTop(), scroll:GetBottom()
+	if top and bottom then
+		for _, b in ipairs(made) do
+			if b:IsShown() then
+				local bt, bb = b:GetTop(), b:GetBottom()
+				if bt and bb and (bb < bottom - 2 or bt > top + 2) then b:Hide() end
+			end
+		end
+	end
+	if not scroll.wcJobsHooked then
+		scroll.wcJobsHooked = true
+		local busy
+		scroll:HookScript("OnVerticalScroll", function()
+			if busy then return end
+			busy = true
+			WC.Jobs.Refresh()
+			busy = false
+		end)
+	end
 end
 
 WC.Jobs = {}
