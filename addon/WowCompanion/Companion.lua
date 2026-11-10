@@ -446,7 +446,67 @@ end
 -- ShowUIPanel, so the window joins the controller's focus cycle (see buildLog).
 -- It is refused in combat, where a plain Show at least puts the text in front of
 -- them; the manager is not told, so nothing is left for it to forget.
+-- A one-line notice at the top of the screen, instead of opening the window:
+-- the window only opens when the player asks for it (a minus tap, /wc log).
+-- It cannot take the mouse or the gamepad focus, so it never gets in the way,
+-- and in combat it holds what arrives until the fight is over.
+local toastFrame, toastHeld, toastTimer
+local function toast(text, r, g, b, hold)
+	if not toastFrame then
+		-- bottom left, flush with the screen's corner, under the chat box; the
+		-- game's tooltip border and dark dialog backing, like Blizzard's own UI
+		local made, frame = pcall(CreateFrame, "Frame", nil, UIParent, "BackdropTemplate")
+		toastFrame = made and frame or CreateFrame("Frame", nil, UIParent)
+		toastFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+		local chat = ChatFrame1 and ChatFrame1:GetWidth()
+		toastFrame:SetSize(math.max(380, (chat or 430) + 40), 34)
+		toastFrame:SetFrameStrata("HIGH")
+		toastFrame:EnableMouse(false)
+		if toastFrame.SetBackdrop then
+			toastFrame:SetBackdrop({
+				bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+				edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+				tile = true, tileSize = 16, edgeSize = 16,
+				insets = { left = 4, right = 4, top = 4, bottom = 4 },
+			})
+			toastFrame:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
+		end
+		toastFrame.text = toastFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		toastFrame.text:SetPoint("LEFT", 12, 0)
+		toastFrame.text:SetPoint("RIGHT", -12, 0)
+		toastFrame.text:SetJustifyH("LEFT")
+		toastFrame.text:SetWordWrap(false)
+		toastFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+		toastFrame:SetScript("OnEvent", function()
+			if toastHeld then
+				local held = toastHeld
+				toastHeld = nil
+				toast(unpack(held))
+			end
+		end)
+	end
+	if not text then
+		toastFrame:Hide()
+		return
+	end
+	if InCombatLockdown() then
+		toastHeld = { text, r, g, b, hold }
+		toastFrame:Hide()
+		return
+	end
+	toastFrame.text:SetText(text)
+	toastFrame.text:SetTextColor(r or 1, g or 1, b or 1)
+	toastFrame:SetAlpha(1)
+	toastFrame:Show()
+	if toastTimer then toastTimer:Cancel() end
+	toastTimer = nil
+	if hold then
+		toastTimer = C_Timer.NewTimer(hold, function() toastFrame:Hide() end)
+	end
+end
+
 local function reveal(frame)
+	toast(nil)
 	if not InCombatLockdown() and UIPanelWindows and UIPanelWindows["WowCompanionLog"] then
 		ShowUIPanel(frame)
 	end
@@ -482,6 +542,7 @@ local function setPending(text)
 	if not text then
 		pendingSince = nil
 		frame.pending:Hide()
+		if toastFrame and toastFrame:IsShown() and not toastTimer then toast(nil) end
 		return
 	end
 	-- the seconds count is the "is it stuck?" answer: counting means working
@@ -489,13 +550,14 @@ local function setPending(text)
 	local turn, since = 0, pendingSince
 	local function spin()
 		turn = turn + 1
-		frame.pending:SetText(("%s%s  %ds"):format(text, ("."):rep(turn % 4), GetTime() - since))
+		local line = ("%s%s  %ds"):format(text, ("."):rep(turn % 4), GetTime() - since)
+		frame.pending:SetText(line)
+		if not frame:IsShown() then
+			toast("|cffffd100Claude|r  " .. line, 0.8, 0.8, 0.8)
+		end
 	end
 	spin()
 	frame.pending:Show()
-	if not frame:IsShown() and not InCombatLockdown() then
-		reveal(frame)
-	end
 	pendingTicker = C_Timer.NewTicker(0.4, spin)
 end
 
@@ -577,9 +639,6 @@ local function offer(label, macro)
 	actionButton:SetAttribute("macrotext", macro)
 	actionButton:SetText(label)
 	actionButton:Show()
-	if not frame:IsShown() then
-		reveal(frame)
-	end
 
 	-- The window is not a frame the gamepad cursor will focus, so instead of making
 	-- it focusable we bind a pad button straight to clicking this one. The binding
@@ -609,6 +668,8 @@ local function offer(label, macro)
 	-- "Do it" tells them nothing about what they would be running
 	remember("claude", ("button |cffffffff%s|r runs |cff9ad5ff%s|r — %s or click it")
 		:format(label, macro, bound ~= "nothing" and ("press " .. bound) or "mouse"))
+	toast(("|cffffd100Claude|r  %s: |cffffffff%s|r"):format(
+		bound ~= "nothing" and ("press " .. bound) or "open the window", label), 0.8, 0.8, 0.8, 30)
 	return ("offering %q which runs %q, bound to %s"):format(label, macro, bound)
 end
 
@@ -687,15 +748,64 @@ function handlers.log(inbox)
 	-- reveal, not Show: ShowUIPanel returns at once for a frame already shown, so a
 	-- window opened by a plain Show never becomes a panel and the controller's
 	-- window toggle cannot reach it until it is closed and opened again
-	if not InCombatLockdown() and not logWindow:IsShown() then
-		reveal(logWindow)
+	-- never opens the window: a reply's first line shows as a toast, errors in
+	-- red, and step results and code output only go in the log
+	if not (logWindow and logWindow:IsShown()) then
+		local first = text:match("^%s*([^\n]+)") or ""
+		first = first:gsub("%*%*", ""):gsub("`", "")
+		if #first > 110 then first = first:sub(1, 107) .. "..." end
+		if who == "claude" and first ~= "" then
+			toast(("|cffffd100Claude|r  %s  |cff808080(minus to read)|r"):format(first), 0.9, 0.9, 0.9, 10)
+		elseif who == "error" then
+			toast("|cffff7777" .. first .. "|r", 1, 0.5, 0.5, 10)
+		end
 	end
 	return ("logged %d line(s)"):format(lines)
 end
 
 -- A tap of the ask button (minus) opens the window, as a panel so the
 -- controller's focus cycle reaches it. In combat it is a plain Show (see reveal).
+-- The game hears the minus button itself (the DualSense Create button is
+-- PADSOCIAL), so a tap toggles the window at once instead of waiting a second for
+-- the helper's message. Holding minus is still push-to-talk on the PC, so only a
+-- short press toggles: down and up are timed, and a hold does nothing here.
+-- Override bindings are an addon's own layer and only while it is loaded, so the
+-- player's binding underneath is untouched.
+local TAP_MAX = 0.35
+local nativeToggleAt = 0
+local function toggleWindow()
+	local frame = logFrame()
+	if frame:IsShown() then
+		frame:Hide() -- plain Hide; see the /wc log note on HideUIPanel
+	else
+		reveal(frame)
+	end
+end
+local tapButton = CreateFrame("Button", "WowCompanionTap", UIParent)
+tapButton:RegisterForClicks("AnyDown", "AnyUp")
+tapButton:SetScript("OnClick", function(self, _, down)
+	if down then
+		self.downAt = GetTime()
+	elseif self.downAt and GetTime() - self.downAt <= TAP_MAX then
+		self.downAt = nil
+		nativeToggleAt = GetTime()
+		toggleWindow()
+	else
+		self.downAt = nil
+	end
+end)
+local function bindTap()
+	if InCombatLockdown() or not SetOverrideBindingClick then return end
+	ClearOverrideBindings(tapButton)
+	SetOverrideBindingClick(tapButton, false, "PADSOCIAL", "WowCompanionTap", "LeftButton")
+end
+
+-- The helper's own tap message, about a second later: ignored when the game
+-- already handled that tap, or it would undo the toggle.
 function handlers.show()
+	if GetTime() - nativeToggleAt < 4 then
+		return "already toggled in game"
+	end
 	reveal(logFrame())
 	return "shown"
 end
@@ -849,11 +959,23 @@ local function safely(label, fn, ...)
 	end
 end
 
+-- A tap of the ask button rings this bell instead of spending a slot on a
+-- message: it only ever means "show the window".
+local SHOW_BELL = "Interface\\AddOns\\" .. ADDON .. "\\Signals\\show.wav"
+local showRang = false
+
 local function poll()
 	safely("bell poll", listen, bellPath(nextSlot), function(rang)
 		if rang then
 			safely("a message from the companion", receive)
 		end
+	end)
+	safely("window bell", listen, SHOW_BELL, function(rang)
+		-- once per ring: the bell stays rung for a moment after the tap
+		if rang and not showRang then
+			safely("showing the window", handlers.show)
+		end
+		showRang = rang
 	end)
 end
 
@@ -2891,6 +3013,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		WowCompanionDB.previous = WowCompanionDB.probe
 		WowCompanionDB.probe = {}
 	elseif event == "PLAYER_LOGIN" then
+		pcall(bindTap)
 		local version, build, _, toc = GetBuildInfo()
 		record("client", ("%s.%s, toc %d"):format(version, build, toc))
 		-- build the window and refill it before anything can write to it
@@ -2905,6 +3028,18 @@ frame:SetScript("OnEvent", function(_, event, ...)
 	elseif event == "PLAYER_LOGOUT" then
 		-- a failed export must not cost the rest of the save
 		pcall(exportContext)
+		-- how many slots this game session can see (folders made after launch
+		-- are invisible until a restart): the companion sends no further than this
+		pcall(function()
+			local seen = 0
+			for index = 1, C_AddOns.GetNumAddOns() do
+				local name = C_AddOns.GetAddOnInfo(index)
+				if name and name:find("^" .. ADDON .. "_S%d+$") then
+					seen = seen + 1
+				end
+			end
+			WowCompanionDB.slotCount = seen
+		end)
 	elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
 		-- taint cascades, and the first block names the real culprit, so number them
 		-- rather than letting each one overwrite the last

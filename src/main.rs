@@ -21,12 +21,18 @@ use std::{
 const ADDON: &str = "WowCompanion";
 // how often the window hears what the agent is doing, and how many times per
 // request at most: every update spends one of the session's 64 slots
-const PROGRESS_EVERY: Duration = Duration::from_secs(6);
-const PROGRESS_LIMIT: u32 = 8;
-// Of the 64 slots a UI session has: progress lines stop at PROGRESS_STOP so the
-// rest go to replies, and from SLOTS_LOW every reply says to reload soon.
-const PROGRESS_STOP: u32 = 50;
-const SLOTS_LOW: u32 = 56;
+// Measured: progress lines were 29 of a session's 64 slots, nearly half. The
+// window's seconds count already shows the agent is alive, so two will do.
+const PROGRESS_EVERY: Duration = Duration::from_secs(12);
+const PROGRESS_LIMIT: u32 = 2;
+// at this many slots used, offer the Reload button once, while slots remain
+// Margins below the slots the game knows (see known_slots): offer Reload at 16
+// left, stop progress lines at 14 left, and from 8 left every reply says so.
+const SLOTS_OFFER_RELOAD: u32 = 16;
+const PROGRESS_STOP: u32 = 14;
+const SLOTS_LOW: u32 = 8;
+// the UI session in which the Reload button was last offered for low slots
+static RELOAD_OFFERED: Mutex<String> = Mutex::new(String::new());
 // requests to the agent running right now; a restart waits for zero
 static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
 
@@ -38,7 +44,9 @@ impl Drop for InFlight {
         IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
     }
 }
-const SLOTS: u32 = 64;
+// 512, not 64: a session spent all 64 (progress lines were nearly half) and every
+// later reply was lost. New folders need one full game restart to be seen.
+const SLOTS: u32 = 512;
 const BELLS: u32 = 8;
 // the addon only checks the next bell, so a rung bell stays rung for this many sends
 const BELL_LINGER: u32 = 4;
@@ -171,6 +179,8 @@ fn install(addons: &Path) -> io::Result<()> {
     }
     fs::write(signals.join("always.wav"), silent_wav())?;
     fs::write(signals.join("never.wav"), [])?;
+    // the window's own bell (see ring_show_bell); silent until a tap rings it
+    fs::write(signals.join("show.wav"), [])?;
     for slot in 1..=SLOTS {
         let dir = addons.join(slot_name(slot));
         fs::create_dir_all(&dir)?;
@@ -358,8 +368,18 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
     // so there is no second bell and no two-second gap between reading the answer
     // and being offered the button. This one carries no `pending`, which stops the
     // spinner.
+    // running low: offer the cure once per UI session, while a slot remains for it
+    let used = slots_used(addons);
+    if used + SLOTS_OFFER_RELOAD >= known_slots(addons) {
+        let stamp = saved_variables_stamp(addons).unwrap_or_default();
+        let mut offered = RELOAD_OFFERED.lock().unwrap();
+        if *offered != stamp {
+            *offered = stamp;
+            let _ = send_inbox(addons, "{ kind = \"reload\" }");
+        }
+    }
     // near the end of the session's slots, say so while a reply can still arrive
-    let say = if slots_used(addons) >= SLOTS_LOW {
+    let say = if slots_used(addons) + SLOTS_LOW >= known_slots(addons) {
         format!("{}\n(Messages are running low for this session: press Reload soon.)", answer.say)
     } else {
         answer.say.clone()
@@ -396,6 +416,20 @@ fn pull(addons: &Path, key: &str, out: &Path) -> io::Result<()> {
 }
 
 /// One string-valued key out of SavedVariables, unescaped.
+/// How many slots the running game knows. The game only sees addon folders that
+/// existed when it launched, so slots installed since are invisible to it until a
+/// full restart, and a message sent to one would be lost. The addon records the
+/// count it sees in SavedVariables; until it has, assume the old 64.
+fn known_slots(addons: &Path) -> u32 {
+    let counted = saved_variables(addons)
+        .and_then(|saved| fs::read_to_string(saved).ok())
+        .and_then(|text| {
+            let at = text.find("[\"slotCount\"] = ")? + "[\"slotCount\"] = ".len();
+            text[at..].split(|c: char| !c.is_ascii_digit()).next()?.parse::<u32>().ok()
+        });
+    counted.unwrap_or(64).min(SLOTS)
+}
+
 fn saved_string(addons: &Path, key: &str) -> io::Result<String> {
     let saved = saved_variables(addons)
         .ok_or_else(|| io::Error::other("no SavedVariables yet: /reload in game first"))?;
@@ -614,7 +648,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         || vocabulary(addons),
         |role, text| match role {
             // a tap of the ask button, too short to be speech: show the window
-            "ask tap" => deliver("{ kind = \"show\" }".to_string()),
+            // a tap rings the window's own bell: no slot spent (taps were 12 of 64)
+            "ask tap" => ring_show_bell(addons),
             // the voice loop's own news (a reconnected headset), for the window
             "notice" => deliver(log_inbox("error", text, None, None)),
             _ if role.ends_with(" tap") => Ok(()),
@@ -800,6 +835,30 @@ fn chat_inbox(text: &str) -> String {
 static SENDING: Mutex<()> = Mutex::new(());
 
 fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
+    let sent = send_inbox_once(addons, inbox);
+    if let Err(err) = &sent {
+        if err.to_string().contains("slots are spent") {
+            // nothing can reach the game to say so; the pad can
+            voice::ALERT.store(true, Ordering::SeqCst);
+        }
+    }
+    sent
+}
+
+/// The window's own bell, checked on every poll beside the slot bells: ringing it
+/// opens the window, and spends no slot.
+fn ring_show_bell(addons: &Path) -> io::Result<()> {
+    let bell = addons.join(ADDON).join("Signals").join("show.wav");
+    write_reporting(&bell, &silent_wav())?;
+    let addons = addons.to_path_buf();
+    thread::spawn(move || {
+        thread::sleep(BELL_HEARD);
+        let _ = write_reporting(&addons.join(ADDON).join("Signals").join("show.wav"), &[]);
+    });
+    Ok(())
+}
+
+fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     let _one_at_a_time = SENDING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if !game_running()? {
         return Err(io::Error::other("Wow.exe isn't running, so nothing would read this"));
@@ -808,7 +867,7 @@ fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
     // has, so a stale UI can still take it. Blocking those is how a finished answer
     // sat undelivered behind "reload first" while the window spun "thinking".
     // A reload is the same: every version has it, and it is the cure for staleness.
-    if inbox.starts_with("{ kind = \"progress\"") && slots_used(addons) >= PROGRESS_STOP {
+    if inbox.starts_with("{ kind = \"progress\"") && slots_used(addons) + PROGRESS_STOP >= known_slots(addons) {
         // the last slots are for replies; a skipped progress line is no loss
         return Ok(());
     }
@@ -867,7 +926,7 @@ fn next_slot(addons: &Path) -> io::Result<u32> {
     if stamp != seen {
         cursor = 1;
     }
-    if cursor > SLOTS {
+    if cursor > known_slots(addons) {
         return Err(io::Error::other(format!(
             "all {SLOTS} slots are spent this UI session: `send reload`, or /reload in game"
         )));
