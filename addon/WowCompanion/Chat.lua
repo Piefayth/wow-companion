@@ -19,6 +19,44 @@ local function plain(text)
 	return (text or ""):lower():gsub("[^%w]", "")
 end
 
+-- Speech-to-text gets invented names a letter or two wrong ("Orihine" for
+-- Orihime; the player, 2026-11-10), and the game is the only side that knows
+-- the real spelling. Edit distance on the plain forms; close enough is about
+-- one slip per three letters, and the best must be the only one that close.
+local function distance(a, b)
+	local prev, cur = {}, {}
+	for j = 0, #b do prev[j] = j end
+	for i = 1, #a do
+		cur[0] = i
+		local ca = a:byte(i)
+		for j = 1, #b do
+			local cost = (ca == b:byte(j)) and 0 or 1
+			cur[j] = math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+		end
+		prev, cur = cur, prev
+	end
+	return prev[#b]
+end
+
+-- spoken: what was heard; names: a list of strings; owners (optional): who each
+-- name belongs to, so two names of one person never count as a tie. Returns the
+-- index of the one name it most likely meant, or nil. A spoken first name matches the start
+-- of a longer one ("Cecil" in "Cecil Sorrowheart").
+function WowCompanion_Closest(spokenText, names, owners)
+	local want = plain(spokenText)
+	if want == "" then return nil end
+	local best, bestD, tie = nil, math.huge, false
+	for i, name in ipairs(names) do
+		local have = plain(name)
+		local d = distance(want, have)
+		if #have > #want then d = math.min(d, distance(want, have:sub(1, #want))) end
+		if d < bestD then best, bestD, tie = i, d, false
+		elseif d == bestD and not (owners and owners[i] == owners[best]) then tie = true end
+	end
+	if best and not tie and bestD <= math.max(1, math.floor(#want / 3)) then return best end
+	return nil
+end
+
 local function fullUnitName(unit)
 	local name, surname = UnitName(unit)
 	if not name then return nil end
@@ -135,6 +173,18 @@ function WowCompanion_ResolveWhisper(rest)
 			local labels = {}
 			for _, hit in ipairs(hits) do labels[#labels + 1] = hit.label end
 			return nil, "more than one person is called that: " .. table.concat(labels, ", ")
+		end
+	end
+	-- nobody by that exact name: the closest one, a mis-heard letter or two away
+	for take = math.min(3, #words), 1, -1 do
+		local keys, owner = {}, {}
+		for _, person in ipairs(everyone) do
+			for _, key in ipairs(person.keys) do keys[#keys + 1] = key owner[#keys] = person end
+		end
+		local i = WowCompanion_Closest(table.concat(words, " ", 1, take), keys, owner)
+		if i then
+			local message = table.concat(words, " ", take + 1):gsub("^[,:%.%-%s]+", "")
+			return owner[i].target, message, owner[i].label .. " (closest to what I heard)"
 		end
 	end
 	local names = {}

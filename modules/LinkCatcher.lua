@@ -48,6 +48,16 @@ function WCOpenTradeLink(n)
     for _, e in ipairs(list) do
       if (e.from or ''):lower():find(want, 1, true) or (e.label or ''):lower():find(want, 1, true) then t = e break end
     end
+    if not t and WowCompanion_Closest then
+      -- speech-to-text spells invented names a letter off: take the closest
+      local names, owner = {}, {}
+      for _, e in ipairs(list) do
+        names[#names + 1] = (e.from or ''):match('^[^%-]+') or '' owner[#names] = e
+        names[#names + 1] = (e.label or ''):gsub('[%[%]]', '') owner[#names] = e
+      end
+      local i = WowCompanion_Closest(n, names, owner)
+      if i then t = owner[i] end
+    end
     if not t then
       print(('no profession link from or for "%s" caught (have %d): ask them to link it again'):format(n, #list))
       for i, e in ipairs(list) do print(('  %d: %s from %s'):format(i, e.label, e.from)) end
