@@ -34,6 +34,7 @@ local refresh
 -- existing working/running paradigm"): the game's own art, named in a tooltip
 -- one family of flat icons from the game's own common set (the player,
 -- 2026-11-10: the glowing loot X beside a plain arrow did not match)
+local orig = getmetatable(CreateFrame("Button")).__index
 local ICONS = { cancel = "common-icon-redx", now = "common-icon-forwardarrow" }
 local function icon(parent, kind, tip, onClick)
 	local b = CreateFrame("Button", nil, parent)
@@ -49,8 +50,26 @@ local function icon(parent, kind, tip, onClick)
 		GameTooltip:SetText(tip)
 		GameTooltip:Show()
 	end)
-	b:SetScript("OnLeave", function() GameTooltip:Hide() end)
-	b:SetScript("OnClick", function(self) onClick(self.job) end)
+	b:SetScript("OnLeave", function(self)
+		GameTooltip:Hide()
+		self.hovered = false
+		if self.stale then self.stale = false orig.Hide(self) WC.Jobs.Refresh() end
+	end)
+	b:HookScript("OnEnter", function(self) self.hovered = true end)
+	b:SetScript("OnClick", function(self) if self.job then onClick(self.job) end end)
+	-- hiding the button under the cursor left the cursor aiming at nothing
+	-- (the player, 2026-11-10): it stays, dimmed and spent, until the cursor
+	-- moves off it. Blizzard's own focus code is never called
+	b.Hide = function(self)
+		if self.hovered and orig.IsShown(self) then
+			self.stale, self.job = true, nil
+			self:SetAlpha(0.35)
+			return
+		end
+		orig.Hide(self)
+	end
+	b.Show = function(self) self.stale = false self:SetAlpha(1) orig.Show(self) end
+	b.SetShown = function(self, on) if on then self:Show() else self:Hide() end end
 	if not InCombatLockdown() and SmartNavigation_MarkFrameFocusable then
 		pcall(SmartNavigation_MarkFrameFocusable, b)
 	else
