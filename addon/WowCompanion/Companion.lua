@@ -404,15 +404,25 @@ local function buildTabs(frame, messages, pending)
 	back:SetPoint("BOTTOMRIGHT", -3, 3)
 	frame.chatParts = frame.chatParts or {}
 	table.insert(frame.chatParts, well)
-	-- the transcript and its arrows move left of the well
+	-- The transcript sits in a well of its own, an inset like the conversation
+	-- list's, with its scroll arrows inside it; the raised frame around them
+	-- keeps only the waiting line (the player, 2026-11-10).
+	local madeChat, chatWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
+	if not madeChat or not chatWell then chatWell = CreateFrame("Frame", nil, frame) end
+	chatWell:SetPoint("TOPLEFT", 16, -40)
+	chatWell:SetPoint("BOTTOMRIGHT", -(16 + WELL + 6), 32)
+	table.insert(frame.chatParts, chatWell)
 	messages.scroll:ClearAllPoints()
-	messages.scroll:SetPoint("TOPLEFT", 20, -42)
-	messages.scroll:SetPoint("BOTTOMRIGHT", -(16 + WELL + 30), 34)
+	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", 10, -8)
+	messages.scroll:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT", -28, 8)
+	messages.scroll:SetFrameLevel(chatWell:GetFrameLevel() + 2)
 	if frame.chatParts[1] and frame.chatParts[2] then
 		frame.chatParts[1]:ClearAllPoints()
-		frame.chatParts[1]:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(16 + WELL + 6), -44)
+		frame.chatParts[1]:SetPoint("TOPRIGHT", chatWell, "TOPRIGHT", -5, -6)
+		frame.chatParts[1]:SetFrameLevel(chatWell:GetFrameLevel() + 3)
 		frame.chatParts[2]:ClearAllPoints()
-		frame.chatParts[2]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -(16 + WELL + 6), 36)
+		frame.chatParts[2]:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT", -5, 6)
+		frame.chatParts[2]:SetFrameLevel(chatWell:GetFrameLevel() + 3)
 	end
 	frame.convButtons = {}
 	local LABELS = { [""] = "Main", l1 = "L1", l2 = "L2", r1 = "R1", r2 = "R2" }
