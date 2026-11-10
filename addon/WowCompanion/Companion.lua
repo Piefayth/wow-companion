@@ -22,6 +22,10 @@ local actionButton
 local offers = {}
 -- the conversation of the message being handled, for the steps it carries
 local offerSlot
+-- the conversation of the message being handled, so what its steps report (code
+-- ran, module ran, a failure) lands in that conversation, not whichever one is in
+-- view: the main agent's results showed up in R2 (2026-11-10)
+local replySlot
 -- which pad key the offer button binds to; set with /wc key <PADNAME>
 local offerKey
 
@@ -1117,7 +1121,7 @@ end
 paintHook = paintConversations
 
 local function remember(who, text, continued, slot)
-	slot = slot or viewSlot
+	slot = slot or replySlot or viewSlot
 	WowCompanionDB.log = WowCompanionDB.log or {}
 	local entries = WowCompanionDB.log
 	entries[#entries + 1] = { at = time(), who = who, text = text, continued = continued or nil,
@@ -2007,6 +2011,7 @@ local function receive(catchingUp)
 		record("slot " .. slot, "unknown kind: " .. tostring(inbox.kind))
 		return
 	end
+	replySlot = inbox.slot
 	local ok, result = pcall(handler, inbox)
 	-- only probe traffic is worth narrating in chat; the window is where the rest goes
 	if inbox.kind == "probe" or not ok then
@@ -2026,6 +2031,7 @@ local function receive(catchingUp)
 		end
 		report(following, done, outcome)
 	end
+	replySlot = nil
 end
 
 -- An error anywhere in polling or handling a message is caught, said once in the
@@ -3944,6 +3950,7 @@ local function runCode(label, code, quiet)
 	if not before then
 		return line
 	end
+	local whose = replySlot
 	C_Timer.After(1.5, function()
 		local after = taintScan()
 		local fresh = {}
@@ -3956,7 +3963,7 @@ local function runCode(label, code, quiet)
 		run.taint = #fresh == 0 and "none" or table.concat(fresh, "; ")
 		if #fresh > 0 then
 			remember("probe", ("%s tainted %d variable(s): %s -- /reload clears it"):format(
-				label, #fresh, table.concat(fresh, "; ", 1, math.min(#fresh, 4))))
+				label, #fresh, table.concat(fresh, "; ", 1, math.min(#fresh, 4))), nil, whose)
 		end
 	end)
 	return line
