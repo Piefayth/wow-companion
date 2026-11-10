@@ -177,8 +177,14 @@ refresh = function()
 	end
 	local scroll = transcript0.scroll
 	local following = scroll:GetVerticalScroll() >= scroll:GetVerticalScrollRange() - 30
-	transcript0.content:SetHeight(math.max(y, base, 1))
-	if following and y > base then scroll:SetVerticalScroll(scroll:GetVerticalScrollRange()) end
+	-- a scroll frame only redraws its child's new area when told (the
+	-- player, 2026-11-10: "doesn't update till I move my cursor")
+	if transcript0.jobsHeight ~= y then
+		transcript0.jobsHeight = y
+		transcript0.content:SetHeight(math.max(y, base, 1))
+		scroll:UpdateScrollChildRect()
+		if following and y > base then scroll:SetVerticalScroll(scroll:GetVerticalScrollRange()) end
+	end
 	if target and hearingLine and hearingLine:IsShown() then
 		statusX.job = target
 		statusX:SetParent(transcript0.content)
