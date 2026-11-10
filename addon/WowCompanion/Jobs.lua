@@ -181,7 +181,9 @@ refresh = function()
 				else
 					p.state:SetText(("|cffffd100%s  working %ds|r"):format(who, secs))
 					local doing = working[job.slot] and working[job.slot].text
-					p.text:SetText(clean(job.text) .. (doing and ("  |cff808080" .. clean(doing) .. "|r") or ""))
+					-- the message itself is already in the transcript just above:
+					-- here, what the agent is doing with it (the player, 2026-11-10)
+					p.text:SetText("|cffb0b0b0" .. clean(doing or "thinking") .. "|r")
 				end
 				local runningThere = false
 				for _, other in ipairs(jobs) do
