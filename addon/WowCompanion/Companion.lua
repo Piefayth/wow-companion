@@ -754,10 +754,15 @@ local function toast(text, r, g, b, hold)
 			toastFrame:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
 		end
 		toastFrame.text = toastFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		toastFrame.text:SetPoint("LEFT", 12, 0)
-		toastFrame.text:SetPoint("RIGHT", -12, 0)
+		-- fills the frame and wraps, so a board of several rows shows every
+		-- row: a non-wrapping string anchored only left and right drew the first
+		-- line alone in a frame grown tall for all of them (seen 2026-11-10)
+		toastFrame.text:SetPoint("TOPLEFT", 12, -9)
+		toastFrame.text:SetPoint("BOTTOMRIGHT", -12, 9)
 		toastFrame.text:SetJustifyH("LEFT")
-		toastFrame.text:SetWordWrap(false)
+		toastFrame.text:SetJustifyV("MIDDLE")
+		toastFrame.text:SetWordWrap(true)
+		toastFrame.text:SetMaxLines(8)
 		toastFrame.text:SetSpacing(3)
 		toastFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 		toastFrame:SetScript("OnEvent", function()
@@ -780,7 +785,7 @@ local function toast(text, r, g, b, hold)
 	toastFrame.text:SetText(text)
 	-- one row per line: several agents at work show one each
 	local rows = select(2, text:gsub("\n", "")) + 1
-	toastFrame:SetHeight(20 + rows * 14 + (rows - 1) * 3)
+	toastFrame:SetHeight(18 + rows * 15 + (rows - 1) * 3)
 	toastFrame.text:SetTextColor(r or 1, g or 1, b or 1)
 	toastFrame:SetAlpha(1)
 	toastFrame:Show()
