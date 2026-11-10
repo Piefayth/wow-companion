@@ -828,7 +828,7 @@ local SLOT_ORDER = { "", "l1", "l2", "r1", "r2" }
 local function slotLabel(slot) return slot == "" and "Main" or slot:upper() end
 local renderPending
 -- the last reply or error per conversation, shown in its row for a while
-local recent, RECENT_FOR = {}, 12
+local recent, RECENT_FOR = {}, 30
 function WowCompanion_Recent(slot, text)
 	recent[slot or ""] = { text = text, at = GetTime() }
 	if renderPending then renderPending() end
@@ -866,26 +866,41 @@ renderPending = function()
 	turn = turn + 1
 	local dots = ("."):rep(turn % 4)
 	local now = GetTime()
+	-- One row per conversation with something going on, readable at a glance
+	-- (the player, 2026-11-10): the name in its state's colour, the state and
+	-- its seconds, then the detail in grey. Blue is hearing you (Whisper has the
+	-- clip), gold is working, green has answered, red went wrong.
+	local function clip(text, n)
+		text = tostring(text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+		if #text > n then text = text:sub(1, n - 3) .. "..." end
+		return text
+	end
+	local function row(slot, colour, state, detail)
+		local name = ("|cff%s%-4s|r"):format(colour, slotLabel(slot))
+		return ("%s  |cff%s%s|r%s"):format(name, colour, state,
+			detail and detail ~= "" and ("   |cffa0a0a0" .. clip(detail, 64) .. "|r") or "")
+	end
 	for _, slot in ipairs(SLOT_ORDER) do
 		local entry = working[slot]
 		local done = recent[slot]
 		if done and now - done.at > RECENT_FOR then recent[slot] = nil done = nil end
-		if not entry and done then
-			lines[#lines + 1] = ("|cffffd100%s|r  %s"):format(slotLabel(slot), done.text)
-		end
 		local heard = transcribing[slot]
 		if heard and now - heard > TRANSCRIBE_FOR then transcribing[slot] = nil heard = nil end
 		local line
-		if entry then
-			line = ("%s%s  %ds"):format(entry.text, dots, now - entry.since)
-		end
 		if heard then
-			local words = ("transcribing%s  %ds"):format(entry and "" or dots, now - heard)
-			line = line and (line .. "  |cff9ad5ff+ " .. words .. "|r") or words
+			line = row(slot, "9ad5ff", ("hearing %ds"):format(now - heard), entry and entry.text)
+		elseif entry then
+			line = row(slot, "ffd100", ("working %ds"):format(now - entry.since), entry.text .. dots)
+		elseif done then
+			local bad = done.text:find("ff7777", 1, true)
+			line = row(slot, bad and "ff6060" or "40ff40", bad and "problem" or "replied", done.text)
 		end
 		if line then
-			lines[#lines + 1] = ("|cffffd100%s|r  %s"):format(slotLabel(slot), line)
-			if slot == (WowCompanion_ViewSlot and WowCompanion_ViewSlot() or "") then view = line end
+			lines[#lines + 1] = line
+			if (heard or entry) and slot == (WowCompanion_ViewSlot and WowCompanion_ViewSlot() or "") then
+				view = entry and ("%s%s  %ds"):format(entry.text, dots, now - entry.since)
+					or ("hearing you  %ds"):format(now - heard)
+			end
 		end
 	end
 	if paintHook then paintHook() end
