@@ -10,6 +10,8 @@
 Engine.lua
 Style.lua
 Companion.lua
+Sandbox.lua
+Tests.lua
 Window.lua
 Transcript.lua
 Board.lua
