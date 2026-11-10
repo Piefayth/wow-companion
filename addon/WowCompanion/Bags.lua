@@ -21,7 +21,14 @@ local function build()
 	-- BackdropTemplate's OnLoad replaces the secure handler's, which gives SetFrameRef
 	if not f.SetFrameRef then SecureHandler_OnLoad(f) end
 	f:SetFrameStrata("DIALOG")
-	f:SetPoint("RIGHT", UIParent, "RIGHT", -120, 40)
+	-- where Blizzard's bags sit (UpdateContainerFrameAnchors): bottom right, 85 up
+	-- (the player, 2026-11-10: "closer to where the blizzard bags show up")
+	local bx = 4
+	if GetInitialContainerFrameOffsetX then
+		local ok, v = pcall(GetInitialContainerFrameOffsetX)
+		if ok and type(v) == "number" then bx = v end
+	end
+	f:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -bx, CONTAINER_OFFSET_Y or 85)
 	f:SetBackdrop({
 		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
 		edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
@@ -58,6 +65,21 @@ local function build()
 		HideUIPanel(self)
 		if self:IsShown() then self:Hide() end
 	end
+	-- While the bags hold controller focus, circle belongs to the game's
+	-- navigation, which closes a window by clicking its CloseButton
+	-- (SmartNavigation:AttemptClose keeps a tainted CloseButton's taint to that
+	-- click). Without one, circle did nothing there (2026-11-10). Holding an
+	-- item, it puts the item back first, as Blizzard's bags do.
+	local x = CreateFrame("Button", "WCBagsCloseX", f, "UIPanelCloseButton")
+	x:SetPoint("TOPRIGHT", -6, -6)
+	x:SetScript("OnClick", function()
+		if CursorHasItem() then ClearCursor() if f.Paint then f:Paint() end return end
+		if not InCombatLockdown() then f:Shut() end
+	end)
+	f.CloseButton = x
+	-- circle clicks CloseButton (SmartNavigation:AttemptClose), but the cursor must
+	-- never land on it: the slots are what focus means here (the player, 2026-11-10)
+	if SmartNavigation_MarkFrameIgnored then SmartNavigation_MarkFrameIgnored(x) end
 	-- even margins all round (the player, 2026-11-10): EDGE from the border's
 	-- inside on every side, a title row, the grid, a legend row
 	local EDGE, TITLE_H, LEGEND_H, GAP_V = 18, 20, 24, 8
@@ -617,6 +639,13 @@ do
 		local blizz = theirs()
 		if blizz then showAnim:SetTarget(blizz) showGroup:Play() end
 	end
+	-- no flicker (the player, 2026-11-10): their frame stays at alpha 0 between
+	-- opens while the stand-in is on, so it is already invisible when it shows.
+	-- Their ContainerFrame code never sets alpha, so ours holds.
+	if WowCompanionDB == nil or WowCompanionDB.standInBags ~= false then
+		local blizz = theirs()
+		if blizz then hideAnim:SetTarget(blizz) hideGroup:Play() end
+	end
 
 	if EventRegistry and EventRegistry.RegisterCallback then
 		EventRegistry:RegisterCallback("ContainerFrame.OpenBag", function()
@@ -626,7 +655,7 @@ do
 			C_Timer.After(0, function()
 				local blizz = theirs()
 				if blizz and not blizz:IsShown() then
-					restore()
+					if not on() then restore() end
 					-- the vendor or mail closing their bags closes ours too
 					if on() and WCBags:IsShown() and WCBags.followBlizzard then WCBags:Shut() end
 				end
