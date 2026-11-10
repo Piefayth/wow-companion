@@ -454,7 +454,9 @@ fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -
     let waiting = session.start(spoken, agent_context(addons))?;
     // a queued request already showed its words; now it only starts thinking
     if shown {
-        send_inbox(addons, &format!("{{ kind = \"progress\", text = \"thinking\", slot = {} }}", lua_string(&session.slot)))?;
+        // `started` first, so this one is not advisory: it is what ends the queued
+        // mark on the request's line, and must not be dropped on a busy channel
+        send_inbox(addons, &format!("{{ started = true, kind = \"progress\", text = \"thinking\", slot = {} }}", lua_string(&session.slot)))?;
     } else {
         send_inbox(addons, &log_inbox_in(Some(&session.slot), "you", spoken, Some("thinking"), None))?;
     }
@@ -979,8 +981,12 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         Ok(guard) => (guard, false),
                         Err(std::sync::TryLockError::Poisoned(poisoned)) => (poisoned.into_inner(), false),
                         Err(std::sync::TryLockError::WouldBlock) => {
-                            set_working(&slot, "waiting for the request before this one");
-                            let line = log_inbox_in(Some(&slot), "you", &text, Some("waiting for the request before this one"), None);
+                            // Shown in the transcript as queued, on the request's own
+                            // line; the board and WORKING keep the running request's
+                            // progress, which the waiting line used to overwrite
+                            // (the player, 2026-11-10).
+                            let line = log_inbox_in(Some(&slot), "you", &text, None, None)
+                                .replacen("{ kind = \"log\"", "{ kind = \"log\", queued = true", 1);
                             let _ = courier.send(line);
                             // the conversation still runs one request at a time
                             (session.lock().unwrap_or_else(|poisoned| poisoned.into_inner()), true)
@@ -1212,7 +1218,11 @@ fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     }
     let always_readable = ["log", "progress", "reload", "board", "transcribing", "show"]
         .iter()
-        .any(|kind| inbox.starts_with(&format!("{{ kind = \"{kind}\"")));
+        .any(|kind| inbox.starts_with(&format!("{{ kind = \"{kind}\"")))
+        // a status line made non-advisory by a leading flag is still one the
+        // oldest addon reads
+        || inbox.starts_with("{ started = true, kind = \"progress\"")
+        || inbox.starts_with("{ resync = true, kind = \"progress\"");
     if !always_readable && addon_is_stale(addons)? {
         return Err(io::Error::other(
             "the addon on disk is newer than the running UI session: /reload in game first",
