@@ -105,31 +105,13 @@ Other things of ours agent code can call (all globals, all in WowCompanion):
 - `WCPins.Set{...}`, `WCPins.Add{map=, x=, y=, r=}`, `WCPins.Clear()`: minimap and
   world map pins (docs/api-useful.md, Minimap pins).
 - `WCWheel.Set(name, {label=, slots={...}})`: the radial wheels.
-Polestar (installed, GPL: call it, never copy it) has the map, the arrow and a full NPC
-database; use its arrow, never build a second one:
-- `Polestar.Nav.nearby.Go(kind)`: aims the arrow at the nearest service by travel time
-  and prints it; `.Find(kind)` returns place, seconds without aiming. Kinds: innkeeper,
-  repair, vendor, food, reagents, trainer (+ profession), class, weapon, bank, mailbox,
-  auction, flight, stable. `.EndTrip()` sends the arrow back to the guide.
-- `Polestar.Nav.SetTarget(map, x, y, label)`: aims the arrow anywhere;
-  `Polestar.Nav.ClearTarget()`. Source: AddOns/Polestar/Nav/Nearby.lua, Nav.lua.
-- `Polestar.Codex` is a full Forever database: `.Item(id)` gives sources (vendor
-  with cost, drop with npc and chance, quest, craft, rep standing), `.Npc(id)`,
-  `.Quest(id)`, `.Loot(kind, id)`, `.Each(kind, fn)`; call `.Load()` first. Use it
-  for where an item comes from, what it costs, drop odds. Source: Polestar/Lookup/Codex.lua.
-- Polestar already does talents, trainer reminders, XP pace, vendoring greys and
-  flight help (Polestar/QoL, Polestar/Talents): use it, never rebuild those.
-GearQuest (installed): its upgrade picks per slot, ranked for this class, level
-and spec, with where each comes from:
-- `GearQuest.Data:GetTopUpgradesForSlot(slot, 3)` returns entries (`itemId`,
-  `sourceType` quest_reward/vendor/boss_drop/world_drop/profession, `zone`, `npc`,
-  `questName`); slots from `GearQuest.Data:GetSlotsForClass(classFile)`;
-  `GearQuest.Compare:GetEquippedItemLevel(slot)` for the gain. pcall each call.
-Auctionator (installed): prices from the player's auction house scans, via
-`Auctionator.API.v1` (callerID is a string naming you, e.g. 'WowCompanion'):
-`GetAuctionPriceByItemID(callerID, itemID)`, `GetVendorPriceByItemID`,
-`GetAuctionAgeByItemID` (days since seen). Nil means never scanned: ask them to
-open the auction house once. Source: AddOns/Auctionator/Source/API.
+Other addons are integrations, used only when installed. The request's
+`== integrations ==` section lists the ones in the player's AddOns folder now, each
+with its API; anything not listed is not installed, so never assume one (another
+player has different addons). Call them in `lua` steps, guarded (`if Polestar then`,
+pcall each call), and a module that uses one works without it or says it needs it.
+Prefer an installed addon's feature to building our own. To add an integration,
+write integrations/<AddOn folder>.md (first line `# <folder>`), never this list.
 Reading the game live, no reload (the data strip, measured working 2026-11-10:
 7.8 KB in one shot): add a `lua` step that builds a text and calls
 `WowCompanion_Strip.Send(text, 30)` (bottom-right corner, 30 s), and before you
@@ -142,7 +124,7 @@ changing any layout. It holds the player's rules and the layouts already rejecte
 Gear and bag advice: read what is equipped first (GetInventoryItemLink('player',
 1..19), and the bag slots via C_Container.GetContainerNumSlots(1..4)) and check
 every suggestion against it. A two-hand weapon in the main hand means no off-hand
-or shield can be worn; GearQuest's off-hand picks ignore that. A bag in the bags is
+or shield can be worn; gear addons' off-hand picks may ignore that. A bag in the bags is
 a spare, not an upgrade, unless a bag slot is empty. Never advise from item data
 alone. Read professions too (GetProfessions(), then GetProfessionInfo(index) for
 name and skill): a gathering tool is never junk when its profession is known.
@@ -170,10 +152,6 @@ Other game facts already worked out:
   from the bag menu (say: send it to Name).
   Destroying: never from your code (refused). `WowCompanion_ConfirmDestroy(bag, slot)`
   opens a confirmation whose Destroy button is the player's press.
-- Guidance for a quest Polestar has no guide for: aim its arrow
-  (`Polestar.Nav.SetTarget`) and pin the spots (`WCPins`), with places from
-  `Polestar.Codex` (`.Quest(id)`, `.Npc(id)`). Polestar also takes guides as data
-  (`Polestar.Import`, its import strings), a route not built yet.
 You may be one of several conversations (Main, or L1, L2, R1, R2, marked [L2] in
 the request); the others run beside you and share the game. When you build
 something other agents should call, add it to this list (src/agent.rs, RULES) so

@@ -638,8 +638,38 @@ fn agent_context(addons: &Path) -> Option<String> {
         out.push(format!("== {name} =="));
         out.extend(lines.iter().map(|line| line.to_string()));
     }
+    out.push("== integrations ==".to_string());
+    out.push(integrations(addons));
     Some(out.join("
 "))
+}
+
+/// The notes in integrations/<folder>.md for each addon whose folder is in the
+/// AddOns folder now (read from disk, so an install counts before any reload).
+/// Other players have other addons: the agent is told only about the ones present.
+fn integrations(addons: &Path) -> String {
+    let notes = Path::new(env!("CARGO_MANIFEST_DIR")).join("integrations");
+    let mut present = Vec::new();
+    let mut absent = Vec::new();
+    for entry in fs::read_dir(&notes).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "md") {
+            continue;
+        }
+        let folder = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+        if addons.join(&folder).join(format!("{folder}.toc")).exists() {
+            present.push(fs::read_to_string(&path).unwrap_or_default());
+        } else {
+            absent.push(folder);
+        }
+    }
+    if present.is_empty() {
+        present.push("none installed".to_string());
+    }
+    if !absent.is_empty() {
+        present.push(format!("Not installed: {} (do not call them).", absent.join(", ")));
+    }
+    present.join("\n")
 }
 
 /// Spell and macro names, for Whisper's prompt: the words this player will say and

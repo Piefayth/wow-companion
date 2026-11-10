@@ -176,7 +176,8 @@ goes to a detached process.
   only Whisper echoing its prompt (cut off when it prefixes real speech).
 - **Names are first and last** ("Pietra Fayth"; `UnitName` gives "Pietra"). The
   addon resolves a spoken name for whispers.
-- **Other addons are the agent's to use**: their code is in the AddOns folder and
-  their globals are live, e.g. `GearQuest` (GearQuest Forever: `GQ.Compare:RankEntries`
-  and the rest) and Polestar. Read the source, call it in a `lua` step, print.
+- **Other addons are integrations, optional**: `integrations/<AddOn folder>.md`
+  holds what we know of each (API, terms); the agent is given only those whose
+  folder is installed (`integrations` in main.rs). Our code guards every call
+  (`if Polestar then`, pcall) and works without them. Another player has others.
 - One client per install: two running at once both consume slots and bells.
