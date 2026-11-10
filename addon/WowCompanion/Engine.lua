@@ -47,6 +47,20 @@ do
 		if InCombatLockdown() then afterCombat[#afterCombat + 1] = fn else fn() end
 	end
 
+	-- Tell the controller's manager a window of ours closed. FrameHidden is
+	-- wrapped by SmartNavigation's SecureHelper: called by addon code in a fight
+	-- it does nothing and shows "Interface action failed" (bag close, 2026-11-10).
+	-- So in a fight it waits for the fight's end, if the frame is still hidden.
+	function WC.FrameHidden(frame)
+		local m = GamepadMode and GamepadMode.FrameControlsManager
+		if not m or not (InputUtil and InputUtil.IsGamepadUIEnabled()) then return end
+		if InCombatLockdown() then
+			WC.AfterCombat(function() if not frame:IsShown() then pcall(m.FrameHidden, m, frame) end end)
+		else
+			pcall(m.FrameHidden, m, frame)
+		end
+	end
+
 	function WC.Send(msg, ...)
 		for owner, fn in pairs(listeners[msg] or {}) do
 			local ok, err = pcall(fn, ...)

@@ -139,10 +139,18 @@ Other things of ours agent code can call (all globals, all in WowCompanion):
 Other addons are integrations, used only when installed. The request's
 `== integrations ==` section lists the ones in the player's AddOns folder now, each
 with its API; anything not listed is not installed, so never assume one (another
-player has different addons). Call them in `lua` steps, guarded (`if Polestar then`,
-pcall each call), and a module that uses one works without it or says it needs it.
-Prefer an installed addon's feature to building our own. To add an integration,
-write integrations/<AddOn folder>.md (first line `# <folder>`), never this list.
+player has different addons). Prefer an installed addon's feature to building our own.
+**Code reaches other addons through capabilities, never directly** (Engine.lua):
+`local price = WC.Use('price')` (nil when nothing provides it), then
+`price.auction(id)`; `WC.Has(cap, method)` asks whether any loaded provider does one.
+The `== capabilities ==` section lists what is available now and from whom, best
+first (price: auction, vendor; nav: aim, nearest, clear). A feature must work, or
+say what it needs, when a capability or one of its methods is missing. A new
+addon's feature, or a new capability, is a provider file in
+addon/WowCompanion/Providers/ (`WC.Provide(cap, name, impl, { addon = 'Folder',
+rank = n })`, every call into the addon under pcall), plus its
+integrations/<AddOn folder>.md (first line `# <folder>`), never this list. A
+one-off `lua` step may still call an integration directly, guarded.
 Reading the game live, no reload (the data strip, measured working 2026-11-10:
 7.8 KB in one shot): add a `lua` step that builds a text and calls
 `WowCompanion_Strip.Send(text, 30)` (bottom-right corner, 30 s), and before you

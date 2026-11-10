@@ -47,8 +47,12 @@ do
 		if WCBags:IsShown() and not WCBags.mirror then
 			-- ours already up with its own pad (the secure toggle): keep it, and
 			-- drop theirs from the focus cycle
+			-- (not now: FrameHidden from addon code in a fight is "Interface action
+			-- failed"; our pad's bindings win meanwhile)
 			if GamepadMode and GamepadMode.FrameControlsManager then
-				pcall(GamepadMode.FrameControlsManager.FrameHidden, GamepadMode.FrameControlsManager, blizz)
+				WC.AfterCombat(function()
+					pcall(GamepadMode.FrameControlsManager.FrameHidden, GamepadMode.FrameControlsManager, blizz)
+				end)
 			end
 			return
 		end

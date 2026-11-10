@@ -69,7 +69,7 @@ pub(crate) fn saved_string(addons: &Path, key: &str) -> io::Result<String> {
 /// 500 lines answering questions we asked while mapping the UI, not ones the agent
 /// asks. Those stay in the file for us and out of the prompt.
 pub(crate) const AGENT_SECTIONS: &[&str] =
-    &["character", "equipped", "bags", "skills", "quest log", "action slots", "empty slots on screen", "controller", "macros", "spellbook", "reach", "modules", "code runs", "lua errors"];
+    &["character", "equipped", "bags", "skills", "quest log", "action slots", "empty slots on screen", "controller", "macros", "spellbook", "reach", "modules", "capabilities", "code runs", "lua errors"];
 
 pub(crate) fn sections<'a>(context: &'a str, wanted: &[&str]) -> Vec<(&'a str, Vec<&'a str>)> {
     let mut kept: Vec<(&str, Vec<&str>)> = Vec::new();
@@ -91,7 +91,7 @@ pub(crate) fn sections<'a>(context: &'a str, wanted: &[&str]) -> Vec<(&'a str, V
 
 /// The quick conversation's export: what chat, links and buttons need, so the
 /// prompt is a fraction of the size and the answer comes sooner.
-pub(crate) const QUICK_SECTIONS: &[&str] = &["character", "bags", "skills", "macros", "lua errors"];
+pub(crate) const QUICK_SECTIONS: &[&str] = &["character", "bags", "skills", "macros", "capabilities", "lua errors"];
 
 pub(crate) fn agent_context(addons: &Path) -> Option<String> {
     agent_context_for(addons, "")

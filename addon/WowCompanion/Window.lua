@@ -90,7 +90,7 @@ local function buildTabs(frame, messages, pending)
 			if not (WC.Fonts and WC.Fonts.Next) then return end
 			local said = WC.Fonts.Next()
 			self:SetText("Font: " .. WC.Fonts.Current())
-			if said:find("restart") then print(said) end
+			if said:find("restart") or said:find("failed") then print(said) end
 		end)
 	end
 	button("Clear map pins", "Remove every pin I put on your minimap and world map.", function()
@@ -468,10 +468,7 @@ local function buildLog()
 		end)
 	end)
 	frame:SetScript("OnHide", function(self)
-		if GamepadMode and GamepadMode.FrameControlsManager
-			and InputUtil and InputUtil.IsGamepadUIEnabled() then
-			GamepadMode.FrameControlsManager:FrameHidden(self)
-		end
+		WC.FrameHidden(self)
 	end)
 
 	frame:SetResizable(true)
