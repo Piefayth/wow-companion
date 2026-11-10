@@ -199,6 +199,10 @@ pub static ALERT: AtomicBool = AtomicBool::new(false);
 /// True once the loop is reading the pad with a model loaded: the companion can
 /// hear the player. The in-game "companion" mark beats only while this holds.
 pub static READY: AtomicBool = AtomicBool::new(false);
+/// Set by a companion handing over to a newer copy once that copy is listening:
+/// this one stops reading the pad, so a press is never handled twice, while its
+/// requests in flight finish (two copies answering one clip, measured 2026-11-10).
+pub static DEAF: AtomicBool = AtomicBool::new(false);
 
 pub fn listen(
     model: &Path,
@@ -410,6 +414,16 @@ pub fn listen(
                 }
                 println!("  discarded the clip in progress");
             }
+            continue;
+        }
+        if DEAF.load(Ordering::SeqCst) {
+            if holding.take().is_some() {
+                if let Some(mic) = &microphone {
+                    mic.stop();
+                }
+            }
+            HOLDING.store(false, Ordering::Relaxed);
+            thread::sleep(POLL);
             continue;
         }
         if ALERT.swap(false, Ordering::SeqCst) && rumbles {

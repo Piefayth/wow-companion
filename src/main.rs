@@ -1211,8 +1211,14 @@ fn watch_for_restart(args: Vec<String>) {
         if !flag.exists() {
             continue;
         }
-        // and not mid-request or mid-press, now that the new copy is waiting
-        while IN_FLIGHT.load(Ordering::SeqCst) > 0 || voice::HOLDING.load(Ordering::Relaxed) || recently_released() {
+        // not mid-press, then deaf: the new copy takes the pad from here (it stops
+        // waiting for this one after 15 s), and this one only finishes its work.
+        // Both reading the pad answered one clip twice (measured 2026-11-10).
+        while voice::HOLDING.load(Ordering::Relaxed) || recently_released() {
+            thread::sleep(Duration::from_millis(100));
+        }
+        voice::DEAF.store(true, Ordering::SeqCst);
+        while IN_FLIGHT.load(Ordering::SeqCst) > 0 {
             thread::sleep(Duration::from_millis(100));
         }
         voice::SHUTDOWN.store(true, Ordering::SeqCst);
