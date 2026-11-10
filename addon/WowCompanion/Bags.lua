@@ -283,8 +283,53 @@ local function build()
 	-- Mirror mode (BagsStandIn.lua, in combat): our slots laid exactly over
 	-- Blizzard's, which hold the controller's focus and take the presses; ours
 	-- only show. Out of it, our own grid again.
+	-- In controller mode Blizzard's combined bags lay one bag button per bag (the
+	-- ones that collapse a bag, GamepadBagBar) into the same grid as the slots
+	-- (ContainerFrame.lua UpdateItemLayout). Mirrored, those cells were gaps
+	-- (the player, 2026-11-10): ours draw the bag's icon there.
+	local bagIcons = {}
+	local function bagIcon(i)
+		local t = bagIcons[i]
+		if t then return t end
+		t = CreateFrame("Frame", nil, f)
+		t:SetSize(SIZE, SIZE)
+		t.tex = t:CreateTexture(nil, "ARTWORK")
+		t.tex:SetAllPoints()
+		t.ring = t:CreateTexture(nil, "OVERLAY")
+		t.ring:SetPoint("TOPLEFT", -1, 1)
+		t.ring:SetPoint("BOTTOMRIGHT", 1, -1)
+		t.ring:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+		t.ring:SetTexCoord(0.2, 0.8, 0.2, 0.8)
+		bagIcons[i] = t
+		return t
+	end
+	local function mirrorBagButtons()
+		for _, t in pairs(bagIcons) do t:Hide() end
+		if not (GamepadBagBar and GamepadBagBar.GetBagButton) then return end
+		local n = 0
+		for bag = 0, MAXBAG do
+			local ok, btn = pcall(GamepadBagBar.GetBagButton, GamepadBagBar, bag)
+			if ok and btn and btn:IsShown() then
+				n = n + 1
+				local t = bagIcon(n)
+				local tex
+				if bag == 0 then
+					tex = "Interface\\Buttons\\Button-Backpack-Up"
+				else
+					local inv = C_Container.ContainerIDToInventoryID and C_Container.ContainerIDToInventoryID(bag)
+					tex = inv and GetInventoryItemTexture("player", inv)
+				end
+				t.tex:SetTexture(tex or "Interface\\Buttons\\UI-EmptySlot-Disabled")
+				t:ClearAllPoints()
+				t:SetPoint("CENTER", btn, "CENTER")
+				t:Show()
+			end
+		end
+	end
+
 	function f:Mirror(blizz)
 		self.mirror = blizz and true or nil
+		if blizz then mirrorBagButtons() else for _, t in pairs(bagIcons) do t:Hide() end end
 		-- our legend names our own buttons; over theirs the game's controller
 		-- drives (its own legend), and ours sat on their bottom row
 		for _, pr in ipairs(self.prompts) do pr:SetShown(not blizz) end
