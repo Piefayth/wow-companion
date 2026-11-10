@@ -65,10 +65,25 @@ local function build(i)
 	p.text:SetPoint("TOPLEFT", p.state, "BOTTOMLEFT", 0, -3)
 	p.text:SetJustifyH("LEFT")
 	p.text:SetWordWrap(false)
-	local function button(text, onClick)
-		local b = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
-		b:SetSize(80, 22)
-		b:SetText(text)
+	-- small icon buttons (the player, 2026-11-10: "whole wordy buttons"): the
+	-- game's own art, the name in a tooltip when the cursor lands on one
+	local ICONS = {
+		cancel = { "Interface\Buttons\UI-GroupLoot-Pass-Up", "Interface\Buttons\UI-GroupLoot-Pass-Down", "Interface\Buttons\UI-GroupLoot-Pass-Highlight" },
+		now = { "Interface\Buttons\UI-SpellbookIcon-NextPage-Up", "Interface\Buttons\UI-SpellbookIcon-NextPage-Down", "Interface\Buttons\UI-Common-MouseHilight" },
+	}
+	local function button(text, onClick, icon)
+		local b = CreateFrame("Button", nil, p)
+		b:SetSize(26, 26)
+		local art = ICONS[icon]
+		b:SetNormalTexture(art[1])
+		b:SetPushedTexture(art[2])
+		b:SetHighlightTexture(art[3], "ADD")
+		b:SetScript("OnEnter", function(self)
+			GameTooltip:SetOwner(self, "ANCHOR_TOP")
+			GameTooltip:SetText(text)
+			GameTooltip:Show()
+		end)
+		b:SetScript("OnLeave", function() GameTooltip:Hide() end)
 		b:SetScript("OnClick", function() onClick(p.job) end)
 		if not InCombatLockdown() and SmartNavigation_MarkFrameFocusable then
 			pcall(SmartNavigation_MarkFrameFocusable, b)
@@ -88,16 +103,16 @@ local function build(i)
 			if live then live.state = "cancelling" end
 		end
 		refresh()
-	end)
-	p.cancel:SetPoint("RIGHT", -8, 0)
+	end, "cancel")
+	p.cancel:SetPoint("RIGHT", -6, 0)
 	p.now = button("Send now", function(job)
 		if not job then return end
 		command("now", job.slot, job.req)
 		local live = find(job.req)
 		if live then live.sending = true end
 		refresh()
-	end)
-	p.now:SetPoint("RIGHT", p.cancel, "LEFT", -4, 0)
+	end, "now")
+	p.now:SetPoint("RIGHT", p.cancel, "LEFT", -2, 0)
 	p.text:SetPoint("RIGHT", p.now, "LEFT", -8, 0)
 	p:Hide()
 	panels[i] = p
