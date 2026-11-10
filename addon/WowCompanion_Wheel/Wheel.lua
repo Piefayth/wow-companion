@@ -16,7 +16,7 @@
 --       { emote = "WAVE" }, { macrotext = "/sit", label = "Sit", icon = 134400 } } })
 --   WCWheel.Remove("buffs")   WCWheel.List()
 -- A slot may carry `label` and `icon` to override what is looked up.
--- (A slot with `rule` is reserved for slots that fill themselves; none yet.)
+-- A slot { rule = "items" } fills itself: every usable bag item and quest item.
 
 WCWheel = WCWheel or {}
 local W = WCWheel
@@ -458,9 +458,48 @@ local function Resolve(slot)
         return { type = "macro", attr = "macrotext", value = slot.macrotext, label = slot.label or slot.macrotext,
             icon = slot.icon or 134400 }
     elseif slot.rule then
-        return nil, "rules are not built yet (" .. tostring(slot.rule) .. ")"
+        return nil, "unknown rule " .. tostring(slot.rule)
     end
     return nil, "empty slot"
+end
+
+-- Rules fill themselves, out of combat, each time the wheel is rebuilt.
+-- "items": every usable thing in the bags -- anything with a Use: (food,
+-- drink, potions, scrolls, usable quest items) -- once per item, in bag order.
+local RULES = {}
+function RULES.items()
+    local found, seen = {}, {}
+    for bag = 0, 4 do
+        local count = C_Container.GetContainerNumSlots(bag) or 0
+        for index = 1, count do
+            local info = C_Container.GetContainerItemInfo(bag, index)
+            local id = info and info.itemID
+            if id and not seen[id] then
+                -- only what has a Use: effect, quest items included; a quest
+                -- item you only carry has no spell and stays off
+                if C_Item.GetItemSpell(id) ~= nil then
+                    seen[id] = true
+                    found[#found + 1] = { item = id }
+                end
+            end
+        end
+    end
+    return found
+end
+
+-- a wheel's slots with every rule replaced by what it finds now
+local function Expand(slots)
+    local out = {}
+    for _, slot in ipairs(slots or {}) do
+        local rule = slot.rule and RULES[slot.rule]
+        if rule then
+            local ok, found = pcall(rule)
+            for _, each in ipairs(ok and found or {}) do out[#out + 1] = each end
+        else
+            out[#out + 1] = slot
+        end
+    end
+    return out
 end
 
 local function ButtonIndex(binding)
@@ -482,7 +521,7 @@ function W.Rebuild(quiet)
     for key, wheel in pairs(WowCompanionWheelDB.wheels) do
         OpenButton(key)
         local entries = {}
-        for _, slot in ipairs(wheel.slots or {}) do
+        for _, slot in ipairs(Expand(wheel.slots)) do
             local entry, why = Resolve(slot)
             if entry and #entries < MAX_SLOTS then
                 entries[#entries + 1] = entry
@@ -541,6 +580,7 @@ events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:RegisterEvent("SPELLS_CHANGED")
 events:RegisterEvent("UPDATE_MACROS")
 events:RegisterEvent("CVAR_UPDATE")
+events:RegisterEvent("BAG_UPDATE_DELAYED") -- an items rule follows the bags
 events:SetScript("OnEvent", function(_, event, name)
     if event == "PLAYER_LOGIN" then
         WowCompanionWheelDB = WowCompanionWheelDB or {}

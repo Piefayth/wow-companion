@@ -375,6 +375,17 @@ local function buildLog()
 			allowOtherPanels = 1,
 		}
 	end
+	-- The right stick scrolls a panel's text once SmartNavigation is told which
+	-- scroll frame belongs to it, as the chat frame and Blizzard's own dialogs do
+	-- (FloatingChatFrame.lua, SocialContract.lua). It is SecureHelper-wrapped for
+	-- such callers. Deferred a tick, so the panel is registered first.
+	frame:SetScript("OnShow", function(self)
+		C_Timer.After(0, function()
+			if SmartNavigation and SmartNavigation.SetScrollFrameForFrame and self.messages then
+				pcall(SmartNavigation.SetScrollFrameForFrame, SmartNavigation, self, self.messages.scroll)
+			end
+		end)
+	end)
 	frame:SetScript("OnHide", function(self)
 		if GamepadMode and GamepadMode.FrameControlsManager
 			and InputUtil and InputUtil.IsGamepadUIEnabled() then
@@ -391,8 +402,38 @@ local function buildLog()
 	grip:SetPoint("BOTTOMRIGHT", -8, 8)
 	grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
 	grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-	grip:SetScript("OnMouseDown", function() frame:StartSizing("BOTTOMRIGHT") end)
+	-- A mouse drags it; the controller can only click it, which used to do
+	-- nothing. So a click that did not resize steps through three sizes. A drag
+	-- also ends in a click, which is why the size at mouse-down is compared.
+	local SIZES = { { 560, 340 }, { 760, 520 }, { 980, 700 } }
+	local sizeBefore
+	grip:SetScript("OnMouseDown", function()
+		sizeBefore = frame:GetWidth() .. "x" .. frame:GetHeight()
+		frame:StartSizing("BOTTOMRIGHT")
+	end)
 	grip:SetScript("OnMouseUp", function() frame:StopMovingOrSizing() end)
+	grip:SetScript("OnClick", function()
+		if sizeBefore and sizeBefore ~= frame:GetWidth() .. "x" .. frame:GetHeight() then
+			sizeBefore = nil
+			return
+		end
+		sizeBefore = nil
+		local width = frame:GetWidth()
+		local pick = SIZES[1]
+		for _, size in ipairs(SIZES) do
+			if size[1] > width + 10 then
+				pick = size
+				break
+			end
+		end
+		-- grow from the top-left corner, so the window stays where it is
+		local left, top = frame:GetLeft(), frame:GetTop()
+		frame:SetSize(pick[1], pick[2])
+		if left and top then
+			frame:ClearAllPoints()
+			frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+		end
+	end)
 
 	return frame
 end
@@ -1646,12 +1687,32 @@ local function reachLines(line, frames)
 		if place and HasAction(slot) then
 			local kind, id = GetActionInfo(slot)
 			if kind == "spell" then
-				reach(spellName(id), place)
-				-- a slot holding the base spell fires its form's version too
+				local held = spellName(id)
+				reach(held, place)
+				-- a slot holding the base spell fires its form's version too. The slot
+				-- reports whichever version the current form shows, so "Feral Charge"
+				-- (1238122) in caster is "Feral Charge (Cat)" (414924) in cat: match on
+				-- the shared base spell, or on the name with a "(Form)" suffix
+				local function baseOf(spell)
+					local ok, base = pcall(C_SpellBook.FindBaseSpellByID, spell)
+					return ok and base or spell
+				end
+				local heldBase = C_SpellBook and C_SpellBook.FindBaseSpellByID and baseOf(id) or id
+				-- in cat the slot reads "Feral Charge (Cat)"; its bear twin shares the stem
+				local stem = held and held:gsub("%s*%b()$", "")
+				local prefix = stem and (stem:lower() .. " (")
 				for key, known in pairs(store) do
 					local match = tonumber(key) == id
 					for _, variant in pairs(known.forms or {}) do
 						if variant.id == id then match = true end
+						if variant.id and C_SpellBook and C_SpellBook.FindBaseSpellByID
+							and baseOf(variant.id) == heldBase then
+							match = true
+						end
+						if prefix and type(variant.name) == "string"
+							and variant.name:lower():sub(1, #prefix) == prefix then
+							match = true
+						end
 					end
 					if match then
 						for _, variant in pairs(known.forms or {}) do
@@ -1660,7 +1721,19 @@ local function reachLines(line, frames)
 					end
 				end
 			elseif kind == "macro" then
-				local _, _, body = GetMacroInfo(id)
+				-- a macro with #showtooltip reports its spell's ID here, not its
+				-- index, so find it by the name the slot shows
+				-- and that spell is what the macro casts now, so it counts as reached
+				if id and spellName(id) then
+					reach(spellName(id), place .. " via macro")
+				end
+				local index = id
+				local named = GetActionText and GetActionText(slot)
+				if named and GetMacroIndexByName then
+					local found = GetMacroIndexByName(named)
+					if found and found > 0 then index = found end
+				end
+				local _, _, body = GetMacroInfo(index)
 				fromMacroBody(body, place .. " via macro")
 			end
 		end

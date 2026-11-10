@@ -123,3 +123,32 @@ What follows:
 - Pick a form per fight and stay in it: heal before the pull or after it, not
   mid-fight, unless it's an emergency.
 - Damage pairs never cancel a form, so a stray press costs nothing.
+
+## Layout proposal v2 (21:05, after all three forms were recorded)
+
+- Top (no trigger): unchanged. Melon Juice, War Stomp, Cultivation, Apple.
+- L2 (never pages; heals drop form in the same press, on friendly target else self):
+  left Buffs wheel; up Cure Poison; right Cat Form, again Prowl; down Bear Form,
+  again Enrage; square free; triangle Healing Touch; circle Rejuvenation; cross Regrowth.
+- R2 caster page (193-200): left Faerie Fire; up Hibernate; right Nature's Grasp;
+  down free; square Wrath; triangle Starfire; circle Moonfire; cross Entangling Roots.
+  Duplicate Moonfire and caster Feral Charge removed.
+- R2 cat page (265-272) and bear page (281-288): unchanged; Feral Charge stays on both.
+- L2+R2: Teleport: Moonglade and Attack; old Moonfire/Hibernate/Roots/Grasp copies cleared.
+- Form numbers for macros: bear 1, cat 2 assumed from the recorder (0 caster); verify.
+- Reach checker still flags Feral Charge (Cat)/(Bear) falsely; checked by hand: 267, 283.
+
+## Applied layout (21:42, measured in the export)
+
+Stance page off (GamepadStanceBarOverride 1). Help/harm macros HH_* branch
+[help] -> heal (drops form), [form:1] bear, [form:2] cat, [harm]/[@softenemy] caster damage, else self.
+- Naked d-pad: left Items wheel (rule: bag items with a Use:), up Buffs wheel (MotW, Thorns, Moonglade).
+- L2 face: square HH_Cross (Cure Poison / Feral Charge / Faerie Fire), triangle HH_Square
+  (HT / Maul / Claw / Wrath), circle HH_Triangle (Rejuv / Swipe / Rip / Moonfire),
+  cross HH_Circle (Regrowth / Roar / Shred / Starfire).
+- R2 face: square Growl|Prowl, triangle Enrage, circle Bash (form-only; free in caster).
+- L2+R2: right War Stomp, down Rez (Rebirth in combat, else Revive), square Hibernate,
+  circle Entangling Roots, cross Nature's Grasp.
+- Off the bars by request: Attack, Cultivation.
+Player's rules: no duplicates; face buttons > d-pad (left thumb moves); frequent on face,
+situational/long-cooldown (CC, rez) on L2+R2.
