@@ -33,6 +33,8 @@ yes; don't reinvent what Claude Code has.
   Rumble is DualSense output report 0x02.
 - `crates/voice`: mic (`cpal`) and Whisper large-v3-turbo on the 4090, its own crate
   so the CUDA build is not invalidated by edits elsewhere.
+  Files: `lib.rs` (the push-to-talk loop), `mic.rs`, `transcribe.rs`, `cue.rs`,
+  `bluetooth.rs` (the hands-free reconnect).
 - `src/`: the helper, one job per file: `main.rs` (command dispatch, `run`'s
   wiring of the voice loop), `channel.rs` (slots, the cursor, sending, bells),
   `requests.rs` (asking the agent, progress, auto-continue, re-sync, `tell`),
