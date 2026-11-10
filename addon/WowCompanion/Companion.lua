@@ -278,12 +278,8 @@ function Transcript:Clear()
 end
 
 -- Tabs along the bottom edge, as Blizzard's own panels have them
--- (PanelTabButtonTemplate, PanelTemplates_SetTab), picked with the cursor
--- while the window is open, the way the controller UI pages its own tabbed
--- windows. Those two keys are bound only while the window is shown and out of
--- combat: L1 and R1 are the targeting buttons, and a binding left behind would
--- take them in a fight. PLAYER_REGEN_DISABLED fires before the lockdown starts,
--- which is the last moment a binding can still be cleared.
+-- (PanelTabButtonTemplate, PanelTemplates_SetTab), picked with the controller
+-- cursor. No shoulder buttons: L1 and R1 are talk-button slots.
 local TAB_NAMES = { "Chat", "Tools", "Status" }
 local function buildTabs(frame, messages, pending)
 	local pages = {}
