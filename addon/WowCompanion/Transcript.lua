@@ -179,6 +179,10 @@ function Transcript:Row(font, text, indent, gap, r, g, b)
 		self.height = self:Place(row, self.height, width)
 		self.content:SetHeight(math.max(self.height, 1))
 		if following then self:ToBottom() end
+		-- the progress lines after the last message move down at once, not
+		-- on the next tick (the player, 2026-11-10: a queued line covered the
+		-- agent's working line)
+		if self.jobsGhosts and WC.Jobs and WC.Jobs.Refresh then WC.Jobs.Refresh() end
 	end
 	return row
 end
