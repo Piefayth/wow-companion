@@ -22,6 +22,7 @@ Transcript.lua
 Board.lua
 Jobs.lua
 Chat.lua
+ChatWheel.lua
 Chords.lua
 Probes.lua
 Export.lua

@@ -684,6 +684,15 @@ function handlers.chat(inbox)
 		local result = previewLine(inbox.text or "")
 		if result then return result end
 	end
+	-- L1+R1 dictation (ChatWheel.lua): no text box in use, so the line goes to
+	-- the send preview on the channel picked on the chat wheel
+	if inbox.wheel then
+		local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+		if not (focused and focused.IsVisible and focused:IsVisible()) and WC.ChatChannel then
+			local result = previewLine(WC.ChatChannel.Line(inbox.text or ""))
+			if result then return result end
+		end
+	end
 	-- Any text box the player put the cursor in takes dictation: the auction
 	-- house search, a mail recipient, a search field. They focused it, so setting
 	-- its text is what typing would do, as with chat. Other boxes get the words
@@ -863,6 +872,8 @@ tapButton:SetScript("OnClick", function(self, _, down)
 		-- (the player, 2026-11-10). The PC's own messages take over from here.
 		local slot = self.slot or (WowCompanion_PadSlot and WowCompanion_PadSlot()) or ""
 		self.downAt = nil
+		-- dictation (L1+R1) is no conversation's: its line arrives on its own
+		if slot == "say" then return end
 		if setTranscribing then setTranscribing(slot, true) end
 		if renderPending then renderPending() end
 	elseif self.downAt and GetTime() - self.downAt <= TAP_MAX then

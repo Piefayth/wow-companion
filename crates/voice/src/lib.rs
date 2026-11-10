@@ -325,8 +325,13 @@ pub fn listen(
             .map(|(role, _)| *role);
         // L2 and R2 together are the quick conversation (the player, 2026-11-10):
         // a fast agent for chat, links and buttons
+        // L1 and R1 together are dictation (the player, 2026-11-10): the words go
+        // straight to the send preview on the channel picked on the chat wheel,
+        // with no agent in the way
         let modifier = if pad.held(&slots[1].1) && pad.held(&slots[3].1) {
             Some("quick")
+        } else if pad.held(&slots[0].1) && pad.held(&slots[2].1) {
+            Some("say")
         } else {
             slots.iter().find(|(_, press)| pad.held(press)).map(|(name, _)| *name)
         };
@@ -404,6 +409,9 @@ pub fn listen(
                 }
                 // the second trigger of L2+R2 pulled a moment after the first
                 if role == "ask" && modifier == Some("quick") && matches!(slot, Some("l2") | Some("r2")) {
+                    slot = modifier;
+                }
+                if role == "ask" && modifier == Some("say") && matches!(slot, Some("l1") | Some("r1")) {
                     slot = modifier;
                 }
                 if rumbles && !pulsed && pressed_at.elapsed() >= TAP {

@@ -106,6 +106,17 @@ pub(crate) fn dictation_inbox(raw: &str, routed: &str) -> String {
     )
 }
 
+/// Dictation from the L1+R1 chord: for the send preview, never the agent. `wheel`
+/// asks the addon to put the chat wheel's channel on a line that names none.
+pub(crate) fn say_inbox(raw: &str, routed: &str) -> String {
+    format!(
+        "{{ kind = \"chat\", text = {}, raw = {}, wheel = {} }}",
+        lua_string(routed),
+        lua_string(raw.trim()),
+        routed == raw.trim()
+    )
+}
+
 pub(crate) fn chat_inbox(text: &str) -> String {
     format!("{{ kind = \"chat\", text = {} }}", lua_string(text))
 }

@@ -159,6 +159,8 @@ function WowCompanion_PadSlot()
 	end
 	-- L2 and R2 together are the quick conversation, as on the PC
 	if held.l2 and held.r2 then return "quick" end
+	-- L1 and R1 together are dictation (ChatWheel.lua), no conversation
+	if held.l1 and held.r1 then return "say" end
 	for _, slot in ipairs({ "l1", "l2", "r1", "r2" }) do
 		if held[slot] then return slot end
 	end

@@ -369,6 +369,20 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
                 Ok(())
             }
+            // L1+R1: dictation, no agent. Sent at once (no gathering): the line
+            // goes to the send preview, on the channel it opens with, else on
+            // the one picked on the chat wheel (the addon adds it)
+            "ask@say" => {
+                if discards(text) {
+                    return deliver("{ kind = \"chat\", clear = true }".to_string());
+                }
+                let routed = channeled(text);
+                *LAST_CHAT.lock().unwrap() = Some((routed.clone(), Instant::now()));
+                println!("  dictated: {routed}");
+                deliver(say_inbox(text, &routed))?;
+                // a line in the window, which also ends its "transcribing" mark
+                deliver(log_inbox("you", &format!("(dictated) {routed}"), None, None))
+            }
             r if r == "ask" || r.starts_with("ask@") => {
                 let slot = r.strip_prefix("ask@").unwrap_or("").to_string();
                 // Cancel pressed on the "hearing" panel while Whisper had the clip
