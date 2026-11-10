@@ -39,16 +39,16 @@ jobs:
       - name: Build (Vulkan)
         run: cargo build --release --no-default-features --features vulkan
         env:
-          CARGO_TARGET_DIR: C:	v
+          CARGO_TARGET_DIR: C:/tv
       - name: Build (CPU fallback)
         run: cargo build --release --no-default-features
         env:
-          CARGO_TARGET_DIR: C:	c
+          CARGO_TARGET_DIR: C:/tc
       - name: Build (setup window)
         run: cargo build --release
         working-directory: crates/setup
         env:
-          CARGO_TARGET_DIR: C:	s
+          CARGO_TARGET_DIR: C:/ts
       - name: Package
         shell: pwsh
         run: >
@@ -83,16 +83,16 @@ jobs:
         run: cargo build --release
         env:
           CUDAARCHS: "75;80;86;89;90"
-          CARGO_TARGET_DIR: C:	g
+          CARGO_TARGET_DIR: C:/tg
       - name: Build (CPU fallback)
         run: cargo build --release --no-default-features
         env:
-          CARGO_TARGET_DIR: C:	c
+          CARGO_TARGET_DIR: C:/tc
       - name: Build (setup window)
         run: cargo build --release
         working-directory: crates/setup
         env:
-          CARGO_TARGET_DIR: C:	s
+          CARGO_TARGET_DIR: C:/ts
       - name: Package
         shell: pwsh
         run: |
