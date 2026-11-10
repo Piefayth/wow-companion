@@ -602,6 +602,7 @@ local function buildLog()
 		local range = sc:GetVerticalScrollRange()
 		sc:SetVerticalScroll(math.max(0, math.min(range, sc:GetVerticalScroll() + pages * step)))
 	end
+	local arrows = {}
 	for _, spec in ipairs({ { "UIPanelScrollUpButtonTemplate", -1, "TOPRIGHT", -16, -44 },
 		{ "UIPanelScrollDownButtonTemplate", 1, "BOTTOMRIGHT", -16, 36 } }) do
 		local made, arrow = pcall(CreateFrame, "Button", nil, frame, spec[1])
@@ -610,7 +611,44 @@ local function buildLog()
 			table.insert(frame.chatParts, arrow)
 			arrow:SetPoint(spec[3], frame, spec[3], spec[4], spec[5])
 			arrow:SetScript("OnClick", function() scrollBy(spec[2]) end)
+			arrows[#arrows + 1] = arrow
 		end
+	end
+	-- The scroll bar between the arrows (the player, 2026-11-10): a thumb sized to
+	-- the share of the transcript in view and placed at the scroll position, in
+	-- Blizzard's own scroll bar art. Shown only, never dragged: the arrows scroll.
+	if #arrows == 2 then
+		local track = CreateFrame("Frame", nil, frame)
+		track:SetPoint("TOP", arrows[1], "BOTTOM", 0, -2)
+		track:SetPoint("BOTTOM", arrows[2], "TOP", 0, 2)
+		track:SetWidth(arrows[1]:GetWidth() > 0 and arrows[1]:GetWidth() or 16)
+		local groove = track:CreateTexture(nil, "BACKGROUND")
+		groove:SetPoint("TOPLEFT", 3, 0)
+		groove:SetPoint("BOTTOMRIGHT", -3, 0)
+		groove:SetColorTexture(0, 0, 0, 0.45)
+		local thumb = track:CreateTexture(nil, "ARTWORK")
+		thumb:SetTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+		thumb:SetTexCoord(0.20, 0.80, 0.125, 0.875)
+		thumb:SetWidth(track:GetWidth())
+		table.insert(frame.chatParts, track)
+		local function paintThumb()
+			local sc = messages.scroll
+			local range = sc:GetVerticalScrollRange() or 0
+			local view = sc:GetHeight() or 0
+			local room = track:GetHeight() or 0
+			if range <= 1 or view <= 0 or room <= 0 then thumb:Hide() return end
+			local size = math.max(16, room * view / (view + range))
+			local offset = (room - size) * math.min(1, (sc:GetVerticalScroll() or 0) / range)
+			thumb:ClearAllPoints()
+			thumb:SetPoint("TOP", track, "TOP", 0, -offset)
+			thumb:SetHeight(size)
+			thumb:Show()
+		end
+		messages.scroll:HookScript("OnVerticalScroll", paintThumb)
+		messages.scroll:HookScript("OnScrollRangeChanged", paintThumb)
+		messages.scroll:HookScript("OnSizeChanged", paintThumb)
+		track:SetScript("OnShow", paintThumb)
+		frame.paintThumb = paintThumb
 	end
 	frame.messages = messages
 
