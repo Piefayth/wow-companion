@@ -675,19 +675,24 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         map.insert(String::new(), Arc::clone(&session));
         Arc::new(Mutex::new(map))
     };
+    // Copied now, while nothing holds the main session. Creating a conversation
+    // used to lock the main one for these two fields, and the main one is held for
+    // a whole request: the voice loop waited minutes, the pad went dead and the
+    // rumble with it, until the request finished (2026-11-10).
+    let (base_model, base_setup) = {
+        let main = session.lock().unwrap();
+        (main.model.clone(), main.setup.clone())
+    };
     let slot_session = {
-        let (slots, session) = (Arc::clone(&slots), Arc::clone(&session));
+        let slots = Arc::clone(&slots);
         move |slot: &str| -> Arc<Mutex<agent::Session>> {
             let mut map = slots.lock().unwrap();
             if let Some(found) = map.get(slot) {
                 return Arc::clone(found);
             }
             let mut fresh = agent::Session::resumed_slot(slot);
-            {
-                let main = session.lock().unwrap();
-                fresh.model = main.model.clone();
-                fresh.setup = main.setup.clone();
-            }
+            fresh.model = base_model.clone();
+            fresh.setup = base_setup.clone();
             let fresh = Arc::new(Mutex::new(fresh));
             map.insert(slot.to_string(), Arc::clone(&fresh));
             fresh
@@ -742,14 +747,17 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 }
                 *pending = Some((text.to_string(), Instant::now(), slot.clone()));
                 drop(pending);
-                let (addons, session, looking, gathering, courier) = (
+                // the session is found or made on the request's own thread: nothing
+                // the voice loop does may wait on a lock a request can hold
+                let (addons, find_session, looking, gathering, courier) = (
                     addons.to_path_buf(),
-                    slot_session(&slot),
+                    slot_session.clone(),
                     Arc::clone(&looking),
                     Arc::clone(&gathering),
                     courier.clone(),
                 );
                 thread::spawn(move || {
+                    let session = find_session(&slot);
                     let text = loop {
                         thread::sleep(Duration::from_millis(100));
                         let mut pending = gathering.lock().unwrap();
