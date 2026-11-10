@@ -6,7 +6,13 @@ in the box, macros, bars, wheels, addon code, addons installed.
 
 This file is what is true now, kept short because the in-game agent reads it on
 every request. **How each thing was learned is in `docs/history.md`**; when a rule
-here looks odd, its story is there. **What we do next is `docs/PLAN.md`**, with the
+here looks odd, its story is there. **You can look at the screen** (the player, 2026-11-10): `powershell -NoProfile -File
+tools/shot.ps1` saves the screen at half size and prints the path; `Read` it. On the PC
+only, nothing in the game is touched, so use it whenever seeing beats guessing (where a
+frame sits, what a tooltip says, what the player is pointing at). Looking is fine;
+acting on what you see for the player is not (no automation).
+
+**What we do next is `docs/PLAN.md`**, with the
 player's standing terms. Read it before starting anything sizeable.
 
 ## The player's terms (in full in PLAN.md)

@@ -1007,6 +1007,102 @@ function WowCompanion_ResolveWhisper(rest)
 		.. (#names > 0 and ("I can see: " .. table.concat(names, ", ")) or "Nobody on your friends list, guild or group is online.")
 end
 
+-- The send preview (the player, 2026-11-10). A dictated line with a channel
+-- ("party, pulling now", "whisper Sage, on my way") no longer needs the chat box
+-- at all: it shows here, and the Send button is a secure macro button whose
+-- macro is the line itself, so the player's press is the send. Nothing of
+-- Blizzard's is opened or touched, which is what broke A and B before. It opens
+-- because the player just spoke a line meant to go out; nothing else opens it.
+local CHANNEL_NAMES = {
+	["/p"] = "party", ["/g"] = "guild", ["/o"] = "officer", ["/raid"] = "raid",
+	["/rw"] = "raid warning", ["/i"] = "instance", ["/s"] = "say", ["/y"] = "yell",
+	["/r"] = "your last whisper", ["/e"] = "emote",
+}
+local preview
+local function buildPreview()
+	local made, frame = pcall(CreateFrame, "Frame", "WowCompanionPreview", UIParent, "BackdropTemplate")
+	if not made or not frame then return nil end
+	frame:SetSize(420, 150)
+	frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 16, 260)
+	frame:SetFrameStrata("DIALOG")
+	frame:SetClampedToScreen(true)
+	frame:Hide()
+	frame:SetBackdrop({
+		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+		edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+		edgeSize = 32,
+		insets = { left = 11, right = 12, top = 12, bottom = 11 },
+	})
+	local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	title:SetPoint("TOPLEFT", 22, -20)
+	title:SetPoint("TOPRIGHT", -40, -20)
+	title:SetJustifyH("LEFT")
+	frame.title = title
+	local body = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -10)
+	body:SetPoint("RIGHT", -22, 0)
+	body:SetJustifyH("LEFT")
+	body:SetJustifyV("TOP")
+	body:SetMaxLines(4)
+	frame.body = body
+
+	local send = CreateFrame("Button", "WowCompanionPreviewSend", frame,
+		"SecureActionButtonTemplate, UIPanelButtonTemplate")
+	send:SetSize(130, 26)
+	send:SetPoint("BOTTOMRIGHT", -22, 18)
+	send:SetText("Send")
+	send:SetAttribute("type", "macro")
+	send:RegisterForClicks("AnyDown") -- the only edge that runs the macro once
+	send:SetScript("PostClick", function()
+		toast("|cffffd100Sent|r", 0.8, 0.8, 0.8, 3)
+		frame:Hide()
+	end)
+	frame.send = send
+
+	local cancel = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+	cancel:SetSize(110, 26)
+	cancel:SetPoint("RIGHT", send, "LEFT", -10, 0)
+	cancel:SetText("Don't send")
+	cancel:SetScript("OnClick", function() frame:Hide() end)
+
+	local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+	close:SetPoint("TOPRIGHT", -6, -6)
+	close:SetScript("OnClick", function() frame:Hide() end)
+	-- circle closes a focused window by clicking this (SmartNavigation:AttemptClose)
+	frame.CloseButton = close
+
+	if SmartNavigation_MarkFrameFocusable then
+		pcall(SmartNavigation_MarkFrameFocusable, frame)
+		pcall(SmartNavigation_MarkFrameFocusable, send)
+		pcall(SmartNavigation_MarkFrameFocusable, cancel)
+	end
+	if UIPanelWindows then
+		UIPanelWindows["WowCompanionPreview"] = { area = "center", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
+	end
+	frame:SetScript("OnHide", function(self)
+		if GamepadMode and GamepadMode.FrameControlsManager
+			and InputUtil and InputUtil.IsGamepadUIEnabled() then
+			GamepadMode.FrameControlsManager:FrameHidden(self)
+		end
+	end)
+	return frame
+end
+
+-- line is the full slash line ("/w Name text"); heading says where it goes
+local function showPreview(line, heading, shown)
+	if InCombatLockdown() then return false end -- a secure button cannot be set in combat
+	preview = preview or buildPreview()
+	if not preview then return false end
+	preview.title:SetText(heading)
+	preview.body:SetText(shown)
+	preview.send:SetAttribute("macrotext", line)
+	if UIPanelWindows and UIPanelWindows["WowCompanionPreview"] then
+		ShowUIPanel(preview)
+	end
+	if not preview:IsShown() then preview:Show() end
+	return true
+end
+
 function handlers.chat(inbox)
 	-- The controller's cancel unfocuses the box but keeps its text, and dictation
 	-- appends, so a discarded line would come back glued to the next one. Clearing
@@ -1019,6 +1115,25 @@ function handlers.chat(inbox)
 			return "chat box cleared"
 		end
 		return "refused: no chat box to clear"
+	end
+	-- a line spoken with a channel goes to the send preview, chat box or not
+	do
+		local text = inbox.text or ""
+		local slash, rest = text:match("^(/%a+)%s+(.+)")
+		if slash and inbox.raw and inbox.raw ~= text and not InCombatLockdown() then
+			local line, heading, shown = text, "Send to " .. (CHANNEL_NAMES[slash] or slash), rest
+			if slash == "/w" or slash == "/whisper" then
+				local target, message, label = WowCompanion_ResolveWhisper(rest)
+				if not target then
+					remember("error", "Whisper not ready: " .. message .. ".")
+					return "refused: " .. message
+				end
+				line, heading, shown = "/w " .. target .. " " .. message, "Whisper to " .. label, message
+			end
+			if #line <= 255 and showPreview(line, heading, shown) then
+				return ("preview: %q"):format(line)
+			end
+		end
 	end
 	-- Any text box the player put the cursor in takes dictation: the auction
 	-- house search, a mail recipient, a search field. They focused it, so setting
