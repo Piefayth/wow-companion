@@ -689,8 +689,17 @@ function handlers.chat(inbox)
 	if inbox.wheel then
 		local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
 		if not (focused and focused.IsVisible and focused:IsVisible()) and WC.ChatChannel then
-			local result = previewLine(WC.ChatChannel.Line(inbox.text or ""))
-			if result then return result end
+			local words = (inbox.text or ""):gsub("^%s+", "")
+			local line = WC.ChatChannel.Line(words)
+			if line ~= words then
+				-- the wheel's channel: the d-pad can turn it in the preview
+				if showPreview(line, "Send to " .. WC.ChatChannel.Name(), words, words) then
+					return ("preview: %q"):format(line)
+				end
+			else
+				local result = previewLine(line)
+				if result then return result end
+			end
 		end
 	end
 	-- Any text box the player put the cursor in takes dictation: the auction

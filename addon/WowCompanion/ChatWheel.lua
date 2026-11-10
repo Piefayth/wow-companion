@@ -52,7 +52,18 @@ do
 		print("|cffffd100Chat:|r speaking to " .. NAMES[slash])
 	end
 
+	-- the ring's order, for turning the channel a step at a time
+	local ORDER = {}
+	for i, s in ipairs(SLOTS) do ORDER[i] = s[1] end
 	WC.ChatChannel = {
+		Cycle = function(step)
+			local at = 1
+			for i, slash in ipairs(ORDER) do if slash == current() then at = i end end
+			local slash = ORDER[(at - 1 + step) % #ORDER + 1]
+			WowCompanionDB.chatChannel = slash
+			showTag()
+			return slash
+		end,
 		Current = current,
 		Name = function() return NAMES[current()] end,
 		Line = function(text)

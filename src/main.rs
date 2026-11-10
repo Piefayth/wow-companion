@@ -379,9 +379,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 let routed = channeled(text);
                 *LAST_CHAT.lock().unwrap() = Some((routed.clone(), Instant::now()));
                 println!("  dictated: {routed}");
-                deliver(say_inbox(text, &routed))?;
-                // a line in the window, which also ends its "transcribing" mark
-                deliver(log_inbox("you", &format!("(dictated) {routed}"), None, None))
+                // no line in a conversation (the player: agents need not see
+                // every dictation); the preview itself shows it
+                deliver(say_inbox(text, &routed))
             }
             r if r == "ask" || r.starts_with("ask@") => {
                 let slot = r.strip_prefix("ask@").unwrap_or("").to_string();
