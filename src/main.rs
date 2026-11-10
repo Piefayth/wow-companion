@@ -822,16 +822,23 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     // A request made while another runs is shown at once, as
                     // waiting: otherwise it appears only when it starts, and reads
                     // as dropped.
-                    let queued = IN_FLIGHT.load(Ordering::SeqCst) > 0;
-                    if queued {
-                        let line = log_inbox_in(Some(&slot), "you", &text, Some("waiting for the request before this one"), None);
-                        let _ = courier.send(line);
-                    }
-                    // A second request waits on the session lock, so the
-                    // conversation still runs one request at a time.
+                    // Waiting means *this conversation's* lock is held: a request in
+                    // another slot (counted in IN_FLIGHT) is no reason to wait, and
+                    // marking R1 "waiting" for the main one sent that line after R1's
+                    // reply, so it read as stuck (2026-11-10).
+                    let (mut held, queued) = match session.try_lock() {
+                        Ok(guard) => (guard, false),
+                        Err(std::sync::TryLockError::Poisoned(poisoned)) => (poisoned.into_inner(), false),
+                        Err(std::sync::TryLockError::WouldBlock) => {
+                            let line = log_inbox_in(Some(&slot), "you", &text, Some("waiting for the request before this one"), None);
+                            let _ = courier.send(line);
+                            // the conversation still runs one request at a time
+                            (session.lock().unwrap_or_else(|poisoned| poisoned.into_inner()), true)
+                        }
+                    };
                     IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
                     let _done = InFlight;
-                    match ask(&addons, &mut session.lock().unwrap(), &text, queued) {
+                    match ask(&addons, &mut held, &text, queued) {
                         // a look resumes the main conversation, so only the main one looks
                         Ok(true) if slot.is_empty() => *looking.lock().unwrap() = Some(session_began(&addons)),
                         Ok(true) => {}
