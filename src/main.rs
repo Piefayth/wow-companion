@@ -726,14 +726,6 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
                 Ok(())
             }
-            // Home with a trigger (or Home held alone): that slot starts over
-            r if r.starts_with("clear@") => {
-                let slot = match &r["clear@".len()..] { "main" => "", other => other };
-                slot_session(slot).lock().map(|mut session| session.forget()).ok();
-                let name = if slot.is_empty() { "the main conversation".to_string() } else { slot.to_uppercase() };
-                println!("  {name} starts over");
-                deliver(log_inbox("you", &format!("(started {name} over)"), None, None))
-            }
             r if r == "ask" || r.starts_with("ask@") => {
                 let slot = r.strip_prefix("ask@").unwrap_or("").to_string();
                 // Gathered, not sent at once: the player often lets go before they
@@ -774,6 +766,14 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         let _ = courier.send("{ kind = \"chat\", clear = true }".to_string());
                         // a line without `pending` also clears "got it, transcribing"
                         let _ = courier.send(log_inbox("you", &text, None, None));
+                        return;
+                    }
+                    // "start over" / "new conversation" alone: this conversation
+                    // begins fresh (the Home chords for it were dropped, 2026-11-10)
+                    let plain: String = text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>().to_lowercase();
+                    if matches!(plain.trim(), "start over" | "new conversation" | "fresh start" | "reset conversation") {
+                        session.lock().map(|mut s| s.forget()).ok();
+                        let _ = courier.send(log_inbox_in(Some(&slot), "you", "(started this conversation over)", None, None));
                         return;
                     }
                     let routed = channeled(&text);

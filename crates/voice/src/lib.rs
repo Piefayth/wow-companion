@@ -299,13 +299,9 @@ pub fn listen(
     let rumbler = pad::Rumbler::new(vid, pid);
     let mut holding: Option<&str> = None;
     // Conversation slots (the player, 2026-11-10): a trigger held with the talk
-    // button picks one; none is the main conversation. Home with a trigger starts
-    // that slot over; Home held alone for a second starts the main one over.
+    // button picks one; none is the main conversation.
     let slots = [("l1", pad::press("l1")?), ("l2", pad::press("l2")?), ("r1", pad::press("r1")?), ("r2", pad::press("r2")?)];
-    let home = pad::press("home")?;
     let mut slot: Option<&str> = None;
-    let mut home_down: Option<Instant> = None;
-    let mut home_done = false;
     let mut pressed_at = Instant::now();
     // the opening pulse waits until a press has outlasted a tap: a tap (which
     // the game handles itself, opening the window) stays silent, and feeling
@@ -435,25 +431,6 @@ pub fn listen(
             .find(|(_, press)| pad.held(press))
             .map(|(role, _)| *role);
         let modifier = slots.iter().find(|(_, press)| pad.held(press)).map(|(name, _)| *name);
-        if pad.held(&home) && !bindings.iter().any(|(_, press)| *press == home) {
-            match home_down {
-                None => {
-                    home_down = Some(Instant::now());
-                    home_done = false;
-                    if let Some(name) = modifier {
-                        home_done = true;
-                        let _ = heard(&format!("clear@{name}"), "");
-                    }
-                }
-                Some(at) if !home_done && at.elapsed() >= Duration::from_secs(1) => {
-                    home_done = true;
-                    let _ = heard("clear@main", "");
-                }
-                _ => {}
-            }
-        } else {
-            home_down = None;
-        }
         let Some(mic) = &microphone else {
             if held.is_some() && holding.is_none() {
                 println!("no microphone yet; still waiting for it");
