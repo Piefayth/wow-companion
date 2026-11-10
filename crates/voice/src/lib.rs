@@ -56,11 +56,6 @@ const PHANTOMS: &[&str] = &["thank you", "thanks for watching", "you", "bye", "t
 // RMS of a clip with nobody talking; speech sits well above it. Printed with every
 // clip, so it can be tuned from the log rather than guessed.
 const SILENCE: f32 = 0.01;
-// Below this a clip holds no sound at all (a dead or muted mic measured 0.0011;
-// real speech here is 0.016 to 0.043), and Whisper fills it with its own prompt
-// ("Commands: the first one."), which then went to the agent as a request. Such
-// a clip is dropped whatever the transcript says.
-const NOTHING: f32 = 0.004;
 // no buffers for this long and the mic stream is taken for dead
 const STALL: Duration = Duration::from_millis(1500);
 // at most one automatic reconnect this often, so an absent headset cannot loop
@@ -458,20 +453,31 @@ pub fn listen(
                         eprintln!("  not delivered: {err}");
                     }
                 } else if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
-                    println!("too short, ignored");
+                    // held long enough to mean it, yet almost no audio arrived
+                    println!("too short, ignored ({seconds:.2}s of audio)");
+                    let _ = heard("notice", &format!(
+                        "I got only {seconds:.1}s of audio from that press, so nothing was sent. If you spoke, the mic may not be sending."
+                    ));
                 } else {
+                    // Every clip goes to Whisper; none is judged by volume. A filter
+                    // on level dropped a real, quiet sentence (0.0024, the first
+                    // press after a restart) without a word to the player.
                     let level = loudness(&clip);
-                    if level < NOTHING {
-                        println!("no sound in that clip (level {level:.4}); is the mic muted or disconnected?");
-                        holding = held;
-                        HOLDING.store(held.is_some(), Ordering::Relaxed);
-                        thread::sleep(POLL);
-                        continue;
-                    }
                     match transcribe(&whisper, &clip, &prompt(&vocabulary())) {
-                        Ok(text) if text.is_empty() => println!("heard nothing (level {level:.4})"),
+                        Ok(text) if text.is_empty() => {
+                            println!("heard nothing (level {level:.4})");
+                            let _ = heard("notice", "I heard nothing in that clip, so nothing was sent.");
+                        }
+                        // Whisper filling silence with its own prompt, at any volume
+                        Ok(text) if echoes_prompt(&text) => {
+                            println!("heard only the prompt echoed (level {level:.4}); ignored {text:?}");
+                            let _ = heard("notice", "That clip held no words I could make out, so nothing was sent.");
+                        }
                         Ok(text) if level < SILENCE && phantom(&text) => {
-                            println!("heard only silence (level {level:.4}); ignored {text:?}")
+                            println!("heard only silence (level {level:.4}); ignored {text:?}");
+                            let _ = heard("notice", &format!(
+                                "That clip sounded like silence (I made out only {text:?}), so nothing was sent."
+                            ));
                         }
                         Ok(text) => {
                             println!("heard ({seconds:.1}s, {role}, level {level:.4}): {text}");
@@ -498,6 +504,15 @@ fn loudness(clip: &[f32]) -> f32 {
         return 0.0;
     }
     (clip.iter().map(|sample| sample * sample).sum::<f32>() / clip.len() as f32).sqrt()
+}
+
+/// Whisper, given silence, writes out the prompt it was seeded with
+/// ("Commands: the first one.", "World of Warcraft. Spells and macros: ...").
+fn echoes_prompt(text: &str) -> bool {
+    let lowered = text.trim().to_lowercase();
+    lowered.starts_with("commands:")
+        || lowered.starts_with("world of warcraft. spells")
+        || lowered.contains("spells and macros:")
 }
 
 fn phantom(text: &str) -> bool {

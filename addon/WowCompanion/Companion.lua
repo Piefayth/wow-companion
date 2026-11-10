@@ -833,12 +833,50 @@ local function receive()
 	end
 end
 
+-- An error anywhere in polling or handling a message is caught, said once in the
+-- window, and polling goes on. Unguarded, one error could stop the companion
+-- hearing anything until a /reload, which is what "the communication layer is
+-- broken again" looked like from the player's side.
+local reportedFailures = {}
+local function safely(label, fn, ...)
+	local ok, err = pcall(fn, ...)
+	if not ok then
+		local key = label .. tostring(err)
+		if not reportedFailures[key] then
+			reportedFailures[key] = true
+			pcall(remember, "error", ("%s failed: %s"):format(label, tostring(err)))
+		end
+	end
+end
+
 local function poll()
-	listen(bellPath(nextSlot), function(rang)
+	safely("bell poll", listen, bellPath(nextSlot), function(rang)
 		if rang then
-			receive()
+			safely("a message from the companion", receive)
 		end
 	end)
+end
+
+-- Polled from OnUpdate, which WoW keeps calling whatever happened the frame
+-- before, rather than a C_Timer ticker, which a callback error may cancel for
+-- good. `ticker` keeps its shape (truthy while polling, :Cancel() to stop) so
+-- /wc quiet and /wc listen are unchanged.
+local pollFrame = CreateFrame("Frame")
+local sincePoll = 0
+local function startPolling()
+	sincePoll = 0
+	pollFrame:SetScript("OnUpdate", function(_, elapsed)
+		sincePoll = sincePoll + elapsed
+		if sincePoll >= 0.5 then
+			sincePoll = 0
+			poll()
+		end
+	end)
+	return {
+		Cancel = function()
+			pollFrame:SetScript("OnUpdate", nil)
+		end,
+	}
 end
 
 local function cvar(name)
@@ -2863,7 +2901,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		C_Timer.After(2, loadModules)
 		-- read-only: polls the pad and the buttons' pushed state, hooks nothing
 		pcall(learnChords)
-		ticker = C_Timer.NewTicker(0.5, poll)
+		ticker = startPolling()
 	elseif event == "PLAYER_LOGOUT" then
 		-- a failed export must not cost the rest of the save
 		pcall(exportContext)
@@ -2938,7 +2976,7 @@ SlashCmdList.WOWCOMPANION = function(command)
 		say("bell poll stopped; nothing from the helper will arrive until /wc listen")
 	elseif command == "listen" then
 		if not ticker then
-			ticker = C_Timer.NewTicker(0.5, poll)
+			ticker = startPolling()
 		end
 		say("bell poll running")
 	elseif command == "log" then
