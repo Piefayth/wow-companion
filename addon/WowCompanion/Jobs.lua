@@ -76,8 +76,11 @@ end
 local function sendNow(job)
 	if not job then return end
 	command("now", job.slot, job.req)
-	local live = find(job.req)
-	if live then live.sending = true end
+	-- every queued message goes in the same request, so one press sends them
+	-- all: the other play buttons go too
+	for _, other in ipairs(jobs) do
+		if other.slot == job.slot and other.state == "queued" then other.sending = true end
+	end
 	refresh()
 end
 

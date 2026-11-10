@@ -266,6 +266,18 @@ pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool
     let running = running_req(slot);
     println!("{} [{}] request {req} (running: {running:?})", if send_now { "send now" } else { "cancel" }, if slot.is_empty() { "main" } else { slot });
     let message = if send_now {
+        // Send now on a message no longer waiting (taken by a batch that is
+        // already running) must not end that batch: several presses in a row
+        // ended each new request in turn (the player, 2026-11-10)
+        let still_waiting = WAITING
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .any(|(at, id, _)| at == slot && *id == req);
+        if !still_waiting {
+            println!("  send now: request {req} already started; nothing to end");
+            return;
+        }
         if running.is_some() {
             let running = running.unwrap_or_default();
             end_running(slot);
