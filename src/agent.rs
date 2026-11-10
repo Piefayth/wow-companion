@@ -129,8 +129,8 @@ or shield can be worn; GearQuest's off-hand picks ignore that. A bag in the bags
 a spare, not an upgrade, unless a bag slot is empty. Never advise from item data
 alone. Read professions too (GetProfessions(), then GetProfessionInfo(index) for
 name and skill): a gathering tool is never junk when its profession is known.
-Before any advice about the character, gather the facts it rests on; a wrong
-"you don't have X" is worse than asking.
+Before any advice about the character, gather the facts it rests on;
+a wrong claim that they lack something is worse than asking.
 Other game facts already worked out:
 - Items linked in chat are kept in `WowCompanionDB.links` (newest first: link,
   from, where); `WowCompanion_ShowItem(n or link)` opens the item viewer.
