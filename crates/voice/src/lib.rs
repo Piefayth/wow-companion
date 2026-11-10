@@ -62,6 +62,11 @@ const PHANTOMS: &[&str] = &["thank you", "thanks for watching", "you", "bye", "t
 // RMS of a clip with nobody talking; speech sits well above it. Printed with every
 // clip, so it can be tuned from the log rather than guessed.
 const SILENCE: f32 = 0.01;
+// Below this a clip holds no sound at all (a dead or muted mic measured 0.0011;
+// real speech here is 0.016 to 0.043), and Whisper fills it with its own prompt
+// ("Commands: the first one."), which then went to the agent as a request. Such
+// a clip is dropped whatever the transcript says.
+const NOTHING: f32 = 0.004;
 
 fn prompt(spells: &[String]) -> String {
     let mut prompt = String::from("World of Warcraft. Spells and macros: ");
@@ -229,6 +234,13 @@ pub fn listen(
                     println!("too short, ignored");
                 } else {
                     let level = loudness(&clip);
+                    if level < NOTHING {
+                        println!("no sound in that clip (level {level:.4}); is the mic muted or disconnected?");
+                        holding = held;
+                        HOLDING.store(held.is_some(), Ordering::Relaxed);
+                        thread::sleep(POLL);
+                        continue;
+                    }
                     match transcribe(&whisper, &clip, &prompt(&vocabulary())) {
                         Ok(text) if text.is_empty() => println!("heard nothing (level {level:.4})"),
                         Ok(text) if level < SILENCE && phantom(&text) => {
