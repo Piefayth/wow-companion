@@ -5498,6 +5498,26 @@ local function build()
 		tip:SetPoint("TOPRIGHT", b, "TOPLEFT", -6, 0)
 		if C_Container.GetContainerItemID(b.bag, b.slot) then
 			tip:SetBagItem(b.bag, b.slot)
+			-- Auctionator adds its prices to GameTooltip only; this tooltip is ours,
+			-- so its prices come from its API (the player, 2026-11-10)
+			local A = Auctionator and Auctionator.API and Auctionator.API.v1
+			local id = C_Container.GetContainerItemID(b.bag, b.slot)
+			if A and id then
+				local info = C_Container.GetContainerItemInfo(b.bag, b.slot)
+				local n = info and info.stackCount or 1
+				local ok, ah = pcall(A.GetAuctionPriceByItemID, "WowCompanion", id)
+				local ok2, vendor = pcall(A.GetVendorPriceByItemID, "WowCompanion", id)
+				local function money(c) return GetMoneyString and GetMoneyString(c, true) or tostring(c) end
+				if ok2 and vendor and vendor > 0 then
+					tip:AddDoubleLine("Vendor" .. (n > 1 and (" x" .. n) or ""), money(vendor * n), 1, 0.82, 0, 1, 1, 1)
+				end
+				if ok and ah and ah > 0 then
+					tip:AddDoubleLine("Auction" .. (n > 1 and (" x" .. n) or ""), money(ah * n), 1, 0.82, 0, 1, 1, 1)
+				elseif ok then
+					tip:AddLine("Auction: not seen in your scans", 0.6, 0.6, 0.6)
+				end
+				tip:Show()
+			end
 			tip:Show()
 		else
 			tip:Hide()
