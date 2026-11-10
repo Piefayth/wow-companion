@@ -28,7 +28,7 @@ pub static BEATING: AtomicBool = AtomicBool::new(true);
 
 fn bells(addons: &Path) -> [PathBuf; 2] {
     let signals = addons.join(crate::ADDON).join("Signals");
-    [signals.join("alive-a.wav"), signals.join("alive-b.wav")]
+    [signals.join("pulse-a.wav"), signals.join("pulse-b.wav")]
 }
 
 /// A quarter second of silence at 192 kHz stereo: short, so the game closes the

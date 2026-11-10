@@ -13,7 +13,9 @@
 -- nothing of Blizzard's is shown, hidden, moved or set; no secure code.
 
 local SIGNALS = "Interface\\AddOns\\WowCompanion\\Signals\\"
-local BELLS = { SIGNALS .. "alive-a.wav", SIGNALS .. "alive-b.wav" }
+-- new names: the first heartbeat used 10 s bells, which the game held open for
+-- good, so those files could never be replaced or removed
+local BELLS = { SIGNALS .. "pulse-a.wav", SIGNALS .. "pulse-b.wav" }
 local STALE = 12
 local ICON = "Interface\\Icons\\UI_Chat"
 
