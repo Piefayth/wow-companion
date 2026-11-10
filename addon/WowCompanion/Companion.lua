@@ -1102,7 +1102,7 @@ local preview
 local function buildPreview()
 	local made, frame = pcall(CreateFrame, "Frame", "WowCompanionPreview", UIParent, "BackdropTemplate")
 	if not made or not frame then return nil end
-	frame:SetSize(420, 150)
+	frame:SetSize(460, 150)
 	frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 16, 260)
 	frame:SetFrameStrata("DIALOG")
 	frame:SetClampedToScreen(true)
@@ -1142,6 +1142,12 @@ local function buildPreview()
 		frame:Hide()
 	end)
 	frame.send = send
+
+	-- the edit path is the voice: the preview cannot tell the PC anything, but
+	-- the PC remembers the line it put here
+	local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	hint:SetPoint("BOTTOMLEFT", 22, 22)
+	hint:SetText("To change it: \"edit, ...\"")
 
 	local cancel = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 	cancel:SetSize(110, 26)

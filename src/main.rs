@@ -38,6 +38,9 @@ const SLOTS_LOW: u32 = 8;
 static RELOAD_OFFERED: Mutex<String> = Mutex::new(String::new());
 // requests to the agent running right now; a restart waits for zero
 static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+/// The last chat line sent to the send preview, and when: "edit that, ..." is
+/// handed to the agent with it, so the player can reword a line by voice.
+static LAST_CHAT: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 /// How long after the last clip a request waits for the player to add to it:
 /// long enough to slip off the button and back on, short enough not to be felt.
 const GATHER: Duration = Duration::from_millis(500);
@@ -762,10 +765,25 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     let routed = channeled(&text);
                     if routed != text.trim() {
                         println!("  chat line: {routed}");
+                        *LAST_CHAT.lock().unwrap() = Some((routed.clone(), Instant::now()));
                         let _ = courier.send(dictation_inbox(&text, &routed));
                         let _ = courier.send(log_inbox("you", &format!("(to chat) {routed}"), None, None));
                         return;
                     }
+                    // "edit ..." / "change ..." soon after a chat line: the agent gets
+                    // the line, rewrites it and puts it back in the send preview
+                    let lowered = text.trim_start().to_lowercase();
+                    let text = match LAST_CHAT.lock().unwrap().as_ref() {
+                        Some((line, at)) if at.elapsed() < Duration::from_secs(300)
+                            && (lowered.starts_with("edit") || lowered.starts_with("change")
+                                || lowered.starts_with("reword") || lowered.starts_with("fix")) =>
+                        {
+                            format!("{text}
+
+(Editing the chat line still in the send preview: `{line}`. Rewrite it as asked, keep the slash command, and show it again with a lua step calling WowCompanion_Preview(line, heading, shownText).)")
+                        }
+                        _ => text,
+                    };
                     // a slot's request is marked with it, in the window and for the
                     // agent ("[L2] ..."), so both can tell the conversations apart
                     let text = if slot.is_empty() { text } else { format!("[{}] {}", slot.to_uppercase(), text) };
