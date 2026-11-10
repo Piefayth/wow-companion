@@ -229,3 +229,48 @@ marker:SetScript("OnEvent", function()
 		end
 	end
 end)
+
+-- Shortcuts while the Companion window has the controller's focus (the
+-- player, 2026-11-10): square cancels, triangle sends now, each acting on the
+-- newest message of the conversation in view. Live only while the UI is
+-- focused on our window (Blizzard's FrameControlsManager.isUIFocused and
+-- focusedFrame, read, never set): the d-pad and face buttons belong to the
+-- cursor then anyway, so nothing of the bars is taken. Set and cleared out of
+-- combat only; the window cannot hold focus in a fight.
+local function newest(state)
+	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
+	if not state and (core.transcribing or {})[view] then return { state = "hearing", slot = view } end
+	for i = #jobs, 1, -1 do
+		local job = jobs[i]
+		if job.slot == view and (state and job.state == state or (not state and job.state ~= "cancelling")) then
+			return job
+		end
+	end
+end
+local cancelKey = CreateFrame("Button", "WCJobsCancelKey", UIParent)
+cancelKey:SetScript("OnClick", function() cancel(newest()) end)
+local nowKey = CreateFrame("Button", "WCJobsNowKey", UIParent)
+nowKey:SetScript("OnClick", function()
+	local job = newest("queued")
+	if job then sendNow(job) end
+end)
+local keyOwner = CreateFrame("Frame", "WCJobsKeys", UIParent)
+local bound = false
+local elapsed = 0
+keyOwner:SetScript("OnUpdate", function(_, dt)
+	elapsed = elapsed + dt
+	if elapsed < 0.2 then return end
+	elapsed = 0
+	if InCombatLockdown() then return end
+	local mgr = GamepadMode and GamepadMode.FrameControlsManager
+	local window = core.logFrame and core.logFrame()
+	local focused = mgr and mgr.isUIFocused and window and mgr.focusedFrame == window and window:IsShown() or false
+	if focused and not bound then
+		SetOverrideBindingClick(keyOwner, true, "PAD3", "WCJobsCancelKey")
+		SetOverrideBindingClick(keyOwner, true, "PAD4", "WCJobsNowKey")
+		bound = true
+	elseif not focused and bound then
+		ClearOverrideBindings(keyOwner)
+		bound = false
+	end
+end)
