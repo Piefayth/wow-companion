@@ -5841,3 +5841,24 @@ else
 end
 
 end
+
+-- Vendors, mail, the bank and the auction house open Blizzard's bags
+-- (OpenAllBags, which announces itself as "ContainerFrame.OpenAllBags"). The
+-- player wants ours there, not both (2026-11-10): ours opens and Blizzard's is
+-- closed by its own CloseAllBags, a frame later, out of combat. An experiment:
+-- WowCompanionDB.suppressBlizzardBags = false turns it off if it ever taints.
+do
+	local function swap()
+		if WowCompanionDB.suppressBlizzardBags == false or InCombatLockdown() then return end
+		if not (WCBags and WCBags.ready) then return end
+		C_Timer.After(0, function()
+			if InCombatLockdown() then return end
+			pcall(CloseAllBags)
+			if not WCBags:IsShown() then WCBags:Open() end
+		end)
+	end
+	if EventRegistry and EventRegistry.RegisterCallback then
+		EventRegistry:RegisterCallback("ContainerFrame.OpenAllBags", swap, "WowCompanionBagSwap")
+	end
+end
+
