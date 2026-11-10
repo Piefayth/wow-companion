@@ -25,5 +25,6 @@ BagsInput.lua
 BagsMenu.lua
 Bags.lua
 BagsStandIn.lua
+Interact.lua
 Status.lua
 Modules.lua
