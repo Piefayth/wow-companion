@@ -988,9 +988,32 @@ local function safely(label, fn, ...)
 end
 
 
+-- What the poll has seen, exported at every reload, so a stuck channel can be
+-- read from the save file instead of guessed at.
+local channel = { polls = 0, heard = 0, caughtUp = 0 }
+
+-- Each message's bell rings for about two seconds. Missing that window once (a
+-- hitch, a locked file) used to leave the addon waiting on that slot forever
+-- while the companion moved on to the next ones: every later message lost until
+-- a reload, which is what "broken again" was. So the next slot's bell is checked
+-- too: if it rings, the missed slot (still on disk, never loaded) is taken first,
+-- then this one. Late and in order, never lost.
 local function poll()
-	safely("bell poll", listen, bellPath(nextSlot), function(rang)
-		if rang then
+	channel.polls = channel.polls + 1
+	channel.lastPoll = time()
+	channel.waitingOn = nextSlot
+	local waiting = nextSlot
+	safely("bell poll", listen, bellPath(waiting), function(rang)
+		if rang and nextSlot == waiting then
+			channel.heard = channel.heard + 1
+			safely("a message from the companion", receive)
+		end
+	end)
+	safely("bell poll ahead", listen, bellPath(waiting + 1), function(rang)
+		if rang and nextSlot == waiting then
+			channel.caughtUp = channel.caughtUp + 1
+			channel.lastCaughtUp = ("slot %d missed, taken late at %s"):format(waiting, date("%H:%M:%S"))
+			safely("a missed message from the companion", receive)
 			safely("a message from the companion", receive)
 		end
 	end)
@@ -3065,6 +3088,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 			end
 			WowCompanionDB.slotCount = seen
 		end)
+		WowCompanionDB.channel = channel
 	elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
 		-- taint cascades, and the first block names the real culprit, so number them
 		-- rather than letting each one overwrite the last
@@ -3304,5 +3328,116 @@ do
 	boot:RegisterEvent("PLAYER_LOGIN")
 	boot:SetScript("OnEvent", function()
 		if WowCompanionDB and WowCompanionDB.pins and #WowCompanionDB.pins > 0 then start() end
+	end)
+end
+
+-- The same pins on the world map. Not a data provider: AcquirePin and
+-- AddDataProvider reach into Blizzard's map tables, and writing into those from
+-- insecure code is the kind of thing that taints. Instead one frame of ours rides
+-- on the map's canvas (WorldMapFrame:GetCanvas(), the ScrollContainer child that
+-- pans and zooms), and each pin is placed by its position on whatever map is shown.
+-- A pin given on a zone map is carried to the shown map through world yards:
+-- GetWorldPosFromMapPos, then GetMapPosFromWorldPos(continent, pos, shownMap).
+do
+	local layer, pool, lastKey = nil, {}, nil
+	local function piece(i)
+		if pool[i] then return pool[i] end
+		local function disc(level, sub)
+			local t = layer:CreateTexture(nil, level, nil, sub)
+			t:SetColorTexture(1, 1, 1, 1)
+			local m = layer:CreateMaskTexture()
+			m:SetAtlas("CircleMask")
+			m:SetAllPoints(t)
+			t:AddMaskTexture(m)
+			return t
+		end
+		local p = { area = disc("ARTWORK", 0), edge = disc("OVERLAY", 0), dot = disc("OVERLAY", 1) }
+		p.edge:SetVertexColor(0, 0, 0, 0.8)
+		pool[i] = p
+		return p
+	end
+	local function hideFrom(n)
+		for i = n, #pool do
+			local p = pool[i]
+			p.area:Hide(); p.dot:Hide(); p.edge:Hide()
+		end
+	end
+	local function onMap(pin, shown)
+		local ok, cont, world = pcall(C_Map.GetWorldPosFromMapPos, pin.map,
+			CreateVector2D((pin.x or 0) / 100, (pin.y or 0) / 100))
+		if not (ok and cont and world) then return end
+		local okPos, mapID, pos = pcall(C_Map.GetMapPosFromWorldPos, cont, world, shown)
+		if not (okPos and pos and mapID == shown) then return end
+		local x, y = pos:GetXY()
+		local rx
+		if (pin.r or 0) > 0 then
+			-- the radius in map units: a point r yards north, measured on this map
+			local n, w = world:GetXY()
+			local okR, _, edge = pcall(C_Map.GetMapPosFromWorldPos, cont, CreateVector2D(n + pin.r, w), shown)
+			if okR and edge then
+				local ex, ey = edge:GetXY()
+				rx = math.sqrt((ex - x) ^ 2 + (ey - y) ^ 2)
+			end
+		end
+		return x, y, rx
+	end
+	local function draw()
+		local map = WorldMapFrame
+		local pins = WowCompanionDB and WowCompanionDB.pins
+		if not (map and map:IsShown() and pins and #pins > 0) then hideFrom(1) return end
+		local shown = map:GetMapID()
+		local canvas = map:GetCanvas()
+		local w, h = canvas:GetWidth(), canvas:GetHeight()
+		-- dots keep their size on screen while the canvas zooms
+		local scale = map.GetCanvasScale and map:GetCanvasScale() or 1
+		if not scale or scale <= 0 then scale = 1 end
+		local n = 0
+		for _, pin in ipairs(pins) do
+			local x, y, rx = onMap(pin, shown)
+			if x then
+				n = n + 1
+				local p = piece(n)
+				local c = pin.color or { 1, 0.82, 0 }
+				local px, py = x * w, -y * h
+				if rx and rx * w > 4 / scale then
+					p.area:ClearAllPoints()
+					p.area:SetPoint("CENTER", layer, "TOPLEFT", px, py)
+					p.area:SetSize(rx * w * 2, rx * w * 2)
+					p.area:SetVertexColor(c[1], c[2], c[3], 0.3)
+					p.area:Show()
+				else
+					p.area:Hide()
+				end
+				p.dot:ClearAllPoints(); p.dot:SetPoint("CENTER", layer, "TOPLEFT", px, py)
+				p.dot:SetSize(12 / scale, 12 / scale)
+				p.dot:SetVertexColor(c[1], c[2], c[3], 1)
+				p.edge:ClearAllPoints(); p.edge:SetPoint("CENTER", p.dot, "CENTER")
+				p.edge:SetSize(16 / scale, 16 / scale)
+				p.dot:Show(); p.edge:Show()
+			end
+		end
+		hideFrom(n + 1)
+	end
+	local function attach()
+		if layer or not (WorldMapFrame and WorldMapFrame.GetCanvas) then return end
+		local canvas = WorldMapFrame:GetCanvas()
+		layer = CreateFrame("Frame", nil, canvas)
+		layer:SetAllPoints(canvas)
+		-- above the map's art, below Blizzard's own pins' tooltips
+		layer:SetFrameLevel(canvas:GetFrameLevel() + 20)
+		local elapsed = 0
+		layer:SetScript("OnUpdate", function(_, dt)
+			elapsed = elapsed + dt
+			if elapsed < 0.1 then return end
+			elapsed = 0
+			local ok, err = pcall(draw)
+			WCPins.mapError = not ok and tostring(err) or nil
+		end)
+	end
+	local f = CreateFrame("Frame")
+	f:RegisterEvent("PLAYER_LOGIN")
+	f:RegisterEvent("ADDON_LOADED")
+	f:SetScript("OnEvent", function(_, event, name)
+		if event == "PLAYER_LOGIN" or name == "Blizzard_WorldMap" then attach() end
 	end)
 end
