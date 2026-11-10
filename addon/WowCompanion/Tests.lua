@@ -261,7 +261,12 @@ if hooksecurefunc and DisplayInterfaceActionBlockedMessage then
 	hooksecurefunc("DisplayInterfaceActionBlockedMessage", function()
 		WowCompanionDB.blockedNotices = WowCompanionDB.blockedNotices or {}
 		local stamp = date("%H:%M:%S")
-		table.insert(WowCompanionDB.blockedNotices, stamp)
+		-- who asked: SecureHelper's wrapped calls (FrameHidden, MarkFrame*) fail
+		-- here without ADDON_ACTION_BLOCKED, so the stack is the only name for it
+		local stack = debugstack and debugstack(2, 8, 0) or ""
+		local ours = stack:match("(WowCompanion[%w_]*[/%.%w_]*:%d+)")
+		table.insert(WowCompanionDB.blockedNotices, stamp .. (ours and (" " .. ours) or ""))
+		while #WowCompanionDB.blockedNotices > 40 do table.remove(WowCompanionDB.blockedNotices, 1) end
 		if placeEntry then
 			placeEntry.notices = (placeEntry.notices or 0) + 1
 		end
