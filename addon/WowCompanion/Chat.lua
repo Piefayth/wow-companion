@@ -381,11 +381,6 @@ local function bindPreview(frame)
 	ClearOverrideBindings(frame)
 	SetOverrideBindingClick(frame, true, "PAD1", "WowCompanionPreviewSend", "LeftButton")
 	SetOverrideBindingClick(frame, true, "PAD2", "WowCompanionPreviewCancel", "LeftButton")
-	-- a dictated line (L1+R1, ChatWheel.lua): the d-pad turns its channel
-	if frame.dictated then
-		SetOverrideBindingClick(frame, true, "PADDLEFT", "WowCompanionPreviewPrev", "LeftButton")
-		SetOverrideBindingClick(frame, true, "PADDRIGHT", "WowCompanionPreviewNext", "LeftButton")
-	end
 	return true
 end
 function WowCompanion_PreviewTap()
@@ -409,18 +404,6 @@ end
 -- Works in combat: nothing in the window is secure. Returns false and why when
 -- the line is not one the Send press can send.
 local showPreview
--- The channel of a dictated line, turned in the preview (the player, 2026-11-10:
--- choosing on the hold was too much for one hand). Plain buttons, bound to the
--- d-pad while the preview is up out of combat.
-local function turnChannel(step)
-	if not (preview and preview.dictated and WC.ChatChannel and WC.ChatChannel.Cycle) then return end
-	local slash = WC.ChatChannel.Cycle(step)
-	showPreview(slash .. " " .. preview.dictated, "Send to " .. WC.ChatChannel.Name(), preview.dictated, preview.dictated)
-end
-for name, step in pairs({ WowCompanionPreviewPrev = -1, WowCompanionPreviewNext = 1 }) do
-	local b = _G[name] or CreateFrame("Button", name, UIParent)
-	b:SetScript("OnClick", function() turnChannel(step) end)
-end
 function showPreview(line, heading, shown, dictated)
 	local out, why = parseLine(line or "")
 	if not out then
@@ -451,8 +434,7 @@ function showPreview(line, heading, shown, dictated)
 	if not preview:IsShown() then preview:Show() end
 	local glyph = WowCompanion_Glyph or function(k) return k end
 	if bindPreview(preview) then
-		preview.hint:SetText(((dictated and "%s %s channel   " or "") .. "%s send   %s don't send"):format(
-			unpack(dictated and { glyph("PADDLEFT"), glyph("PADDRIGHT"), glyph("PAD1"), glyph("PAD2") } or { glyph("PAD1"), glyph("PAD2") })))
+		preview.hint:SetText(("%s send   %s don't send"):format(glyph("PAD1"), glyph("PAD2")))
 	else
 		preview.hint:SetText(("In combat: tap %s to send   \"edit, ...\" to change"):format(glyph(WowCompanion_TalkKey or "PADSOCIAL")))
 	end
