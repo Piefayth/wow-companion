@@ -26,8 +26,9 @@ These outrank any item below.
   borders, backings, fonts and atlases (tooltip border, dialog background, the
   gamepad art), never flat colour boxes. Read how Blizzard builds the nearest
   equivalent in `docs/wow-ui-source` and copy it.
-- **Never take screenshots to get information** (the player, 2026-11-10). Only
-  when they explicitly ask the agent to look at their screen.
+- **API first, screenshots last** (the player, 2026-11-10): get information from
+  the API whenever possible; a screenshot only with explicit permission and when
+  there is no other way.
 - **Nothing of ours opens itself.** The Companion window opens only when the player
   asks (minus tap, `/wc log`); news goes to the bottom-left toast.
 
