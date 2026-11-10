@@ -73,8 +73,25 @@ def send_lua(code):
                    stdout=subprocess.DEVNULL)
 
 
+def watch(seconds, out):
+    """Poll the corner for up to `seconds`; write the payload (or the last
+    error) to `out`. Run detached, beside an answer whose lua step draws it."""
+    end = time.time() + seconds
+    err = "nothing seen"
+    while time.time() < end:
+        payload, err = decode(*capture())
+        if payload is not None:
+            open(out, "wb").write(payload)
+            return 0
+        time.sleep(0.5)
+    open(out, "w", encoding="utf-8").write("STRIP FAILED: " + err)
+    return 1
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
+    if args[:1] == ["--watch"]:
+        sys.exit(watch(float(args[1]), args[2]))
     if args[:1] == ["--send"]:
         send_lua(args[1])
         time.sleep(float(args[2]) if len(args) > 2 else 2.5)
