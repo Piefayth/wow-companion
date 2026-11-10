@@ -117,51 +117,65 @@ refresh = function()
 	-- used to carry are lines at the end of the conversation, where the reply
 	-- will appear: the agent working, then your next clip being heard.
 	local transcript0 = frame.messages
+	-- each state laid out as a message (the player, 2026-11-10: "spaced like a
+	-- message"): the name and time as a header, what is happening under it
 	local ghosts = transcript0.jobsGhosts
 	if not ghosts then
 		ghosts = {}
+		local body = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 		for i = 1, 2 do
-			local fs = transcript0.content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-			fs:SetJustifyH("LEFT")
-			fs:SetWordWrap(false)
-			fs:Hide()
-			ghosts[i] = fs
+			local head = transcript0.content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+			head:SetJustifyH("LEFT")
+			local line = transcript0.content:CreateFontString(nil, "OVERLAY", body)
+			line:SetJustifyH("LEFT")
+			line:SetWordWrap(false)
+			line:SetTextColor(0.6, 0.6, 0.6)
+			head:Hide() line:Hide()
+			ghosts[i] = { head = head, line = line }
 		end
 		transcript0.jobsGhosts = ghosts
 	end
-	local texts = {}
+	local items = {}
 	local dots = ("."):rep(math.floor(now * 2) % 4)
+	local stamp = "  |cff5c6370" .. date("%H:%M") .. "|r"
 	local entry = working[view]
 	if entry then
 		local doing = tostring(entry.text or "thinking"):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-		texts[#texts + 1] = ("|cffffe08aClaude|r  |cff808080working %ds  %s%s|r"):format(now - (entry.since or now), doing, dots)
+		items[#items + 1] = { "|cffffd100Claude|r" .. stamp, ("%s%s  %ds"):format(doing, dots, now - (entry.since or now)) }
 	end
 	if since then
-		texts[#texts + 1] = ("|cff9ad5ffYou|r  |cff808080hearing you%s  %ds|r"):format(dots, now - since)
+		items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp, ("hearing you%s  %ds"):format(dots, now - since), hearing = true }
 	end
 	local base = transcript0.height or 0
 	local width = transcript0.Width and transcript0:Width() or 300
 	local y = base
-	for i, fs in ipairs(ghosts) do
-		local text = texts[i]
-		if text then
-			y = y + 10
-			fs:ClearAllPoints()
-			fs:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -y)
-			fs:SetWidth(math.max(50, width - 30))
-			fs:SetText(text)
-			fs:Show()
-			fs.y = y
-			y = y + 14
+	local hearingLine
+	for i, g in ipairs(ghosts) do
+		local item = items[i]
+		if item then
+			y = y + 14 -- TURN_GAP, as Transcript.lua spaces a new message
+			g.head:ClearAllPoints()
+			g.head:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -y)
+			g.head:SetText(item[1])
+			g.head:Show()
+			g.head.y = y
+			y = y + g.head:GetStringHeight() + 3
+			g.line:ClearAllPoints()
+			g.line:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -y)
+			g.line:SetWidth(math.max(50, width - 4))
+			g.line:SetText(item[2])
+			g.line:Show()
+			y = y + g.line:GetStringHeight()
+			if item.hearing then hearingLine = g.head end
 		else
-			fs:Hide()
+			g.head:Hide()
+			g.line:Hide()
 		end
 	end
 	local scroll = transcript0.scroll
 	local following = scroll:GetVerticalScroll() >= scroll:GetVerticalScrollRange() - 30
 	transcript0.content:SetHeight(math.max(y, base, 1))
 	if following and y > base then scroll:SetVerticalScroll(scroll:GetVerticalScrollRange()) end
-	local hearingLine = since and ghosts[#texts]
 	if target and hearingLine and hearingLine:IsShown() then
 		statusX.job = target
 		statusX:SetParent(transcript0.content)
