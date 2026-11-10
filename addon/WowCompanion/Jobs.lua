@@ -28,6 +28,8 @@ local function command(verb, slot, req)
 end
 
 local refresh
+local queuedRow
+WC.Jobs = WC.Jobs or {}
 
 -- small icon buttons on the lines that already say what is going on (the
 -- player, 2026-11-10: "you could have just used little smaller icons and the
@@ -80,17 +82,82 @@ local function icon(parent, kind, tip, onClick)
 	return b
 end
 
+-- A cancel is only a request until the companion answers (the player,
+-- 2026-11-10: "I'd like to truly know that it actually got cancelled"): the
+-- message's header says "cancelling" at once, then what the PC answered, or
+-- that it never did. The message stays as a tombstone, greyed
+local CONFIRM_WITHIN = 12
+local GREY, GOOD, BAD = "|cff9d9d9d", "|cff7fd27f", "|cffff7777"
+local function mark(transcript, row, status, grey)
+	if transcript and row and WC.Transcript.markRow then
+		pcall(WC.Transcript.markRow, transcript, row, status, grey)
+	end
+end
+local hearingAsked = {} -- slot -> GetTime() of a hearing cancel not yet answered
+local function note(slot, text)
+	if core.remember then core.remember("note", text, nil, slot) end
+end
 local function cancel(job)
 	if not job then return end
 	if job.state == "hearing" then
 		command("hear", job.slot)
 		if core.setTranscribing then core.setTranscribing(job.slot, false) end
+		local asked = GetTime()
+		hearingAsked[job.slot] = asked
+		C_Timer.After(CONFIRM_WITHIN, function()
+			if hearingAsked[job.slot] == asked then
+				hearingAsked[job.slot] = nil
+				note(job.slot, BAD .. "Cancel not confirmed: the companion never answered. Your words may still be sent.|r")
+			end
+		end)
 	else
-		command("cancel", job.slot, job.req)
 		local live = find(job.req)
-		if live then live.state = "cancelling" end
+		if not live or live.state == "cancelling" then return end
+		local frame = core.logFrame and core.logFrame()
+		local transcript = frame and frame.messages
+		live.cancelRow = live.state == "queued" and live.queueId and transcript and queuedRow(transcript, live.queueId) or live.row
+		live.cancelIn = transcript
+		live.state = "cancelling"
+		command("cancel", job.slot, job.req)
+		mark(transcript, live.cancelRow, "  " .. GREY .. "cancelling...|r")
+		C_Timer.After(CONFIRM_WITHIN, function()
+			if live.state == "cancelling" and find(live.req) then
+				mark(live.cancelIn, live.cancelRow, "  " .. BAD .. "cancel not confirmed|r")
+				live.state = live.queueId and "queued" or "working"
+				refresh()
+			end
+		end)
 	end
 	refresh()
+end
+
+-- the companion's answer to a cancel (Companion.lua handlers.stopped)
+function WC.Jobs.Stopped(inbox)
+	local slot = inbox.slot or ""
+	if inbox.hearing then
+		local asked = hearingAsked[slot]
+		hearingAsked[slot] = nil
+		if asked or inbox.nothing then
+			note(slot, inbox.nothing and (GREY .. "Nothing left to cancel: that message was already answered.|r")
+				or (GOOD .. "Cancelled|r " .. GREY .. "before it was sent.|r"))
+		end
+		return
+	end
+	local job = inbox.req and find(inbox.req)
+	if not job then return end
+	local frame = core.logFrame and core.logFrame()
+	local transcript = job.cancelIn or (frame and frame.messages)
+	local row = job.cancelRow or job.row
+	if not row and job.queueId and transcript then row = queuedRow(transcript, job.queueId) end
+	if inbox.tooLate then
+		mark(transcript, row, "  " .. BAD .. "too late: already answered|r")
+	elseif inbox.sendNow then
+		-- not a cancel of this message: it was interrupted for the next one
+		mark(transcript, row, "  " .. GREY .. "interrupted|r")
+	else
+		mark(transcript, row, "  " .. GOOD .. "cancelled|r", true)
+	end
+	if job.queueId and WC.Transcript.unqueueId then WC.Transcript.unqueueId(slot, job.queueId) end
 end
 local function sendNow(job)
 	if not job then return end
@@ -108,7 +175,7 @@ end
 local statusX
 local pairsPool = {}
 
-local function queuedRow(transcript, queueId)
+function queuedRow(transcript, queueId)
 	for _, row in ipairs(transcript.rows or {}) do
 		if row.queued == queueId and row.fs:IsShown() then return row end
 	end
@@ -352,7 +419,6 @@ refresh = function()
 	end
 end
 
-WC.Jobs = {}
 WC.Jobs.Refresh = function() pcall(refresh) if WC.Jobs.Chain then pcall(WC.Jobs.Chain) end end
 
 -- a log line from the companion: a request's own line carries `req`

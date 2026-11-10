@@ -39,11 +39,11 @@ local function paintQueued()
 	local turn = math.floor(GetTime() * 2) % #SPIN + 1
 	local alive = {}
 	for _, row in ipairs(queuedRows) do
-		if queuedLive[row.queued] and row.fs:IsShown() then
+		if queuedLive[row.queued] and row.fs:IsShown() and not row.status then
 			row.fs:SetText(row.base .. "  |cff9d9d9dqueued" .. SPIN[turn] .. "|r")
 			alive[#alive + 1] = row
 		else
-			row.fs:SetText(row.base)
+			row.fs:SetText(row.base .. (row.status or ""))
 		end
 	end
 	queuedRows = alive
@@ -70,6 +70,35 @@ local function unqueue(slot, all)
 		if not all then break end
 	end
 	paintQueued()
+end
+
+-- one queued request by its id (a cancelled one, not always the oldest)
+local function unqueueId(slot, id)
+	local list = queuedBySlot[slot or ""]
+	for i = #(list or {}), 1, -1 do
+		if list[i] == id then table.remove(list, i) end
+	end
+	queuedLive[id] = nil
+	paintQueued()
+end
+
+-- A message's state after its header (the player, 2026-11-10: a cancel must
+-- leave a tombstone and say whether it really happened). `grey` dims the
+-- message's own lines too
+local function markRow(transcript, row, status, grey)
+	row.base = row.base or row.fs:GetText()
+	row.status = status
+	row.fs:SetText(row.base .. (status or ""))
+	if grey then
+		local found
+		for _, r in ipairs(transcript.rows) do
+			if r == row then found = true
+			elseif found then
+				if r.header then break end
+				r.fs:SetTextColor(0.45, 0.45, 0.45)
+			end
+		end
+	end
 end
 
 -- the conversations with requests still queued, for the board's resync
@@ -242,6 +271,7 @@ function Transcript:Add(who, text, continued, at, queued)
 			local row = self:Row("GameFontNormalSmall", header, 0, TURN_GAP)
 			-- your own message's header carries its controls (Jobs.lua)
 			if who == "you" then row.you = true end
+			row.header = true
 			if queued and queuedLive[queued] then
 				row.base, row.queued = header, queued
 				watchQueued(row)
@@ -295,3 +325,5 @@ WC.Transcript.newTranscript = newTranscript
 WC.Transcript.queueRequest = queueRequest
 WC.Transcript.queuedSlots = queuedSlots
 WC.Transcript.unqueue = unqueue
+WC.Transcript.unqueueId = unqueueId
+WC.Transcript.markRow = markRow

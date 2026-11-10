@@ -310,8 +310,21 @@ pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool
         end_running(slot);
         format!("{{ kind = \"stopped\", slot = {}, req = {req}, dropped = false }}", lua_string(slot))
     } else {
+        let waiting = WAITING
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .any(|(at, id, _)| at == slot && *id == req);
+        // kept either way: a request just starting is dropped when it gets there
         CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push(req);
-        format!("{{ kind = \"stopped\", slot = {}, req = {req}, wasQueued = true }}", lua_string(slot))
+        if waiting {
+            format!("{{ kind = \"stopped\", slot = {}, req = {req}, wasQueued = true }}", lua_string(slot))
+        } else {
+            // neither waiting nor running: most likely answered already, and the
+            // game must say so rather than claim it cancelled (the player, 2026-11-10)
+            println!("  request {req} is neither waiting nor running: too late");
+            format!("{{ kind = \"stopped\", slot = {}, req = {req}, wasQueued = true, tooLate = true }}", lua_string(slot))
+        }
     };
     if let Err(err) = send_inbox(addons, &message) {
         eprintln!("  telling the game failed: {err}");
@@ -356,6 +369,7 @@ pub(crate) fn cancel_hearing(addons: &Path, slot: &str, press: u128) {
         }
     }
     println!("  nothing to cancel for that press");
+    let _ = send_inbox(addons, &format!("{{ kind = \"stopped\", slot = {}, hearing = true, nothing = true }}", lua_string(slot)));
 }
 static STOPS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::new());
 /// Per conversation, how many times its running request was ended (by Stop or

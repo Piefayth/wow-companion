@@ -972,20 +972,24 @@ end
 function handlers.stopped(inbox)
 	local slot = inbox.slot or ""
 	setTranscribing(slot, false)
+	-- the cancelled message keeps its line, marked with what the PC answered
+	if WC.Jobs and WC.Jobs.Stopped then pcall(WC.Jobs.Stopped, inbox) end
 	if inbox.hearing then
 		return "stopped"
 	end
 	if inbox.req and inbox.wasQueued then
-		-- one queued message dropped; the running one carries on
-		unqueue(slot)
+		-- one queued message dropped (Jobs.Stopped took its queued mark off);
+		-- the running one carries on
 		if WC.Jobs then WC.Jobs.Gone(inbox.req, slot) end
 		return "stopped"
 	end
 	setPending(nil, slot)
 	if WC.Jobs then WC.Jobs.Gone(inbox.req, slot, inbox.dropped ~= false and not inbox.req) end
 	if inbox.req then
-		remember("claude", inbox.dropped == false and inbox.sendNow and "Interrupted. Sending your next message now."
-			or "Cancelled.", nil, slot)
+		-- a cancel shows on the message itself; only an interrupt says more
+		if inbox.dropped == false and inbox.sendNow then
+			remember("claude", "Interrupted. Sending your next message now.", nil, slot)
+		end
 	elseif inbox.dropped == false then
 		remember("claude", "Interrupted. Sending your next message now.", nil, slot)
 	else
