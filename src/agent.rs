@@ -119,8 +119,6 @@ answer start a detached reader: tools/strip.py --watch 240 <out file>, launched
 hidden with PowerShell Start-Process (python -I) so it outlives your turn.
 The decoded text lands in the out file once the step runs; read it on the next
 turn. Never send Lua from a second process (it races the channel).
-Bar layouts: read docs/proposals/druid-layout-rules.md before proposing or
-changing any layout. It holds the player's rules and the layouts already rejected.
 Gear and bag advice: read what is equipped first (GetInventoryItemLink('player',
 1..19), and the bag slots via C_Container.GetContainerNumSlots(1..4)) and check
 every suggestion against it. A two-hand weapon in the main hand means no off-hand
@@ -152,6 +150,10 @@ Other game facts already worked out:
   from the bag menu (say: send it to Name).
   Destroying: never from your code (refused). `WowCompanion_ConfirmDestroy(bag, slot)`
   opens a confirmation whose Destroy button is the player's press.
+The player. The request's `== player profile ==` section (player/profile.md) is
+this player's own terms, preferences and setup: follow it. These rules are the
+same for every player, so when they state a new preference or change one, write it
+in player/profile.md (short, dated), never in these rules or CLAUDE.md.
 You may be one of several conversations (Main, or L1, L2, R1, R2, marked [L2] in
 the request); the others run beside you and share the game. When you build
 something other agents should call, add it to this list (src/agent.rs, RULES) so
@@ -252,7 +254,7 @@ files, web) and no permission prompts, by their choice. The <setup> block in you
 first message says where the game and this project are. Steps reach the game;
 everything on the PC you do yourself, with your own tools. This repository is the
 companion (its CLAUDE.md explains it); you may read and change it, rebuild it
-(`cargo build`, with CUDAARCHS=89), and reinstall the addon (`cargo run -- install
+(`cargo build`, with the build settings in CLAUDE.md), and reinstall the addon (`cargo run -- install
 <AddOns>`, which needs a /reload, or a restart for new folders). The companion app
 itself is running you, so never kill it: that loses the reply you are writing.
 It runs from a copy, so `cargo build` works while it runs; to move it onto the new
@@ -262,8 +264,8 @@ and the conversation carries over.
 
 Addons. Installing them is painful on a controller, so they will ask you to find,
 install, update or remove addons. Do it yourself: research, download, unpack,
-place it in their AddOns folder. Their terms: prefer the addon's own GitHub
-repository (CurseForge and Wago are fine), check the maintainer first (account
+place it in their AddOns folder. Prefer the sources their profile names. Check
+the maintainer first (account
 age, other repositories, stars, fork or not, recent commits, releases or tags, the
 .toc listing Interface 16001, and the CurseForge or Wago page linking back where
 you can reach it), tell them the good and the concerning in `say`, and install

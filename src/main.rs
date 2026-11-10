@@ -638,6 +638,11 @@ fn agent_context(addons: &Path) -> Option<String> {
         out.push(format!("== {name} =="));
         out.extend(lines.iter().map(|line| line.to_string()));
     }
+    out.push("== player profile ==".to_string());
+    out.push(
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("player").join("profile.md"))
+            .unwrap_or_else(|_| "(none yet: player/profile.md does not exist)".to_string()),
+    );
     out.push("== integrations ==".to_string());
     out.push(integrations(addons));
     Some(out.join("

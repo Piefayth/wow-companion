@@ -7,31 +7,12 @@ CLAUDE.md is the truth about how things work; this file is what we do next.
 
 ## The player's standing terms
 
-These outrank any item below.
+They outrank any item below, and live in `player/profile.md` (sent with every
+agent request). One more, for whoever works on the companion itself:
 
-- **Controller first; voice is the last resort.** Prefer a setting, an existing
-  addon, or a controller-native path. Speech is for when the game offers none.
 - **Don't reinvent what Claude Code already has.** The agent is Claude Code; give it
   tools and instructions. Write code only for the channel, the pad, the voice, and
   fences that must hold whatever the model decides.
-- **The agent is at full strength** (every tool, no prompts), by the player's choice.
-- **The whole game, not one system.** The player engages with most of it and will
-  want many things.
-- **Never play for them.** Casting, targeting, moving and the final step that spends
-  or sends (buy, post, mail gold, send chat) are the player's press.
-- **Addons are vetted before install** (maintainer, files, the `.toc`), and installed
-  only after a yes.
-- **Ask before restarting the game; restart the companion only between requests.**
-- **All UI we build looks like Blizzard's** (the player, 2026-11-09): the game's own
-  borders, backings, fonts and atlases (tooltip border, dialog background, the
-  gamepad art), never flat colour boxes. Read how Blizzard builds the nearest
-  equivalent in `docs/wow-ui-source` and copy it.
-- **API first; screenshots to read our own displays** (the player, 2026-11-10):
-  information comes from the API; when it is only on screen (our frame, an addon's)
-  and a reload is the alternative, draw it and read it by screenshot. Anything
-  else on the player's screen only when they ask.
-- **Nothing of ours opens itself.** The Companion window opens only when the player
-  asks (minus tap, `/wc log`); news goes to the bottom-left toast.
 
 ## Who does what
 

@@ -16,12 +16,14 @@ acting for them.
 **What we do next is `docs/PLAN.md`**, with the
 player's standing terms. Read it before starting anything sizeable.
 
-## The player's terms (in full in PLAN.md)
+## The player
 
-Controller first, voice the last resort. Don't reinvent what Claude Code has. Never
-play for them: casting, targeting, moving, and the step that spends or sends are
-their press. Addons are vetted before install and installed only after a yes. Ask
-before restarting the game. The whole game, not one system.
+**`player/profile.md` is this player's terms, preferences and setup**, sent with
+every agent request. This file and the agent's rules are the same for every
+player: a new preference goes in the profile, never here. Product rules that hold
+for everyone: never play for them (casting, targeting, moving, and the step that
+spends or sends are their press); addons are vetted and installed only after a
+yes; don't reinvent what Claude Code has.
 
 ## Shape
 
