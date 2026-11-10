@@ -112,9 +112,10 @@ impl Setup {
 }
 
 impl eframe::App for Setup {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        ctx.request_repaint_after(Duration::from_millis(50));
-        egui::CentralPanel::default().show(ctx, |ui| {
+    // eframe 0.37 hands the app its root Ui instead of a Context
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        ui.ctx().request_repaint_after(Duration::from_millis(50));
+        egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.heading("Game");
                 ui.label("The game's Interface\\AddOns folder (World of Warcraft\\_forever_\\Interface\\AddOns):");
