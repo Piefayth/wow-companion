@@ -248,6 +248,20 @@ pub fn listen(
     println!("loading {path}");
     let whisper = WhisperContext::new_with_params(path, WhisperContextParameters::default())
         .map_err(|err| io::Error::other(format!("{err:?}")))?;
+    let (jobs, results) = {
+        let (jobs, inbox) = std::sync::mpsc::channel::<Job>();
+        let (outbox, results) = std::sync::mpsc::channel::<Done>();
+        std::thread::spawn(move || {
+            for job in inbox {
+                let result = transcribe(&whisper, &job.clip, &job.prompt);
+                let done = Done { role: job.role, level: job.level, seconds: job.seconds, result };
+                if outbox.send(done).is_err() {
+                    break;
+                }
+            }
+        });
+        (jobs, results)
+    };
 
     for (role, press) in &bindings {
         println!("ready: hold {press} for {role}");
@@ -284,6 +298,46 @@ pub fn listen(
     let mut retry_mic = Instant::now();
     let mut healed_at: Option<Instant> = None;
     loop {
+        // transcripts finished by the Whisper thread, delivered in order
+        while let Ok(done) = results.try_recv() {
+            let Done { role, level, seconds, result } = done;
+            let role = role.as_str();
+            match result {
+                        Ok(text) if text.is_empty() => {
+                            println!("heard nothing (level {level:.4})");
+                            let _ = heard("notice", "I heard nothing in that clip, so nothing was sent.");
+                        }
+                        // Whisper filling silence with its own prompt: nothing but the
+                        // echo, or an echo in a clip too quiet to hold speech (a dead
+                        // mic measured 0.0011; speech here is 0.016 and up)
+                        Ok(text) if without_echo(&text).is_empty()
+                            || (level < SILENCE && without_echo(&text) != text.trim()) => {
+                            println!("heard only the prompt echoed (level {level:.4}); ignored {text:?}");
+                            let _ = heard("notice", "That clip held no words I could make out, so nothing was sent.");
+                        }
+                        Ok(text) if level < SILENCE && phantom(&text) => {
+                            println!("heard only silence (level {level:.4}); ignored {text:?}");
+                            let _ = heard("notice", &format!(
+                                "That clip sounded like silence (I made out only {text:?}), so nothing was sent."
+                            ));
+                        }
+                        Ok(text) => {
+                            // Whisper sometimes glues its prompt onto real speech
+                            // ("Commands: and, uh, ..."): keep the speech
+                            let text = without_echo(&text);
+                            println!("heard ({seconds:.1}s, {role}, level {level:.4}): {text}");
+                            // a failed delivery must not kill the loop: the game may
+                            // be closed, or every slot spent until the next reload
+                            if let Err(err) = heard(role, &text) {
+                                eprintln!("  not delivered: {err}");
+                            }
+                        }
+                        Err(err) => {
+                            eprintln!("transcribe failed: {err}");
+                            let _ = heard("notice", &format!("I could not transcribe that clip ({err}), so nothing was sent."));
+                        }
+            }
+        }
         if SHUTDOWN.load(Ordering::SeqCst) {
             // close the mic properly before the next copy opens its own
             drop(microphone.take());
@@ -404,41 +458,11 @@ pub fn listen(
                     // said at once, before Whisper runs: the player sees the clip
                     // arrived instead of wondering whether it was dropped
                     let _ = heard(&format!("{role} heard"), "");
-                    match transcribe(&whisper, &clip, &prompt(&vocabulary())) {
-                        Ok(text) if text.is_empty() => {
-                            println!("heard nothing (level {level:.4})");
-                            let _ = heard("notice", "I heard nothing in that clip, so nothing was sent.");
-                        }
-                        // Whisper filling silence with its own prompt: nothing but the
-                        // echo, or an echo in a clip too quiet to hold speech (a dead
-                        // mic measured 0.0011; speech here is 0.016 and up)
-                        Ok(text) if without_echo(&text).is_empty()
-                            || (level < SILENCE && without_echo(&text) != text.trim()) => {
-                            println!("heard only the prompt echoed (level {level:.4}); ignored {text:?}");
-                            let _ = heard("notice", "That clip held no words I could make out, so nothing was sent.");
-                        }
-                        Ok(text) if level < SILENCE && phantom(&text) => {
-                            println!("heard only silence (level {level:.4}); ignored {text:?}");
-                            let _ = heard("notice", &format!(
-                                "That clip sounded like silence (I made out only {text:?}), so nothing was sent."
-                            ));
-                        }
-                        Ok(text) => {
-                            // Whisper sometimes glues its prompt onto real speech
-                            // ("Commands: and, uh, ..."): keep the speech
-                            let text = without_echo(&text);
-                            println!("heard ({seconds:.1}s, {role}, level {level:.4}): {text}");
-                            // a failed delivery must not kill the loop: the game may
-                            // be closed, or every slot spent until the next reload
-                            if let Err(err) = heard(role, &text) {
-                                eprintln!("  not delivered: {err}");
-                            }
-                        }
-                        Err(err) => {
-                            eprintln!("transcribe failed: {err}");
-                            let _ = heard("notice", &format!("I could not transcribe that clip ({err}), so nothing was sent."));
-                        }
-                    }
+                    // Whisper runs on its own thread, so the pad and mic stay
+                    // live: slipping back onto the button while this clip is
+                    // transcribed starts the next one at once (the player,
+                    // 2026-11-10). Results come back in order, below.
+                    let _ = jobs.send(Job { role: role.to_string(), clip, prompt: prompt(&vocabulary()), level, seconds });
                 }
             }
             (Some(_), Some(_)) => {
@@ -512,6 +536,21 @@ fn phantom(text: &str) -> bool {
         .collect::<String>()
         .to_lowercase();
     PHANTOMS.contains(&plain.trim())
+}
+
+/// A clip for the Whisper thread, and what it made of one.
+struct Job {
+    role: String,
+    clip: Vec<f32>,
+    prompt: String,
+    level: f32,
+    seconds: f32,
+}
+struct Done {
+    role: String,
+    level: f32,
+    seconds: f32,
+    result: io::Result<String>,
 }
 
 fn transcribe(whisper: &WhisperContext, clip: &[f32], prompt: &str) -> io::Result<String> {
