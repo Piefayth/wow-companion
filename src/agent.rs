@@ -46,7 +46,8 @@ trigger and stop. The export here is trimmed (no bars, spellbook or quests).
 Your steps run blind and you cannot look: never run a lua step to check something
 first, and never set `look` (it offers a reload, which wipes chat). Write the one
 step that does the job. A profession link from someone: a `press` with
-`/run WCOpenTradeLink(\"Name\")`.";
+`/run WCOpenTradeLink(\"Name\")`, or for anything else (\"enchanting, from someone
+starting with O\") a test: `/run WCOpenTradeLink(function(e) return e.label:find(\"Enchanting\") and e.from:find(\"^O\") end)`.";
 
 // Real work (researching and installing an addon, restarting the game, changing
 // the addon) takes many tool calls; a quick answer still takes one.
@@ -121,6 +122,9 @@ Other things of ours agent code can call (all globals, all in WowCompanion):
   `/run WCOpenTradeLink(\"Orihime\")` matches who linked it or the profession
   (\"Enchanting\"), newest first, and lists what it has when nothing matches. It
   opens the profession window as a chat click would (measured working 2026-11-10).
+  For anything a name cannot say, pass a test, newest first:
+  `/run WCOpenTradeLink(function(e) return e.label:find(\"Enchanting\") and e.from:find(\"^O\") end)`
+  (e.label \"[Enchanting]\", e.from \"Orihime Shishun\", e.where, e.at; keep it under 255).
   It must be the player's press. Never look the link up first in a `lua` step: you
   cannot see what it prints, so give the press directly.
   None caught: ask in /2 Trade for a link; chat history itself is lost at a reload.

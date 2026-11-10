@@ -39,11 +39,24 @@ end
 
 -- opens a caught profession link as a chat click would; pressed by the player.
 -- n: 1 = newest, or a name to match against who linked it or the profession
--- ("Orihime", "Enchanting"), newest match first, so one press needs no lookup.
+-- ("Orihime", "Enchanting"), newest match first, so one press needs no lookup;
+-- or a function(entry) returning true for the one wanted.
 function WCOpenTradeLink(n)
   local list = WowCompanionDB.tradeLinks or {}
   local t
-  if type(n) == 'string' then
+  if type(n) == 'function' then
+    -- the agent's own test, so any request fits one press: each entry has
+    -- label ("[Enchanting]"), from ("Orihime Shishun"), where, at; newest first
+    for _, e in ipairs(list) do
+      local ok, yes = pcall(n, e)
+      if ok and yes then t = e break end
+    end
+    if not t then
+      print(('no caught profession link fits (have %d):'):format(#list))
+      for i, e in ipairs(list) do print(('  %d: %s from %s'):format(i, e.label, e.from)) end
+      return
+    end
+  elseif type(n) == 'string' then
     local want = n:lower()
     for _, e in ipairs(list) do
       if (e.from or ''):lower():find(want, 1, true) or (e.label or ''):lower():find(want, 1, true) then t = e break end
