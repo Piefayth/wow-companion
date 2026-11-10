@@ -94,6 +94,9 @@ fn main() {
         [command, addons] if command == "install" => install(Path::new(addons)),
         // ask the running companion to move onto the newest build once it is idle
         [command] if command == "restart" => request_restart(),
+        // a request typed into a conversation (main, l1, l2, r1, r2), taken by the
+        // running companion as if spoken there
+        [command, slot, words @ ..] if command == "tell" && !words.is_empty() => tell(slot, &words.join(" ")),
         [command, addons] if command == "probe" => probe(Path::new(addons)),
         [command, addons, rest @ ..] if command == "send" => send(Path::new(addons), rest),
         // the agent's answer, printed and never delivered: for trying the agent
@@ -877,6 +880,58 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             fresh
         }
     };
+    // Typed requests (`wow-companion tell <slot> <text>`): a file per request in
+    // %LOCALAPPDATA%\wow-companion\typed, taken as if spoken into that
+    // conversation, so one can be asked from a terminal while the player is away.
+    // The reply goes to the game as usual.
+    {
+        let (addons, find_session, looking, courier) =
+            (addons.to_path_buf(), slot_session.clone(), Arc::clone(&looking), courier.clone());
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_secs(2));
+            let Some(dir) = typed_dir() else { continue };
+            let mut waiting: Vec<_> = fs::read_dir(&dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "txt")).collect();
+            waiting.sort();
+            for path in waiting {
+                let Ok(text) = fs::read_to_string(&path) else { continue };
+                if fs::remove_file(&path).is_err() {
+                    continue;
+                }
+                let Some((slot, text)) = text.split_once('\n') else { continue };
+                let (slot, text) = (slot.trim().to_string(), text.trim().to_string());
+                if text.is_empty() {
+                    continue;
+                }
+                println!("typed ({}): {text}", if slot.is_empty() { "main" } else { &slot });
+                let (addons, session, looking, courier) =
+                    (addons.clone(), find_session(&slot), Arc::clone(&looking), courier.clone());
+                thread::spawn(move || {
+                    let text = if slot.is_empty() { text } else { format!("[{}] {}", slot.to_uppercase(), text) };
+                    if slot.is_empty() {
+                        *looking.lock().unwrap() = None;
+                    }
+                    let (mut held, queued) = match session.try_lock() {
+                        Ok(guard) => (guard, false),
+                        Err(std::sync::TryLockError::Poisoned(poisoned)) => (poisoned.into_inner(), false),
+                        Err(std::sync::TryLockError::WouldBlock) => {
+                            let _ = courier.send(log_inbox_in(Some(&slot), "you", &text, Some("waiting for the request before this one"), None));
+                            (session.lock().unwrap_or_else(|poisoned| poisoned.into_inner()), true)
+                        }
+                    };
+                    IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+                    let _done = InFlight;
+                    match ask(&addons, &mut held, &text, queued) {
+                        Ok(true) if slot.is_empty() => *looking.lock().unwrap() = Some(session_began(&addons)),
+                        Ok(_) => {}
+                        Err(err) => {
+                            eprintln!("  not delivered: {err}");
+                            tell_failure(&addons, &err);
+                        }
+                    }
+                });
+            }
+        });
+    }
     voice::listen(
         model,
         options,
@@ -1508,6 +1563,30 @@ fn addon_is_stale(addons: &Path) -> io::Result<bool> {
         // never saved, or no addon: nothing to compare, so do not block
         _ => false,
     })
+}
+
+/// Where typed requests wait for the running companion.
+fn typed_dir() -> Option<PathBuf> {
+    let dir = PathBuf::from(env::var_os("LOCALAPPDATA")?).join("wow-companion").join("typed");
+    fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+fn tell(slot: &str, words: &str) -> io::Result<()> {
+    let slot = slot.to_lowercase();
+    let slot = match slot.as_str() {
+        "main" | "" => "",
+        "l1" | "l2" | "r1" | "r2" => slot.as_str(),
+        other => return Err(io::Error::other(format!("no conversation {other:?}: main, l1, l2, r1 or r2"))),
+    };
+    let dir = typed_dir().ok_or_else(|| io::Error::other("LOCALAPPDATA is not set"))?;
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_millis()).unwrap_or_default();
+    // written whole under another name, then renamed: never read half-written
+    let part = dir.join(format!("{stamp}.part"));
+    fs::write(&part, format!("{slot}\n{words}\n"))?;
+    fs::rename(&part, dir.join(format!("{stamp}.txt")))?;
+    println!("left for the companion: [{}] {words}", if slot.is_empty() { "main" } else { slot });
+    Ok(())
 }
 
 fn modified_millis(path: &Path) -> Option<u128> {

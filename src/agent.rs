@@ -213,7 +213,7 @@ empty: say so and ask them to shift into that form once.
   current code there before changing one (<character> lists only its name), and
   send the whole file as `code`. The companion writes the file before the game
   runs it; never edit modules/ by hand without also sending the step.
-  Write every module on the engine, `WC` (Companion.lua, top): it opens with
+  Write every module on the engine, `WC` (addon Engine.lua): it opens with
   `local M = WC.Module('Name', { after = {'Other'}, combat = 'wait' })` and puts its
   work in `function M:Enable()` (and `M:Disable()` to undo it). Listen with
   `M:Event('GAME_EVENT', fn)` and `M:On('MESSAGE', fn)`, both dropped on replace;

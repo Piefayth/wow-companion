@@ -7,6 +7,11 @@
 ## AddonCompartmentFuncOnEnter: WowCompanion_OnCompartmentEnter
 ## AddonCompartmentFuncOnLeave: WowCompanion_OnCompartmentLeave
 
+Engine.lua
+Style.lua
 Companion.lua
+Pins.lua
+Strip.lua
+Bags.lua
 Status.lua
 Modules.lua

@@ -57,6 +57,13 @@ end
 -- when this UI session began, to tell this session's messages from a slot's old one
 local sessionStart = time()
 
+-- The engine, the style helpers and the rest live in their own files (Engine.lua,
+-- Style.lua, Pins.lua, Strip.lua, Bags.lua; the .toc's order). If one of them
+-- failed to load, the channel here must still work: these keep it standing.
+WC = WC or {}
+WowCompanion_TalkKey = WowCompanion_TalkKey or "PADSOCIAL"
+WowCompanion_Glyph = WowCompanion_Glyph or function(key) return key end
+
 
 -- Every module to run, name -> { code, disk }. modules/<Name>.lua in the repo is
 -- the source of truth, reaching the game as Modules.lua (WowCompanion_DiskModules,

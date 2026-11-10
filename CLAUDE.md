@@ -35,8 +35,11 @@ yes; don't reinvent what Claude Code has.
   so the CUDA build is not invalidated by edits elsewhere.
 - `src/`: the helper. `main.rs` (commands, the voice loop's wiring, slots),
   `agent.rs` (the agent and its rules), `bells.rs`, `heartbeat.rs`, `doctor.rs`.
-- `addon/WowCompanion/`: the in-game half (`Companion.lua`, `Status.lua` for the
-  minimap button), `addon/WowCompanion_Wheel/`: the radial wheels.
+- `addon/WowCompanion/`: the in-game half, in .toc order: `Engine.lua` (`WC`, the
+  module engine), `Style.lua` (Blizzard look, glyphs, destroy dialog), `Companion.lua`
+  (the channel, board, log, preview, export, sandbox), `Pins.lua`, `Strip.lua`,
+  `Bags.lua`, `Status.lua` (minimap button), `Modules.lua` (generated). Files share
+  nothing local: they talk through globals. `addon/WowCompanion_Wheel/`: the wheels.
 - `modules/`: the agent's modules, one `<Name>.lua` each, in git. A `module` step
   writes the file (`src/modules.rs`), which regenerates the addon's `Modules.lua`
   (gitignored, reread at every /reload) and also runs it at once. The save file's

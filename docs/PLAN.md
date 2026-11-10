@@ -36,11 +36,11 @@ message bus, per-module settings, then smaller files.
    BuffGlow. They send LINK_CAUGHT, TRADE_LINK_CAUGHT, BAGS_FULL.
 3. ~~Bags onto the engine~~: Bags left modules/ for the addon's own files (a
    controller-managed window must not run as a module: taint).
-4. **Split Companion.lua** (~5,900 lines) into files along its seams: engine,
-   channel (slots, bells), board/toast, log window, send preview, strip, style.
-   A new file in our existing toc loads at /reload (measured 2026-11-10), so no
-   restart. Do it when no other agent is editing Companion.lua; keep the channel
-   in Companion.lua and move only pieces that talk through globals.
+4. **Split Companion.lua** (done 2026-11-10): Engine, Style, Companion (channel and
+   core, ~4,600 lines), Pins, Strip, Bags. Checked: no file uses another's locals
+   (tools/addon_locals.py). Companion keeps fallbacks so the channel stands alone.
+   Further splits (board, log window, preview) need their shared locals turned
+   into WC fields first.
 5. Later: move saved data (links, tradeLinks, pins, bagLink) under
    `WowCompanionDB.mods.<Name>` with a one-time copy; until then keep the old keys.
 
