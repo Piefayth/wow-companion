@@ -7,7 +7,7 @@ use std::{
     path::Path,
     process::Command,
     thread,
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 fn running(image: &str) -> bool {
@@ -45,24 +45,34 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
     line(used + 16 < known, "slots", &format!("{used} of {known} used this session{}",
         if used + 16 >= known { ": nearly out, /reload refills them" } else { "" }));
 
-    // bells: none should be empty (rule 3 in bells.rs), and at most a couple ring
+    // bells: what each file holds, not its size. A ringing bell has its `data`
+    // chunk right after the header; the heartbeat's quiet bell is the same size
+    // but opens with `JUNK` (bells.rs), so size alone called it ringing.
     let mut ringing = Vec::new();
     let mut empty = Vec::new();
+    let mut leftover = Vec::new();
     if let Ok(entries) = fs::read_dir(&signals) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            // always.wav is the probe's control; a pulse bell is the heartbeat
-            if !name.ends_with(".wav") || name == "always.wav" || name.starts_with("pulse-") {
+            if !name.ends_with(".wav") {
+                continue;
+            }
+            if !current_bell(&name) {
+                leftover.push(name);
+                continue;
+            }
+            // always.wav is the probe's control; the pulse bells are the heartbeat's
+            if name == "always.wav" || name.starts_with("pulse-") {
                 continue;
             }
             // message (m) and catch-up (c) bells and never.wav are empty when idle
-            // by design (bells.rs, the 2026-11-09 protocol); only a ringing one counts
-            let idle_empty = name == "never.wav"
-                || (name.len() == 6 && (name.starts_with('m') || name.starts_with('c')));
+            // by design (bells.rs, the 2026-11-09 protocol)
+            let idle_empty = name != "doctor.wav";
+            let path = entry.path();
             match entry.metadata().map(|meta| meta.len()) {
                 Ok(0) if idle_empty => {}
                 Ok(len) if len < 174_763 => empty.push(name),
-                Ok(_) => ringing.push(name),
+                Ok(_) if rings(&path) => ringing.push(name),
                 _ => {}
             }
         }
@@ -73,10 +83,15 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
         format!("{} (a small or empty bell gets cached and locked; reinstall, then /reload)", empty.join(", "))
     });
     // one message bell and one catch-up bell may ring at once
-    line(ringing.len() <= 2, "bells present", &if ringing.is_empty() {
-        "none ringing".to_string()
+    line(ringing.len() <= 2, "bells ringing", &if ringing.is_empty() {
+        "none".to_string()
     } else {
-        format!("{} (more than one ringing, or old names, means a stuck file)", ringing.join(", "))
+        format!("{}{}", ringing.join(", "), if ringing.len() > 2 { " (more than two means a stuck file)" } else { "" })
+    });
+    line(true, "old bell files", &if leftover.is_empty() {
+        "none".to_string()
+    } else {
+        format!("{} (names no longer used; nothing reads them, safe to delete)", leftover.join(", "))
     });
 
     // writable: ring and silence a bell nobody listens to
@@ -87,19 +102,35 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
         Err(err) => err.to_string(),
     });
 
-    // heartbeat: one pulse bell, swapping every 4 s
-    let pulses = |at: &str| -> Option<SystemTime> {
-        fs::metadata(signals.join(at)).and_then(|meta| meta.modified()).ok()
-    };
-    let before = (pulses("pulse-a.wav"), pulses("pulse-b.wav"));
-    thread::sleep(Duration::from_secs(9));
-    let after = (pulses("pulse-a.wav"), pulses("pulse-b.wav"));
-    let both = after.0.is_some() && after.1.is_some();
-    let swapped = before != after;
-    line(swapped && !both, "heartbeat", &match (swapped, both) {
-        (true, false) => "swapping: the in-game mark should be in colour".to_string(),
-        (_, true) => "both pulse bells exist at once: the mark will flap".to_string(),
-        (false, _) => "not swapping: the companion is down, loading, or handing over".to_string(),
+    // heartbeat: both pulse files always exist (one ringing, one the quiet bell)
+    // and the ringing one swaps every 4 s (heartbeat.rs)
+    let pulse = |at: &str| rings(&signals.join(at));
+    // sampled twice a second for 9 s: two snapshots 9 s apart are two swaps
+    // apart, and read the same as no swap at all
+    let mut swaps = 0;
+    let mut both = 0;
+    let mut neither = 0;
+    let mut last = (pulse("pulse-a.wav"), pulse("pulse-b.wav"));
+    for _ in 0..18 {
+        thread::sleep(Duration::from_millis(500));
+        let now = (pulse("pulse-a.wav"), pulse("pulse-b.wav"));
+        match now {
+            (true, true) => both += 1,
+            (false, false) => neither += 1,
+            _ => {}
+        }
+        if now != last && now.0 != now.1 {
+            swaps += 1;
+        }
+        last = now;
+    }
+    line(swaps >= 1 && both <= 2, "heartbeat", &if swaps == 0 {
+        "not swapping: the companion is down, loading, or handing over".to_string()
+    } else if both > 2 {
+        format!("both pulse bells ringing in {both} of 18 samples: the mark will flap")
+    } else {
+        format!("{swaps} swaps in 9 s: the in-game mark should be in colour{}",
+            if neither > 0 { format!(" ({neither} of 18 samples caught both quiet mid-swap)") } else { String::new() })
     });
 
     // the mic: is audio actually arriving?
@@ -108,4 +139,27 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
         line(false, "mic", &err.to_string());
     }
     Ok(())
+}
+
+/// A bell file that is ringing: a real sound right after the header. The quiet
+/// bell (bells.rs) carries a `JUNK` chunk there instead, and an emptied one is 0 bytes.
+fn rings(path: &std::path::Path) -> bool {
+    let mut head = [0u8; 40];
+    match fs::File::open(path) {
+        Ok(mut file) => {
+            use std::io::Read;
+            file.read_exact(&mut head).is_ok() && &head[36..40] == b"data"
+        }
+        Err(_) => false,
+    }
+}
+
+/// The bell names in use (bells.rs, main.rs, heartbeat.rs, Status.lua). Anything
+/// else in Signals was left by an earlier design.
+fn current_bell(name: &str) -> bool {
+    let stem = name.trim_end_matches(".wav");
+    matches!(stem, "always" | "never" | "doctor" | "pulse-a" | "pulse-b")
+        || (stem.len() == 2
+            && (stem.starts_with('m') || stem.starts_with('c'))
+            && stem[1..].parse::<u32>().is_ok_and(|n| (1..=8).contains(&n)))
 }
