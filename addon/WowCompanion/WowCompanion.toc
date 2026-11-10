@@ -4,3 +4,4 @@
 ## SavedVariables: WowCompanionDB
 
 Companion.lua
+Status.lua
