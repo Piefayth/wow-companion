@@ -173,7 +173,9 @@ goes to a detached process.
 - The API is **retail 11.x behind a 1.60.1 version string**, with 12.0's secret
   values: `C_Spell`, `C_SpellBook`, `C_ClassTalents`; no `GetSpellInfo`. Forever's
   game type in Blizzard's manifests is `camelot`.
-- New addon *folders* or new files in a toc need a full game restart, not a reload.
+- New addon *folders* need a full game restart, not a reload. A new file added to
+  an existing addon's .toc was picked up by a plain /reload (`Modules.lua`, measured
+  2026-11-10: the game had run since 01:20, the file was added at 03:10).
 - Agent Lua runs out of combat in a sandbox that refuses a short list by name
   (deleting items, sending chat, trading, gold, leaving groups) and is followed by
   an `issecurevariable` taint diff. `PlaceAction` was measured clean.
