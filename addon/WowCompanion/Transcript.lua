@@ -100,7 +100,9 @@ end
 
 -- place one row below the last; returns the new bottom
 function Transcript:Place(row, y, width)
-	y = y + (y > 0 and row.gap or 0)
+	-- `extra`: room kept open above this row (Jobs.lua puts the agent's
+	-- working line there, right after the message it works on)
+	y = y + (row.extra or 0) + (y > 0 and row.gap or 0)
 	local fs = row.fs
 	fs:ClearAllPoints()
 	fs:SetPoint("TOPLEFT", self.content, "TOPLEFT", row.indent, -y)

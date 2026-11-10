@@ -154,11 +154,56 @@ refresh = function()
 	end
 	local base = transcript0.height or 0
 	local width = transcript0.Width and transcript0:Width() or 300
+	-- The working line belongs right after the message being worked on, not
+	-- after the queued ones (the player, 2026-11-10: "your thinking got
+	-- pushed"): room is kept open above the first of your messages after it.
+	local rows = transcript0.rows or {}
+	local runIndex, afterIndex
+	for i = #rows, 1, -1 do
+		if rows[i].you and not rows[i].queued then runIndex = i break end
+	end
+	if entry and runIndex then
+		for i = runIndex + 1, #rows do
+			if rows[i].you then afterIndex = i break end
+		end
+	end
+	local GHOST_H = 46
+	local relayout = false
+	for i, row in ipairs(rows) do
+		local want = (i == afterIndex) and GHOST_H or nil
+		if row.extra ~= want then row.extra = want relayout = true end
+	end
+	if relayout and transcript0.Layout then
+		transcript0:Layout()
+		base = transcript0.height or base
+	end
+	local insertY
+	if afterIndex then
+		local _, _, _, _, oy = rows[afterIndex].fs:GetPoint(1)
+		if oy then insertY = -oy - (rows[afterIndex].gap or 0) - GHOST_H end
+	end
 	local y = base
 	local hearingLine
 	for i, g in ipairs(ghosts) do
 		local item = items[i]
 		if item then
+			if i == 1 and entry and insertY then
+				-- the working line, in the room kept for it
+				local saved = y
+				y = insertY + 14
+				g.head:ClearAllPoints()
+				g.head:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -y)
+				g.head:SetText(item[1])
+				g.head:Show()
+				g.head.y = y
+				y = y + g.head:GetStringHeight() + 3
+				g.line:ClearAllPoints()
+				g.line:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -y)
+				g.line:SetWidth(math.max(50, width - 4))
+				g.line:SetText(item[2])
+				g.line:Show()
+				y = saved
+			else
 			y = y + 14 -- TURN_GAP, as Transcript.lua spaces a new message
 			g.head:ClearAllPoints()
 			g.head:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -y)
@@ -172,6 +217,7 @@ refresh = function()
 			g.line:SetText(item[2])
 			g.line:Show()
 			y = y + g.line:GetStringHeight()
+			end
 			if item.hearing then hearingLine = g.head end
 		else
 			g.head:Hide()
