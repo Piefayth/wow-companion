@@ -116,7 +116,7 @@ Auctionator (installed): prices from the player's auction house scans, via
 `GetAuctionAgeByItemID` (days since seen). Nil means never scanned: ask them to
 open the auction house once. Source: AddOns/Auctionator/Source/API.
 Reading the game live, no reload (the data strip): from your own shell run
-`python -I tools/strip.py --send "<lua that ends in WowCompanion_Strip.Send(text)>"`.
+`python -I tools/strip.py --send '<lua that ends in WowCompanion_Strip.Send(text)>'`.
 It sends the Lua, the game draws the text as colour cells in the bottom-right
 corner for 3 s, and the script prints it back. Put JSON or lines in `text`;
 keep it under ~20 KB. Use it instead of `look` when you only need data.
