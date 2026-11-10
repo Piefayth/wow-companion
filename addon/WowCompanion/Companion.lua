@@ -1037,6 +1037,12 @@ local CHANNEL_NAMES = {
 	["/r"] = "your last whisper", ["/e"] = "emote",
 	["/1"] = "General", ["/2"] = "Trade", ["/4"] = "Looking For Group",
 }
+local PREVIEW_CHAT_TYPES = {
+	["/p"] = "PARTY", ["/g"] = "GUILD", ["/o"] = "OFFICER", ["/raid"] = "RAID",
+	["/rw"] = "RAID_WARNING", ["/i"] = "INSTANCE_CHAT", ["/s"] = "SAY", ["/y"] = "YELL",
+	["/e"] = "EMOTE", ["/w"] = "WHISPER", ["/r"] = "WHISPER",
+	["/1"] = "CHANNEL1", ["/2"] = "CHANNEL2", ["/4"] = "CHANNEL4",
+}
 local preview
 local function buildPreview()
 	local made, frame = pcall(CreateFrame, "Frame", "WowCompanionPreview", UIParent, "BackdropTemplate")
@@ -1118,6 +1124,16 @@ local function showPreview(line, heading, shown)
 	if not preview then return false end
 	preview.title:SetText(heading)
 	preview.body:SetText(shown)
+	-- in the channel's own chat colour, read from Blizzard's ChatTypeInfo (the
+	-- player's colour settings), so guild is guild green, raid is raid orange
+	local slash = line:match("^(/%w+)")
+	local chatType = PREVIEW_CHAT_TYPES[slash]
+	if slash == "/w" and line:find("|K", 1, true) then chatType = "BN_WHISPER" end
+	local info = chatType and ChatTypeInfo and ChatTypeInfo[chatType]
+	local r, g, b = 1, 1, 1
+	if info and info.r then r, g, b = info.r, info.g, info.b end
+	preview.title:SetTextColor(r, g, b)
+	preview.body:SetTextColor(r, g, b)
 	preview.send:SetAttribute("macrotext", line)
 	if UIPanelWindows and UIPanelWindows["WowCompanionPreview"] then
 		ShowUIPanel(preview)
