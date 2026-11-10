@@ -46,6 +46,17 @@ struct Setup {
     claude: String,
     /// output of doctor or the last save
     report: Arc<Mutex<String>>,
+    /// `cpu` when the self-test chose the CPU build
+    engine: String,
+    /// the speech self-test: running, then its verdict and details
+    speech: Arc<Mutex<Option<SpeechTest>>>,
+}
+
+#[derive(Clone)]
+struct SpeechTest {
+    passed: bool,
+    summary: String,
+    details: String,
 }
 
 impl Setup {
@@ -59,6 +70,7 @@ impl Setup {
             ask: value("ask"),
             mic: value("mic"),
             agent: value("agent"),
+            engine: value("engine"),
             settings,
             found_addons: find_addons(),
             models: find_models(),
@@ -68,6 +80,7 @@ impl Setup {
             meter: Meter::default(),
             claude: claude_version(),
             report: Arc::default(),
+            speech: Arc::default(),
         };
         setup.refresh_devices();
         if setup.addons.is_empty() {
@@ -101,6 +114,7 @@ impl Setup {
             ("ask", &self.ask),
             ("mic", &self.mic),
             ("agent", &self.agent),
+            ("engine", &self.engine),
         ] {
             self.settings.set(key, value.trim());
         }
@@ -193,6 +207,28 @@ impl eframe::App for Setup {
                 if self.models.is_empty() {
                     ui.small("No model found: download ggml-large-v3-turbo.bin (or ggml-small.bin for a slower GPU) from huggingface.co/ggerganov/whisper.cpp into a models folder.");
                 }
+                ui.horizontal(|ui| {
+                    if ui.button("Test speech recognition").clicked() {
+                        self.test_speech();
+                    }
+                    ui.label(if self.engine == "cpu" { "using: CPU build" } else { "using: GPU build" });
+                });
+                let test = self.speech.lock().unwrap().clone();
+                if let Some(test) = test {
+                    let colour = if test.passed { egui::Color32::LIGHT_GREEN } else { egui::Color32::LIGHT_RED };
+                    ui.colored_label(colour, &test.summary);
+                    ui.collapsing("details", |ui| ui.monospace(&test.details));
+                    let cpu_ready = companion().is_some_and(|exe| exe.with_file_name("wow-companion-cpu.exe").exists());
+                    if !test.passed && self.engine != "cpu" && cpu_ready && ui.button("Use the CPU build instead (slower, works anywhere)").clicked() {
+                        self.engine = "cpu".into();
+                        self.save();
+                        self.test_speech();
+                    }
+                }
+                if self.engine == "cpu" && ui.small_button("go back to the GPU build").clicked() {
+                    self.engine.clear();
+                    self.save();
+                }
 
                 ui.separator();
                 ui.heading("Agent");
@@ -241,6 +277,28 @@ impl Setup {
             .find(|(vid, pid, _)| format!("{vid:04x}:{pid:04x}") == self.pad)
             .map(|(_, _, name)| format!("{name} ({})", self.pad))
             .unwrap_or_else(|| if self.pad.is_empty() { "none found".into() } else { format!("{} (not connected)", self.pad) })
+    }
+
+    /// Whisper on the bundled sample clip through the companion itself (the build
+    /// that will really run), checked against the clip's known script.
+    fn test_speech(&mut self) {
+        // saved first: the companion reads `engine` to pick its build
+        self.save();
+        let model = self.model.clone();
+        let speech = Arc::clone(&self.speech);
+        *speech.lock().unwrap() = Some(SpeechTest { passed: false, summary: "testing...".into(), details: String::new() });
+        thread::spawn(move || {
+            let result = (|| {
+                let exe = companion().ok_or("wow-companion.exe not found next to this window")?;
+                let clip = sample_clip().ok_or("the sample clip (assets/sample.wav) is missing")?;
+                let out = Command::new(exe).arg("transcribe").arg(&model).arg(clip).output().map_err(|e| e.to_string())?;
+                Ok::<_, String>(format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
+            })();
+            *speech.lock().unwrap() = Some(match result {
+                Err(why) => SpeechTest { passed: false, summary: why, details: String::new() },
+                Ok(output) => judge(&output),
+            });
+        });
     }
 
     fn learn(&mut self) {
@@ -331,6 +389,43 @@ impl Meter {
     }
 }
 
+/// The self-test's verdict from the companion's output: the right words, and on
+/// which device.
+fn judge(output: &str) -> SpeechTest {
+    let text = output.lines().find_map(|l| l.strip_prefix("text: ")).unwrap_or("").to_lowercase();
+    let timing = output.lines().find(|l| l.contains("transcribed in")).unwrap_or("").to_string();
+    let device = if output.contains("using Vulkan") || output.contains("ggml_vulkan: Found") {
+        "Vulkan (GPU)"
+    } else if output.contains("using CUDA") {
+        "CUDA (GPU)"
+    } else {
+        "CPU"
+    };
+    let details = output
+        .lines()
+        .filter(|l| !l.starts_with("whisper_full") && !l.contains("decoder") && !l.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("
+");
+    let passed = text.contains("moonfire") && text.contains("flight master");
+    let summary = if passed {
+        format!("works: {timing} on {device}")
+    } else if text.is_empty() {
+        "did not work: no transcript (see details)".to_string()
+    } else {
+        format!("heard something else: \"{text}\" on {device}")
+    };
+    SpeechTest { passed, summary, details }
+}
+
+/// The bundled sample clip: beside the exes in a release, in the checkout's
+/// assets/ in development.
+fn sample_clip() -> Option<PathBuf> {
+    let beside = std::env::current_exe().ok()?.parent()?.join("assets").join("sample.wav");
+    let checkout = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("assets").join("sample.wav");
+    [beside, checkout].into_iter().find(|clip| clip.exists())
+}
+
 /// Where Forever is usually installed, on every drive.
 fn find_addons() -> Vec<String> {
     let mut found = Vec::new();
@@ -349,6 +444,9 @@ fn find_addons() -> Vec<String> {
 /// %LOCALAPPDATA%\wow-companion\models.
 fn find_models() -> Vec<String> {
     let mut dirs = vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("models")];
+    if let Some(beside) = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join("models"))) {
+        dirs.insert(0, beside);
+    }
     if let Some(base) = std::env::var_os("LOCALAPPDATA") {
         dirs.push(PathBuf::from(base).join("wow-companion").join("models"));
     }
@@ -374,6 +472,28 @@ fn claude_version() -> String {
 
 /// wow-companion.exe, beside this window's exe.
 fn companion() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?.with_file_name("wow-companion.exe");
-    exe.exists().then_some(exe)
+    let beside = std::env::current_exe().ok()?.with_file_name("wow-companion.exe");
+    // in development the two are built in different target folders
+    let checkout = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/wow-companion.exe");
+    [beside, checkout].into_iter().find(|exe| exe.exists())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::judge;
+
+    #[test]
+    fn a_right_transcript_on_cuda_passes() {
+        let output = "whisper_backend_init_gpu: using CUDA0 backend\nmodel loaded in 1.66s\n6.1s of audio transcribed in 0.29s\ntext: Put Moonfire on the right bar, then whisper my guild that I am on my way to the flight master.\n";
+        let test = judge(output);
+        assert!(test.passed);
+        assert_eq!(test.summary, "works: 6.1s of audio transcribed in 0.29s on CUDA (GPU)");
+    }
+
+    #[test]
+    fn a_failed_load_fails_and_says_so() {
+        let test = judge("Error: failed to load model\n");
+        assert!(!test.passed);
+        assert!(test.summary.contains("no transcript"));
+    }
 }

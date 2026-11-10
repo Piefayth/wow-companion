@@ -6,7 +6,8 @@
 //! options still win over it.
 //!
 //! Keys: `addons` (the game's Interface\AddOns folder), `model` (the Whisper
-//! model file), and the run options: `pad` (vid:pid), `ask` (the talk button: a
+//! model file), `engine` (`cpu` to use the CPU build a release ships beside the
+//! GPU one), and the run options: `pad` (vid:pid), `ask` (the talk button: a
 //! name or byte:mask), `chat`, `mic`, `cue`, `volume`, `agent`.
 
 use std::{fs, io, path::PathBuf};
@@ -65,7 +66,7 @@ impl Settings {
 
     pub fn render(&self) -> String {
         let mut out = String::from("# WoW Companion settings for this PC (the setup window writes this)\n");
-        let mut keys: Vec<&str> = vec!["addons", "model"];
+        let mut keys: Vec<&str> = vec!["addons", "model", "engine"];
         keys.extend(OPTIONS);
         let extra: Vec<&str> =
             self.entries.iter().map(|(k, _)| k.as_str()).filter(|k| !keys.contains(k)).collect();

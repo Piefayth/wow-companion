@@ -36,6 +36,8 @@ use std::{
 };
 
 const ADDON: &str = "WowCompanion";
+// set on a build started by another to honour `engine`, so it does not hand off again
+const ENGINE_CHOSEN: &str = "WOW_COMPANION_ENGINE";
 
 /// Where the companion's own files are (addon/, modules/, integrations/,
 /// player/, CLAUDE.md): the folder of the exe in a release, this checkout in
@@ -63,6 +65,16 @@ fn recently_released() -> bool {
 const GATHER: Duration = Duration::from_millis(500);
 
 fn main() {
+    // A release ships a CPU build beside the GPU one. Settings `engine = "cpu"`
+    // (the setup window's self-test picks it when the GPU build cannot run on
+    // this machine) hands every command to that one.
+    if Settings::load().get("engine") == Some("cpu") && env::var_os(ENGINE_CHOSEN).is_none() {
+        let cpu = env::current_exe().ok().map(|exe| exe.with_file_name("wow-companion-cpu.exe")).filter(|cpu| cpu.exists());
+        if let Some(cpu) = cpu {
+            let status = std::process::Command::new(cpu).args(env::args().skip(1)).env(ENGINE_CHOSEN, "cpu").status();
+            std::process::exit(status.ok().and_then(|status| status.code()).unwrap_or(1));
+        }
+    }
     let args: Vec<String> = env::args().skip(1).collect();
     let result = match args.as_slice() {
         [command, addons] if command == "install" => install(Path::new(addons)),
