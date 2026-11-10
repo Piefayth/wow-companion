@@ -950,14 +950,12 @@ function handlers.stopped(inbox)
 	local slot = inbox.slot or ""
 	setTranscribing(slot, false)
 	if inbox.hearing then
-		remember("claude", "Cancelled before it was sent.", nil, slot)
 		return "stopped"
 	end
 	if inbox.req and inbox.wasQueued then
 		-- one queued message dropped; the running one carries on
 		unqueue(slot)
 		if WC.Jobs then WC.Jobs.Gone(inbox.req, slot) end
-		remember("claude", "Cancelled a queued message.", nil, slot)
 		return "stopped"
 	end
 	setPending(nil, slot)
