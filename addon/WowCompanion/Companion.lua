@@ -819,6 +819,20 @@ function WowCompanion_Recent(slot, text)
 	if renderPending then renderPending() end
 end
 local paintHook -- the conversation list's painter, set once it exists
+-- A clip on its way through Whisper, per conversation (the player, 2026-11-10):
+-- the list, the waiting line and the toast show it beside the agent's own
+-- progress. Started by a `transcribing` message the moment the pad is released;
+-- ended by what the words became (the request's own line, a chat line, a
+-- dropped-clip notice), or after TRANSCRIBE_FOR in case that line never comes.
+local transcribing, TRANSCRIBE_FOR = {}, 60
+local function setTranscribing(slot, on)
+	if slot then
+		transcribing[slot] = on and (transcribing[slot] or GetTime()) or nil
+	else
+		wipe(transcribing)
+	end
+	if renderPending then renderPending() end
+end
 local function setPending(text, slot)
 	slot = slot or ""
 	if text then
@@ -844,8 +858,17 @@ renderPending = function()
 		if not entry and done then
 			lines[#lines + 1] = ("|cffffd100%s|r  %s"):format(slotLabel(slot), done.text)
 		end
+		local heard = transcribing[slot]
+		if heard and now - heard > TRANSCRIBE_FOR then transcribing[slot] = nil heard = nil end
+		local line
 		if entry then
-			local line = ("%s%s  %ds"):format(entry.text, dots, GetTime() - entry.since)
+			line = ("%s%s  %ds"):format(entry.text, dots, now - entry.since)
+		end
+		if heard then
+			local words = ("transcribing%s  %ds"):format(entry and "" or dots, now - heard)
+			line = line and (line .. "  |cff9ad5ff+ " .. words .. "|r") or words
+		end
+		if line then
 			lines[#lines + 1] = ("|cffffd100%s|r  %s"):format(slotLabel(slot), line)
 			if slot == (WowCompanion_ViewSlot and WowCompanion_ViewSlot() or "") then view = line end
 		end
@@ -886,7 +909,11 @@ local function paintConversations()
 		-- each conversation shows its own progress in the list (the player,
 		-- 2026-11-10): the seconds while its agent works, "new" once it answered
 		local entry = working[key]
-		if entry then
+		local heard = transcribing[key]
+		if heard then
+			-- Whisper still has this conversation's clip (the player, 2026-11-10)
+			label = label .. "  |cff9ad5ffhearing " .. math.floor(GetTime() - heard) .. "s|r"
+		elseif entry then
 			label = label .. "  |cffb0b0b0" .. math.floor(GetTime() - entry.since) .. "s|r"
 		elseif unread[key] then
 			label = "|cff40ff40" .. label .. "  new|r"
@@ -1504,8 +1531,17 @@ function handlers.log(inbox)
 	-- another conversation lights it up in the list, and what you said does not
 	-- `pending` starts this conversation's waiting line; a line without it ends it
 	if inbox.slot or inbox.pending then setPending(inbox.pending, islot) end
-	-- "got it, transcribing" has no conversation yet: whatever line comes next
-	-- (the request in its slot, a chat line, a dropped-clip notice) ends it
+	-- what a clip became ends its "transcribing": the request's own line in its
+	-- conversation, or a line that names none (a chat line, a dropped-clip
+	-- notice), which cannot say whose clip it was and so ends them all
+	if inbox.slot then
+		if who == "you" then setTranscribing(inbox.slot, false) end
+	elseif who == "you" or who == "error" then
+		setTranscribing(nil)
+	end
+	-- "got it, transcribing" from an older helper has no conversation yet:
+	-- whatever line comes next (the request in its slot, a chat line, a
+	-- dropped-clip notice) ends it
 	if islot ~= "" or not inbox.slot then
 		local early = working[""]
 		if early and early.text == "got it, transcribing" and not (inbox.slot == "" and inbox.pending) then
@@ -1593,6 +1629,14 @@ end
 function handlers.progress(inbox)
 	setPending(inbox.text or "thinking", inbox.slot)
 	return "progress"
+end
+
+-- A clip released and handed to Whisper, for the conversation it belongs to
+-- ("" is the main one): shown in the list and on the waiting line until the
+-- words arrive.
+function handlers.transcribing(inbox)
+	setTranscribing(inbox.slot or "", true)
+	return "transcribing"
 end
 
 function handlers.macro(inbox)

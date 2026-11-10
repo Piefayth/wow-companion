@@ -712,20 +712,18 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             "notice" => deliver(log_inbox("error", text, None, None)),
             _ if role.ends_with(" tap") => Ok(()),
             // released and on its way to Whisper: show it at once, so a long clip
-            // reads as "being worked on" and not as dropped. Not while another
-            // request runs, whose own progress line is on screen (the queued line
-            // follows as soon as the words are known).
-            // a second clip on its way to Whisper keeps the gather window open
-            r if r.starts_with("ask") && r.ends_with(" heard") && gathering.lock().unwrap().is_some() => {
+            // reads as "being worked on" and not as dropped. Every clip shows as "transcribing" in its own conversation's row
+            // (the player, 2026-11-10), even while another request runs: that one
+            // keeps its own progress line, and this sits beside it. The addon ends
+            // it when the words arrive as a line.
+            r if r.starts_with("ask") && r.ends_with(" heard") => {
                 *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
+                // a second clip on its way to Whisper keeps the gather window open
                 if let Some((_, last, _)) = gathering.lock().unwrap().as_mut() {
                     *last = Instant::now();
                 }
-                Ok(())
-            }
-            r if r.starts_with("ask") && r.ends_with(" heard") && IN_FLIGHT.load(Ordering::SeqCst) == 0 => {
-                *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
-                deliver("{ kind = \"progress\", text = \"got it, transcribing\" }".to_string())
+                let slot = r.trim_end_matches(" heard").strip_prefix("ask@").unwrap_or("");
+                deliver(format!("{{ kind = \"transcribing\", slot = {} }}", lua_string(slot)))
             }
             _ if role.ends_with(" heard") => {
                 *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
@@ -1025,7 +1023,9 @@ fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     // has, so a stale UI can still take it. Blocking those is how a finished answer
     // sat undelivered behind "reload first" while the window spun "thinking".
     // A reload is the same: every version has it, and it is the cure for staleness.
-    if inbox.starts_with("{ kind = \"progress\"") && slots_used(addons) + PROGRESS_STOP >= known_slots(addons) {
+    if (inbox.starts_with("{ kind = \"progress\"") || inbox.starts_with("{ kind = \"transcribing\""))
+        && slots_used(addons) + PROGRESS_STOP >= known_slots(addons)
+    {
         // the last slots are for replies; a skipped progress line is no loss
         return Ok(());
     }
