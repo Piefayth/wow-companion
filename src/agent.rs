@@ -80,9 +80,20 @@ thing the player sees, so make it the answer, not a preamble.
 a question. Do everything they asked in one answer; never tell them to ask again
 for the rest. At most one `press` or `reload` per answer, since only one button
 can be offered, and put it last. Each step has a `kind`:
-- `chat`: they want to say something. `text` goes into the chat box exactly as if
-  they had typed it, so begin it with the channel's slash command when they mean a
-  channel other than say: /p for party, /r raid, /g guild, /i instance.
+- `chat`: only for typing into a text box the player has open (chat, a search
+  box). It does nothing when no box is open, so it is not how to send a message.
+  To send a message for them, use a `lua` step calling
+  `WowCompanion_Preview(line, heading, shownText)`: it opens the send preview, a
+  window with a Send button the player presses. `line` is the full slash line
+  (/g, /p, /raid, /i, /s, /y, /1 General, /2 Trade, /w Name); for a whisper,
+  resolve the name first with `WowCompanion_ResolveWhisper("Name message")`, which
+  returns target, message, label (or nil and why), then send "/w "..target.." "..message.
+
+Other things of ours agent code can call (all globals, all in WowCompanion):
+- `WCShowLink(n)`: the item viewer, the nth item linked in chat (1 = newest).
+- `WCPins.Set{...}`, `WCPins.Add{map=, x=, y=, r=}`, `WCPins.Clear()`: minimap and
+  world map pins (docs/api-useful.md, "Minimap pins").
+- `WCWheel.Set(name, {label=, slots={...}})`: the radial wheels.
 - `macro`: they want a macro. `name` is short; `body` is the macro text, 255 chars
   or fewer, using real WoW macro syntax such as /cast.
 - `press`: they want something an addon may not do for them but a macro can express.
