@@ -57,6 +57,163 @@ end
 -- when this UI session began, to tell this session's messages from a slot's old one
 local sessionStart = time()
 
+---------------------------------------------------------------------------
+-- WC, the engine modules hang off (the player, 2026-11-10; the shape of the
+-- big UI packs: one table, a module registry with a lifecycle, a message bus,
+-- per-module settings). Agent modules in modules/*.lua register here:
+--
+--   local M = WC.Module("Name", { after = { "Other" }, combat = "wait" })
+--   function M:Enable() ... end      -- build frames, listen; runs at login and on replace
+--   function M:Disable() ... end     -- optional: undo what Enable did
+--   M:On("BAGS_CHANGED", fn)         -- bus message; dropped on Disable
+--   M:Event("BAG_UPDATE_DELAYED", fn)-- game event via one shared frame; dropped on Disable
+--   M.db = WC.Settings("Name", { defaults })   -- WowCompanionDB.mods.Name, defaults filled
+--   WC.Send("MSG", ...)              -- to every listener, each under pcall
+--   WC.AfterCombat(fn)               -- now, or when the fight ends
+--
+-- Re-registering a name (a module step replacing its code) disables the old
+-- one first, so its listeners and events go away instead of doubling up.
+-- Frames it made stay (frames cannot be destroyed): Enable reuses them by name.
+---------------------------------------------------------------------------
+WC = WC or {}
+do
+	local mods, order = {}, {}
+	local listeners = {}            -- message -> { [owner] = fn }
+	local events = {}               -- event -> { [owner] = fn }
+	local afterCombat = {}
+	local bus = CreateFrame("Frame")
+	bus:RegisterEvent("PLAYER_REGEN_ENABLED")
+	bus:SetScript("OnEvent", function(_, event, ...)
+		if event == "PLAYER_REGEN_ENABLED" and #afterCombat > 0 then
+			local queued = afterCombat
+			afterCombat = {}
+			for _, fn in ipairs(queued) do
+				local ok, err = pcall(fn)
+				if not ok then geterrorhandler()(err) end
+			end
+		end
+		for owner, fn in pairs(events[event] or {}) do
+			local ok, err = pcall(fn, event, ...)
+			if not ok then geterrorhandler()(("%s %s: %s"):format(tostring(owner.name or owner), event, tostring(err))) end
+		end
+	end)
+
+	function WC.AfterCombat(fn)
+		if InCombatLockdown() then afterCombat[#afterCombat + 1] = fn else fn() end
+	end
+
+	function WC.Send(msg, ...)
+		for owner, fn in pairs(listeners[msg] or {}) do
+			local ok, err = pcall(fn, ...)
+			if not ok then geterrorhandler()(("%s on %s: %s"):format(tostring(owner.name or owner), msg, tostring(err))) end
+		end
+	end
+
+	-- per-module saved settings, defaults filled in without overwriting
+	function WC.Settings(name, defaults)
+		WowCompanionDB = WowCompanionDB or {}
+		WowCompanionDB.mods = WowCompanionDB.mods or {}
+		local db = WowCompanionDB.mods[name] or {}
+		WowCompanionDB.mods[name] = db
+		for k, v in pairs(defaults or {}) do
+			if db[k] == nil then db[k] = type(v) == "table" and CopyTable(v) or v end
+		end
+		return db
+	end
+
+	local proto = {}
+	proto.__index = proto
+	function proto:On(msg, fn)
+		listeners[msg] = listeners[msg] or {}
+		listeners[msg][self] = fn
+	end
+	function proto:Event(event, fn)
+		if not events[event] then
+			events[event] = {}
+			if event ~= "PLAYER_REGEN_ENABLED" then pcall(bus.RegisterEvent, bus, event) end
+		end
+		events[event][self] = fn
+	end
+	function proto:Drop()
+		for _, t in pairs(listeners) do t[self] = nil end
+		for _, t in pairs(events) do t[self] = nil end
+	end
+
+	local function enable(m)
+		if m.enabled then return end
+		for _, dep in ipairs(m.after or {}) do
+			local d = mods[dep]
+			if d and not d.enabled then enable(d) end
+		end
+		local function go()
+			if m.enabled or m.retired then return end
+			m.enabled = true
+			if m.Enable then
+				local ok, err = pcall(m.Enable, m)
+				if not ok then
+					m.enabled = false
+					m:Drop()
+					geterrorhandler()(("module %s: %s"):format(m.name, tostring(err)))
+				end
+			end
+		end
+		-- a module that builds secure frames or bindings waits out a fight
+		if m.combat == "wait" then WC.AfterCombat(go) else go() end
+	end
+
+	local function disable(m)
+		if not m.enabled then return end
+		m.enabled = false
+		if m.Disable then pcall(m.Disable, m) end
+		m:Drop()
+	end
+
+	-- Register (or replace) a module. Enable runs on the next frame, so the rest
+	-- of the module's file has defined its methods by then.
+	function WC.Module(name, opts)
+		local old = mods[name]
+		if old then
+			disable(old)
+			old.retired = true
+		else
+			order[#order + 1] = name
+		end
+		local m = setmetatable({ name = name }, proto)
+		for k, v in pairs(opts or {}) do m[k] = v end
+		mods[name] = m
+		C_Timer.After(0, function() if mods[name] == m then enable(m) end end)
+		return m
+	end
+
+	function WC.Get(name) return mods[name] end
+	function WC.Disable(name) local m = mods[name] if m then disable(m) end end
+	function WC.Enable(name) local m = mods[name] if m then enable(m) end end
+	-- name, enabled, for /wc and the agents
+	function WC.List()
+		local out = {}
+		for _, name in ipairs(order) do out[#out + 1] = { name = name, enabled = mods[name].enabled and true or false } end
+		return out
+	end
+
+	-- one place for what agent code may call; the old global names stay
+	-- (looked up at call time: some are defined further down this file)
+	WC.Board = { Post = function(...) return WowCompanion_Recent(...) end }
+	WC.Chat = {
+		Preview = function(...) return WowCompanion_Preview(...) end,
+		ResolveWhisper = function(...) return WowCompanion_ResolveWhisper(...) end,
+	}
+	WC.Items = {
+		Show = function(...) return WowCompanion_ShowItem(...) end,
+		ConfirmDestroy = function(...) return WowCompanion_ConfirmDestroy(...) end,
+	}
+	setmetatable(WC, { __index = function(_, k)
+		if k == "Pins" then return WCPins end
+		if k == "Strip" then return WowCompanion_Strip end
+		if k == "Style" then return WowCompanion_Style end
+		if k == "Wheel" then return WCWheel end
+	end })
+end
+
 -- Every module to run, name -> { code, disk }. modules/<Name>.lua in the repo is
 -- the source of truth, reaching the game as Modules.lua (WowCompanion_DiskModules,
 -- reread at every /reload); WowCompanionDB.modules is the old store, kept for a
@@ -108,6 +265,52 @@ end
 
 local Transcript = {}
 Transcript.__index = Transcript
+
+-- A request made while its conversation's agent is still busy (the player,
+-- 2026-11-10): its own line in the transcript says "queued" with a spinner until
+-- the agent starts on it, instead of the board saying "waiting" and losing what
+-- the agent is doing. Each queued line has an id; ids wait per conversation, in
+-- order, and the companion's `started` progress takes the oldest.
+local queuedLive, queuedBySlot, queuedNext = {}, {}, 0
+local queuedRows = {}
+local SPIN = { "|", "/", "-", "\\" }
+local spinTicker
+local function paintQueued()
+	local turn = math.floor(GetTime() * 6) % #SPIN + 1
+	local alive = {}
+	for _, row in ipairs(queuedRows) do
+		if queuedLive[row.queued] and row.fs:IsShown() then
+			row.fs:SetText(row.base .. "  |cff9d9d9dqueued behind the request before it  " .. SPIN[turn] .. "|r")
+			alive[#alive + 1] = row
+		else
+			row.fs:SetText(row.base)
+		end
+	end
+	queuedRows = alive
+	if #alive == 0 and spinTicker then spinTicker:Cancel() spinTicker = nil end
+end
+local function watchQueued(row)
+	queuedRows[#queuedRows + 1] = row
+	if not spinTicker then spinTicker = C_Timer.NewTicker(0.17, paintQueued) end
+	paintQueued()
+end
+local function queueRequest(slot)
+	queuedNext = queuedNext + 1
+	local id = ("%s#%d#%d"):format(slot, time(), queuedNext)
+	queuedLive[id] = true
+	queuedBySlot[slot] = queuedBySlot[slot] or {}
+	table.insert(queuedBySlot[slot], id)
+	return id
+end
+-- the oldest queued request of a conversation started; `all` ends every one
+local function unqueue(slot, all)
+	local list = queuedBySlot[slot or ""]
+	while list and #list > 0 do
+		queuedLive[table.remove(list, 1)] = nil
+		if not all then break end
+	end
+	paintQueued()
+end
 
 local function newTranscript(parent)
 	local scroll = CreateFrame("ScrollFrame", nil, parent)
@@ -260,14 +463,18 @@ local WHO = {
 	claude = { "Claude", "|cffffd100", 0.93, 0.93, 0.93 },
 }
 
-function Transcript:Add(who, text, continued, at)
+function Transcript:Add(who, text, continued, at, queued)
 	local voice = WHO[who]
 	if not continued then
 		self.code = false
 		if voice then
 			local stamp = date("%H:%M", at or time())
-			self:Row("GameFontNormalSmall", ("%s%s|r  |cff5c6370%s|r"):format(voice[2], voice[1], stamp),
-				0, TURN_GAP)
+			local header = ("%s%s|r  |cff5c6370%s|r"):format(voice[2], voice[1], stamp)
+			local row = self:Row("GameFontNormalSmall", header, 0, TURN_GAP)
+			if queued and queuedLive[queued] then
+				row.base, row.queued = header, queued
+				watchQueued(row)
+			end
 			self.gap = 3
 		end
 	end
@@ -1060,8 +1267,8 @@ local function colouredFor(who)
 	return "|cffffe08a"
 end
 
-local function showLine(who, text, continued, at)
-	logFrame().messages:Add(who, text, continued, at)
+local function showLine(who, text, continued, at, queued)
+	logFrame().messages:Add(who, text, continued, at, queued)
 end
 
 -- Spinning while the agent thinks. Several seconds of silence after you speak is
@@ -1215,17 +1422,17 @@ end
 
 paintHook = paintConversations
 
-local function remember(who, text, continued, slot)
+local function remember(who, text, continued, slot, queued)
 	slot = slot or replySlot or viewSlot
 	WowCompanionDB.log = WowCompanionDB.log or {}
 	local entries = WowCompanionDB.log
 	entries[#entries + 1] = { at = time(), who = who, text = text, continued = continued or nil,
-		slot = slot ~= "" and slot or nil }
+		slot = slot ~= "" and slot or nil, queued = queued }
 	while #entries > LOG_KEEP do
 		table.remove(entries, 1)
 	end
 	if slot == viewSlot then
-		showLine(who, text, continued, entries[#entries].at)
+		showLine(who, text, continued, entries[#entries].at, queued)
 	elseif not continued and who ~= "you" then
 		unreadSet()[slot] = true
 		paintConversations()
@@ -1237,7 +1444,7 @@ local function replayLog()
 	messages:Hold(true)
 	for _, entry in ipairs(WowCompanionDB.log or {}) do
 		if (entry.slot or "") == viewSlot then
-			showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at)
+			showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at, entry.queued)
 		end
 	end
 	messages:Hold(false)
@@ -2038,7 +2245,9 @@ function handlers.log(inbox)
 	-- the view never jumps on its own (the player, 2026-11-10): a reply in
 	-- another conversation lights it up in the list, and what you said does not
 	-- `pending` starts this conversation's waiting line; a line without it ends it
-	if inbox.slot or inbox.pending then setPending(inbox.pending, islot) end
+	-- a queued request leaves the running one's waiting line alone
+	local queued = inbox.queued and queueRequest(islot) or nil
+	if (inbox.slot or inbox.pending) and not queued then setPending(inbox.pending, islot) end
 	-- what a clip became ends its "transcribing": the request's own line in its
 	-- conversation, or a line that names none (a chat line, a dropped-clip
 	-- notice), which cannot say whose clip it was and so ends them all
@@ -2059,11 +2268,11 @@ function handlers.log(inbox)
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
 	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-		remember(who, line, lines > 0, islot)
+		remember(who, line, lines > 0, islot, lines == 0 and queued or nil)
 		lines = lines + 1
 	end
 	if lines == 0 then
-		remember(who, text, nil, islot)
+		remember(who, text, nil, islot, queued)
 	end
 	-- reveal, not Show: ShowUIPanel returns at once for a frame already shown, so a
 	-- window opened by a plain Show never becomes a panel and the controller's
@@ -2144,6 +2353,8 @@ end
 -- What the agent is doing right now, on the waiting line: "reading StanceBar.lua".
 -- Not logged; the reply is what stays.
 function handlers.progress(inbox)
+	-- the agent took the oldest queued request of this conversation
+	if inbox.started then unqueue(inbox.slot) end
 	setPending(inbox.text or "thinking", inbox.slot, inbox.since)
 	return "progress"
 end
@@ -2161,6 +2372,10 @@ function handlers.board(inbox)
 	end
 	for slot in pairs(working) do
 		if not listed[slot] then working[slot] = nil end
+	end
+	-- nothing running in a conversation: nothing in it is still queued
+	for slot in pairs(queuedBySlot) do
+		if not listed[slot] then unqueue(slot, true) end
 	end
 	renderPending()
 	return "board"
@@ -5052,4 +5267,566 @@ do
 	function WowCompanion_Strip.Hide()
 		if frame then frame:Hide() end
 	end
+end
+
+do
+-- Our bag window (the player, 2026-11-10), moved here from modules/Bags.lua.
+-- Modules run in the agent sandbox under forced taint (ForceTaint_Strong): the
+-- controller's frame manager, touching a window made there, was forbidden
+-- SetPreferredGamepadInteractTarget. Made here it carries only this addon's
+-- taint, like the Companion window, which takes part in the focus cycle fine. Every bag slot is a secure
+-- button running "/use bag slot", Blizzard's own right-click: use, equip, sell at
+-- a vendor, attach to mail or trade, take a spell's pending item target. A button
+-- is welded to its slot, so it never needs re-pointing in combat. Opening,
+-- closing and the d-pad run in secure snippets, so they work in combat too.
+local COLS, SIZE, GAP, PAD = 8, 40, 4, 14
+local MAXBAG = 4
+
+local function build()
+	if WCBags and WCBags.SetFrameRef and WCBags.ready then return end
+	local f = CreateFrame("Frame", "WCBags", UIParent, "SecureHandlerShowHideTemplate,BackdropTemplate")
+	-- BackdropTemplate's OnLoad replaces the secure handler's, which gives SetFrameRef
+	if not f.SetFrameRef then SecureHandler_OnLoad(f) end
+	f:SetFrameStrata("DIALOG")
+	f:SetPoint("RIGHT", UIParent, "RIGHT", -120, 40)
+	f:SetBackdrop({
+		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+		edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+		edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 },
+	})
+	f:Hide()
+	-- A focusable controller panel (the player, 2026-11-10), the same recipe as
+	-- the Companion window: marked focusable, a UIPanelWindows entry, opened with
+	-- ShowUIPanel (its secure dispatch tells the frame manager), FrameHidden on
+	-- hide. Firing the manager's EventRegistry event ourselves ran its focus code
+	-- tainted: SetPreferredGamepadInteractTarget was blocked. Never do that.
+	-- It navigates itself (useCustomNavigation: the manager calls FocusGamepad /
+	-- UnfocusGamepad on us). In combat ShowUIPanel is refused, so the secure
+	-- snippet shows it plainly: usable, not in the focus cycle.
+	f.useCustomNavigation = true
+	if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, f) end
+	if UIPanelWindows then
+		UIPanelWindows["WCBags"] = { area = "right", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
+	end
+	function f:Open()
+		if InCombatLockdown() then self:Show() return end
+		ShowUIPanel(self)
+		if not self:IsShown() then self:Show() end
+	end
+	function f:Shut()
+		if InCombatLockdown() then self:Hide() return end
+		HideUIPanel(self)
+		if self:IsShown() then self:Hide() end
+	end
+	-- even margins all round (the player, 2026-11-10): EDGE from the border's
+	-- inside on every side, a title row, the grid, a legend row
+	local EDGE, TITLE_H, LEGEND_H, GAP_V = 18, 20, 24, 8
+	local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	title:SetPoint("LEFT", f, "TOPLEFT", EDGE, -(EDGE + TITLE_H / 2))
+	f.title = title
+	local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	hint:SetPoint("BOTTOMLEFT", PAD + 4, PAD)
+	-- the buttons Blizzard's controller bags use (ContainerFrame.lua, SetupGamepad)
+	local g = WowCompanion_Glyph or function(key) return key end
+	hint:SetText(("%s use   %s move   %s more   %s close   %s %s bags"):format(
+		g("PAD3"), g("PAD1"), g("PAD4"), g("PAD2"), g("PADLSHOULDER"), g("PADRSHOULDER")))
+	-- the controller legend as Blizzard draws it: the pad's own glyphs
+	if WowCompanion_Style then
+		hint:Hide()
+		local prev
+		f.legendW = 0
+		for i, p in ipairs({ { "PAD3", USE or "Use" }, { "PAD1", "Move" }, { "PAD4", "More" },
+			{ "PAD2", CLOSE or "Close" }, { "PADRSHOULDER", "Bag" } }) do
+			local pr = WowCompanion_Style.Prompt(f, p[1], p[2])
+			pr:SetHeight(LEGEND_H)
+			if prev then pr:SetPoint("LEFT", prev, "RIGHT", 12, 0) else pr:SetPoint("BOTTOMLEFT", EDGE, EDGE) end
+			local w = pr:GetWidth()
+			if pr.ControlDescText and pr.ControlDescText.GetWidth then
+				w = math.max(w, 28 + (pr.ControlDescText.Text and pr.ControlDescText.Text:GetStringWidth() or pr.ControlDescText:GetWidth()))
+				pr:SetWidth(w)
+			end
+			f.legendW = f.legendW + w + (i > 1 and 12 or 0)
+			prev = pr
+		end
+	end
+	f:SetAttribute("cols", COLS)
+
+	local tip = CreateFrame("GameTooltip", "WCBagsTip", UIParent, "GameTooltipTemplate")
+	local hl = CreateFrame("Frame", nil, f)
+	hl:SetSize(SIZE + 8, SIZE + 8)
+	hl:SetFrameLevel(f:GetFrameLevel() + 20)
+	local hlt = hl:CreateTexture(nil, "OVERLAY")
+	hlt:SetAllPoints()
+	hlt:SetTexture("Interface\\Buttons\\CheckButtonHilight")
+	hlt:SetBlendMode("ADD")
+	hl:Hide()
+	-- the item in hand, drawn on the focused slot's corner as Blizzard's gamepad
+	-- cursor carries it
+	local carry = CreateFrame("Frame", nil, f)
+	carry:SetSize(SIZE - 4, SIZE - 4)
+	carry:SetFrameLevel(f:GetFrameLevel() + 30)
+	carry.icon = carry:CreateTexture(nil, "OVERLAY")
+	carry.icon:SetAllPoints()
+	carry:Hide()
+	function f:Carry()
+		local kind, id = GetCursorInfo()
+		local b = self.order[self.focusIndex or 1]
+		if kind == "item" and id and b then
+			carry.icon:SetTexture(C_Item.GetItemIconByID(id))
+			carry:ClearAllPoints()
+			carry:SetPoint("CENTER", b, "BOTTOMRIGHT", -4, 4)
+			carry:Show()
+		else
+			carry:Hide()
+		end
+	end
+
+	f.buttons, f.order = {}, {}
+
+	local function slotButton(bag, slot)
+		local key = bag * 100 + slot
+		local b = f.buttons[key]
+		if b then return b end
+		b = CreateFrame("Button", ("WCBagsSlot%d_%d"):format(bag, slot), f, "SecureActionButtonTemplate")
+		b:SetSize(SIZE, SIZE)
+		b:RegisterForClicks("AnyDown")
+		b:SetAttribute("type", "macro")
+		b:SetAttribute("macrotext", ("/use %d %d"):format(bag, slot))
+		b.bag, b.slot = bag, slot
+		local bg = b:CreateTexture(nil, "BACKGROUND")
+		bg:SetAllPoints()
+		bg:SetTexture("Interface\\Buttons\\UI-EmptySlot-Disabled")
+		bg:SetTexCoord(0.14, 0.86, 0.14, 0.86)
+		b.icon = b:CreateTexture(nil, "ARTWORK")
+		b.icon:SetAllPoints()
+		b.border = b:CreateTexture(nil, "OVERLAY")
+		b.border:SetPoint("TOPLEFT", -1, 1)
+		b.border:SetPoint("BOTTOMRIGHT", 1, -1)
+		b.border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+		b.border:SetBlendMode("ADD")
+		b.count = b:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+		b.count:SetPoint("BOTTOMRIGHT", -2, 2)
+		b.cd = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
+		b.cd:SetAllPoints()
+		b:SetScript("OnEnter", function(self) f:Focus(self.index) end)
+		b:SetScript("OnLeave", function() tip:Hide() end)
+		f.buttons[key] = b
+		return b
+	end
+
+	local function paint(b)
+		local info = C_Container.GetContainerItemInfo(b.bag, b.slot)
+		if info and info.iconFileID then
+			b.icon:SetTexture(info.iconFileID)
+			b.icon:SetDesaturated(info.isLocked and true or false)
+			b.count:SetText((info.stackCount or 1) > 1 and info.stackCount or "")
+			local q = info.quality
+			if q and q >= 2 then
+				local r, g, bl = C_Item.GetItemQualityColor(q)
+				b.border:SetVertexColor(r, g, bl)
+				b.border:Show()
+			else
+				b.border:Hide()
+			end
+			local start, dur, on = C_Container.GetContainerItemCooldown(b.bag, b.slot)
+			if on and on ~= 0 and dur and dur > 0 then b.cd:SetCooldown(start, dur) else b.cd:Clear() end
+		else
+			b.icon:SetTexture(nil)
+			b.count:SetText("")
+			b.border:Hide()
+			b.cd:Clear()
+		end
+	end
+
+	function f:Paint()
+		local free, total = 0, 0
+		for _, b in ipairs(self.order) do
+			paint(b)
+			total = total + 1
+			if not C_Container.GetContainerItemID(b.bag, b.slot) then free = free + 1 end
+		end
+		local held = ""
+		local kind, _, link = GetCursorInfo()
+		if kind == "item" and link then held = "   |cffffffffholding|r " .. link end
+		self.title:SetText(("Bags   |cffffffff%d free of %d|r%s"):format(free, total, held))
+		self:Carry()
+		if self.focusIndex and self.order[self.focusIndex] and tip:IsShown() then self:Focus(self.focusIndex) end
+	end
+
+	-- Out of combat only: which slots exist, where they sit, the secure refs.
+	function f:Layout()
+		if InCombatLockdown() then self.layoutOwed = true return end
+		self.layoutOwed = nil
+		for _, b in pairs(self.buttons) do b:Hide() end
+		wipe(self.order)
+		self.gridX = EDGE + math.floor((math.max(COLS * (SIZE + GAP) - GAP, self.legendW or 0) - (COLS * (SIZE + GAP) - GAP)) / 2)
+		for bag = 0, MAXBAG do
+			for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
+				self.order[#self.order + 1] = slotButton(bag, slot)
+			end
+		end
+		local n = #self.order
+		for bag = 0, MAXBAG do self:SetAttribute("bagstart" .. bag, nil) end
+		for i, b in ipairs(self.order) do
+			if not self:GetAttribute("bagstart" .. b.bag) then self:SetAttribute("bagstart" .. b.bag, i) end
+			local col, row = (i - 1) % COLS, math.floor((i - 1) / COLS)
+			b:ClearAllPoints()
+			b:SetPoint("TOPLEFT", self.gridX + col * (SIZE + GAP), -(EDGE + TITLE_H + GAP_V + row * (SIZE + GAP)))
+			b.index = i
+			b:Show()
+			self:SetFrameRef("slot" .. i, b)
+		end
+		self:SetAttribute("count", n)
+		local rows = math.max(1, math.ceil(n / COLS))
+		local gridW = COLS * (SIZE + GAP) - GAP
+		local inner = math.max(gridW, self.legendW or 0)
+		self:SetSize(EDGE * 2 + inner, EDGE * 2 + TITLE_H + GAP_V + rows * (SIZE + GAP) - GAP + GAP_V + LEGEND_H)
+		if (self:GetAttribute("focus") or 1) > n then self:SetAttribute("focus", 1) end
+		self:Paint()
+	end
+
+	-- insecure half of a move: the highlight and the tooltip
+	function f:Focus(i)
+		local b = self.order[i]
+		if not b then return end
+		self.focusIndex = i
+		hl:ClearAllPoints()
+		hl:SetPoint("CENTER", b, "CENTER")
+		hl:Show()
+		tip:SetOwner(b, "ANCHOR_NONE")
+		tip:ClearAllPoints()
+		tip:SetPoint("TOPRIGHT", b, "TOPLEFT", -6, 0)
+		if C_Container.GetContainerItemID(b.bag, b.slot) then
+			tip:SetBagItem(b.bag, b.slot)
+			tip:Show()
+		else
+			tip:Hide()
+		end
+		self:Carry()
+	end
+
+	-- secure half: the d-pad walks the grid in order, cross clicks the focused slot
+	f:SetAttribute("move", [[
+		local dx, dy, jump = ...
+		local n = self:GetAttribute("count") or 0
+		if n == 0 then return end
+		local cols = self:GetAttribute("cols")
+		local i = self:GetAttribute("focus") or 1
+		if i > n then i = 1 end
+		local j = i
+		if jump and jump ~= 0 then
+			local here = 0
+			for bag = 4, 0, -1 do
+				local s0 = self:GetAttribute("bagstart" .. bag)
+				if s0 and s0 <= i then here = bag break end
+			end
+			local bag = here
+			for _ = 1, 5 do
+				bag = bag + jump
+				if bag > 4 then bag = 0 elseif bag < 0 then bag = 4 end
+				local s0 = self:GetAttribute("bagstart" .. bag)
+				if s0 then j = s0 break end
+			end
+		elseif dx ~= 0 then
+			j = i + dx
+			if j < 1 then j = n elseif j > n then j = 1 end
+		elseif dy ~= 0 then
+			j = i + dy * cols
+			if j > n then
+				j = (i - 1) % cols + 1
+			elseif j < 1 then
+				j = i
+				while j + cols <= n do j = j + cols end
+			end
+		end
+		self:SetAttribute("focus", j)
+		local b = self:GetFrameRef("slot" .. j)
+		if b then self:SetBindingClick(true, "PAD3", b:GetName(), "LeftButton") end
+		self:CallMethod("Focus", j)
+	]])
+	f:SetAttribute("_onshow", [[
+		self:SetBindingClick(true, "PADDUP", "WCBagsUp")
+		self:SetBindingClick(true, "PADDDOWN", "WCBagsDown")
+		self:SetBindingClick(true, "PADDLEFT", "WCBagsLeft")
+		self:SetBindingClick(true, "PADDRIGHT", "WCBagsRight")
+		self:SetBindingClick(true, "PAD2", "WCBagsClose")
+		self:SetBindingClick(true, "PAD1", "WCBagsPick")
+		self:SetBindingClick(true, "PAD4", "WCBagsMore")
+		self:SetBindingClick(true, "PADLSHOULDER", "WCBagsPrevBag")
+		self:SetBindingClick(true, "PADRSHOULDER", "WCBagsNextBag")
+		self:RunAttribute("move", 0, 0)
+	]])
+	f:SetAttribute("_onhide", [[ self:ClearBindings() self:CallMethod("Closed") ]])
+	function f:Closed() hl:Hide() tip:Hide() end
+
+	local function navButton(name, dx, dy, jump)
+		local b = CreateFrame("Button", name, UIParent, "SecureHandlerClickTemplate")
+		b:RegisterForClicks("AnyDown")
+		b:SetFrameRef("bags", f)
+		b:SetAttribute("_onclick", ([[ self:GetFrameRef("bags"):RunAttribute("move", %d, %d, %d) ]]):format(dx, dy, jump or 0))
+	end
+	navButton("WCBagsPrevBag", 0, 0, -1)
+	navButton("WCBagsNextBag", 0, 0, 1)
+	navButton("WCBagsUp", 0, -1)
+	navButton("WCBagsDown", 0, 1)
+	navButton("WCBagsLeft", -1, 0)
+	navButton("WCBagsRight", 1, 0)
+
+	local close = CreateFrame("Button", "WCBagsClose", UIParent, "SecureHandlerClickTemplate")
+	close:RegisterForClicks("AnyDown")
+	close:SetFrameRef("bags", f)
+	close:SetAttribute("_onclick", [[
+		local bags = self:GetFrameRef("bags")
+		if PlayerInCombat() then bags:Hide() else bags:CallMethod("Shut") end
+	]])
+	-- Holding an item, circle puts it back (Blizzard's Back). Out of combat the
+	-- binding swaps to WCBagsDrop, which only puts it back; in combat it puts it
+	-- back and closes.
+	close:HookScript("PreClick", function() if CursorHasItem() then ClearCursor() end end)
+	local drop = CreateFrame("Button", "WCBagsDrop", UIParent)
+	drop:RegisterForClicks("AnyDown")
+
+	-- cross: pick up and put down, as a left click on Blizzard's slot does
+	local pick = CreateFrame("Button", "WCBagsPick", UIParent)
+	pick:RegisterForClicks("AnyDown")
+	local function holdBindings()
+		if InCombatLockdown() then return end
+		SetOverrideBindingClick(f, true, "PAD2", CursorHasItem() and "WCBagsDrop" or "WCBagsClose")
+	end
+	pick:SetScript("OnClick", function()
+		local b = f.order[f.focusIndex or 1]
+		if not b then return end
+		C_Container.PickupContainerItem(b.bag, b.slot)
+		holdBindings()
+		f:Paint()
+	end)
+	drop:SetScript("OnClick", function()
+		ClearCursor()
+		holdBindings()
+		f:Paint()
+	end)
+
+	-- triangle: more actions, out of combat (Blizzard's list has bind to the
+	-- bar and split the stack; sorting is added here)
+	-- drawn as Blizzard's context menu (WowCompanion_Style, in the addon)
+	local menu = CreateFrame("Frame", "WCBagsMenu", f)
+	menu:SetFrameStrata("FULLSCREEN_DIALOG")
+	menu:Hide()
+	if WowCompanion_Style then WowCompanion_Style.Menu(menu) end
+	menu.hl = WowCompanion_Style and WowCompanion_Style.Highlight(menu) or menu:CreateTexture(nil, "ARTWORK")
+	menu.rows = {}
+	if WowCompanion_Style then
+		local pick = WowCompanion_Style.Prompt(menu, "PAD1", ACCEPT or "Select")
+		pick:SetPoint("TOPLEFT", menu, "BOTTOMLEFT", 2, -10)
+		local back = WowCompanion_Style.Prompt(menu, "PAD2", BACK or "Back")
+		back:SetPoint("LEFT", pick, "RIGHT", 14, 0)
+	end
+	local function firstFree()
+		for bag = 0, MAXBAG do
+			for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
+				if not C_Container.GetContainerItemID(bag, slot) then return bag, slot end
+			end
+		end
+	end
+	local function split(b, n)
+		local bag, slot = firstFree()
+		if not bag then print("bags: no free slot to split into") return end
+		C_Container.SplitContainerItem(b.bag, b.slot, n)
+		C_Container.PickupContainerItem(bag, slot)
+	end
+	local BARS = { { 181, "d-pad" }, { 185, "L2" }, { 193, "R2" }, { 201, "L2+R2" } }
+	local KEYS = { "left", "up", "right", "down", "square", "triangle", "circle", "cross" }
+	local function toBar(b)
+		for _, bar in ipairs(BARS) do
+			for k = 0, 7 do
+				if not GetActionInfo(bar[1] + k) then
+					C_Container.PickupContainerItem(b.bag, b.slot)
+					PlaceAction(bar[1] + k)
+					ClearCursor()
+					print(("bags: put on %s + %s"):format(bar[2], KEYS[k + 1]))
+					return
+				end
+			end
+		end
+		print("bags: no empty bar button")
+	end
+	local closeMenu
+	local function entries(b)
+		local info = C_Container.GetContainerItemInfo(b.bag, b.slot)
+		local list = {}
+		if info then
+			if C_Item.IsUsableItem(info.itemID) then list[#list + 1] = { "Put on action bar", function() toBar(b) end } end
+			local n = info.stackCount or 1
+			if n > 1 then
+				list[#list + 1] = { "Split stack in half", function() split(b, math.floor(n / 2)) end }
+				list[#list + 1] = { "Split one off", function() split(b, 1) end }
+			end
+		end
+		-- linking is by voice (\"link X to Y\"), not a menu entry (the player, 2026-11-10)
+		if info and WowCompanion_ConfirmDestroy then
+			list[#list + 1] = { "|cffff6060Destroy|r", function()
+				-- the confirmation takes cross and circle; ours come back when it closes
+				ClearOverrideBindings(f)
+				if not WowCompanion_ConfirmDestroy(b.bag, b.slot, function() closeMenu() end) then closeMenu() end
+			end }
+		end
+		list[#list + 1] = { "Sort bags", function() C_Container.SortBags() end }
+		list[#list + 1] = { "Cancel", function() end }
+		return list
+	end
+	closeMenu = function()
+		menu:Hide()
+		if not InCombatLockdown() and f:IsShown() then
+			ClearOverrideBindings(f)
+			f:Execute(f:GetAttribute("_onshow"))
+			holdBindings()
+		end
+	end
+	local function paintMenu()
+		for i, row in ipairs(menu.rows) do
+			local on = i == menu.sel
+			row:SetTextColor(1, 1, 1)
+			row:SetText(menu.list[i] and menu.list[i][1] or "")
+			row:SetShown(menu.list[i] ~= nil)
+			if on then
+				menu.hl:ClearAllPoints()
+				menu.hl:SetPoint("LEFT", menu, "LEFT", 2, 0)
+				menu.hl:SetPoint("RIGHT", menu, "RIGHT", -2, 0)
+				menu.hl:SetPoint("TOP", menu, "TOP", 0, -(6 + (i - 1) * 20))
+				menu.hl:SetHeight(20)
+				menu.hl:Show()
+			end
+		end
+	end
+	local function plainButton(name, fn)
+		local b = CreateFrame("Button", name, UIParent)
+		b:RegisterForClicks("AnyDown")
+		b:SetScript("OnClick", fn)
+	end
+	plainButton("WCBagsMenuUp", function() menu.sel = menu.sel > 1 and menu.sel - 1 or #menu.list paintMenu() end)
+	plainButton("WCBagsMenuDown", function() menu.sel = menu.sel < #menu.list and menu.sel + 1 or 1 paintMenu() end)
+	plainButton("WCBagsMenuPick", function()
+		local e = menu.list[menu.sel]
+		closeMenu()
+		if e then pcall(e[2]) end
+		f:Paint()
+	end)
+	plainButton("WCBagsMenuBack", closeMenu)
+	plainButton("WCBagsMore", function()
+		if InCombatLockdown() or CursorHasItem() then return end
+		local b = f.order[f.focusIndex or 1]
+		if not b then return end
+		menu.list, menu.sel = entries(b), 1
+		for i = #menu.rows + 1, #menu.list do
+			-- MenuStyle2's insets: 6 above, 7 below; each row a 20 px cell, text centred in it
+			local row = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+			row:SetPoint("LEFT", menu, "TOPLEFT", 12, -(6 + (i - 0.5) * 20))
+			row:SetJustifyH("LEFT")
+			menu.rows[i] = row
+		end
+		menu:SetSize(190, 6 + #menu.list * 20 + 7)
+		menu:ClearAllPoints()
+		menu:SetPoint("TOPLEFT", b, "BOTTOMRIGHT", 4, 4)
+		paintMenu()
+		menu:Show()
+		SetOverrideBindingClick(f, true, "PADDUP", "WCBagsMenuUp")
+		SetOverrideBindingClick(f, true, "PADDDOWN", "WCBagsMenuDown")
+		SetOverrideBindingClick(f, true, "PAD1", "WCBagsMenuPick")
+		for _, key in ipairs({ "PAD2", "PAD3", "PAD4", "PADDLEFT", "PADDRIGHT" }) do
+			SetOverrideBindingClick(f, true, key, "WCBagsMenuBack")
+		end
+	end)
+	f:HookScript("OnHide", function() menu:Hide() if CursorHasItem() then ClearCursor() end end)
+	f:RegisterEvent("PLAYER_REGEN_DISABLED")
+
+	-- opening: a macro (/click WCBagsToggle) fires once; a key binding fires
+	-- WCBagsKey on the press only
+	for _, name in ipairs({ "WCBagsToggle", "WCBagsKey" }) do
+		local t = CreateFrame("Button", name, UIParent, "SecureHandlerClickTemplate")
+		if name == "WCBagsToggle" then t:RegisterForClicks("AnyUp", "AnyDown") else t:RegisterForClicks("AnyDown") end
+		t:SetFrameRef("bags", f)
+		t:SetAttribute("_onclick", [[
+			local bags = self:GetFrameRef("bags")
+			if PlayerInCombat() then
+				if bags:IsShown() then bags:Hide() else bags:Show() end
+			elseif bags:IsShown() then bags:CallMethod("Shut") else bags:CallMethod("Open") end
+		]])
+	end
+
+	local sort = CreateFrame("Button", "WCBagsSort", UIParent)
+	sort:RegisterForClicks("AnyDown")
+	sort:SetScript("OnClick", function()
+		if InCombatLockdown() then return end
+		C_Container.SortBags()
+	end)
+
+	f:RegisterEvent("BAG_UPDATE_DELAYED")
+	f:RegisterEvent("ITEM_LOCK_CHANGED")
+	f:RegisterEvent("BAG_UPDATE_COOLDOWN")
+	f:RegisterEvent("PLAYER_REGEN_ENABLED")
+	pcall(f.RegisterEvent, f, "CURSOR_CHANGED")
+	f:SetScript("OnEvent", function(self, event)
+		-- fires just before the lockdown: the last moment to put the window's own
+		-- bindings back (menu keys or put-back on circle would be stuck all fight)
+		if event == "PLAYER_REGEN_DISABLED" then
+			menu:Hide()
+			if self:IsShown() then ClearOverrideBindings(self) self:Execute(self:GetAttribute("_onshow")) end
+			return
+		end
+		if event == "BAG_UPDATE_DELAYED" or event == "PLAYER_REGEN_ENABLED" then
+			local n = 0
+			for bag = 0, MAXBAG do n = n + (C_Container.GetContainerNumSlots(bag) or 0) end
+			if n ~= #self.order or self.layoutOwed then self:Layout() return end
+		end
+		if event == "CURSOR_CHANGED" then if self:IsShown() then self:Paint() end return end
+		if self:IsShown() or event == "BAG_UPDATE_DELAYED" then self:Paint() end
+	end)
+	f:HookScript("OnShow", function(self)
+		self:Paint()
+	end)
+	-- however it closes, the manager hears (or the bars stay dead after it)
+	f:HookScript("OnHide", function(self)
+		if GamepadMode and GamepadMode.FrameControlsManager
+			and InputUtil and InputUtil.IsGamepadUIEnabled() then
+			GamepadMode.FrameControlsManager:FrameHidden(self)
+		end
+	end)
+	-- focus moved to another window: give the d-pad and face buttons back to it;
+	-- focus came back: take them again
+	function f:UnfocusGamepad()
+		if InCombatLockdown() then return end
+		menu:Hide()
+		ClearOverrideBindings(self)
+		hl:Hide()
+		tip:Hide()
+	end
+	function f:FocusGamepad()
+		if InCombatLockdown() or not self:IsShown() then return end
+		ClearOverrideBindings(self)
+		self:Execute(self:GetAttribute("_onshow"))
+		holdBindings()
+	end
+
+	-- the keyboard's own bag key opens ours (the pad uses the macro)
+	local keys = CreateFrame("Frame", "WCBagsKeys")
+	for _, cmd in ipairs({ "TOGGLEBACKPACK", "OPENALLBAGS" }) do
+		for _, key in ipairs({ GetBindingKey(cmd) }) do
+			SetOverrideBindingClick(keys, false, key, "WCBagsKey")
+		end
+	end
+
+	f:Layout()
+	f.ready = true
+	print(("bags: ready, %d slots"):format(#f.order))
+end
+
+if InCombatLockdown() then
+	local w = CreateFrame("Frame")
+	w:RegisterEvent("PLAYER_REGEN_ENABLED")
+	w:SetScript("OnEvent", function(self) self:UnregisterAllEvents() build() end)
+	print("bags: will build when this fight ends")
+else
+	build()
+end
+
 end
