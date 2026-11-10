@@ -24,7 +24,8 @@ local function build()
 	f.title = title
 	local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	hint:SetPoint("BOTTOMLEFT", PAD + 4, PAD)
-	hint:SetText("|cffffd100cross|r use   |cffffd100triangle|r sort   |cffffd100circle|r close")
+	-- the buttons Blizzard's controller bags use (ContainerFrame.lua, SetupGamepad)
+	hint:SetText("|cffffd100square|r use   |cffffd100cross|r move   |cffffd100triangle|r more   |cffffd100circle|r close   |cffffd100L1 R1|r bags")
 	f:SetAttribute("cols", COLS)
 
 	local tip = CreateFrame("GameTooltip", "WCBagsTip", UIParent, "GameTooltipTemplate")
@@ -101,7 +102,10 @@ local function build()
 			total = total + 1
 			if not C_Container.GetContainerItemID(b.bag, b.slot) then free = free + 1 end
 		end
-		self.title:SetText(("Bags   |cffffffff%d free of %d|r"):format(free, total))
+		local held = ""
+		local kind, _, link = GetCursorInfo()
+		if kind == "item" and link then held = "   |cffffffffholding|r " .. link end
+		self.title:SetText(("Bags   |cffffffff%d free of %d|r%s"):format(free, total, held))
 		if self.focusIndex and self.order[self.focusIndex] and tip:IsShown() then self:Focus(self.focusIndex) end
 	end
 
@@ -117,7 +121,9 @@ local function build()
 			end
 		end
 		local n = #self.order
+		for bag = 0, MAXBAG do self:SetAttribute("bagstart" .. bag, nil) end
 		for i, b in ipairs(self.order) do
+			if not self:GetAttribute("bagstart" .. b.bag) then self:SetAttribute("bagstart" .. b.bag, i) end
 			local col, row = (i - 1) % COLS, math.floor((i - 1) / COLS)
 			b:ClearAllPoints()
 			b:SetPoint("TOPLEFT", PAD + col * (SIZE + GAP), -(PAD + 24 + row * (SIZE + GAP)))
@@ -153,14 +159,27 @@ local function build()
 
 	-- secure half: the d-pad walks the grid in order, cross clicks the focused slot
 	f:SetAttribute("move", [[
-		local dx, dy = ...
+		local dx, dy, jump = ...
 		local n = self:GetAttribute("count") or 0
 		if n == 0 then return end
 		local cols = self:GetAttribute("cols")
 		local i = self:GetAttribute("focus") or 1
 		if i > n then i = 1 end
 		local j = i
-		if dx ~= 0 then
+		if jump and jump ~= 0 then
+			local here = 0
+			for bag = 4, 0, -1 do
+				local s0 = self:GetAttribute("bagstart" .. bag)
+				if s0 and s0 <= i then here = bag break end
+			end
+			local bag = here
+			for _ = 1, 5 do
+				bag = bag + jump
+				if bag > 4 then bag = 0 elseif bag < 0 then bag = 4 end
+				local s0 = self:GetAttribute("bagstart" .. bag)
+				if s0 then j = s0 break end
+			end
+		elseif dx ~= 0 then
 			j = i + dx
 			if j < 1 then j = n elseif j > n then j = 1 end
 		elseif dy ~= 0 then
@@ -174,7 +193,7 @@ local function build()
 		end
 		self:SetAttribute("focus", j)
 		local b = self:GetFrameRef("slot" .. j)
-		if b then self:SetBindingClick(true, "PAD1", b:GetName(), "LeftButton") end
+		if b then self:SetBindingClick(true, "PAD3", b:GetName(), "LeftButton") end
 		self:CallMethod("Focus", j)
 	]])
 	f:SetAttribute("_onshow", [[
@@ -183,18 +202,23 @@ local function build()
 		self:SetBindingClick(true, "PADDLEFT", "WCBagsLeft")
 		self:SetBindingClick(true, "PADDRIGHT", "WCBagsRight")
 		self:SetBindingClick(true, "PAD2", "WCBagsClose")
-		self:SetBindingClick(true, "PAD4", "WCBagsSort")
+		self:SetBindingClick(true, "PAD1", "WCBagsPick")
+		self:SetBindingClick(true, "PAD4", "WCBagsMore")
+		self:SetBindingClick(true, "PADLSHOULDER", "WCBagsPrevBag")
+		self:SetBindingClick(true, "PADRSHOULDER", "WCBagsNextBag")
 		self:RunAttribute("move", 0, 0)
 	]])
 	f:SetAttribute("_onhide", [[ self:ClearBindings() self:CallMethod("Closed") ]])
 	function f:Closed() hl:Hide() tip:Hide() end
 
-	local function navButton(name, dx, dy)
+	local function navButton(name, dx, dy, jump)
 		local b = CreateFrame("Button", name, UIParent, "SecureHandlerClickTemplate")
 		b:RegisterForClicks("AnyDown")
 		b:SetFrameRef("bags", f)
-		b:SetAttribute("_onclick", ([[ self:GetFrameRef("bags"):RunAttribute("move", %d, %d) ]]):format(dx, dy))
+		b:SetAttribute("_onclick", ([[ self:GetFrameRef("bags"):RunAttribute("move", %d, %d, %d) ]]):format(dx, dy, jump or 0))
 	end
+	navButton("WCBagsPrevBag", 0, 0, -1)
+	navButton("WCBagsNextBag", 0, 0, 1)
 	navButton("WCBagsUp", 0, -1)
 	navButton("WCBagsDown", 0, 1)
 	navButton("WCBagsLeft", -1, 0)
@@ -204,6 +228,144 @@ local function build()
 	close:RegisterForClicks("AnyDown")
 	close:SetFrameRef("bags", f)
 	close:SetAttribute("_onclick", [[ self:GetFrameRef("bags"):Hide() ]])
+	-- Holding an item, circle puts it back (Blizzard's Back). Out of combat the
+	-- binding swaps to WCBagsDrop, which only puts it back; in combat it puts it
+	-- back and closes.
+	close:HookScript("PreClick", function() if CursorHasItem() then ClearCursor() end end)
+	local drop = CreateFrame("Button", "WCBagsDrop", UIParent)
+	drop:RegisterForClicks("AnyDown")
+
+	-- cross: pick up and put down, as a left click on Blizzard's slot does
+	local pick = CreateFrame("Button", "WCBagsPick", UIParent)
+	pick:RegisterForClicks("AnyDown")
+	local function holdBindings()
+		if InCombatLockdown() then return end
+		SetOverrideBindingClick(f, true, "PAD2", CursorHasItem() and "WCBagsDrop" or "WCBagsClose")
+	end
+	pick:SetScript("OnClick", function()
+		local b = f.order[f.focusIndex or 1]
+		if not b then return end
+		C_Container.PickupContainerItem(b.bag, b.slot)
+		holdBindings()
+		f:Paint()
+	end)
+	drop:SetScript("OnClick", function()
+		ClearCursor()
+		holdBindings()
+		f:Paint()
+	end)
+
+	-- triangle: more actions, out of combat (Blizzard's list has bind to the
+	-- bar and split the stack; sorting is added here)
+	local menu = CreateFrame("Frame", "WCBagsMenu", f, "BackdropTemplate")
+	menu:SetBackdrop({
+		bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		edgeSize = 14, insets = { left = 3, right = 3, top = 3, bottom = 3 },
+	})
+	menu:SetBackdropColor(0, 0, 0, 0.95)
+	menu:SetFrameLevel(f:GetFrameLevel() + 40)
+	menu:Hide()
+	menu.rows = {}
+	local function firstFree()
+		for bag = 0, MAXBAG do
+			for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
+				if not C_Container.GetContainerItemID(bag, slot) then return bag, slot end
+			end
+		end
+	end
+	local function split(b, n)
+		local bag, slot = firstFree()
+		if not bag then print("bags: no free slot to split into") return end
+		C_Container.SplitContainerItem(b.bag, b.slot, n)
+		C_Container.PickupContainerItem(bag, slot)
+	end
+	local BARS = { { 181, "d-pad" }, { 185, "L2" }, { 193, "R2" }, { 201, "L2+R2" } }
+	local KEYS = { "left", "up", "right", "down", "square", "triangle", "circle", "cross" }
+	local function toBar(b)
+		for _, bar in ipairs(BARS) do
+			for k = 0, 7 do
+				if not GetActionInfo(bar[1] + k) then
+					C_Container.PickupContainerItem(b.bag, b.slot)
+					PlaceAction(bar[1] + k)
+					ClearCursor()
+					print(("bags: put on %s + %s"):format(bar[2], KEYS[k + 1]))
+					return
+				end
+			end
+		end
+		print("bags: no empty bar button")
+	end
+	local function entries(b)
+		local info = C_Container.GetContainerItemInfo(b.bag, b.slot)
+		local list = {}
+		if info then
+			if C_Item.IsUsableItem(info.itemID) then list[#list + 1] = { "Put on action bar", function() toBar(b) end } end
+			local n = info.stackCount or 1
+			if n > 1 then
+				list[#list + 1] = { "Split stack in half", function() split(b, math.floor(n / 2)) end }
+				list[#list + 1] = { "Split one off", function() split(b, 1) end }
+			end
+		end
+		list[#list + 1] = { "Sort bags", function() C_Container.SortBags() end }
+		list[#list + 1] = { "Cancel", function() end }
+		return list
+	end
+	local function closeMenu()
+		menu:Hide()
+		if not InCombatLockdown() and f:IsShown() then
+			ClearOverrideBindings(f)
+			f:Execute(f:GetAttribute("_onshow"))
+			holdBindings()
+		end
+	end
+	local function paintMenu()
+		for i, row in ipairs(menu.rows) do
+			local on = i == menu.sel
+			row:SetTextColor(1, on and 0.82 or 1, on and 0 or 1)
+			row:SetText((on and "> " or "   ") .. (menu.list[i] and menu.list[i][1] or ""))
+			row:SetShown(menu.list[i] ~= nil)
+		end
+	end
+	local function plainButton(name, fn)
+		local b = CreateFrame("Button", name, UIParent)
+		b:RegisterForClicks("AnyDown")
+		b:SetScript("OnClick", fn)
+	end
+	plainButton("WCBagsMenuUp", function() menu.sel = menu.sel > 1 and menu.sel - 1 or #menu.list paintMenu() end)
+	plainButton("WCBagsMenuDown", function() menu.sel = menu.sel < #menu.list and menu.sel + 1 or 1 paintMenu() end)
+	plainButton("WCBagsMenuPick", function()
+		local e = menu.list[menu.sel]
+		closeMenu()
+		if e then pcall(e[2]) end
+		f:Paint()
+	end)
+	plainButton("WCBagsMenuBack", closeMenu)
+	plainButton("WCBagsMore", function()
+		if InCombatLockdown() or CursorHasItem() then return end
+		local b = f.order[f.focusIndex or 1]
+		if not b then return end
+		menu.list, menu.sel = entries(b), 1
+		for i = #menu.rows + 1, #menu.list do
+			local row = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+			row:SetPoint("TOPLEFT", 10, -8 - (i - 1) * 20)
+			row:SetJustifyH("LEFT")
+			menu.rows[i] = row
+		end
+		menu:SetSize(200, 16 + #menu.list * 20)
+		menu:ClearAllPoints()
+		menu:SetPoint("TOPLEFT", b, "BOTTOMRIGHT", 4, 4)
+		paintMenu()
+		menu:Show()
+		SetOverrideBindingClick(f, true, "PADDUP", "WCBagsMenuUp")
+		SetOverrideBindingClick(f, true, "PADDDOWN", "WCBagsMenuDown")
+		SetOverrideBindingClick(f, true, "PAD1", "WCBagsMenuPick")
+		for _, key in ipairs({ "PAD2", "PAD3", "PAD4", "PADDLEFT", "PADDRIGHT" }) do
+			SetOverrideBindingClick(f, true, key, "WCBagsMenuBack")
+		end
+	end)
+	f:HookScript("OnHide", function() menu:Hide() if CursorHasItem() then ClearCursor() end end)
+	f:RegisterEvent("PLAYER_REGEN_DISABLED")
 
 	-- opening: a macro (/click WCBagsToggle) fires once; a key binding fires
 	-- WCBagsKey on the press only
@@ -229,6 +391,13 @@ local function build()
 	f:RegisterEvent("BAG_UPDATE_COOLDOWN")
 	f:RegisterEvent("PLAYER_REGEN_ENABLED")
 	f:SetScript("OnEvent", function(self, event)
+		-- fires just before the lockdown: the last moment to put the window's own
+		-- bindings back (menu keys or put-back on circle would be stuck all fight)
+		if event == "PLAYER_REGEN_DISABLED" then
+			menu:Hide()
+			if self:IsShown() then ClearOverrideBindings(self) self:Execute(self:GetAttribute("_onshow")) end
+			return
+		end
 		if event == "BAG_UPDATE_DELAYED" or event == "PLAYER_REGEN_ENABLED" then
 			local n = 0
 			for bag = 0, MAXBAG do n = n + (C_Container.GetContainerNumSlots(bag) or 0) end
@@ -248,7 +417,7 @@ local function build()
 
 	f:Layout()
 	f.ready = true
-	print(("bags: ready, %d slots; cross uses, circle closes, triangle sorts"):format(#f.order))
+	print(("bags: ready, %d slots; square uses, cross moves, triangle more, circle closes"):format(#f.order))
 end
 
 if InCombatLockdown() then
