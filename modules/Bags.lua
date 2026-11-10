@@ -27,8 +27,10 @@ local function build()
 	-- It navigates itself (useCustomNavigation: the manager calls FocusGamepad /
 	-- UnfocusGamepad on us). In combat ShowUIPanel is refused, so the secure
 	-- snippet shows it plainly: usable, not in the focus cycle.
-	f.useCustomNavigation = true
-	if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, f) end
+	-- Modules run under forced taint (ForceTaint_Strong), so anything of ours the
+	-- controller UI reads (focusable marks, its fields, FocusGamepad methods)
+	-- carried that taint into SmartNavigation, and SetPreferredGamepadInteractTarget
+	-- was forbidden (2026-11-10, three times). Nothing here touches it any more.
 	-- ShowUIPanel called from here (a snippet's CallMethod) still tainted the
 	-- manager's focus code (2026-11-10, the second time): ImprovedForever's rule
 	-- holds, never ShowUIPanel / FrameShown from addon code. Plain Show / Hide
@@ -502,22 +504,6 @@ local function build()
 		self:Paint()
 	end)
 	-- however it closes, the manager hears (or the bars stay dead after it)
-
-	-- focus moved to another window: give the d-pad and face buttons back to it;
-	-- focus came back: take them again
-	function f:UnfocusGamepad()
-		if InCombatLockdown() then return end
-		menu:Hide()
-		ClearOverrideBindings(self)
-		hl:Hide()
-		tip:Hide()
-	end
-	function f:FocusGamepad()
-		if InCombatLockdown() or not self:IsShown() then return end
-		ClearOverrideBindings(self)
-		self:Execute(self:GetAttribute("_onshow"))
-		holdBindings()
-	end
 
 	-- the keyboard's own bag key opens ours (the pad uses the macro)
 	local keys = CreateFrame("Frame", "WCBagsKeys")
