@@ -75,7 +75,10 @@ jobs:
 
   cuda:
     if: github.event_name == 'workflow_dispatch' && inputs.cuda
-    runs-on: windows-latest
+    # windows-2022, not latest: windows-latest has Visual Studio 18, which the CUDA
+    # installer's Visual Studio integration does not reach ("No CUDA toolset
+    # found", run 42943361104), and CUDA 12.9 predates its compiler
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
