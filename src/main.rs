@@ -11,7 +11,6 @@ mod channel;
 mod requests;
 mod context;
 mod restart;
-mod chat;
 mod install;
 mod jobs;
 mod ledger;
@@ -32,7 +31,6 @@ use channel::*;
 use requests::*;
 use context::*;
 use restart::*;
-use chat::*;
 use install::*;
 use message::{Line, Msg, Out};
 
@@ -409,9 +407,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 let conversation = if slot == Slot::Dictation { "" } else { slot.key() };
                 deliver(Out::Line(Line::new(conversation, "error", why)))
             }
-            // L1+R1: dictation, no agent. Sent at once (no gathering): the line
-            // goes into the chat box (or waits for it), on the channel it opens
-            // with, else on the one picked on the chat wheel (the addon adds it)
+            // L1+R1: dictation, no agent. Sent at once (no gathering): the words
+            // go into the chat box (or wait for it) as said, on the channel picked
+            // on the chat wheel (the addon adds it)
             Event::Words(Slot::Dictation, text) => {
                 // its clip's job ends answered with the message that carries the words
                 let Some((job, _)) = jobs::words(dictation, text) else {
@@ -420,14 +418,10 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 };
                 let _ = jobs::advance(job, jobs::State::Answered);
                 let ended = |msg: Msg| msg.int("job", job).text("slot", dictation).text("state", jobs::State::Answered.name());
-                if discards(text) {
-                    return deliver(Out::Now(ended(Msg::new("chat").flag("clear", true))));
-                }
-                let routed = channeled(text);
-                println!("  dictated: {routed}");
+                println!("  dictated: {text}");
                 // no line in a conversation (agents need not see every
                 // dictation); the chat box itself shows it
-                deliver(Out::Now(ended(say_inbox(text, &routed))))
+                deliver(Out::Now(ended(message::dictated(text))))
             }
             Event::Words(slot, text) => {
                 let slot = slot.key().to_string();

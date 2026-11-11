@@ -62,8 +62,8 @@ yes; don't reinvent what Claude Code has.
   values), `requests.rs` (asking the agent, progress, auto-continue, cancels, `tell`),
   `jobs.rs` (each request's one state, forward only; cancels and replies race
   there; a clip's job is named to the game by `heard` when it is let go),
-  `context.rs` (the export, profile and integrations the agent gets), `chat.rs`
-  (spoken chat lines), `restart.rs`, `install.rs`, `agent.rs` (the agent; its
+  `context.rs` (the export, profile and integrations the agent gets),
+  `session.rs` (the game's UI session, on trial beside the channel), `restart.rs`, `install.rs`, `agent.rs` (the agent; its
   rules are `agent/rules.md`), `bells.rs`, `heartbeat.rs`, `doctor.rs`, `modules.rs`; its life:
   `lifecycle.rs` (one companion at a time, clean exits, pause, two clients),
   `watcher.rs` + `tray.rs` (`start`: wakes it with WoW, the tray icon),

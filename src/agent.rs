@@ -393,7 +393,7 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
 /// One step as the message the addon's dispatch accepts.
 fn step_inbox(command: &Value) -> io::Result<Msg> {
     Ok(match field(command, "kind")? {
-        "chat" => crate::chat_inbox(field(command, "text")?),
+        "chat" => crate::message::chat_line(field(command, "text")?),
         "send" => {
             let send = Msg::new("send").text("text", field(command, "text")?);
             match command.get("label").and_then(Value::as_str) {

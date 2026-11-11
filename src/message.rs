@@ -203,6 +203,17 @@ pub(crate) enum Out {
     Now(Msg),
 }
 
+/// A line for the chat box the player opened (an agent's `chat` step).
+pub(crate) fn chat_line(text: &str) -> Msg {
+    Msg::new("chat").text("text", text)
+}
+
+/// L1+R1 dictation: the words as said, for the chat box on the channel picked
+/// on the chat wheel (`wheel`: the addon puts that channel on the line).
+pub(crate) fn dictated(words: &str) -> Msg {
+    Msg::new("chat").text("text", words.trim()).flag("wheel", true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
