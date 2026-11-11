@@ -24,6 +24,9 @@ env:
   # bindgen (whisper-rs-sys) needs libclang; the Windows runner has LLVM here
   LIBCLANG_PATH: C:\Program Files\LLVM\bin
   CARGO_TERM_COLOR: always
+  # the version the setup window and doctor show: the tag, or for a run by hand
+  # the branch and commit (wow_companion_settings::VERSION)
+  WOW_COMPANION_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('{0} at {1}', github.ref_name, github.sha) }}
 
 jobs:
   windows:

@@ -18,6 +18,13 @@ pub mod stream_model;
 
 use std::{fs, io, path::PathBuf};
 
+/// Which build this is: the release's tag (the release workflow sets
+/// `WOW_COMPANION_VERSION` from it), or a build from the source.
+pub const VERSION: &str = match option_env!("WOW_COMPANION_VERSION") {
+    Some(version) => version,
+    None => "a development build",
+};
+
 /// The run options a settings file may carry, in the order they are written.
 pub const OPTIONS: &[&str] = &["pad", "ask", "chat", "mic", "cue", "volume", "agent", "speech", "stream_model"];
 

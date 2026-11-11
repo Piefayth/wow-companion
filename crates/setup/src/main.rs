@@ -48,7 +48,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([720.0, 860.0])
             .with_min_inner_size([560.0, 480.0])
-            .with_title("WoW Companion setup"),
+            .with_title(format!("WoW Companion setup ({})", wow_companion_settings::VERSION)),
         ..Default::default()
     };
     eframe::run_native(

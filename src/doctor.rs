@@ -23,6 +23,7 @@ fn line(ok: bool, what: &str, detail: &str) {
 }
 
 pub fn run(addons: &Path) -> std::io::Result<()> {
+    line(true, "version", wow_companion_settings::VERSION);
     let signals = addons.join(crate::LINK).join("Signals");
 
     let clients = crate::game_clients();
