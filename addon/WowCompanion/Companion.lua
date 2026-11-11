@@ -887,6 +887,22 @@ local function toggleWindow()
 end
 local tapButton = CreateFrame("Button", "WowCompanionTap", UIParent)
 tapButton:RegisterForClicks("AnyDown", "AnyUp")
+-- The conversation follows the PC's rule (crates/voice lib.rs): a trigger
+-- pulled any time during the hold counts, and a second trigger upgrades L2/R2
+-- to Quick and L1/R1 to dictation. Reading it only at the press showed a clip
+-- for L2 as hearing on Main (the player, 2026-11-10).
+tapButton:SetScript("OnUpdate", function(self)
+	if not self.downAt or not WowCompanion_PadSlot then return end
+	local now = WowCompanion_PadSlot()
+	local slot = self.slot or ""
+	if slot == "" and now ~= "" then
+		self.slot = now
+	elseif now == "quick" and (slot == "l2" or slot == "r2") then
+		self.slot = now
+	elseif now == "say" and (slot == "l1" or slot == "r1") then
+		self.slot = now
+	end
+end)
 tapButton:SetScript("OnClick", function(self, _, down)
 	if down then
 		self.downAt = GetTime()
