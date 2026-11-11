@@ -88,5 +88,5 @@ if __name__ == "__main__":
     # the two darkest of three tried (the player, 2026-11-11): replies on the
     # former dark stone, the player's on a darker one still
     write_tga(os.path.join(OUT, "Slate-%s.tga" % v), stone(23, (17, 18, 20), calm=0.45))
-    write_tga(os.path.join(OUT, "SlateLight-%s.tga" % v), stone(7, (26, 27, 30), calm=0.45))
+    write_tga(os.path.join(OUT, "SlateLight-%s.tga" % v), stone(7, (22, 23, 26), calm=0.45))
     print("wrote", os.path.abspath(OUT))

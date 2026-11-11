@@ -4,9 +4,11 @@
 local effectiveModules = WC.Companion.modules
 local function newTranscript(...) return WC.Transcript.newTranscript(...) end
 
--- Tabs on the top edge, as the macro frame and the auction house have them
--- (PanelTopTabButtonTemplate, PanelTemplates_SetTab), picked with the
--- controller cursor. No shoulder buttons: L1 and R1 are talk-button slots.
+-- Tabs on the top edge: Blizzard's dark modern tabs (MinimalTabTemplate, the
+-- settings panel's, gold underline on the picked one), which sit on dark stone
+-- where the classic brown ones looked pasted on (the player, 2026-11-11).
+-- Picked with the controller cursor. No shoulder buttons: L1 and R1 are
+-- talk-button slots.
 local TAB_NAMES = { "Chat", "Tools", "Status", "Errands" }
 local function buildTabs(frame, messages)
 	local pages = {}
@@ -415,32 +417,30 @@ local function buildTabs(frame, messages)
 		p:SetPoint("BOTTOMRIGHT", -12, 10)
 	end
 
-	-- the tabs, standing on the wells' top edge inside the panel, as the macro
-	-- frame's (Blizzard_MacroUI.xml:183)
+	-- the tabs, standing on the wells' top edge inside the panel
+	local tabs = {}
 	for i, name in ipairs(TAB_NAMES) do
-		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTopTabButtonTemplate")
+		local made, tab = pcall(CreateFrame, "Button", nil, frame, "MinimalTabTemplate")
 		if not made or not tab then return end
 		tab:SetID(i)
-		tab:SetText(name)
+		tab.Text:SetText(name)
+		tab:SetWidth(tab.Text:GetStringWidth() + 40)
 		if i == 1 then
-			-- the tab's foot on the well's top border, so the picked tab opens
-			-- into it instead of hovering in the strip above
-			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 8, -4)
+			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 6, 0)
 		else
-			tab:SetPoint("LEFT", frame.Tabs[i - 1], "RIGHT", 0, 0)
+			tab:SetPoint("LEFT", tabs[i - 1], "RIGHT", 2, 0)
 		end
 		tab:SetScript("OnClick", function(self) frame.SelectTab(self:GetID()) end)
-		-- above the well's border and its top shadow, so the picked tab's open
-		-- foot covers the border beneath it and runs into the well
+		-- above the well's border and its top shadow
 		tab:SetFrameLevel(chatWell:GetFrameLevel() + 5)
 		WC.MarkFocusable(tab)
+		tabs[i] = tab
 	end
-	PanelTemplates_SetNumTabs(frame, #TAB_NAMES)
 
 	function frame.SelectTab(id)
 		id = ((id - 1) % #TAB_NAMES) + 1
 		frame.currentTab = id
-		PanelTemplates_SetTab(frame, id)
+		for i, tab in ipairs(tabs) do tab:SetSelected(i == id) end
 		local chat = id == 1
 		messages.scroll:SetShown(chat)
 		for _, part in ipairs(frame.chatParts or {}) do part:SetShown(chat) end
