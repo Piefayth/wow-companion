@@ -333,43 +333,35 @@ local function buildPreview()
 	-- secure child makes the whole window protected, so in combat it could
 	-- neither be loaded with the line nor shown. Sending chat is not protected,
 	-- only tied to a real press, so our own OnClick sends it, in combat or out.
-	local send = CreateFrame("Button", "WowCompanionPreviewSend", frame, "UIPanelButtonTemplate")
-	send:SetSize(130, 26)
-	send:SetPoint("BOTTOMRIGHT", -22, 18)
-	send:SetText("Send")
+	-- Hotkey-driven (the player, 2026-11-10): no Send / Don't send buttons. The
+	-- panel's one focus target is the message itself, so with the controller's
+	-- own focus on the panel, confirm sends and circle closes (Blizzard's
+	-- SmartNavigation: confirm clicks the selected button, circle clicks
+	-- CloseButton). Nothing is bound; no key does anything while it is not
+	-- focused. The footer shows the two glyphs.
+	local send = CreateFrame("Button", "WowCompanionPreviewSend", frame)
+	send:SetPoint("TOPLEFT", 14, -14)
+	send:SetPoint("BOTTOMRIGHT", -14, 40)
 	send:RegisterForClicks("AnyDown")
 	send:SetScript("OnClick", function()
-		-- a binding left over from a fight (it cannot be cleared in combat)
-		-- must not send an old line again
-		if not frame:IsShown() then return end
+		if not frame:IsShown() or not frame.out then return end
 		local ok, sent, why = pcall(sendParsed, frame.out)
 		local err = ok and why or sent
 		if ok and sent then
-			-- not "Sent": the press is all we know. Chat from addons is restricted
-			-- only during instance encounters.
 			toast("|cffffd100Pressed|r  check chat to see it went out", 0.8, 0.8, 0.8, 4)
 		else
 			toast("|cffff7777Not sent|r: " .. tostring(err), 1, 0.6, 0.6, 8)
 			remember("error", "The send preview could not send that: " .. tostring(err))
 		end
+		frame.out = nil
 		frame:Hide()
 	end)
 	frame.send = send
 
-	-- the edit path is the voice: the preview cannot tell the PC anything, but
-	-- the PC remembers the line it put here
-	local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	hint:SetPoint("BOTTOMLEFT", 22, 22)
-	hint:SetText("To change it: \"edit, ...\"")
+	local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	hint:SetPoint("BOTTOMRIGHT", -22, 20)
+	hint:SetJustifyH("RIGHT")
 	frame.hint = hint
-
-	local cancel = CreateFrame("Button", "WowCompanionPreviewCancel", frame, "UIPanelButtonTemplate")
-	cancel:SetSize(110, 26)
-	cancel:SetPoint("RIGHT", send, "LEFT", -10, 0)
-	cancel:SetText("Don't send")
-	frame.cancelButton = cancel
-	cancel:RegisterForClicks("AnyDown")
-	cancel:SetScript("OnClick", function() frame:Hide() end)
 
 	local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", -6, -6)
@@ -380,7 +372,6 @@ local function buildPreview()
 	if SmartNavigation_MarkFrameFocusable then
 		pcall(SmartNavigation_MarkFrameFocusable, frame)
 		pcall(SmartNavigation_MarkFrameFocusable, send)
-		pcall(SmartNavigation_MarkFrameFocusable, cancel)
 	end
 	if UIPanelWindows then
 		UIPanelWindows["WowCompanionPreview"] = { area = "center", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
@@ -423,11 +414,6 @@ local function bindPreview(frame)
 	-- No pad bindings (the player, 2026-11-10): the window takes the controller's
 	-- focus, so confirm presses whichever button is selected and circle closes.
 	-- Binding cross to Send made "Don't send" send.
-	return true
-end
-function WowCompanion_PreviewTap()
-	if not (preview and preview:IsShown()) then return false end
-	preview.send:Click()
 	return true
 end
 -- In combat the controller's own focus cycle (the triggers) must reach the
@@ -489,11 +475,8 @@ function showPreview(line, heading, shown, dictated)
 	end
 	if InCombatLockdown() then focusTrace("shown in combat") end
 	local glyph = WowCompanion_Glyph or function(k) return k end
-	if bindPreview(preview) then
-		preview.hint:SetText("")
-	else
-		preview.hint:SetText(("In combat: tap %s to send   \"edit, ...\" to change"):format(glyph(WowCompanion_TalkKey or "PADSOCIAL")))
-	end
+	bindPreview(preview)
+	preview.hint:SetText(("%s Send     %s Don't send"):format(glyph("PAD1"), glyph("PAD2")))
 	return true
 end
 -- Blizzard's chat prints nothing when a Battle.net whisper cannot be delivered

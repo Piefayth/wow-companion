@@ -869,9 +869,6 @@ local function windowOpen()
 end
 local function toggleWindow()
 	local frame = logFrame()
-	-- a send preview up takes the tap first: it sends (Chat.lua; the way to
-	-- send in combat, where its own buttons cannot be bound)
-	if WowCompanion_PreviewTap and WowCompanion_PreviewTap() then return end
 	if windowOpen() then
 		WowCompanion_HideWindow()
 	elseif combatHidden then
