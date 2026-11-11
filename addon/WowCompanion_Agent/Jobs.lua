@@ -534,11 +534,13 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	-- they work (the player, 2026-11-10: "no input legend")
 	if window then
 		-- one line with the game's own button glyphs inline, in the panel's
-		-- bottom strip under the chat well, shown only with prompts
+		-- bottom strip, shown only with prompts
 		if not window.jobsLegend then
 			local fs = window:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-			-- centred in the 26-px strip under the wells (ButtonFrameTemplate)
-			fs:SetPoint("RIGHT", window.chatWell or window, "BOTTOMRIGHT", -4, -13)
+			-- at the window's right, where Blizzard's panels keep their buttons,
+			-- centred in the strip between the wells (26 up) and the bottom
+			-- border (about 4 thick), clear of the size grip
+			fs:SetPoint("RIGHT", window, "BOTTOMRIGHT", -26, 15)
 			fs:SetJustifyH("RIGHT")
 			window.jobsLegend = fs
 		end
