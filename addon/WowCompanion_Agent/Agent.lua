@@ -178,6 +178,9 @@ end
 -- and start time; the toast shows a labelled line for every one at work, and
 -- the window's line shows the conversation in view.
 local working = {}
+-- the work lines as the last reload saved them (wall-clock `began`), shown again
+-- for the conversations the mailbox says still run
+local wasWorking = {}
 -- "chat" is not a conversation: its row says a line is waiting for the chat box
 local SLOT_ORDER = { "", "l1", "l2", "r1", "r2", "quick", "chat" }
 local function slotLabel(slot)
@@ -874,6 +877,11 @@ frame:SetScript("OnEvent", function(_, event, ...)
 					recent[slot] = { text = e.text, at = GetTime() - age }
 				end
 			end
+			-- what each conversation was doing and since when; shown again only for
+			-- the ones the mailbox says still run (MAILBOX_JOBS)
+			for slot, e in pairs(board.working or {}) do
+				if type(e) == "table" and tonumber(e.began) then wasWorking[slot] = e end
+			end
 			renderPending()
 		end)
 		probeSound()
@@ -887,9 +895,13 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- the board lives in memory only; keep it for the next session to show
 		pcall(function()
 			local clock = GetTime()
-			local board = { at = time(), recent = {} }
+			local board = { at = time(), recent = {}, working = {} }
 			for slot, done in pairs(recent) do
 				board.recent[slot] = { text = done.text, age = clock - done.at }
+			end
+			-- when the work began, in wall time, so its count goes on after the reload
+			for slot, entry in pairs(working) do
+				board.working[slot] = { text = entry.text, began = time() - (clock - entry.since) }
 			end
 			WowCompanionAgentDB.board = board
 		end)
@@ -935,7 +947,9 @@ bus:On("MAILBOX_JOBS", function(jobs)
 	pcall(WC.Jobs.Mail, jobs)
 	for _, slot in ipairs(SLOT_ORDER) do
 		local running = WC.Jobs.Running(slot)
-		if running and not working[slot] then setPending("thinking", slot)
+		local was = wasWorking[slot]
+		if running and not working[slot] then
+			setPending(was and was.text or "thinking", slot, was and math.max(0, time() - was.began) or nil)
 		elseif not running and working[slot] then setPending(nil, slot) end
 	end
 end)
