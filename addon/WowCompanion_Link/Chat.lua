@@ -4,21 +4,21 @@
 
 local function toast(...) return WC.Board.toast(...) end
 local function problem(text) toast("|cffff7777" .. text .. "|r", 1, 0.6, 0.6, 10) end
--- Whispers by the name the player knows someone by. "whisper Sage, on my way"
--- arrives as "/w Sage, on my way"; this finds who Sage is among the people the
+-- Whispers by the name the player knows someone by. "whisper Mira, on my way"
+-- arrives as "/w Mira, on my way"; this finds who Mira is among the people the
 -- game can see (Battle.net friends by BattleTag or the character they are on,
 -- character friends, the guild, the group) and writes the name the way
 -- Blizzard's own whisper menus do, which is the part a spoken name gets wrong:
 -- names here are first and last, and UnitName gives only the first, so a
--- whisper to "Pietra" came back "no player named Pietra". The unit popup joins
+-- whisper to "Aren" came back "no player named Aren". The unit popup joins
 -- name and surname with CHARACTERNAME_SURNAME_SEPARATOR when regional unique
 -- names are on (UnitPopupUtils.lua, GetFullPlayerName); so do we.
 local function plain(text)
 	return (text or ""):lower():gsub("[^%w]", "")
 end
 
--- Speech-to-text gets invented names a letter or two wrong ("Orihine" for
--- Orihime), and the game is the only side that knows
+-- Speech-to-text gets invented names a letter or two wrong ("Mirra" for
+-- Mira), and the game is the only side that knows
 -- the real spelling. Edit distance on the plain forms; close enough is about
 -- one slip per three letters, and the best must be the only one that close.
 local function distance(a, b)
@@ -39,7 +39,7 @@ end
 -- spoken: what was heard; names: a list of strings; owners (optional): who each
 -- name belongs to, so two names of one person never count as a tie. Returns the
 -- index of the one name it most likely meant, or nil. A spoken first name matches the start
--- of a longer one ("Cecil" in "Cecil Sorrowheart").
+-- of a longer one ("Aren" in "Aren Valecrest").
 function WowCompanion_Closest(spokenText, names, owners)
 	local want = plain(spokenText)
 	if want == "" then return nil end
