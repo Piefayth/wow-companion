@@ -287,6 +287,10 @@ local function buildTabs(frame, messages, pending)
 		local fp, flast = 0, nil
 		if WC.FocusLog then fp, flast = WC.FocusLog.Problems() end
 		add("Focus", fp == 0 and "ok" or ("|cffff6060%d problem%s|r, last %s"):format(fp, fp == 1 and "" or "s", tostring(flast)))
+		-- the export's sections that failed when it was last written (Export.lua)
+		local failed = WowCompanionAgentDB.exportFailures
+		add("Export", failed and ("|cffff6060%d part%s failed|r, first: %s"):format(#failed,
+			#failed == 1 and "" or "s", failed[1]) or "whole")
 		add("Combat", InCombatLockdown() and "|cffff6060yes|r " .. grey .. "(changes wait until it ends)|r" or "no")
 		status:SetText(table.concat(lines, "\n"))
 	end
