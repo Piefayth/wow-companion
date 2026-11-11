@@ -33,8 +33,9 @@ local function buildTabs(frame, messages)
 	-- Tools: settings are
 	-- labelled rows with the control their data calls for, a dropdown for a
 	-- choice, a slider for a range; actions stay buttons, under their own
-	-- heading. The slider is Blizzard's MinimalSliderWithSteppers, one stop
-	-- for the controller (WC.SliderStop); the dropdown is our own (below).
+	-- heading, each row one controller stop (WC.RowStop: left and right change
+	-- it). The slider is Blizzard's MinimalSliderWithSteppers; the dropdown is
+	-- our own (below).
 	local tools = pages[2]
 	local y = 0
 	local LABEL_W, CONTROL_W = 110, 190
@@ -139,7 +140,16 @@ local function buildTabs(frame, messages)
 		end)
 		d:SetScript("OnShow", function() value:SetText(get() or "") end)
 		note(d, text)
-		focusable(d)
+		-- one row: left and right cycle the choices, confirm opens the list
+		WC.RowStop(d, function(dir)
+			local names, at = options(), 1
+			for i, name in ipairs(names) do if name == get() then at = i end end
+			local name = names[(at - 1 + dir) % #names + 1]
+			if name then
+				set(name)
+				value:SetText(get() or name)
+			end
+		end, "Change")
 		tools:HookScript("OnHide", close)
 		return d
 	end

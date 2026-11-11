@@ -81,7 +81,7 @@ yes; don't reinvent what Claude Code has.
     bus, settings, `WC.AfterCombat`, the focus helpers, capabilities, `WC.Saved`),
     `Conversations.lua` (the conversations as the PC names them, their labels;
     `WC.Conversations`), `Style.lua` (Blizzard look, glyphs, destroy dialog),
-    `Slider.lua` (a slider as one controller stop, `WC.SliderStop`), `Board.lua` (the toast
+    `Rows.lua` (settings rows as controller stops, `WC.RowStop`, `WC.SliderStop`), `Board.lua` (the toast
     and board; `WC.Board.Post`), `Providers/` (price, nav, gear, itemSource,
     guide, Polestar's pins). Saved: `WowCompanionDB` (module settings).
   - `WowCompanion_Link` (needs Core): the PC bridge. `Link.lua` the channel
@@ -241,6 +241,13 @@ goes to a detached process.
   replace their globals.** That taints them, and the gamepad UI's
   `SetPreferredGamepadInteractTarget` then fails: the A and B buttons stop
   working. Chat text goes only into a box the player opened. Our frames are fine.
+- **Settings in our windows are one column of rows, as Blizzard's Settings
+  are**: each row one controller stop (`WC.RowStop`, Rows.lua); left/right
+  change its value (a slider steps, a dropdown cycles its choices), confirm
+  opens a dropdown's list, up/down move between rows, a long page scrolls
+  vertically; the window's legend shows the left/right prompt. Done with our
+  own override bindings while the row has the cursor, never by hooking
+  SmartNavigation or its prompted binding footer.
 - **Protected things are a button the player presses**: a `SecureActionButtonTemplate`
   with `macrotext`, registered for `"AnyDown"` (other edges misfire). `ReloadUI()`
   is protected.

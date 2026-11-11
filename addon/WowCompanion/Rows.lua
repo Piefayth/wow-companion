@@ -1,0 +1,83 @@
+-- Settings rows the controller reaches the way Blizzard's Settings do: each row
+-- is one stop; while the cursor is on it, d-pad left and right change its
+-- value (a slider steps, a dropdown cycles its choices); confirm opens a
+-- dropdown's list; up and down move between rows.
+--
+-- Nothing of ours runs from the navigation. A frame of our own polls which row
+-- the cursor is on (its button's highlight is locked while it is the cursor's)
+-- and binds left and right with override bindings of its own, set and cleared
+-- out of combat only (cleared as a fight starts). The window's legend shows the
+-- row's prompt (WC.RowPrompt).
+--
+--   WC.RowStop(button, step, prompt)  step(-1 | 1) changes the value; prompt is
+--                                     the legend's word ("Adjust", "Change")
+--   WC.SliderStop(slider)             a MinimalSliderWithSteppersTemplate as
+--                                     one row: a button laid over it, the
+--                                     slider and its steppers out of the cycle
+--   WC.RowPrompt(window)              the legend's words while a row in window
+--                                     has the cursor, else nil
+
+local rows = {}
+local current -- the row the left and right keys change now, or nil
+local keys = CreateFrame("Frame", "WCRowKeys", UIParent)
+
+local less = CreateFrame("Button", "WCRowLess", UIParent)
+less:SetScript("OnClick", function() if current then current.rowStep(-1) end end)
+local more = CreateFrame("Button", "WCRowMore", UIParent)
+more:SetScript("OnClick", function() if current then current.rowStep(1) end end)
+
+local function focused()
+	for _, row in ipairs(rows) do
+		if row:IsVisible() and row:IsHighlightLocked() then return row end
+	end
+end
+
+local function bind(row)
+	if row == current then return end
+	current = row
+	ClearOverrideBindings(keys)
+	if row then
+		SetOverrideBindingClick(keys, true, "PADDLEFT", "WCRowLess")
+		SetOverrideBindingClick(keys, true, "PADDRIGHT", "WCRowMore")
+	end
+end
+
+local since = 0
+keys:SetScript("OnUpdate", function(_, elapsed)
+	since = since + elapsed
+	if since < 0.05 or InCombatLockdown() then return end
+	since = 0
+	bind(focused())
+end)
+-- the bindings go before the lockdown takes them out of reach
+keys:RegisterEvent("PLAYER_REGEN_DISABLED")
+keys:SetScript("OnEvent", function() bind(nil) end)
+
+function WC.RowStop(button, step, prompt)
+	button.rowStep, button.rowPrompt = step, prompt
+	rows[#rows + 1] = button
+	WC.MarkFocusable(button)
+	return button
+end
+
+function WC.SliderStop(slider)
+	local stop = CreateFrame("Button", nil, slider:GetParent())
+	stop:SetPoint("TOPLEFT", slider, "TOPLEFT", -4, 2)
+	stop:SetPoint("BOTTOMRIGHT", slider, "BOTTOMRIGHT", 4, -2)
+	stop:SetFrameLevel(slider:GetFrameLevel() + 5)
+	stop:SetHighlightAtlas("Options_List_Hover", "ADD")
+	WC.MarkIgnored(slider)
+	return WC.RowStop(stop, function(dir)
+		if dir < 0 then slider.Back:Click() else slider.Forward:Click() end
+	end, "Adjust")
+end
+
+function WC.RowPrompt(window)
+	local row = current
+	if not (row and window) then return end
+	local parent = row:GetParent()
+	while parent and parent ~= window do parent = parent:GetParent() end
+	if parent then
+		return WowCompanion_Glyph("PADDLEFT") .. WowCompanion_Glyph("PADDRIGHT") .. " " .. (row.rowPrompt or "Change")
+	end
+end
