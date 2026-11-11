@@ -499,6 +499,9 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " Cancel newest" end
 		if focused and sendable() then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
 		if focused and offerShown() then parts[#parts + 1] = glyph("PADLSTICK") .. " " .. offerShown() end
+		-- a slider under the cursor, on any tab (WC.SliderStop binds the keys)
+		local adjust = WC.SliderPrompt(window)
+		if adjust then parts[#parts + 1] = adjust end
 		window.jobsLegend:SetText(table.concat(parts, "     "))
 		window.jobsLegend:SetShown(#parts > 0)
 		if window.jobsCancelPrompt then window.jobsCancelPrompt:Hide() window.jobsNowPrompt:Hide() end
