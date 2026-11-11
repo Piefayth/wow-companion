@@ -143,6 +143,8 @@ do
 		WowCompanionPinsDB.pins = {}
 		hideFrom(1)
 	end
+	WC.SettingsPage.Add({ kind = "button", order = 80, label = "Clear map pins",
+		text = "Remove every pin on your minimap and world map.", onClick = WCPins.Clear })
 	local boot = CreateFrame("Frame")
 	boot:RegisterEvent("PLAYER_LOGIN")
 	boot:SetScript("OnEvent", function()

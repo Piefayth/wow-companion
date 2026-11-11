@@ -8,7 +8,8 @@
 --   WC.Link.Run(step)           a step through its handler: ok, outcome
 --   WC.Link.Current()           the conversation slot of the message being handled
 --   WC.Link.Slash(word, fn)     a /wc subcommand
--- Bus messages sent: TALK_TAP (a short press of the talk button),
+-- Bus messages sent: TALK_TAP (a tap of the Companion key), TALK_DOWN and
+-- TALK_UP (its press and release),
 -- JOB_MESSAGE(inbox) (a handled message that names a job or lists jobs: their
 -- states for whoever keeps them), LINK_STEP(step, ok, outcome) (a follow-up step
 -- ran), LINK_FAILED(text), MAILBOX_JOBS(jobs).
@@ -51,49 +52,26 @@ local handlers = {}
 -- ran, a button offered, a failure) lands in that conversation
 local current
 
--- A short tap of the talk button (WowCompanion_TalkKey, the DualSense Create
--- button PADSOCIAL by default): TALK_TAP, and the Agent opens its window. The
--- game alone decides a tap; a hold is the PC's push-to-talk, and its clip is
--- named to the game by the PC's `heard`.
+-- The Companion key, an addon keybinding in WoW's own Keybindings screen
+-- (Bindings.xml, "Toggle Companion window"; the player binds the talk button to
+-- it). It runs on press and release, so a tap is told from a hold: a tap sends
+-- TALK_TAP (the Agent opens or closes its window), a hold does nothing here (the
+-- PC's push-to-talk, its clip named by the PC's `heard`). TALK_DOWN and TALK_UP
+-- go out on both edges (the chat wheel's ring).
 local TAP_MAX = 0.35
-local tapButton = CreateFrame("Button", "WowCompanionTap", UIParent)
-tapButton:RegisterForClicks("AnyDown", "AnyUp")
-tapButton:SetScript("OnClick", function(self, _, down)
-	if down then
-		self.downAt = GetTime()
+local downAt
+function WowCompanion_TalkBinding(keystate)
+	if keystate == "down" then
+		downAt = GetTime()
+		WC.Send("TALK_DOWN")
 		return
 	end
-	local held = self.downAt and GetTime() - self.downAt
-	self.downAt = nil
+	local held = downAt and GetTime() - downAt
+	downAt = nil
+	WC.Send("TALK_UP")
 	if held and held <= TAP_MAX then WC.Send("TALK_TAP") end
-end)
--- Override bindings are an addon's own layer and only while it is loaded, so the
--- player's binding underneath is untouched.
-local function bindTap()
-	if InCombatLockdown() then return end
-	ClearOverrideBindings(tapButton)
-	SetOverrideBindingClick(tapButton, false, WowCompanion_TalkKey, "WowCompanionTap", "LeftButton")
 end
-
--- `/wc talkkey`, then press the talk button: the game's name for it (PADSOCIAL,
--- PADBACK...) is learned and kept, so the tap and every prompt naming the
--- button follow any controller. The PC side learns its own view of the same
--- button in the setup window.
-local talkKeyFrame
-local function learnTalkKey()
-	if not talkKeyFrame then
-		talkKeyFrame = CreateFrame("Frame", nil, UIParent)
-		talkKeyFrame:SetScript("OnGamePadButtonDown", function(self, button)
-			self:EnableGamePadButton(false)
-			WowCompanionLinkDB.talkKey = button
-			WowCompanion_TalkKey = button
-			pcall(bindTap)
-			say(("talk button learned: %s (%s)"):format(WowCompanion_Glyph(button), button))
-		end)
-	end
-	talkKeyFrame:EnableGamePadButton(true)
-	say("press your talk button on the controller now")
-end
+BINDING_NAME_WOWCOMPANION_WINDOW = "Toggle Companion window (tap; hold to talk)"
 
 -- A clip let go, named by the job the PC made for it: its state goes out as
 -- every job's does (JOB_MESSAGE), to the window's model and dictation's wait.
@@ -266,7 +244,6 @@ SlashCmdList.WOWCOMPANION = function(command)
 	table.sort(words)
 	say(table.concat(words, ", "))
 end
-slash.talkkey = learnTalkKey
 -- the bell poll is the only thing the bridge does continuously
 slash.quiet = function()
 	setPolling(false)
@@ -278,7 +255,6 @@ slash.listen = function()
 end
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 -- fires on /reload as well as logout, just before SavedVariables is written
 frame:RegisterEvent("PLAYER_LOGOUT")
@@ -290,11 +266,6 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		db.loads = (db.loads or 0) + 1
 		set = db.loads % 3
 		db.previous, db.probe = nil, nil
-	elseif event == "PLAYER_LOGIN" then
-		if type(WowCompanionLinkDB.talkKey) == "string" then
-			WowCompanion_TalkKey = WowCompanionLinkDB.talkKey
-		end
-		pcall(bindTap)
 	elseif event == "PLAYER_ENTERING_WORLD" and not polling then
 		-- after every addon's PLAYER_LOGIN (the Agent's window is built and
 		-- refilled by then): the mailbox (WowCompanion_Mailbox, src/ledger.rs),
@@ -349,6 +320,9 @@ WC.Link = {
 	say = say,
 	MessagesSent = function() return nextSlot - 1 end,
 	Audit = audit,
+	-- the key bound to the Companion window (Bindings.xml), for prompts that
+	-- name it, or nil while none is
+	TalkKey = function() return GetBindingKey("WOWCOMPANION_WINDOW") end,
 	-- false while the companion has no microphone (handlers.status)
 	Mic = function() return mic end,
 }

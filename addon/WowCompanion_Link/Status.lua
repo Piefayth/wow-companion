@@ -1,6 +1,6 @@
 -- Is the companion on the PC up? Shown the way addons show themselves: a button
 -- on the minimap's rim, and an entry in the minimap's addon drawer (the one a
--- controller can reach). Either opens the Companion window (WowCompanion_Agent). The button is in
+-- controller can reach). Either opens the settings page (Core's SettingsPage.lua). The button is in
 -- full colour while the companion can hear the player, yellow while it runs
 -- without a microphone (gone: unplugged, or the headset taken by a phone), and
 -- greyed with a red edge when it is not running, so nobody talks into a
@@ -21,7 +21,7 @@ local ICON = "Interface\\Icons\\UI_Chat"
 
 local up = false
 
-local function openWindow() WC.Send("TOGGLE_WINDOW") end
+local function openSettings() WC.SettingsPage.Open() end
 
 -- the conversations with news not yet looked at, as the Agent announces them
 -- (UNREAD on the bus); none without the Agent
@@ -41,7 +41,8 @@ local function describe(tooltip)
 	if up and not WC.Link.Mic() then
 		tooltip:AddLine("Companion running, no microphone: connect it and it is picked up.", 1, 0.82, 0)
 	elseif up then
-		local talk = WowCompanion_Glyph and WowCompanion_Glyph(WowCompanion_TalkKey) or "the talk button"
+		local key = WC.Link.TalkKey()
+		local talk = key and WowCompanion_Glyph(key) or "the talk button"
 		tooltip:AddLine(("Listening: hold %s to talk."):format(talk), 0.4, 0.9, 0.4)
 	else
 		tooltip:AddLine("Off: the companion on your PC is not running, or is restarting.", 1, 0.4, 0.4)
@@ -50,12 +51,12 @@ local function describe(tooltip)
 	if #news > 0 then
 		tooltip:AddLine("New replies: " .. table.concat(news, ", "), 0.25, 1, 0.25)
 	end
-	if WC.Companion then tooltip:AddLine("Click to open the Companion window.", 0.8, 0.8, 0.8) end
+	tooltip:AddLine("Click for settings.", 0.8, 0.8, 0.8)
 end
 
 -- the addon drawer (## AddonCompartmentFunc in the .toc): reachable by controller
 function WowCompanion_OnCompartmentClick()
-	openWindow()
+	openSettings()
 end
 
 function WowCompanion_OnCompartmentEnter(_, button)
@@ -124,7 +125,7 @@ end)
 button:SetScript("OnDragStop", function(self)
 	self:SetScript("OnUpdate", nil)
 end)
-button:SetScript("OnClick", openWindow)
+button:SetScript("OnClick", openSettings)
 button:SetScript("OnEnter", function(self)
 	GameTooltip:SetOwner(self, "ANCHOR_LEFT")
 	describe(GameTooltip)

@@ -10,6 +10,7 @@ Engine.lua
 Conversations.lua
 Style.lua
 Rows.lua
+SettingsPage.lua
 Board.lua
 Providers\Price.lua
 Providers\Nav.lua

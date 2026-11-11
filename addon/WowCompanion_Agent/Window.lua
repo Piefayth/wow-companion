@@ -11,7 +11,7 @@ local function newTranscript(...) return WC.Transcript.newTranscript(...) end
 -- the controller cursor. No shoulder buttons: L1 and R1 are talk-button slots.
 -- The tabs: the Agent's own three, then one per loaded addon that adds its
 -- page (WC.Companion.AddTab), so a disabled addon has no tab.
-local TAB_NAMES = { "Chat", "Tools", "Status" }
+local TAB_NAMES = { "Chat", "Settings", "Status" }
 local added = {} -- { name, fill } from other addons, in the order they came
 local addTab -- set once the window is built
 -- name: the tab's label; fill(page): called once with the page's frame
@@ -30,235 +30,30 @@ local function buildTabs(frame, messages)
 	end
 	pages[2], pages[3] = page(), page()
 
-	-- Tools: settings are
-	-- labelled rows with the control their data calls for, a dropdown for a
-	-- choice, a slider for a range; actions stay buttons, under their own
-	-- heading, each row one controller stop (WC.RowStop: left and right change
-	-- it). The slider is Blizzard's MinimalSliderWithSteppers; the dropdown is
-	-- our own (below).
-	local tools = pages[2]
-	local y = 0
-	local LABEL_W, CONTROL_W = 110, 190
-	local function focusable(f)
-		WC.MarkFocusable(f)
-	end
-	local function heading(text)
-		local fs = tools:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-		fs:SetPoint("TOPLEFT", 0, -y)
-		fs:SetText(text)
-		y = y + 26
-	end
-	local function note(anchor, text)
-		local fs = tools:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		fs:SetPoint("LEFT", anchor, "RIGHT", 12, 0)
-		fs:SetPoint("RIGHT", tools, "RIGHT", 0, 0)
-		fs:SetJustifyH("LEFT")
-		fs:SetText(text)
-	end
-	-- one setting: its name on the left, the control beside it, a note after
-	local function row(label, height)
-		local fs = tools:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-		fs:SetPoint("TOPLEFT", 0, -y - 6)
-		fs:SetWidth(LABEL_W)
-		fs:SetJustifyH("LEFT")
-		fs:SetText(label)
-		local top = y
-		y = y + (height or 34)
-		return top
-	end
-	-- A choice from a list, as a dropdown built from parts the controller
-	-- already reaches (Blizzard's DropdownButton, and a cover over it, both stay
-	-- out of the focus cycle). The face is a plain
-	-- Button in Blizzard's dropdown art showing the current value; pressing it
-	-- opens a list of UIPanelButtons under it, the same kind as the Actions
-	-- buttons, which focus fine. Picking one sets it and closes the list.
-	local openList
-	local function dropdown(label, text, options, get, set)
-		local top = row(label)
-		local d = CreateFrame("Button", nil, tools)
-		d:SetSize(CONTROL_W, 26)
-		d:SetPoint("TOPLEFT", LABEL_W, -top)
-		local bg = d:CreateTexture(nil, "BACKGROUND")
-		bg:SetAtlas("common-dropdown-textholder")
-		bg:SetAllPoints()
-		local arrow = d:CreateTexture(nil, "ARTWORK")
-		arrow:SetAtlas("common-dropdown-a-button", true)
-		arrow:SetPoint("RIGHT", -2, -1)
-		local hl = d:CreateTexture(nil, "HIGHLIGHT")
-		hl:SetAtlas("common-dropdown-textholder")
-		hl:SetAllPoints()
-		hl:SetBlendMode("ADD")
-		hl:SetAlpha(0.35)
-		local value = d:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		value:SetPoint("LEFT", 10, 0)
-		value:SetPoint("RIGHT", arrow, "LEFT", -4, 0)
-		value:SetJustifyH("LEFT")
-		value:SetText(get() or "")
-		local made, list = pcall(CreateFrame, "Frame", nil, tools, "InsetFrameTemplate")
-		if not made or not list then list = CreateFrame("Frame", nil, tools) end
-		list:SetPoint("TOPLEFT", d, "BOTTOMLEFT", 0, -2)
-		list:SetFrameStrata("DIALOG")
-		list:Hide()
-		local back = list:CreateTexture(nil, "BACKGROUND", nil, -1)
-		back:SetColorTexture(0, 0, 0, 0.92)
-		back:SetAllPoints()
-		local items = {}
-		local function close()
-			list:Hide()
-			if openList == list then openList = nil end
-		end
-		local function fill()
-			for _, b in ipairs(items) do b:Hide() end
-			local names = options()
-			for i, name in ipairs(names) do
-				local b = items[i]
-				if not b then
-					local ok, nb = pcall(CreateFrame, "Button", nil, list, "UIPanelButtonTemplate")
-					if not ok or not nb then return end
-					b = nb
-					b:SetSize(CONTROL_W - 12, 24)
-					b:SetPoint("TOPLEFT", 6, -6 - (i - 1) * 26)
-					focusable(b)
-					items[i] = b
-				end
-				b:SetText((name == get() and "> " or "") .. name)
-				b:SetScript("OnClick", function()
-					set(name)
-					value:SetText(get() or name)
-					close()
-				end)
-				b:Show()
-			end
-			list:SetSize(CONTROL_W, 12 + #names * 26)
-		end
-		d:SetScript("OnClick", function()
-			if list:IsShown() then return close() end
-			if openList then openList:Hide() end
-			fill()
-			list:Show()
-			openList = list
-		end)
-		d:SetScript("OnShow", function() value:SetText(get() or "") end)
-		note(d, text)
-		-- one row: left and right cycle the choices, confirm opens the list
-		WC.RowStop(d, function(dir)
-			local names, at = options(), 1
-			for i, name in ipairs(names) do if name == get() then at = i end end
-			local name = names[(at - 1 + dir) % #names + 1]
-			if name then
-				set(name)
-				value:SetText(get() or name)
-			end
-		end, "Change")
-		tools:HookScript("OnHide", close)
-		return d
-	end
-	-- a number in a range: Blizzard's slider with steppers either side
-	local function slider(label, text, min, max, steps, get, set, format)
-		local top = row(label, 38)
-		local made, s = pcall(CreateFrame, "Frame", nil, tools, "MinimalSliderWithSteppersTemplate")
-		if not made or not s then return end
-		s:SetWidth(CONTROL_W)
-		s:SetPoint("TOPLEFT", LABEL_W, -top - 2)
-		local formatters = MinimalSliderWithSteppersMixin and {
-			[MinimalSliderWithSteppersMixin.Label.Right] = CreateMinimalSliderFormatter
-				and CreateMinimalSliderFormatter(MinimalSliderWithSteppersMixin.Label.Right, format) or format,
-		}
-		s:Init(get(), min, max, steps, formatters)
-		s:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, value) set(value) end, s)
-		note(s.RightText or s, text)
-		WC.SliderStop(s)
-		return s
-	end
-	local function button(label, text, onClick)
-		local made, b = pcall(CreateFrame, "Button", nil, tools, "UIPanelButtonTemplate")
-		if not made or not b then return end
-		b:SetSize(170, 26)
-		b:SetPoint("TOPLEFT", 0, -y)
-		b:SetText(label)
-		b:SetScript("OnClick", onClick)
-		note(b, text)
-		focusable(b)
-		y = y + 34
-		return b
-	end
-
-	heading("Settings")
-	dropdown("Window size", "The size the window opens at. The corner grip changes it just for now.",
-		function() return frame.SIZE_NAMES or { "Small", "Medium", "Large" } end,
-		function() return (frame.SIZE_NAMES or {})[WowCompanionAgentDB.windowSize or 2] end,
-		function(name)
+	-- Settings: Core's page (SettingsPage.lua), shown in this tab; the
+	-- window's own rows are added here
+	pages[2]:SetScript("OnShow", function(self) WC.SettingsPage.ShowIn(self) end)
+	WC.SettingsPage.Add({ kind = "dropdown", order = 10, label = "Window size",
+		text = "The size the Companion window opens at. Its corner grip changes it just for now.",
+		options = function() return frame.SIZE_NAMES or { "Small", "Medium", "Large" } end,
+		get = function() return (frame.SIZE_NAMES or {})[WowCompanionAgentDB.windowSize or 2] end,
+		set = function(name)
 			for i, n in ipairs(frame.SIZE_NAMES or {}) do
 				if n == name and frame.SetDefaultSize then frame.SetDefaultSize(i) end
 			end
-		end)
-	if WC.Fonts then
-		dropdown("Font", "The interface font. Changes at once, kept across reloads.",
-			function()
-				local names = {}
-				for _, entry in ipairs(WC.Fonts.list) do names[#names + 1] = entry.name end
-				return names
-			end,
-			function() return WC.Fonts.Current() end,
-			function(name)
-				local said = WC.Fonts.Set(name)
-				if said:find("refused") or said:find("failed") then print(said) end
-			end)
-		local scales = WC.Fonts.scales
-		local lo, hi = scales[1], scales[#scales]
-		slider("Text size", "All interface text, with any font.", lo * 100, hi * 100, #scales - 1,
-			function() return math.floor(WC.Fonts.Scale() * 100 + 0.5) end,
-			function(value)
-				local k = math.floor(value + 0.5) / 100
-				if math.abs(k - WC.Fonts.Scale()) > 0.001 then WC.Fonts.SetScale(k) end
-			end,
-			function(value) return ("%d%%"):format(math.floor(value + 0.5)) end)
-	end
-	slider("Window scale", "This window and everything in it, apart from the rest of the interface.", 80, 200, 12,
-		function() return math.floor((WowCompanionAgentDB.windowScale or 1) * 100 + 0.5) end,
-		function(value) frame.SetWindowScale(math.floor(value + 0.5) / 100) end,
-		function(value) return ("%d%%"):format(math.floor(value + 0.5)) end)
-
-	y = y + 8
-	heading("Actions")
-	-- The reload is protected, so it is a secure button the player presses. Built
-	-- out of combat only: a secure frame's attributes cannot be set in one.
-	local reloadY = y
-	y = y + 34
-	local function makeReload()
-		if frame.reloadButton or InCombatLockdown() then return end
-		local made, b = pcall(CreateFrame, "Button", "WowCompanionReload", tools,
-			"SecureActionButtonTemplate, UIPanelButtonTemplate")
-		if not made or not b then return end
-		b:SetSize(170, 26)
-		b:SetPoint("TOPLEFT", 0, -reloadY)
-		b:SetText("Reload UI")
-		b:SetAttribute("type", "macro")
-		b:SetAttribute("macrotext", "/reload")
-		b:RegisterForClicks("AnyDown") -- see CLAUDE.md, "Register a secure button for AnyDown"
-		note(b, "Lets me see what changed, and clears any taint.")
-		focusable(b)
-		frame.reloadButton = b
-		-- out of the window for the length of a fight, so the window stays an
-		-- ordinary frame that opens and closes in combat (Agent.lua, stow)
-		do
-			WC.Companion.stow(b, function(button)
-				button:SetParent(tools)
-				button:ClearAllPoints()
-				button:SetPoint("TOPLEFT", 0, -reloadY)
-			end)
-		end
-	end
-	makeReload()
-	button("Clear map pins", "Remove every pin I put on your minimap and world map.", function()
-		if WCPins and WCPins.Clear then WCPins.Clear() end
-		frame.SelectTab(3)
-	end)
-	button("Clear transcript", "Empty this window. The conversation itself carries on.", function()
-		WowCompanionAgentDB.log = {}
-		messages:Clear()
-		frame.SelectTab(1)
-	end)
+		end })
+	WC.SettingsPage.Add({ kind = "slider", order = 40, label = "Window scale",
+		text = "The Companion window and everything in it, apart from the rest of the interface.",
+		min = 80, max = 200, steps = 12,
+		get = function() return math.floor((WowCompanionAgentDB.windowScale or 1) * 100 + 0.5) end,
+		set = function(value) frame.SetWindowScale(math.floor(value + 0.5) / 100) end,
+		format = function(value) return ("%d%%"):format(math.floor(value + 0.5)) end })
+	WC.SettingsPage.Add({ kind = "button", order = 90, label = "Clear transcript",
+		text = "Empty the Companion window. The conversation itself carries on.",
+		onClick = function()
+			WowCompanionAgentDB.log = {}
+			messages:Clear()
+		end })
 
 	-- Status: what is running, read fresh while the tab is looked at. In the
 	-- chat's look: one row per fact on the replies' stone, the label in gold,
@@ -549,15 +344,10 @@ local function buildTabs(frame, messages)
 		for _, part in ipairs(frame.chatParts or {}) do part:SetShown(chat) end
 		pageWell:SetShown(not chat)
 		for i, p in pairs(pages) do p:SetShown(i == id) end
-		if id == 2 then makeReload() end
 	end
 	frame.SelectTab(1)
-
 	-- Tabs are picked with the controller cursor; L1 and R1 are talk-button
-	-- slots, so the window binds nothing. The reload button waits out combat, being secure.
-	local keys = CreateFrame("Frame")
-	keys:RegisterEvent("PLAYER_REGEN_ENABLED")
-	keys:SetScript("OnEvent", function() makeReload() end)
+	-- slots, so the window binds nothing.
 end
 
 -- The conversation window. Chat lines scroll away and cannot be scrolled back
@@ -762,7 +552,7 @@ local function buildLog()
 		sizeBefore = nil
 		frame.CycleSize()
 	end)
-	-- The corner grip steps the size for now; the Tools tab's button sets the
+	-- The corner grip steps the size for now; the Settings row sets the
 	-- default the window opens at, kept in WowCompanionAgentDB.windowSize
 	-- (medium unless the player picks otherwise).
 	local function applySize(index)

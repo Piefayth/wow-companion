@@ -15,10 +15,6 @@
 -- plain art if a template is missing.
 WowCompanion_Style = WowCompanion_Style or {}
 
--- The talk button as the game sees it, for prompts that name it; WowCompanion_Link
--- learns the player's own (/wc talkkey) and sets it.
-WowCompanion_TalkKey = "PADSOCIAL"
-
 -- A controller button drawn as the game draws it for the pad in use: the same
 -- glyph set Blizzard's prompts pick (InputDeviceIconSetManager: the active
 -- device's labelStyle, Shp shapes, Ltr letters, Rev Nintendo), from the strings

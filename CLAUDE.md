@@ -81,12 +81,16 @@ yes; don't reinvent what Claude Code has.
     bus, settings, `WC.AfterCombat`, the focus helpers, capabilities, `WC.Saved`),
     `Conversations.lua` (the conversations as the PC names them, their labels;
     `WC.Conversations`), `Style.lua` (Blizzard look, glyphs, destroy dialog),
-    `Rows.lua` (settings rows as controller stops, `WC.RowStop`, `WC.SliderStop`), `Board.lua` (the toast
+    `Rows.lua` (settings rows as controller stops, `WC.RowStop`, `WC.SliderStop`),
+    `SettingsPage.lua` (the one settings page, `WC.SettingsPage.Add` for each
+    addon's rows; its own window, the minimap mark and Blizzard's AddOns settings
+    open it), `Board.lua` (the toast
     and board; `WC.Board.Post`), `Providers/` (price, nav, gear, itemSource,
     guide, Polestar's pins). Saved: `WowCompanionDB` (module settings).
   - `WowCompanion_Link` (needs Core): the PC bridge. `Link.lua` the channel
     (slots, bells, polling, the mailbox, dispatch to handlers registered with
-    `WC.Link.Handle`), the talk button's tap (TALK_TAP on the bus; a hold is the PC's, named by its `heard`), `/wc`
+    `WC.Link.Handle`), the Companion key (an addon keybinding, Bindings.xml: a tap
+    is TALK_TAP on the bus, a hold the PC's push-to-talk, named by its `heard`), `/wc`
     (`WC.Link.Slash`). `Pad.lua` the pad's state and `WowCompanion_PadSlot`.
     `Chat.lua` whisper lookup and the chat line (a line goes into the chat box the
     player opened, or waits for the next one; nothing opens it; dictation goes
@@ -103,7 +107,8 @@ yes; don't reinvent what Claude Code has.
     agents' kinds, `/wc`'s agent commands (`WC.Companion` for the files beside
     it). `Stow.lua` (the window in a fight), `Offer.lua` (the offered button,
     `WC.Offer`), `Steps.lua` (an answer's steps: batch, macro, bar). `Sandbox.lua` agent code (`lua`, `module` steps, the taint scan,
-    blocked-action notices). `Window.lua` (the window and its tabs), `Transcript.lua` (lines
+    blocked-action notices). `Window.lua` (the window and its tabs: Chat, Settings showing Core's page, Status;
+    other addons add theirs with `WC.Companion.AddTab`), `Transcript.lua` (lines
     only append), `JobsModel.lua` (pure, property-tested: `python
     tools/test_jobs.py`, needs `lupa`) and `Jobs.lua` (draws it), `Chords.lua`
     (name lookups, chord learning), `Export.lua` (the context
@@ -113,7 +118,7 @@ yes; don't reinvent what Claude Code has.
   - Extras, standalone (need Core only): `WowCompanion_Bags` (the bag window:
     `BagsInput.lua` the secure pad, `BagsMenu.lua`, `Bags.lua`, `BagsStandIn.lua`
     over Blizzard's, `BagsEvaluate.lua`, `BagSwap.lua`, `MakeRoom.lua`),
-    `WowCompanion_Interact` (combat loot/interact key), `WowCompanion_Fonts`
+    `WowCompanion_Interact` (combat loot, an addon keybinding), `WowCompanion_Fonts`
     (live interface fonts, `Fonts/`), `WowCompanion_Wheel` (the wheels),
     `WowCompanion_Pins` (minimap and map pins; the builtin pins and nav),
     `WowCompanion_Buffs` (watched buffs per character, the glow). And
@@ -241,6 +246,9 @@ goes to a detached process.
   replace their globals.** That taints them, and the gamepad UI's
   `SetPreferredGamepadInteractTarget` then fails: the A and B buttons stop
   working. Chat text goes only into a box the player opened. Our frames are fine.
+- **Our keys are addon keybindings in WoW's own Keybindings screen** (a
+  Bindings.xml per owning addon, category "WoW Companion"), never slash commands
+  or override bindings that take a key.
 - **Settings in our windows are one column of rows, as Blizzard's Settings
   are**: each row one controller stop (`WC.RowStop`, Rows.lua); left/right
   change its value (a slider steps, a dropdown cycles its choices), confirm

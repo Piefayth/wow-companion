@@ -141,7 +141,7 @@ do
 		end
 	end)
 
-	-- the talk button (Link.lua's WowCompanionTap) down and up: the ring
+	-- the Companion key down and up (TALK_DOWN, TALK_UP; Link.lua): the ring
 	-- shows once L1 and R1 are both held with it, a moment late is fine
 	local watch = _G["WCChatRingWatch"] or CreateFrame("Frame", "WCChatRingWatch")
 	watch:Hide()
@@ -154,22 +154,18 @@ do
 		end
 		if self.t > 0.6 and not ring:IsShown() then self:Hide() end
 	end)
-	local tap = _G["WowCompanionTap"]
-	if tap and not tap.wcChatRing then
-		tap.wcChatRing = true
-		tap:HookScript("OnClick", function(_, _, down)
-			if down then
-				watch.t = 0
-				watch:Show()
-			else
-				watch:Hide()
-				if ring:IsShown() then
-					ring:Hide()
-					if ring.pick and ring.pick ~= current() then WCChatChannel(ring.pick) end
-				end
-			end
-		end)
-	end
+	local talk = WC.Module("ChatRing")
+	talk:On("TALK_DOWN", function()
+		watch.t = 0
+		watch:Show()
+	end)
+	talk:On("TALK_UP", function()
+		watch:Hide()
+		if ring:IsShown() then
+			ring:Hide()
+			if ring.pick and ring.pick ~= current() then WCChatChannel(ring.pick) end
+		end
+	end)
 
 	-- While a dictation clip's job is out (named by the PC's `heard`, ended
 	-- by the chat line that carries its words or the notice that says why

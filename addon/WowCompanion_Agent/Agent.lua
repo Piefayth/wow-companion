@@ -131,7 +131,8 @@ renderPending = function()
 	if paintHook then paintHook() end
 	if #lines > 0 then
 		if not frame:IsShown() then
-			toastBoard(lines,("tap %s to read"):format(WowCompanion_Glyph(WowCompanion_TalkKey)))
+			local key = WC.Link.TalkKey()
+			toastBoard(lines, key and ("tap %s to read"):format(WowCompanion_Glyph(key)) or "open the Companion window to read")
 		end
 		if not pendingTicker then pendingTicker = C_Timer.NewTicker(0.4, function() renderPending() end) end
 	else
@@ -430,7 +431,6 @@ local bus = WC.Module("Agent")
 -- a short tap of the talk button opens or closes the window (the game alone
 -- decides a tap: the PC sends nothing for one)
 bus:On("TALK_TAP", function() toggleWindow() end)
-bus:On("TOGGLE_WINDOW", function() toggleWindow() end)
 bus:On("LINK_FAILED", function(text) remember("error", text) end)
 -- every job's state, as each message that names one is handled, and the
 -- mailbox's at load: the model is the window's one truth of what runs
@@ -439,7 +439,7 @@ bus:On("MAILBOX_JOBS", function(jobs) if WC.Jobs then pcall(WC.Jobs.Mail, jobs) 
 WC.Board.poster = function(slot, text, opts) return WowCompanion_Recent(slot, text, opts) end
 for kind, fn in pairs(handlers) do WC.Link.Handle(kind, fn) end
 
--- /wc's agent commands (WowCompanion_Link owns /wc and its talkkey, quiet, listen)
+-- /wc's agent commands (WowCompanion_Link owns /wc and its quiet, listen)
 local slash = WC.Link.Slash
 slash("context", function() say(("context: %d lines; /reload to write it to disk"):format(WC.Export.Context())) end)
 -- plain Hide, not HideUIPanel (WowCompanion_HideWindow)
