@@ -4,7 +4,7 @@
 use super::*;
 
 /// The PC bridge's addon: its Signals (bells), the slot cursor, and its saved
-/// table (`WowCompanionLinkDB`: slotCount, channel, loads, bridgeProbe).
+/// table (`WowCompanionLinkDB`: slotCount, channel, loads).
 pub(crate) const LINK: &str = "WowCompanion_Link";
 /// The agent's addon: its saved table (`WowCompanionAgentDB`: the export,
 /// lines, jobModel, links) and the generated Modules.lua.
@@ -248,7 +248,7 @@ mod lua_error_tests {
         let log = "11/11 00:27:04.716  [N][AccountData] PreLoadGameCVars
 11/11 00:27:11.222  [E][Lua] Lua Error: WowCompanion.lua:10924: attempt to call a nil value
 
-11/11 00:29:00.000  [E][Lua] WCPROBE log 1001
+11/11 00:29:00.000  [E][Lua] a line an addon logged, not an error
 11/11 00:30:00.000  [E][Lua] Lua Error: Bags.lua:5: boom
 11/11 00:31:00.000  [E][Lua] Lua Error: WowCompanion.lua:10924: attempt to call a nil value
 ";

@@ -89,25 +89,6 @@ impl Lua {
         }
     }
 
-    /// The table's list part, in order (bare entries and [1], [2]...).
-    pub(crate) fn list(&self) -> Vec<&Lua> {
-        let Lua::Table(entries) = self else { return Vec::new() };
-        let mut numbered: Vec<(f64, &Lua)> = Vec::new();
-        let mut next = 1.0;
-        for (key, value) in entries {
-            match key {
-                None => {
-                    numbered.push((next, value));
-                    next += 1.0;
-                }
-                Some(Lua::Number(index)) => numbered.push((*index, value)),
-                _ => {}
-            }
-        }
-        numbered.sort_by(|a, b| a.0.total_cmp(&b.0));
-        numbered.into_iter().map(|(_, value)| value).collect()
-    }
-
     /// Every `[key] = value` of a table (bare list entries have no key).
     pub(crate) fn entries(&self) -> &[(Option<Lua>, Lua)] {
         match self {
@@ -157,11 +138,13 @@ mod tests {
         let saved = "{\n[\"log\"] = {\n{\n[\"seq\"] = 1,\n[\"ok\"] = true,\n[\"via\"] = \"LogMessage\",\n[\"result\"] = \"nil\",\n}, -- [1]\n},\n[\"font\"] = {\n{\n[\"n\"] = 2,\n[\"widths\"] = {\n12.5, -- [1]\n-3, -- [2]\n1e-05, -- [3]\n},\n[\"chars\"] = \"AB\\\"C\",\n},\n},\n[1794357313662] = {\n},\n}\n";
         let (value, rest) = Lua::parse(saved).unwrap();
         assert_eq!(rest.trim(), "");
-        let log = value.get("log").unwrap().list();
-        assert_eq!((log[0].text_of("seq"), log[0].text_of("ok"), log[0].text_of("via")), ("1".into(), "true".into(), "LogMessage".into()));
-        let font = value.get("font").unwrap().list()[0];
+        // bare list entries have no key
+        let first = |table: &Lua| table.entries().iter().find(|(key, _)| key.is_none()).map(|(_, value)| value.clone()).unwrap();
+        let log = first(value.get("log").unwrap());
+        assert_eq!((log.text_of("seq"), log.text_of("ok"), log.text_of("via")), ("1".into(), "true".into(), "LogMessage".into()));
+        let font = first(value.get("font").unwrap());
         assert_eq!(font.text_of("chars"), "AB\"C");
-        let widths: Vec<f64> = font.get("widths").unwrap().list().iter().filter_map(|v| v.number()).collect();
+        let widths: Vec<f64> = font.get("widths").unwrap().entries().iter().filter_map(|(_, v)| v.number()).collect();
         assert_eq!(widths, vec![12.5, -3.0, 1e-05]);
     }
 

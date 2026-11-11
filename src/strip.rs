@@ -92,16 +92,12 @@ pub(crate) fn decode(shot: &Shot) -> Result<Vec<u8>, String> {
 
 /// The corner, `height` pixels tall and one strip (1024 px) wide, in real
 /// pixels and the game's colours whatever the display's scaling and mode
-/// (src/duplication.rs); each grab is timed for the bridge probe
-/// (docs/proposals/bridge-probe.md, section 3).
+/// (src/duplication.rs).
 pub(crate) fn capture(height: usize) -> io::Result<Shot> {
-    let began = Instant::now();
     #[cfg(windows)]
-    let shot = crate::duplication::grab(height);
+    return crate::duplication::grab(height);
     #[cfg(not(windows))]
-    let shot = Err(io::Error::other("the data strip is read on Windows only"));
-    crate::bridge_probe::note_capture(height, began.elapsed(), shot.is_ok());
-    shot
+    Err(io::Error::other("the data strip is read on Windows only"))
 }
 
 /// Up to three looks a moment apart: a strip just drawn may not be painted yet.

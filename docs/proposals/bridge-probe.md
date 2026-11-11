@@ -62,3 +62,18 @@ The player feels a hitch at each agent data read. The suspects: drawing up to
 
 Log in and play normally; one agent data read (ask something about chat) during
 the session; reload once at the end. Nothing to press for the probe.
+
+## Results, and the probe removed (2026-11-11)
+
+1. **`C_Log` reaches `General.log`, but late**: the client flushes it in batches
+   (10 to 36 s after the line, apparently when its buffer fills), and cuts a line
+   at about 4,070 bytes. Too slow for a channel; kept for what it is good at, the
+   Lua errors of our addons read after the fact (src/context.rs).
+2. **A font written after launch never loads**: the game reads fonts only at
+   start. A dead end for PC to game.
+3. **The strip**: drawing took about 2 ms; the GDI capture took 8 to 287 ms and was
+   what made the game stutter, so the capture moved to DXGI Desktop Duplication
+   (src/duplication.rs), about 2 ms.
+
+With the results in, the probe's code was removed (PC: src/bridge_probe.rs and
+its hooks; game: BridgeProbe.lua and the strip's timing).

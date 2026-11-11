@@ -27,7 +27,6 @@ mod logfile;
 mod tray;
 mod watcher;
 mod backups;
-mod bridge_probe;
 use channel::*;
 use requests::*;
 use context::*;
@@ -149,7 +148,6 @@ fn main() {
         // the data strip: what it shows now, or `--watch <s> <file> [--then <conv>]`,
         // the agents' detached reader (src/strip.rs)
         [command, rest @ ..] if command == "strip" => strip::command(rest),
-        [command, rest @ ..] if command == "bridge-probe" => bridge_probe::command(rest),
         [command] if command == "pads" => pad::list(),
         [command] if command == "buzz" => pad::buzz(),
         [command] if command == "reconnect" => voice::reconnect(),
@@ -242,8 +240,6 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     // and in the mailbox the game reads at load (src/ledger.rs); jobs the last
     // companion left running end now, each with a line
     let recovered = ledger::open(addons);
-    // docs/proposals/bridge-probe.md: measures while the game runs, changes nothing
-    bridge_probe::start(addons);
     {
         let addons = addons.to_path_buf();
         thread::spawn(move || {
