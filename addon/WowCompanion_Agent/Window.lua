@@ -425,11 +425,14 @@ local function buildTabs(frame, messages)
 		if i == 1 then
 			-- the tab's foot on the well's top border, so the picked tab opens
 			-- into it instead of hovering in the strip above
-			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 8, -2)
+			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 8, -4)
 		else
 			tab:SetPoint("LEFT", frame.Tabs[i - 1], "RIGHT", 0, 0)
 		end
 		tab:SetScript("OnClick", function(self) frame.SelectTab(self:GetID()) end)
+		-- above the well's border and its top shadow, so the picked tab's open
+		-- foot covers the border beneath it and runs into the well
+		tab:SetFrameLevel(chatWell:GetFrameLevel() + 5)
 		WC.MarkFocusable(tab)
 	end
 	PanelTemplates_SetNumTabs(frame, #TAB_NAMES)

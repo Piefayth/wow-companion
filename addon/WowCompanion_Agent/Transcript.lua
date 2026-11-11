@@ -18,7 +18,8 @@ local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 local NOTE_FONT = "GameFontHighlightSmall"
 
 -- Every turn on our own stone (Art/, made by tools/make_slate.py): a dark,
--- fine-grained slate in two values, the player's turns the lighter one. Owners
+-- fine-grained slate in two values, the replies the lighter one (the player,
+-- 2026-11-11: theirs too light). Owners
 -- differ by value, never by hue (brown next to grey read as muddy). Blizzard's
 -- tiles were tried first, 2026-11-11: marble too busy and near black, rock
 -- flat grey, the neutral tile wooden planks. Turns parted by the quest log's
@@ -29,8 +30,8 @@ local NOTE_FONT = "GameFontHighlightSmall"
 local STONE_VERSION = 4
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\]]
 local STONE = {
-	you = ART .. "SlateLight-" .. STONE_VERSION,
-	claude = ART .. "Slate-" .. STONE_VERSION,
+	you = ART .. "Slate-" .. STONE_VERSION,
+	claude = ART .. "SlateLight-" .. STONE_VERSION,
 }
 -- owner: whose turn, which picks the stone
 local function ownBand(band, owner)
