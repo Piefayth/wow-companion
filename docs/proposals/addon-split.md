@@ -160,3 +160,54 @@ addon.
 4. **Pins**: its own extra (proposed), or part of Errands?
 5. **Publishing**: do you want the extras on CurseForge/Wago later? It only
    changes licensing notes (the Wheel carries Improved Forever's MIT licence).
+
+## Addendum: voice bindings in Core (the player, 2026-11-11)
+
+An exact phrase list the player sets ("Hearthstone", "Mount up", "Rez"), each
+mapped to an action (a spell, an item, a macro, or macro text). Saying a phrase
+readies it; **the player's press carries it out**, never ours. No agent.
+
+**Where it lives**: `VoiceBindings.lua` in Core. The list is per character
+(spells differ), in Core's per-character table. A new channel message kind,
+`voice` (the phrase), handled by Core, so it works with agents off.
+
+**The press**: Core already has one secure button the player presses for an
+offered action: the offered button (the `press` step, today in the
+conversation half of `Companion.lua`). It moves into Core, and a voice binding
+is a press offered without an agent. No new button, no new binding.
+
+**Out of combat**: Core points the offered button at the phrase's action
+(`macrotext`), shows it on the board ("Hearthstone: press ..."), the player
+presses it. This is today's `press` path, proven.
+
+**In combat**: a protected button cannot be re-pointed by our code. Two
+candidates, both to be measured before either ships:
+1. **The chat-box flow**: Core puts `/cast X` into the chat box the player
+   opened (the same rule as chat lines: nothing opens it), and the player's send
+   runs it. Untested: whether a slash line our code typed runs as a secure cast
+   on the player's Enter, or is blocked as tainted. If it runs, this is the one
+   combat path and it needs nothing else.
+2. **If it does not**: no voice path exists in combat. The honest fallback is
+   what the game allows: the same bindings on a wheel (secure, works in combat,
+   picked by stick, not voice), and the board says "in a fight: use the wheel".
+   No re-pointing tricks.
+
+**What the PC needs**
+- **Routing without an agent**: the voice loop already sends a line that opens
+  with a channel word to chat (`src/chat.rs`). A line that **equals** a phrase
+  (lower-cased, punctuation stripped; exact, no fuzzy matching) goes to Core as
+  a `voice` message instead. Checked before the agent, so it works with agents
+  off and costs no tokens.
+- **Whisper's prompt**: the phrases go first in the prompt
+  (`crates/voice/src/transcribe.rs`, `prompt()`), ahead of spell names, inside
+  the 224-token budget, so the exact words are what Whisper hears.
+- **The list reaches the PC** like everything game-side: in the export at a
+  reload (Core's own short section), read by the voice loop at start and after
+  each reload.
+- **Setting the list without an agent**: a Core slash (`/wc voice add <phrase> =
+  <action>`, `/wc voice remove <phrase>`, `/wc voice`) and, with agents on, the
+  agent may set it by request. A controller-friendly editor is later.
+
+**Found while looking**: `transcribe.rs`'s `FALLBACK_SPELLS` (used before a
+spellbook is exported) names druid spells (Rejuvenation, Moonfire, Bear Form):
+class-specific, to remove under the class-neutral rule.
