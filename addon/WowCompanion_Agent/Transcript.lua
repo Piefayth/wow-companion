@@ -17,19 +17,20 @@ local PAD_L, PAD_R, PAD_TOP = 10, 28, 6
 local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 local NOTE_FONT = "GameFontHighlightSmall"
 
--- Two tones by owner: the player's turns on Blizzard's marble at full
--- strength, as Guild News uses it, tinted warm; replies, most of the reading,
--- on the window's own black, which reads best (the player, 2026-11-11: marble
--- under every turn lost the alternation and the contrast). Nothing dimmed: a
--- dimmed texture reads as a flat box. Turns parted by the quest log's divider.
-local MARBLE = [[Interface\FrameGeneral\UI-Background-Marble]]
-local WARM = { 1, 0.86, 0.66 }
+-- Two native backings by owner, both at full strength (a dimmed texture
+-- reads as a flat box): replies on Blizzard's marble, as Guild News uses it
+-- (the player, 2026-11-11: plain black "made me appreciate the marble");
+-- the player's turns on its rock, as behind the achievement list. Turns
+-- parted by the quest log's divider.
+local BACKING = {
+	you = [[Interface\FrameGeneral\UI-Background-Rock]],
+	claude = [[Interface\FrameGeneral\UI-Background-Marble]],
+}
 local function turnBand(content, owner)
 	local band = content:CreateTexture(nil, "BACKGROUND", nil, -1)
-	band:SetTexture(MARBLE, "REPEAT", "REPEAT")
+	band:SetTexture(BACKING[owner] or BACKING.claude, "REPEAT", "REPEAT")
 	band:SetHorizTile(true)
 	band:SetVertTile(true)
-	if owner == "you" then band:SetVertexColor(WARM[1], WARM[2], WARM[3]) else band:SetAlpha(0) end
 	local divider = content:CreateTexture(nil, "ARTWORK")
 	divider:SetAtlas("QuestLog-frame-devider")
 	divider:SetAlpha(0.8)
@@ -97,13 +98,13 @@ function Transcript:Place(row, y, width)
 		local top = turnTop + math.floor((y - turnTop) / 2)
 		row.turn:ClearAllPoints()
 		row.turn:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -top)
-		row.turn:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", 0, -top)
+		-- the backings and dividers stop where the scroll bar's gutter begins
+		row.turn:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", -(PAD_R - 2), -top)
 		row.turn:SetHeight(1)
 		-- centred on the boundary with the turn above; none above the first
 		row.divider:ClearAllPoints()
 		row.divider:SetPoint("LEFT", row.turn, "TOPLEFT", 0, 0)
-		-- stops short of the scroll bar, which sits over the backings' right edge
-		row.divider:SetPoint("RIGHT", row.turn, "TOPRIGHT", -(PAD_R - 2), 0)
+		row.divider:SetPoint("RIGHT", row.turn, "TOPRIGHT", 0, 0)
 		row.divider:SetShown(self.turnBand ~= nil)
 		self.turnBand, self.turnTop = row.turn, top
 	end
