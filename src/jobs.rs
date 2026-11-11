@@ -92,7 +92,6 @@ static LAST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new
 /// Ended jobs are kept this long, for resyncs and late cancels.
 const KEEP: Duration = Duration::from_secs(30 * 60);
 /// The game stamps a cancel with time(), to the second.
-const PRESS_SLACK: u128 = 1000;
 
 fn with<R>(f: impl FnOnce(&mut BTreeMap<u64, Job>) -> R) -> R {
     let mut jobs = JOBS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -371,17 +370,6 @@ pub(crate) fn live(slot: &str, only: Option<State>) -> Vec<u64> {
     })
 }
 
-/// The job a cancel pressed at `press` (the game's clock, unix ms) on a
-/// conversation's "hearing" line meant: the clip being heard if it was let go
-/// by then, else the newest request made from a clip let go by then.
-pub(crate) fn pressed_for(slot: &str, press: u128) -> Option<u64> {
-    with(|jobs| {
-        jobs.values()
-            .filter(|job| job.slot == slot && job.released <= press + PRESS_SLACK && job.changed.elapsed() < Duration::from_secs(120))
-            .max_by_key(|job| job.id)
-            .map(|job| job.id)
-    })
-}
 
 /// The job made from the clip let go at `release` (unix ms): its identity, as
 /// the game names it (the game and the PC both see the release; the game's
@@ -468,7 +456,7 @@ pub(crate) fn entries(jobs: &[Job]) -> String {
 
 /// `, job = 7, state = "running"`: the fields every message about a job carries.
 pub(crate) fn fields(id: u64, state: State) -> String {
-    format!(", job = {id}, req = {id}, state = \"{}\"", state.name())
+    format!(", job = {id}, state = \"{}\"", state.name())
 }
 
 #[cfg(test)]

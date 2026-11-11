@@ -176,47 +176,20 @@ pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool
         let running = jobs::live(slot, Some(jobs::State::Running));
         let done = jobs::cancel(&running);
         end_processes(&done.pids);
-        let lead = running.first().copied().unwrap_or_default();
-        tell_states(addons, slot, &running, &format!(", req = {lead}, dropped = false, sendNow = true"));
+        tell_states(addons, slot, &running, ", sendNow = true");
         return;
     }
     let done = jobs::cancel(&[req]);
     end_processes(&done.pids);
-    let older = match before {
-        Some(jobs::State::Running) => format!(", req = {req}, dropped = false"),
-        Some(state) if !state.ended() => format!(", req = {req}, wasQueued = true"),
-        _ => {
-            println!("  request {req} had already ended: too late");
-            format!(", req = {req}, wasQueued = true, tooLate = true")
-        }
-    };
+    if before.is_some_and(|state| state.ended()) {
+        println!("  request {req} had already ended: too late");
+    }
+    // the list says each job's state; that is the whole answer
     let mut ids = vec![req];
     ids.extend(done.ended.iter().map(|job| job.id).filter(|id| *id != req));
-    tell_states(addons, slot, &ids, &older);
+    tell_states(addons, slot, &ids, "");
 }
 
-/// Cancel pressed on a conversation's "hearing" line, before the game knew the
-/// job. `press`: when, by the game's clock (unix ms, to the second). It meant
-/// the clip let go by then: still being heard, its words are dropped; already a
-/// request, that request is cancelled, never a later one.
-pub(crate) fn cancel_hearing(addons: &Path, slot: &str, press: u128) {
-    println!("cancel hearing [{}]", if slot.is_empty() { "main" } else { slot });
-    match jobs::pressed_for(slot, press) {
-        Some(id) if jobs::state(id).is_some_and(|state| !state.ended()) => {
-            if jobs::state(id) == Some(jobs::State::Hearing) {
-                jobs::cancel(&[id]);
-                tell_states(addons, slot, &[id], ", hearing = true");
-            } else {
-                println!("  the clip already became request {id}: cancelling that");
-                cancel_request(addons, slot, id, false);
-            }
-        }
-        found => {
-            println!("  nothing to cancel for that press");
-            tell_states(addons, slot, &found.into_iter().collect::<Vec<_>>(), ", hearing = true, nothing = true");
-        }
-    }
-}
 
 /// Cancel pressed on a clip still shown as being heard, named by when it was
 /// let go (`release`, unix ms). The clip itself is cancelled wherever it got
@@ -317,11 +290,6 @@ pub(crate) fn watch_commands(addons: &Path) {
                         if let Ok(release) = release.parse::<u128>() {
                             cancel_clip(addons, &main(slot), release);
                         }
-                    }
-                    ["WCCMD", nonce, "hear", slot, ..] => {
-                        // the nonce opens with the game's time() in seconds
-                        let press = nonce.get(..10).and_then(|secs| secs.parse::<u128>().ok()).map(|secs| secs * 1000 + 999);
-                        cancel_hearing(addons, &main(slot), press.unwrap_or_else(jobs::now_ms));
                     }
                     ["WCCMD", _nonce, verb @ ("stop" | "now"), slot] => stop(addons, &main(slot), *verb == "stop"),
                     _ => {}

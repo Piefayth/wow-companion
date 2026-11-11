@@ -99,9 +99,6 @@ end
 
 -- moved to Transcript.lua
 local function newTranscript(...) return WC.Transcript.newTranscript(...) end
-local function queueRequest(...) return WC.Transcript.queueRequest(...) end
-local function queuedSlots(...) return WC.Transcript.queuedSlots(...) end
-local function unqueue(...) return WC.Transcript.unqueue(...) end
 -- moved to Window.lua
 local function buildLog(...) return WC.Window.buildLog(...) end
 local function logFrame()
@@ -248,8 +245,8 @@ local function colouredFor(who)
 	return "|cffffe08a"
 end
 
-local function showLine(who, text, continued, at, queued, job, key)
-	logFrame().messages:Add(who, text, continued, at, queued, job, key)
+local function showLine(who, text, continued, at, job)
+	logFrame().messages:Add(who, text, continued, at, job)
 end
 
 -- Spinning while the agent thinks. Several seconds of silence after you speak is
@@ -421,49 +418,12 @@ function WowCompanion_Stop(slot, sendNow)
 	setPending("stopping", slot)
 end
 
--- Where an entry stands in its conversation (Transcript.lua orders rows by
--- it): your message at its job id (the moment you let go), a reply and the
--- notes of its steps right after the messages it answers (the anchor, set by
--- the reply), anything else after everything so far. One rule, so a line is
--- shown where it belongs whenever it arrives, and replays the same way.
-local anchorKey, lastKey, maxKey = {}, {}, {}
-local function topKey(slot)
-	if not maxKey[slot] then
-		local top, s = 0, slot ~= "" and slot or nil
-		for _, e in ipairs(WowCompanionDB.log or {}) do
-			if e.slot == s and tonumber(e.key) and e.key > top then top = e.key end
-		end
-		maxKey[slot] = top
-	end
-	return maxKey[slot]
-end
-local function keyFor(who, slot, job, continued)
-	if continued and lastKey[slot] then return lastKey[slot] end
-	local key
-	if who == "you" and tonumber(job) then
-		key = job
-	elseif who ~= "you" and anchorKey[slot] then
-		key = anchorKey[slot]
-	else
-		key = topKey(slot) + 0.001
-	end
-	lastKey[slot] = key
-	if key > topKey(slot) then maxKey[slot] = key end
-	return key
-end
--- a reply for a job: it and what its steps print stand after that run's messages
-function WowCompanion_AnchorReply(slot, key)
-	anchorKey[slot] = key
-	C_Timer.After(1, function() if anchorKey[slot] == key then anchorKey[slot] = nil end end)
-end
-
-local function remember(who, text, continued, slot, queued, job)
+local function remember(who, text, continued, slot, job)
 	slot = slot or replySlot or viewSlot
 	WowCompanionDB.log = WowCompanionDB.log or {}
 	local entries = WowCompanionDB.log
-	local key = keyFor(who, slot, job, continued)
 	entries[#entries + 1] = { at = time(), who = who, text = text, continued = continued or nil,
-		slot = slot ~= "" and slot or nil, queued = queued, job = job, key = key }
+		slot = slot ~= "" and slot or nil, job = job }
 	-- Each conversation keeps its own LOG_KEEP lines, so a busy one never pushes
 	-- out a quiet one; when one fills, its oldest third is compacted into one
 	-- line that keeps what was asked, not dropped (the player, 2026-11-10).
@@ -505,7 +465,7 @@ local function remember(who, text, continued, slot, queued, job)
 		table.remove(entries, 1)
 	end
 	if slot == viewSlot then
-		showLine(who, text, continued, entries[#entries].at, queued, job, key)
+		showLine(who, text, continued, entries[#entries].at, job)
 	end
 	-- news nobody has seen yet: a reply in another conversation, or in this one
 	-- while the window is closed (the player, 2026-11-10: replies waited unseen
@@ -522,7 +482,7 @@ local function replayLog()
 	messages:Hold(true)
 	for _, entry in ipairs(WowCompanionDB.log or {}) do
 		if (entry.slot or "") == viewSlot then
-			showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at, entry.queued, entry.job, entry.key)
+			showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at, entry.job)
 		end
 	end
 	messages:Hold(false)
@@ -600,9 +560,6 @@ local function buildActionButton()
 			pcall(SmartNavigation_SetReturnFrameFocusButton, frame, actionButton)
 		end
 		actionButton:SetScript("PostClick", function(self)
-			if ClearOverrideBindings then
-				ClearOverrideBindings(self)
-			end
 			if self.slot then offers[self.slot] = nil end
 			self:Hide()
 		end)
@@ -618,7 +575,6 @@ local function showOffer(slot)
 	local held = offers[slot]
 	if not held then
 		if actionButton then
-			if ClearOverrideBindings then ClearOverrideBindings(actionButton) end
 			actionButton.slot = nil
 			actionButton:Hide()
 		end
@@ -631,14 +587,9 @@ local function showOffer(slot)
 	actionButton:SetAttribute("macrotext", macro)
 	actionButton:SetText(label)
 	actionButton:Show()
-
-	-- No pad key is bound to it any more (the player, 2026-11-10: "just let me
-	-- navigate to it and click it"): the window is in the focus cycle, so the
-	-- cursor reaches the button like any other. A binding left from an older
-	-- build is cleared.
-	local bound = "nothing"
-	if ClearOverrideBindings then ClearOverrideBindings(actionButton) end
-	return bound
+	-- the cursor reaches it, and L3 presses it while the window has focus
+	-- (Jobs.lua); nothing else is bound to it
+	return "shown"
 end
 WowCompanion_ShowOffer = showOffer
 
@@ -807,10 +758,7 @@ function handlers.log(inbox)
 	-- another conversation lights it up in the list, and what you said does not
 	-- `pending` starts this conversation's waiting line; a line without it ends it
 	-- a queued request leaves the running one's waiting line alone
-	local queued = inbox.queued and queueRequest(islot) or nil
-	-- the message's Cancel / Send now (Jobs.lua) sit on its queued line
-	inbox.queueId = queued
-	if (inbox.slot or inbox.pending) and not queued then setPending(inbox.pending, islot) end
+	if (inbox.slot or inbox.pending) and inbox.state ~= "queued" then setPending(inbox.pending, islot) end
 	-- what a clip became ends its "transcribing": the request's own line in its
 	-- conversation, or a line that names none (a chat line, a dropped-clip
 	-- notice), which cannot say whose clip it was and so ends them all
@@ -819,15 +767,6 @@ function handlers.log(inbox)
 	elseif who == "you" or who == "error" then
 		setTranscribing(nil)
 		if WC.Jobs and WC.Jobs.DropHearing then pcall(WC.Jobs.DropHearing) end
-	end
-	-- "got it, transcribing" from an older helper has no conversation yet:
-	-- whatever line comes next (the request in its slot, a chat line, a
-	-- dropped-clip notice) ends it
-	if islot ~= "" or not inbox.slot then
-		local early = working[""]
-		if early and early.text == "got it, transcribing" and not (inbox.slot == "" and inbox.pending) then
-			setPending(nil, "")
-		end
 	end
 	-- your words for a clip you cancelled while it was heard stay hidden; a
 	-- message already shown (as that clip's tombstone) is not shown twice; a
@@ -842,11 +781,11 @@ function handlers.log(inbox)
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
 	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-		remember(who, line, lines > 0, islot, lines == 0 and queued or nil, lines == 0 and who == "you" and inbox.job or nil)
+		remember(who, line, lines > 0, islot, lines == 0 and who == "you" and inbox.job or nil)
 		lines = lines + 1
 	end
 	if lines == 0 then
-		remember(who, text, nil, islot, queued, who == "you" and inbox.job or nil)
+		remember(who, text, nil, islot, who == "you" and inbox.job or nil)
 	end
 	-- the job's state, once its line is in the transcript to carry its controls
 	if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
@@ -881,51 +820,21 @@ end
 local TAP_MAX = 0.35
 local nativeToggleAt = 0
 -- Closing in combat (the player, 2026-11-10: "can't close the companion window
--- during combat"). The offered button (WowCompanionDo) is a secure button inside
--- the window, which makes the window protected, and Hide on a protected frame is
--- refused in combat. Alpha is not restricted: in combat the window goes
--- invisible and stops listening, and the real Hide happens when the fight ends.
-local combatHidden = false
-local combatCloser = CreateFrame("Frame")
-combatCloser:SetScript("OnEvent", function(self)
-	self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-	if combatHidden and logWindow then
-		combatHidden = false
-		logWindow:Hide()
-		logWindow:SetAlpha(1)
-	end
-end)
 function WowCompanion_HideWindow()
 	local frame = logWindow
 	if not frame then return end
 	WowCompanionDB.windowCombat = WowCompanionDB.windowCombat or {}
 	WowCompanionDB.windowCombat.lastHide = ("%s combat=%s protected=%s"):format(date("%H:%M:%S"),
 		tostring(InCombatLockdown()), tostring(frame:IsProtected()))
-	if InCombatLockdown() and frame:IsProtected() then
-		frame:SetAlpha(0)
-		combatHidden = true
-		-- the manager hears when the fight ends (FrameHidden from addon code in
-		-- a fight is "Interface action failed")
-		WC.FrameHidden(frame)
-		combatCloser:RegisterEvent("PLAYER_REGEN_ENABLED")
-		return
-	end
 	frame:Hide() -- plain Hide; see the /wc log note on HideUIPanel
 end
 local function windowOpen()
-	return logWindow and logWindow:IsShown() and not combatHidden
+	return logWindow and logWindow:IsShown()
 end
 local function toggleWindow()
 	local frame = logFrame()
 	if windowOpen() then
 		WowCompanion_HideWindow()
-	elseif combatHidden then
-		combatHidden = false
-		frame:SetAlpha(1)
-	elseif InCombatLockdown() and frame:IsProtected() then
-		-- the offer button makes the window protected: Show is refused mid-fight
-		-- (an "interface action failed", 2026-11-10); say so instead
-		toast("|cffffd100Companion|r  opens when this fight ends", 0.8, 0.8, 0.8, 3)
 	else
 		reveal(frame)
 	end
@@ -1015,11 +924,7 @@ function handlers.progress(inbox)
 	if inbox.job and WC.Jobs and WC.Jobs.Ended and WC.Jobs.Ended(inbox.job) then return "progress: ended" end
 	-- the agent took the oldest queued request of this conversation
 	-- its job's state (Jobs.lua takes the queued mark off the right message)
-	if inbox.job and WC.Jobs and WC.Jobs.Apply then
-		pcall(WC.Jobs.Apply, inbox)
-	elseif inbox.started then
-		unqueue(inbox.slot)
-	end
+	if inbox.job and WC.Jobs and WC.Jobs.Apply then pcall(WC.Jobs.Apply, inbox) end
 	setPending(inbox.text or "thinking", inbox.slot, inbox.since)
 	return "progress"
 end
@@ -1057,15 +962,11 @@ function handlers.stopped(inbox)
 	-- a cancel shows on the message itself; only an interrupt or a stop says more
 	if inbox.sendNow then
 		remember("claude", "Interrupted. Sending your next message now.", nil, slot)
-	elseif not inbox.req and not inbox.hearing and inbox.dropped ~= nil then
+	elseif inbox.dropped ~= nil then
 		remember("claude", inbox.dropped and "Stopped. Anything queued behind it was dropped."
 			or "Interrupted. Sending your next message now.", nil, slot)
 	end
 	return "stopped"
-end
-function handlers.transcribing(inbox)
-	setTranscribing(inbox.slot or "", true)
-	return "transcribing"
 end
 
 function handlers.macro(inbox)

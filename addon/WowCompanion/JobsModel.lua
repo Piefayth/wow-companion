@@ -206,7 +206,6 @@ function M:Apply(inbox)
 		local id = tonumber(inbox.job)
 		self:advance(id, slot, inbox.state)
 		local job = self.jobs[id]
-		if job and inbox.queueId and not job.queueId then job.queueId = inbox.queueId end
 		-- a reply names every message it answers in its `list` (src/requests.rs);
 		-- nothing is inferred: one cancelled during the run stays cancelled
 	end

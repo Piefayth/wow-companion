@@ -64,8 +64,8 @@ yes; don't reinvent what Claude Code has.
     with one-line wrappers left in Companion.lua.
   - `Sandbox.lua` agent code (`lua`, `module` steps, the sandbox, taint measuring).
     `Tests.lua` taint and PlaceAction tests. `Window.lua` the Companion window and
-    its tabs. `Transcript.lua` its text and the queued mark. `Board.lua` the toast
-    and agents' board. `Jobs.lua` each message's state on screen (the PC's ledger).
+    its tabs. `Transcript.lua` its text (lines only append). `Board.lua` the toast
+    and agents' board. `JobsModel.lua` the window's model of your messages, pure and property-tested (`python tools/test_jobs.py`, needs `lupa`); `Jobs.lua` draws it.
     `Chat.lua` whisper lookup, send preview, item viewer. `ChatWheel.lua` spoken
     chat without the agent (L1+R1). `Chords.lua` name lookups, the pad, chord
     learning. `Probes.lua` probes and API dumps. `Export.lua` the context export

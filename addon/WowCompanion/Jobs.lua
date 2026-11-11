@@ -20,13 +20,9 @@
 -- A cancel is a pending intent on top, resolved by whatever end the job reaches.
 
 local core = WC.Core
-local jobs = {} -- id -> { id, slot, state, text, queueId, row, at, cancel, sending, endedAt }
+local jobs = {} -- the model's jobs (JobsModel.lua), once it is made
 local made = {} -- every icon button, for marking after a fight
-local RANK = { hearing = 0, queued = 1, running = 2, answered = 3, cancelled = 3, failed = 3 }
 
-local function find(id)
-	return id and jobs[id]
-end
 
 -- `at`: the press, in seconds (the nonce opens with it; a hearing cancel is
 -- matched to its clip by it, so a retry must carry the first press's time)
@@ -100,17 +96,8 @@ local function getModel()
 	return model
 end
 
--- the jobs in order (ids are clock-based, so oldest first)
-local function ordered()
-	local list = {}
-	for _, job in pairs(jobs) do list[#list + 1] = job end
-	table.sort(list, function(a, b) return a.id < b.id end)
-	return list
-end
 
 local refresh
-local restored = false
-local queuedRow
 WC.Jobs = WC.Jobs or {}
 
 -- small icon buttons on the lines that already say what is going on (the
@@ -185,7 +172,6 @@ local function rowOf(job)
 		local row = transcript.rows[i]
 		if row.job == job.id and row.fs:IsShown() then return row end
 	end
-	if job.queueId and queuedRow then return queuedRow(transcript, job.queueId) end
 end
 
 -- What a message's header says, derived from its job alone (the player,
@@ -197,8 +183,6 @@ local WORDS = {
 }
 local function statusOf(job, row)
 	local word, grey = model:StatusOf(job)
-	-- a line still spinning its own "queued..." mark needs no second one
-	if word == "queued" and row and row.queued then return nil end
 	return word and ("  " .. WORDS[word]) or nil, grey
 end
 local function paint(job)
@@ -211,7 +195,6 @@ local function paint(job)
 		pcall(WC.Transcript.markRow, transcript, row, status, grey)
 	end
 end
-local function mark(job) paint(job) end
 
 local function cancel(job)
 	if not job or not getModel() then return end
@@ -250,11 +233,6 @@ end)
 local hearXs = {}
 local pairsPool = {}
 
-function queuedRow(transcript, queueId)
-	for _, row in ipairs(transcript.rows or {}) do
-		if row.queued == queueId and row.fs:IsShown() then return row end
-	end
-end
 
 refresh = function()
 	local frame = core.logFrame and core.logFrame()
@@ -421,8 +399,8 @@ refresh = function()
 	local runningThere = WC.Jobs.Running(view)
 	local list = model:Ordered()
 	for _, job in ipairs(list) do
-		local row = job.slot == view and job.state == "queued" and not job.cancel and not job.heardCancel and job.queueId
-			and queuedRow(transcript, job.queueId)
+		local row = job.slot == view and job.state == "queued" and not job.cancel and not job.heardCancel
+			and rowOf(job)
 		if row then
 			used = used + 1
 			local pair = pairsPool[used]
@@ -457,7 +435,7 @@ refresh = function()
 			for _, job in pairs(jobs) do if job.row then taken[job.row] = true end end
 			for i = #(transcript.rows or {}), 1, -1 do
 				local row = transcript.rows[i]
-				if row.you and not row.queued and row.fs:IsShown() and not taken[row] then running.row = row break end
+				if row.you and row.fs:IsShown() and not taken[row] then running.row = row break end
 			end
 		end
 		runRow = running.row

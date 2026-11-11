@@ -24,64 +24,6 @@ end
 local Transcript = {}
 Transcript.__index = Transcript
 
--- A request made while its conversation's agent is still busy (the player,
--- 2026-11-10): its own line in the transcript says "queued" with a spinner until
--- the agent starts on it, instead of the board saying "waiting" and losing what
--- the agent is doing. Each queued line has an id; ids wait per conversation, in
--- order, and the companion's `started` progress takes the oldest.
-local queuedLive, queuedBySlot, queuedNext = {}, {}, 0
-local queuedRows = {}
--- quiet: dots filling in slowly, as the waiting line does (the player found a
--- spinning character too busy, 2026-11-10)
-local SPIN = { "", ".", "..", "..." }
-local spinTicker
-local function paintQueued()
-	local turn = math.floor(GetTime() * 2) % #SPIN + 1
-	local alive = {}
-	for _, row in ipairs(queuedRows) do
-		if queuedLive[row.queued] and row.fs:IsShown() and not row.status then
-			row.fs:SetText(row.base .. "  |cff9d9d9dqueued" .. SPIN[turn] .. "|r")
-			alive[#alive + 1] = row
-		else
-			row.fs:SetText(row.base .. (row.status or ""))
-		end
-	end
-	queuedRows = alive
-	if #alive == 0 and spinTicker then spinTicker:Cancel() spinTicker = nil end
-end
-local function watchQueued(row)
-	queuedRows[#queuedRows + 1] = row
-	if not spinTicker then spinTicker = C_Timer.NewTicker(0.5, paintQueued) end
-	paintQueued()
-end
-local function queueRequest(slot)
-	queuedNext = queuedNext + 1
-	local id = ("%s#%d#%d"):format(slot, time(), queuedNext)
-	queuedLive[id] = true
-	queuedBySlot[slot] = queuedBySlot[slot] or {}
-	table.insert(queuedBySlot[slot], id)
-	return id
-end
--- the oldest queued request of a conversation started; `all` ends every one
-local function unqueue(slot, all)
-	local list = queuedBySlot[slot or ""]
-	while list and #list > 0 do
-		queuedLive[table.remove(list, 1)] = nil
-		if not all then break end
-	end
-	paintQueued()
-end
-
--- one queued request by its id (a cancelled one, not always the oldest)
-local function unqueueId(slot, id)
-	local list = queuedBySlot[slot or ""]
-	for i = #(list or {}), 1, -1 do
-		if list[i] == id then table.remove(list, i) end
-	end
-	queuedLive[id] = nil
-	paintQueued()
-end
-
 -- A message's state after its header (the player, 2026-11-10: a cancel must
 -- leave a tombstone and say whether it really happened). `grey` dims the
 -- message's own lines too
@@ -100,9 +42,6 @@ local function markRow(transcript, row, status, grey)
 		end
 	end
 end
-
--- the conversations with requests still queued, for the board's resync
-local function queuedSlots() return queuedBySlot end
 
 local function newTranscript(parent)
 	local scroll = CreateFrame("ScrollFrame", nil, parent)
@@ -199,7 +138,7 @@ function Transcript:Row(font, text, indent, gap, r, g, b)
 	fs:SetSpacing(LINE_SPACING)
 	if r then fs:SetTextColor(r, g, b) end
 	fs:SetText(text)
-	local row = { fs = fs, indent = indent or 0, gap = self.gap or gap or 0, key = self.curKey or 0 }
+	local row = { fs = fs, indent = indent or 0, gap = self.gap or gap or 0 }
 	self.gap = nil
 	-- Confirmed lines are only ever appended (the player, 2026-11-10: the
 	-- view must be "predictable and non-disruptive"): a line placed among ones
@@ -265,9 +204,7 @@ local WHO = {
 	claude = { "Claude", "|cffffd100", 0.93, 0.93, 0.93 },
 }
 
-function Transcript:Add(who, text, continued, at, queued, job, key)
-	self.curKey = key or 0
-	self.moved = nil
+function Transcript:Add(who, text, continued, at, job)
 	local voice = WHO[who]
 	if not continued then
 		self.code = false
@@ -279,10 +216,6 @@ function Transcript:Add(who, text, continued, at, queued, job, key)
 			if who == "you" then row.you = true end
 			row.header = true
 			row.job = job
-			if queued and queuedLive[queued] then
-				row.base, row.queued = header, queued
-				watchQueued(row)
-			end
 			self.gap = 3
 		end
 	end
@@ -294,12 +227,6 @@ function Transcript:Add(who, text, continued, at, queued, job, key)
 			who == "error" and 1 or 0.62, who == "error" and 0.47 or 0.65, who == "error" and 0.47 or 0.70)
 		row.marker = self.content:CreateFontString(nil, "OVERLAY", NOTE_FONT)
 		row.marker:SetText(who == "error" and "|cffff7777!|r" or "|cff5c6370›|r")
-	end
-	self.curKey = nil
-	if self.moved then
-		self.moved = nil
-		self:Layout()
-		if self.jobsGhosts and WC.Jobs and WC.Jobs.Refresh then WC.Jobs.Refresh() end
 	end
 	-- a long session would grow without end; keep the newest rows
 	if #self.rows > LOG_KEEP * 3 then
@@ -335,8 +262,4 @@ end
 
 WC.Transcript = WC.Transcript or {}
 WC.Transcript.newTranscript = newTranscript
-WC.Transcript.queueRequest = queueRequest
-WC.Transcript.queuedSlots = queuedSlots
-WC.Transcript.unqueue = unqueue
-WC.Transcript.unqueueId = unqueueId
 WC.Transcript.markRow = markRow
