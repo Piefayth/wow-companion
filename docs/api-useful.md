@@ -31,7 +31,7 @@ The gamepad bars are slots **181–272**, not 1–120 (CLAUDE.md, "Where we are"
 | `PickupAction(slot)`, `PickupMacro(index)`, `ClearCursor()` | measured: no taint |
 | `PlaceAction(slot)` | measured: taints nothing, into an undrawn slot (4), a drawn one (189), and as a move (181 → 13 and back, `PickupAction` then `PlaceAction`) |
 | `C_ActionBar.PutActionInSlot(slot)` | measured: the documented twin of `PlaceAction`; taints nothing into a drawn slot (202) |
-| `C_ActionBar.GetActionBarPage`, `GetBonusBarOffset`, `HasBonusActionBar` | measured: which page is live, e.g. after a shapeshift. Druid forms swap the bar. |
+| `C_ActionBar.GetActionBarPage`, `GetBonusBarOffset`, `HasBonusActionBar` | measured: which page is live, e.g. after a shapeshift. Forms and stances swap the bar. |
 | `C_ActionBar.FindSpellActionButtons(spellID)` | listed: "where is Moonfire on my bars" without walking every slot |
 | `C_Spell.PickupSpell(spell)`, `C_SpellBook.PickupSpellBookItem(i, bank)` | listed: how a spell gets onto the cursor for placing |
 

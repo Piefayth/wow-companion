@@ -27,7 +27,7 @@ foreach ($dir in "addon", "modules", "integrations", "assets", "tools") {
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $stage "tools\__pycache__")
 # modules made for this repo's own player (their class, their bindings): another
 # player's agent makes their own
-foreach ($personal in "BuffGlow.lua", "ExtraButtons.lua") {
+foreach ($personal in "ExtraButtons.lua") {
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $stage "modules\$personal")
 }
 # the generated module bundle is rebuilt by install

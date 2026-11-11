@@ -75,7 +75,7 @@ end
 -- (1-4 the d-pad left, up, right, down; 5-8 the face buttons) -- and, by watching,
 -- which modifiers are held when a button goes into its pushed state. So the base
 -- comes from the art and the modifier is learned from play, keyed by bar position
--- rather than slot, because druid forms page the slots under the same buttons.
+-- rather than slot, because forms and stances page the slots under the same buttons.
 local GAMEPAD_BARS = {
 	{ "TopCenteredAnchorTopBar", 4 },
 	{ "LeftCenteredAnchorLeftBar", 8 },

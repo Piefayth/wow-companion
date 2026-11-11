@@ -69,7 +69,10 @@ yes; don't reinvent what Claude Code has.
     `Chat.lua` whisper lookup, send preview, item viewer. `ChatWheel.lua` spoken
     chat without the agent (L1+R1). `Chords.lua` name lookups, the pad, chord
     learning. `Probes.lua` probes and API dumps. `Export.lua` the context export
-    (bag contents too). `Pins.lua`, `Strip.lua`. The bag window: `BagsInput.lua`
+    (bag contents too). `BuffWatch.lua` the character's watched buffs
+    (`WowCompanionCharDB`, per character, empty by default). **Nothing class- or
+    player-specific ships** (no default wheels, buffs or layouts): it is made per
+    character on request or read from the game. `Pins.lua`, `Strip.lua`. The bag window: `BagsInput.lua`
     (the secure pad), `BagsMenu.lua` (triangle), `Bags.lua`, `BagsStandIn.lua`
     (over Blizzard's). `Interact.lua` combat loot/interact key. `Fonts.lua` live
     interface fonts. `Status.lua` (minimap button). `Providers/` capabilities

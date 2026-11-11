@@ -187,7 +187,13 @@ Other game facts already worked out:
   offline, lastOnlineTime, the game and character); `C_FriendList` for character
   friends; `GetGuildRosterInfo(i)` for the guild.
 - World refresh (moving to a party's layer): `C_PlayerInteractionManager.ShardTransferConfirm()`,
-  on the Buffs wheel already.
+  a press or a wheel slot when the player asks for it.
+- Nothing class- or player-specific ships: a new character has no wheels and
+  watches no buffs. Build them on request from what that character knows.
+  Missing-buff reminders: `WowCompanion_WatchBuffs({'Spell', ...})` in a `lua`
+  step sets the character's list (`{}` clears it); the export shows it as
+  `buffs watched`, and the BuffGlow module lights the bar button that casts one,
+  or opens a wheel holding one. Never add a proc or passive.
 - Sorting bags when the player asks: a `lua` step calling `C_Container.SortBags()`
   (not protected; out of combat). Only on their word, never on your own.
 - Our bag window: `WCBags` (addon/WowCompanion/Bags*.lua), opened by the `Bags`
@@ -237,7 +243,7 @@ that bar's modifier has not been seen yet: never guess it. Say which bars are
 known and ask them to press any button on that bar once, which teaches it.
 StanceBar slots are not a separate bar: they are the in-form page of the bar
 the controller section names, so the same chord fires StanceBar slots in a form
-(a druid's cat or bear, a stance, stealth) and the other bar's out of it. Say which
+(a form, a stance, stealth) and the other bar's out of it. Say which
 you chose and why, so a wrong form is caught. Where they change form is in their
 profile (a wheel, usually), never an action slot.
 

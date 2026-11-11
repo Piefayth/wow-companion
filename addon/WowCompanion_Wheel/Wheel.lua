@@ -11,10 +11,12 @@
 -- its R3 combos, pages, and everything it needed its core for.
 --
 -- Configured by the companion agent, in Lua, out of combat:
---   WCWheel.Set("buffs", { label = "Buffs", slots = {
---       { spell = "Mark of the Wild" }, { item = 6948 }, { macro = "Ping" },
+--   WCWheel.Set("travel", { label = "Travel", slots = {
+--       { spell = "<a spell the character knows>" }, { item = 6948 }, { macro = "Ping" },
 --       { emote = "WAVE" }, { macrotext = "/sit", label = "Sit", icon = 134400 } } })
---   WCWheel.Remove("buffs")   WCWheel.List()
+--   WCWheel.Remove("travel")   WCWheel.List()
+-- No wheel ships: a character starts with none, and each is made on request
+-- from what that character has.
 -- A slot may carry `label` and `icon` to override what is looked up.
 -- A slot { rule = "items" } or { rule = "quest" } fills itself from the bags.
 
@@ -655,12 +657,7 @@ events:SetScript("OnEvent", function(_, event, name)
     if event == "PLAYER_LOGIN" then
         WowCompanionWheelDB = WowCompanionWheelDB or {}
         local db = WowCompanionWheelDB
-        if not db.wheels then
-            -- first run: the wheel the player asked for when this was built
-            db.wheels = { buffs = { label = "Buffs", slots = {
-                { spell = "Mark of the Wild" }, { spell = "Thorns" }, { spell = "Rebirth" }, { spell = "Revive" },
-            } } }
-        end
+        db.wheels = db.wheels or {}
         RestoreAxis()
         W.Rebuild()
     elseif not WowCompanionWheelDB then

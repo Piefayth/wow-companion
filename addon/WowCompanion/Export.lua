@@ -33,6 +33,18 @@ function WowCompanion_BagLines()
 end
 function WowCompanion_BagText() return table.concat(WowCompanion_BagLines(), "\n") end
 
+-- the character's forms or stances, from the game (none for most classes):
+-- names in bar order, and a set of the names
+local function shapeshiftForms()
+	local names, set = {}, {}
+	for i = 1, (GetNumShapeshiftForms and GetNumShapeshiftForms() or 0) do
+		local _, _, _, spellID = GetShapeshiftFormInfo(i)
+		local info = spellID and C_Spell.GetSpellInfo(spellID)
+		if info and info.name then names[#names + 1] = info.name set[info.name] = true end
+	end
+	return names, set
+end
+
 -- The context export (split out of Companion.lua, 2026-11-10): what the agent
 -- reads after every reload, written into SavedVariables at logout, and the form
 -- notes it rests on. Companion.lua shares what this needs through WC.Core and
@@ -212,8 +224,8 @@ local function reachLines(line, frames)
 			table.sort(names)
 			for _, name in ipairs(names) do
 				local at = where[name:lower()]
-				if not at and (known.flyout or name:find(" Form$")) then
-					at = "the L1+L2 form wheel"
+				if not at and (known.flyout or select(2, shapeshiftForms())[name]) then
+					at = "the game's stance/form bar (where the player changes it is in their profile)"
 				end
 				rows[#rows + 1] = ("%s: %s%s"):format(name, at or "NOT REACHABLE",
 					#variants > 1 and ("  [" .. table.concat(variants, "; ") .. "]") or "")
@@ -280,18 +292,15 @@ local function exportContext()
 		line(("zone: %s%s"):format(tostring(zone), (sub and sub ~= "" and sub ~= zone) and (" / " .. sub) or ""))
 	end)
 	pcall(function()
-		-- self-buffs worth noticing when missing (Druid; others add theirs here)
-		local BUFFS = { DRUID = { "Mark of the Wild", "Thorns" } } -- Omen of Clarity is a proc in Forever, not a buff to cast
-		local _, classFile = UnitClass("player")
-		local missing = {}
-		for _, name in ipairs(BUFFS[classFile] or {}) do
-			local info = C_Spell.GetSpellInfo(name)
-			local known = info and info.spellID and IsPlayerSpell(info.spellID)
-			if known and not C_UnitAuras.GetAuraDataBySpellName("player", name, "HELPFUL") then
-				missing[#missing + 1] = name
-			end
+		-- the character's own watch list (BuffWatch.lua), empty until asked for
+		local watched = WC.BuffWatch.List()
+		if #watched == 0 then
+			line("buffs watched: none (set with WowCompanion_WatchBuffs when the player asks)")
+		else
+			local missing = WC.BuffWatch.Missing()
+			line(("buffs watched: %s; missing at export: %s"):format(table.concat(watched, ", "),
+				#missing > 0 and table.concat(missing, ", ") or "none"))
 		end
-		line("buffs missing at export: " .. (#missing > 0 and table.concat(missing, ", ") or "none"))
 	end)
 
 	section("equipped")
@@ -442,7 +451,8 @@ local function exportContext()
 		-- Measured, and corrected by the player: the frames named StanceBar are not
 		-- a bar of their own. They are the in-form page of whichever bar the
 		-- GamepadStanceBarOverride setting names (here the R2 bar), which is why they
-		-- learn the same chord. Switching forms is the L1+L2 wheel, not a slot.
+		-- learn the same chord.
+		local formNames = shapeshiftForms()
 		local byModifier = {}
 		for _, bar in ipairs(GAMEPAD_BARS) do
 			local name = barLabel(bar[1] .. "ActionButton1"):gsub(" 1$", "")
@@ -454,15 +464,19 @@ local function exportContext()
 		end
 		for modifier, names in pairs(byModifier) do
 			if #names > 1 then
-				line(("-- %s is shared by %s: StanceBar is that bar's page while in a form"
-					.. " (cat, bear); out of form it is the other"):format(modifier, table.concat(names, " and ")))
+				line(("-- %s is shared by %s: StanceBar is that bar's page while in a form or stance"
+					.. "%s; out of it it is the other"):format(modifier, table.concat(names, " and "),
+					#formNames > 0 and (" (" .. table.concat(formNames, ", ") .. ")") or ""))
 			end
 		end
-		local form = GetShapeshiftForm and GetShapeshiftForm() or 0
-		line(("form at export: %s"):format(form == 0 and "none (caster)" or ("%d"):format(form)))
-		line(("GamepadStanceBarOverride: %s (the setting that picks which bar shows form actions)")
-			:format(tostring(cvar("GamepadStanceBarOverride"))))
-		line("-- changing form is the L1+L2 wheel, not an action slot")
+		if #formNames > 0 then
+			local form = GetShapeshiftForm and GetShapeshiftForm() or 0
+			line(("forms/stances: %s; at export: %s"):format(table.concat(formNames, ", "),
+				form == 0 and "none" or (formNames[form] or tostring(form))))
+			line(("GamepadStanceBarOverride: %s (the setting that picks which bar shows form actions)")
+				:format(tostring(cvar("GamepadStanceBarOverride"))))
+			line("-- changing form or stance: where the player does it is in their profile, never assumed")
+		end
 		local stats = WowCompanionDB.chordStats
 		if stats then
 			line(("-- %d d-pad/face presses watched, %d lit a bar button"):format(stats.presses, stats.lit))

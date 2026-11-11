@@ -2,6 +2,7 @@
 ## Title: WoW Companion
 ## Notes: Takes commands from the companion helper running on your PC.
 ## SavedVariables: WowCompanionDB
+## SavedVariablesPerCharacter: WowCompanionCharDB
 ## IconTexture: Interface\Icons\UI_Chat
 ## AddonCompartmentFunc: WowCompanion_OnCompartmentClick
 ## AddonCompartmentFuncOnEnter: WowCompanion_OnCompartmentEnter
@@ -27,6 +28,7 @@ Chat.lua
 ChatWheel.lua
 Chords.lua
 Probes.lua
+BuffWatch.lua
 Export.lua
 Pins.lua
 Errands.lua
