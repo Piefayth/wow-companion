@@ -8,8 +8,16 @@ pub(crate) const PROGRESS_STOP: u32 = 14;
 // 512, not 64: a session spent all 64 (progress lines were nearly half) and every
 // later reply was lost. New folders need one full game restart to be seen.
 pub(crate) const SLOTS: u32 = 512;
-// every slot is identical; Slot.xml pulls in Inbox.lua so addon managers see one fixed fingerprint
-pub(crate) const SLOT_TOC: &str = "## Interface: 16001\n## Title: WoW Companion slot\n## LoadOnDemand: 1\n## Group: WowCompanion\n\nSlot.xml\n";
+/// A slot's .toc. Each slot is its own group in a category of its own, so the
+/// AddOns list folds all of them under one collapsible line (Blizzard_AddOnList:
+/// only categories collapse, and the game remembers which; a group's children
+/// always show). Slot.xml pulls in Inbox.lua.
+pub(crate) fn slot_toc(slot: u32) -> String {
+    format!(
+        "## Interface: 16001\n## Title: WoW Companion message slot\n## LoadOnDemand: 1\n## Group: {}\n## Category: WoW Companion: message slots\n\nSlot.xml\n",
+        slot_name(slot)
+    )
+}
 pub(crate) const SLOT_XML: &str = "<Ui xmlns=\"http://www.blizzard.com/wow/ui/\">\n\t<Script file=\"Inbox.lua\"></Script>\n</Ui>\n";
 
 // where the helper remembers the addon's slot cursor; inert to the game, which only

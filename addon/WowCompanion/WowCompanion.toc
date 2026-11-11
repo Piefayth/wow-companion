@@ -4,6 +4,7 @@
 ## SavedVariables: WowCompanionDB
 ## IconTexture: Interface\Icons\UI_Chat
 ## Group: WowCompanion
+## Category: WoW Companion
 
 Engine.lua
 Style.lua

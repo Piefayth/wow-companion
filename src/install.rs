@@ -70,7 +70,7 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
         note_fresh(&dir);
         fs::create_dir_all(&dir)?;
         written.push(dir.clone());
-        fs::write(dir.join(format!("{}.toc", slot_name(slot))), SLOT_TOC)?;
+        fs::write(dir.join(format!("{}.toc", slot_name(slot))), slot_toc(slot))?;
         fs::write(dir.join("Slot.xml"), SLOT_XML)?;
         // the client only knows files that exist at launch
         if missing(&dir.join("Inbox.lua")) {
