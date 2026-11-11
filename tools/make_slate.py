@@ -40,7 +40,7 @@ def periodic_noise(rng, period):
     return (a * (1 - wx) + b * wx) * (1 - wy) + (c * (1 - wx) + d * wx) * wy
 
 
-def stone(seed, base, strata=0.0):
+def stone(seed, base, strata=0.0, calm=1.0):
     """Stone you can see from a couch: cloudy mottling at three scales, a fine
     grain, sparse pale flecks, and (strata > 0) faint horizontal layering, so
     the two tiles differ in kind as well as value. The first version, with
@@ -54,8 +54,9 @@ def stone(seed, base, strata=0.0):
         rows = periodic_noise(rng, 16)[:, :1] * np.ones((1, SIZE))
         wobble = periodic_noise(rng, 64) * 0.5
         v += (rows + wobble) * strata
-    specks = rng.random((SIZE, SIZE)) < 0.006
+    specks = rng.random((SIZE, SIZE)) < 0.006 * calm
     v[specks] += 16
+    v *= calm
     rgb = np.stack([base[k] + v for k in range(3)], axis=-1)
     return np.clip(np.rint(rgb), 0, 255).astype(np.uint8)
 
@@ -79,6 +80,11 @@ if __name__ == "__main__":
     # textures, variants, not one with a lighter wash): the same recipe from
     # different seeds, so the grain differs, at two values; a cool charcoal,
     # warmth left to the gold dividers and headers
-    write_tga(os.path.join(OUT, "Slate-%s.tga" % v), stone(7, (28, 29, 33)))
-    write_tga(os.path.join(OUT, "SlateLight-%s.tga" % v), stone(23, (58, 59, 64), strata=8))
+    # Calm by rule (the player, 2026-11-11: v3 "too busy", theirs "too
+    # light"): behind text, the texture's own contrast stays a small fraction
+    # of the text's, and only broad, soft variation survives; the game feel is
+    # carried by the frame, dividers and headers, not the fill. The owners a
+    # small value step apart, both dark.
+    write_tga(os.path.join(OUT, "Slate-%s.tga" % v), stone(7, (26, 27, 30), calm=0.45))
+    write_tga(os.path.join(OUT, "SlateLight-%s.tga" % v), stone(23, (37, 38, 42), calm=0.45))
     print("wrote", os.path.abspath(OUT))
