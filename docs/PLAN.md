@@ -222,7 +222,7 @@ Built and verified in combat (how: CLAUDE.md, "A window usable in combat"). The
 player's terms hold: items usable in combat, item targeting works, the bag key opens
 it. Done: window, pad, bag key, Blizzard stand-in, triangle menu, bag swap
 (`WCSwapBag`, untested on a real swap), contents in the export.
-Next: (2) sections and prices: keep / vendor / auction from Auctionator, extending
+Next, as `docs/proposals/bags.md` (to agree first): (2) sections and prices: keep / vendor / auction from Auctionator, extending
 MakeRoom; a reusable sell list the player confirms at the vendor (design to agree);
 (3) filters by voice, a make-room view.
 
