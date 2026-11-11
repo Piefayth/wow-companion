@@ -1,7 +1,6 @@
 //! The data strip, read off the screen: the game's one fast way to the PC
-//! (`WowCompanion_Strip.Send(text)`, addon/WowCompanion/Strip.lua). Read here,
-//! in the companion, so nothing needs Python (the player, 2026-11-11: "definitely
-//! don't rely on python"; tools/strip.py stays as a dev tool only).
+//! (`WowCompanion_Strip.Send(text)`, addon/WowCompanion/Strip.lua), read here
+//! in the companion.
 //!
 //! Layout, as Strip.lua draws it: 4 px cells, 256 to a row, filling from the
 //! screen's bottom-right corner rightward along the bottom row, then rows upward.
@@ -10,8 +9,9 @@
 //! zero padded. Every cell is a colour (r, g, b) read at its centre.
 //!
 //! Used for: the game's commands (`serve`: Stop, cancel, send now, drawn as
-//! "WCCMD ..." strips), live chat for a request (`watch`), and the agents' own
-//! readers (`wow-companion strip --watch <s> <file>`, the `command` below).
+//! "WCCMD ..." strips), asks from other processes (`serve_asks`: an agent's
+//! `strip --chat`, a developer's `strip --send <lua>`, put through this
+//! companion's channel), and the agents' detached readers (`strip --watch`).
 
 use super::*;
 
@@ -251,6 +251,108 @@ fn follow_up(slot: &str, out: &Path, arrived: bool) -> io::Result<()> {
     fs::rename(&part, dir.join(format!("{stamp}.txt")))
 }
 
+/// The Lua that has the game draw its recent chat and the profession links it
+/// caught (LinkCatcher's `WCChatStrip`), for an agent's `strip --chat`.
+const CHAT_LUA: &str = "if WCChatStrip then WCChatStrip() end";
+/// How long a chat read watches: `WCChatStrip` shows its strip for 6 s.
+const CHAT_SECONDS: f64 = 8.0;
+
+/// Where asks wait for the running companion: `<id>.ask` (first line the
+/// seconds to watch, then the Lua), taken as `<id>.taken`, answered as
+/// `<id>.out` (the strip's text) or `<id>.err` (why not).
+fn asks_dir() -> io::Result<PathBuf> {
+    let dir = crate::restart::companion_dir()?.join("strip-asks");
+    fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+/// `strip --send <lua> [seconds]` and `strip --chat`, from any process: the
+/// running companion puts the Lua through its own channel (a second process
+/// sending would race it) and reads the strip it draws. Returns the strip's
+/// text, or exactly why not.
+fn ask(lua: &str, seconds: f64) -> io::Result<Vec<u8>> {
+    if !crate::lifecycle::running() {
+        return Err(io::Error::other("the companion is not running: nothing can reach the game"));
+    }
+    let dir = asks_dir()?;
+    let id = SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_nanos()).unwrap_or_default();
+    let part = dir.join(format!("{id}.part"));
+    fs::write(&part, format!("{seconds}\n{lua}"))?;
+    fs::rename(&part, dir.join(format!("{id}.ask")))?;
+    // the send waits for the channel (a bell's 2 s per message ahead of it),
+    // then the watch itself: the deadline covers both, and passing it is said
+    let deadline = Instant::now() + Duration::from_secs_f64(seconds + 60.0);
+    let (out, err) = (dir.join(format!("{id}.out")), dir.join(format!("{id}.err")));
+    while Instant::now() < deadline {
+        if let Ok(payload) = fs::read(&out) {
+            let _ = fs::remove_file(&out);
+            return Ok(payload);
+        }
+        if let Ok(why) = fs::read_to_string(&err) {
+            let _ = fs::remove_file(&err);
+            return Err(io::Error::other(why));
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    // never served: withdraw it; served but late: its answer is not wanted
+    if fs::remove_file(dir.join(format!("{id}.ask"))).is_err() {
+        let _ = fs::write(dir.join(format!("{id}.abandoned")), "");
+    }
+    Err(io::Error::other(format!("the companion did not answer within {:.0} s", seconds + 60.0)))
+}
+
+/// For the running companion: serve asks one at a time, in the order made.
+pub(crate) fn serve_asks(addons: &Path) {
+    let addons = addons.to_path_buf();
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_millis(200));
+        let Ok(dir) = asks_dir() else { continue };
+        let mut waiting: Vec<PathBuf> = fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "ask"))
+            .collect();
+        waiting.sort();
+        for path in waiting {
+            let taken = path.with_extension("taken");
+            if fs::rename(&path, &taken).is_err() {
+                continue;
+            }
+            let answer = fs::read_to_string(&taken).map_err(|err| err.to_string()).and_then(|text| {
+                let (seconds, lua) = text.split_once('\n').ok_or("an ask without its Lua")?;
+                let seconds: f64 = seconds.trim().parse().map_err(|_| "an ask without its seconds")?;
+                serve_one(&addons, lua, seconds)
+            });
+            let _ = fs::remove_file(&taken);
+            let abandoned = path.with_extension("abandoned");
+            if fs::remove_file(&abandoned).is_ok() {
+                continue;
+            }
+            let (name, body) = match answer {
+                Ok(payload) => ("out", payload),
+                Err(why) => ("err", why.into_bytes()),
+            };
+            let part = path.with_extension("answer");
+            if fs::write(&part, body).and_then(|()| fs::rename(&part, path.with_extension(name))).is_err() {
+                eprintln!("strip ask: could not write its answer in {}", dir.display());
+            }
+        }
+    });
+}
+
+fn serve_one(addons: &Path, lua: &str, seconds: f64) -> Result<Vec<u8>, String> {
+    if !channel::game_running().map_err(|err| err.to_string())? {
+        return Err("the game is closed".into());
+    }
+    channel::send_inbox(addons, &format!("{{ kind = \"lua\", code = {} }}", lua_string(lua)))
+        .map_err(|err| format!("the Lua could not be sent: {err}"))?;
+    watch(seconds).map_err(|why| {
+        format!("no strip in {seconds:.0} s ({why}); the game runs Lua from the companion out of combat only, and the code must call WowCompanion_Strip.Send")
+    })
+}
+
 /// For the running companion: watch the corner for command strips ("WCCMD ...",
 /// drawn when the player presses Stop, cancel or send now in the window) and hand
 /// each new one to `command`, newlines made spaces. Never returns. A look at the
@@ -279,20 +381,31 @@ pub(crate) fn serve(mut command: impl FnMut(String)) -> ! {
     }
 }
 
+fn print(payload: &[u8]) -> io::Result<()> {
+    use std::io::Write;
+    let mut stdout = io::stdout();
+    stdout.write_all(payload)?;
+    stdout.write_all(b"\n")
+}
+
 /// `wow-companion strip`: print what the strip shows now (or why not, exit 1).
+/// `wow-companion strip --chat`: the game's recent chat and caught links, now.
+/// `wow-companion strip --send <lua> [seconds]`: run Lua that draws a strip
+/// (through the running companion's channel) and print what it drew.
 /// `wow-companion strip --watch <seconds> <out file> [--then <conversation>]`:
 /// the agents' detached reader (src/agent.rs, "Reading the game live").
 pub(crate) fn command(args: &[String]) -> io::Result<()> {
     match args {
         [] => match read() {
-            Ok(payload) => {
-                use std::io::Write;
-                let mut stdout = io::stdout();
-                stdout.write_all(&payload)?;
-                stdout.write_all(b"\n")
-            }
+            Ok(payload) => print(&payload),
             Err(why) => Err(io::Error::other(format!("strip: {why}"))),
         },
+        [flag] if flag == "--chat" => print(&ask(CHAT_LUA, CHAT_SECONDS)?),
+        [flag, lua] if flag == "--send" => print(&ask(lua, 10.0)?),
+        [flag, lua, seconds] if flag == "--send" => {
+            let seconds: f64 = seconds.parse().map_err(|_| io::Error::other("--send <lua> [seconds]"))?;
+            print(&ask(lua, seconds)?)
+        }
         [flag, seconds, out, rest @ ..] if flag == "--watch" => {
             let seconds: f64 = seconds.parse().map_err(|_| io::Error::other("--watch wants seconds, then the out file"))?;
             let then = match rest {
@@ -306,7 +419,7 @@ pub(crate) fn command(args: &[String]) -> io::Result<()> {
                 std::process::exit(1)
             }
         }
-        _ => Err(io::Error::other("strip [--watch <seconds> <out file> [--then <conversation>]]")),
+        _ => Err(io::Error::other("strip [--chat | --send <lua> [seconds] | --watch <seconds> <out file> [--then <conversation>]]")),
     }
 }
 

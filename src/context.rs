@@ -188,27 +188,6 @@ pub(crate) fn saved_variables(addons: &Path) -> Option<PathBuf> {
     newest.map(|(_, path)| path)
 }
 
-/// Whether a request is about chat or links, so it is worth a live look first.
-pub(crate) fn wants_chat(spoken: &str) -> bool {
-    let lower = spoken.to_lowercase();
-    ["link", "chat", "trade", "general", "said", "says", "saying", "talking", "whisper", "posted", "channel", "guild"]
-        .iter()
-        .any(|word| lower.contains(word))
-}
-
-/// Recent chat and caught profession links, read live (the player, 2026-11-10):
-/// the game draws them as the data strip (`WCChatStrip`, modules/LinkCatcher.lua)
-/// and we read the corner. The chat log file is only written at logout, so this
-/// is the one live way out. A few seconds at most; None when it cannot be read
-/// (combat, no game), and the request goes ahead without it.
-pub(crate) fn live_chat(addons: &Path) -> Option<String> {
-    if !channel::game_running().unwrap_or(false) {
-        return None;
-    }
-    channel::send_inbox(addons, "{ kind = \"lua\", code = \"if WCChatStrip then WCChatStrip() end\" }").ok()?;
-    let payload = crate::strip::watch(5.0).ok()?;
-    Some(String::from_utf8_lossy(&payload).into_owned())
-}
 
 /// The player's profile. A release ships only `profile.template.md`, so unzipping
 /// an update over an install never overwrites what the agent wrote: the profile

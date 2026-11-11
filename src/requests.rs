@@ -304,16 +304,7 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
     // start the agent before announcing ourselves: the announcement costs a bell
     // wait, the agent costs several seconds, and they may as well run together
     voice::mark(&format!("agent starting [{}]", session.slot));
-    let mut context = agent_context_for(addons, &session.slot);
-    if wants_chat(spoken) {
-        jobs::set_doing(group, "reading chat");
-        if let Some(chat) = live_chat(addons) {
-            context = Some(format!("{}
-== live chat ==
--- read from the game just now, through the data strip
-{chat}", context.unwrap_or_default()));
-        }
-    }
+    let context = agent_context_for(addons, &session.slot);
     // what you cancelled after the agent had it is in its conversation; it
     // must know those words were withdrawn
     let withdrawn = jobs::take_withdrawn(&session.slot);
@@ -486,15 +477,7 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
 pub(crate) fn think(addons: &Path, spoken: &str) -> io::Result<()> {
     let mut session = agent::Session::default();
     let started = Instant::now();
-    let mut context = agent_context_for(addons, &session.slot);
-    if wants_chat(spoken) {
-        if let Some(chat) = live_chat(addons) {
-            context = Some(format!("{}
-== live chat ==
--- read from the game just now, through the data strip
-{chat}", context.unwrap_or_default()));
-        }
-    }
+    let context = agent_context_for(addons, &session.slot);
     let waiting = session.start(spoken, context)?;
     let answer = session.finish(waiting, |doing| println!("  ... {doing}"))?;
     println!("({:.1}s) say: {}", started.elapsed().as_secs_f32(), answer.say);

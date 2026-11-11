@@ -38,7 +38,7 @@ what agents are editing now. Counts are from 2026-11-11.
 | Save reset by line counts | src/backups.rs | the addon's own load counter | R1 adds the counter, then the guess is deleted |
 | Combat guard "somewhere before" a call; function ends by indentation | tools/luarules.py | 1.2 above makes the rule exact | after L2 |
 | Cancel matched to the nearest clip within 1.2 s, across two clocks | src/jobs.rs (heard_at) | an identity both sides know | Main to propose |
-| "Is this request about chat?" by keywords | src/context.rs wants_chat | the agent asks for live chat when it wants it (a step), instead of the PC guessing from words | PC-side Claude |
+| "Is this request about chat?" by keywords | src/context.rs wants_chat | the agent runs `strip --chat` when it needs chat | done 2026-11-11 |
 | Whisper's prompt echo stripped by text; quiet clips by a level threshold | crates/voice/src/lib.rs, mic.rs | (speech is approximate) | permitted by the player, 2026-11-11 |
 | Spoken names matched to the closest player name | Lua name lookup | (speech is approximate) | permitted by the player, 2026-11-11 |
 
@@ -50,8 +50,9 @@ counts (measured), the strip's cell size (a format).
 - `req` sent beside `job` in every job message (requests.rs, offline.rs): kept
   "while it costs nothing"; rule 2 says delete it, with the addon's reading of it.
   Owner: whoever does 1.1 (it is the same code).
-- `tools/strip.py` beside `src/strip.rs`: move its one dev-only feature
-  (`--send`) into `wow-companion strip`, then delete it.
+- `tools/strip.py` beside `src/strip.rs`: done 2026-11-11 (`--send` is now
+  `wow-companion strip --send`, served by the running companion; the script and
+  its PowerShell helper are deleted).
 - 176 lines of code comments carry dated history ("the player, 2026-11-10: ...").
   History belongs in `docs/history.md`; a comment says what is true now. Every
   change prunes the comments near what it touched (rule 3); a one-time pass per

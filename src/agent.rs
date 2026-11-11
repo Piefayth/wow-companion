@@ -46,8 +46,9 @@ trigger and stop. The export here is trimmed (no bars, spellbook or quests).
 Your steps run blind and you cannot look: never run a lua step to check something
 first, and never set `look` (it offers a reload, which wipes chat). Write the one
 step that does the job. A profession link from someone: a `press` with
-`/run WCOpenTradeLink(\"Name\")`, or, when `== live chat ==` is in the request, the number of the one meant there:
-`/run WCOpenTradeLink(n)`. Questions about what someone said: answer from it.";
+`/run WCOpenTradeLink(\"Name\")`, or the number of the one meant in what
+`& $env:WOW_COMPANION_EXE strip --chat` prints: `/run WCOpenTradeLink(n)`.
+Questions about what someone said: read `strip --chat` and answer from it.";
 
 // Real work (researching and installing an addon, restarting the game, changing
 // the addon) takes many tool calls; a quick answer still takes one.
@@ -129,9 +130,9 @@ Other things of ours agent code can call (all globals, all in WowCompanion):
   For anything a name cannot say, pass a test, newest first:
   `/run WCOpenTradeLink(function(e) return e.label:find(\"Enchanting\") and e.from:find(\"^O\") end)`
   (e.label \"[Enchanting]\", e.from \"Orihime Shishun\", e.where, e.at; keep it under 255).
-  A request about chat or links comes with `== live chat ==`: recent chat lines and
-  the caught links, read from the game just now. Pick the one meant from that and
-  give `/run WCOpenTradeLink(n)` with its number; no test function needed.
+  `& $env:WOW_COMPANION_EXE strip --chat` prints recent chat lines and the caught
+  links, read from the game now. Pick the one meant from that and give
+  `/run WCOpenTradeLink(n)` with its number; no test function needed.
   It must be the player's press. Never look the link up first in a `lua` step: you
   cannot see what it prints, so give the press directly.
   None caught: ask in /2 Trade for a link; chat history itself is lost at a reload.
@@ -173,7 +174,13 @@ $env:WOW_COMPANION_EXE -ArgumentList 'strip','--watch','240','<out file>'`.
 Add `'--then','<your conversation>'` (main, l1, l2, r1, r2 or quick, from the [..]
 mark on the request; none is main): when the text lands in the out file you are
 asked to carry on by yourself, so finish the job then; never ask the player to
-prompt you. Never send Lua from a second process (it races the channel).
+prompt you. Within your turn, `& $env:WOW_COMPANION_EXE strip --send '<lua>'
+[seconds]` runs Lua that calls WowCompanion_Strip.Send and prints what it drew
+(the running companion puts it through its channel; out of combat only); never
+run `wow-companion send` yourself (a second process races the channel).
+Chat as it is now (what was said, who posted a link): `& $env:WOW_COMPANION_EXE
+strip --chat` prints the last 40 lines and the profession links caught (n for
+WCOpenTradeLink(n)), or why it could not; read it when the request needs it.
 Bags: the export's `== bag contents ==` lists every item (stacks summed, bag:slot,
 flags quest, spare bag, grey, soulbound) as of the last reload. For now, read them
 live: a `lua` step `WowCompanion_Strip.Send(WowCompanion_BagText(), 30)` with the

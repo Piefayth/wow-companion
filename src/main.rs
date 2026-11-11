@@ -268,6 +268,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         let addons = addons.to_path_buf();
         thread::spawn(move || watch_commands(&addons));
     }
+    // other processes' asks to read the game (an agent's `strip --chat`)
+    strip::serve_asks(addons);
     // The voice loop never sends anything itself. A send waits for any other send
     // and then about two seconds for the game to hear it, and the voice loop is
     // what reads the pad: sending from it froze the buttons and the cues whenever
