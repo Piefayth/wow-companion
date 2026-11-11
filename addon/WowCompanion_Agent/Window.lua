@@ -537,7 +537,7 @@ local function buildLog()
 		track:SetPoint("TOP", arrows[1], "BOTTOM", 0, -2)
 		track:SetPoint("BOTTOM", arrows[2], "TOP", 0, 2)
 		track:SetWidth(arrows[1]:GetWidth() > 0 and arrows[1]:GetWidth() or 16)
-		-- The channel inside the trough: the replies' stone under Blizzard's
+		-- The scroll bar's channel: the replies' stone under Blizzard's
 		-- inner shadow (ShadowOverlaySmallTemplate, UIPanelTemplates.xml:1045),
 		-- so it reads carved rather than void; above the inset, below
 		-- the thumb (a child of the track, so one level up).
@@ -552,7 +552,7 @@ local function buildLog()
 			shadow:SetAllPoints(channel)
 			shadow:SetFrameLevel(track:GetFrameLevel())
 		end
-		-- The trough's left edge in the dividers' own art: one quest log
+		-- The channel's left edge in the dividers' own art: one quest log
 		-- divider turned upright (as Blizzard_LFGVanilla_Listing.xml:292-305
 		-- does), so each turn's divider meets it in a T.
 		local edge = CreateFrame("Frame", nil, track)
