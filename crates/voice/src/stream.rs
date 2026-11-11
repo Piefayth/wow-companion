@@ -28,17 +28,18 @@ pub const HOTWORDS_SCORE: f32 = 3.0;
 /// Silence fed after the last of the audio, so the model's final chunk is
 /// decoded (three of its 160 ms chunks).
 const TAIL_SECONDS: f32 = 0.48;
-const RATE: i32 = 16_000;
 /// CPU threads for the recognizer: on four the benchmark decoded at 0.25-0.4x
 /// real time, keeping pace with speech with room to spare.
 pub(crate) const THREADS: i32 = 4;
 
 /// What the voice loop sends the engine's thread.
 pub(crate) enum Feed {
-    /// The button went down: a new utterance, biased toward these words.
-    Start { hotwords: String },
-    /// Audio captured since the last piece, mono, at the mic's own rate.
-    Audio { rate: u32, samples: Vec<f32> },
+    /// The button went down: a new utterance, biased toward these words, its
+    /// audio at this rate. One rate per stream: sherpa-onnx ends the process
+    /// (`exit`) when a stream's rate changes.
+    Start { hotwords: String, rate: u32 },
+    /// Audio captured since the last piece, mono, at the utterance's rate.
+    Audio(Vec<f32>),
     /// The button came up on a real clip: finish and report it.
     Finish { role: String, level: f32, seconds: f32 },
     /// The press was a tap, too short, or cut off: forget it.
@@ -98,20 +99,27 @@ fn decode(recognizer: &OnlineRecognizer, stream: &OnlineStream) -> String {
     recognizer.get_result(stream).map(|result| result.text.trim().to_string()).unwrap_or_default()
 }
 
+/// The final text: the tail of silence at the stream's own rate, then the rest decoded.
+fn finish(recognizer: &OnlineRecognizer, stream: &OnlineStream, rate: u32) -> String {
+    stream.accept_waveform(rate as i32, &vec![0.0; (TAIL_SECONDS * rate as f32) as usize]);
+    stream.input_finished();
+    decode(recognizer, stream)
+}
+
 /// The engine's thread: feeds in, partials printed to the log as they change,
 /// the final text out on `done` (where Whisper's results go).
 pub(crate) fn run(recognizer: OnlineRecognizer, feed: Receiver<Feed>, done: Sender<Done>) {
-    let mut stream: Option<OnlineStream> = None;
+    let mut utterance: Option<(OnlineStream, u32)> = None;
     let mut partial = String::new();
     for item in feed {
         match item {
-            Feed::Start { hotwords } => {
-                stream = Some(recognizer.create_stream_with_hotwords(&hotwords));
+            Feed::Start { hotwords, rate } => {
+                utterance = Some((recognizer.create_stream_with_hotwords(&hotwords), rate));
                 partial.clear();
             }
-            Feed::Audio { rate, samples } => {
-                let Some(stream) = &stream else { continue };
-                stream.accept_waveform(rate as i32, &samples);
+            Feed::Audio(samples) => {
+                let Some((stream, rate)) = &utterance else { continue };
+                stream.accept_waveform(*rate as i32, &samples);
                 let text = decode(&recognizer, stream);
                 if text != partial {
                     crate::mark(&format!("partial: {text}"));
@@ -120,12 +128,10 @@ pub(crate) fn run(recognizer: OnlineRecognizer, feed: Receiver<Feed>, done: Send
             }
             Feed::Finish { role, level, seconds } => {
                 // every Finish is answered: its clip was announced to the player
-                let result = match stream.take() {
-                    Some(stream) => {
+                let result = match utterance.take() {
+                    Some((stream, rate)) => {
                         let since = Instant::now();
-                        stream.accept_waveform(RATE, &vec![0.0; (TAIL_SECONDS * RATE as f32) as usize]);
-                        stream.input_finished();
-                        let text = decode(&recognizer, &stream);
+                        let text = finish(&recognizer, &stream, rate);
                         crate::mark(&format!("streaming final in {} ms", since.elapsed().as_millis()));
                         Ok(text)
                     }
@@ -135,7 +141,7 @@ pub(crate) fn run(recognizer: OnlineRecognizer, feed: Receiver<Feed>, done: Send
                     break;
                 }
             }
-            Feed::Drop => stream = None,
+            Feed::Drop => utterance = None,
         }
     }
 }
@@ -172,9 +178,7 @@ pub fn transcribe_stream_file(dir: &Path, wav: &Path, vocabulary: &[String]) -> 
         }
     }
     let released = Instant::now();
-    stream.accept_waveform(RATE, &vec![0.0; (TAIL_SECONDS * RATE as f32) as usize]);
-    stream.input_finished();
-    let text = decode(&recognizer, &stream);
+    let text = finish(&recognizer, &stream, rate);
     println!(
         "{:.1}s of audio; final text {} ms after the audio ended",
         mono.len() as f32 / rate as f32,

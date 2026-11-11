@@ -161,10 +161,10 @@ impl Microphone {
     }
 
     /// For a streaming engine: what this recording captured since the last call,
-    /// mixed to mono, whole frames only, at the device's own rate (the engine
-    /// resamples). Called while the button is held and once more after `end`, so
-    /// together the calls hand over every sample exactly once.
-    pub(crate) fn take_new(&self) -> (u32, Vec<f32>) {
+    /// mixed to mono, whole frames only, at the device's own rate (`rate`; the
+    /// engine resamples). Called while the button is held and once more after
+    /// `end`, so together the calls hand over every sample exactly once.
+    pub(crate) fn take_new(&self) -> Vec<f32> {
         let mut capture = self.capture.lock().unwrap();
         let channels = self.channels.max(1) as usize;
         let whole = capture.samples.len() - capture.samples.len() % channels;
@@ -174,7 +174,7 @@ impl Microphone {
             .map(|frame| frame.iter().sum::<f32>() / channels as f32)
             .collect();
         capture.taken = whole;
-        (self.rate, mono)
+        mono
     }
 
     pub(crate) fn stop(&self) -> Vec<f32> {

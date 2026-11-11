@@ -110,9 +110,9 @@ impl Engine {
     /// The streaming engine gets what the mic captured since its last piece.
     fn feed(&self, mic: &Microphone) {
         if let Engine::Streaming(feed) = self {
-            let (rate, samples) = mic.take_new();
+            let samples = mic.take_new();
             if !samples.is_empty() {
-                let _ = feed.send(stream::Feed::Audio { rate, samples });
+                let _ = feed.send(stream::Feed::Audio(samples));
             }
         }
     }
@@ -416,7 +416,7 @@ pub fn listen(
                 slot = if role == "ask" { modifier } else { None };
                 mic.start();
                 if let Engine::Streaming(feed) = &engine {
-                    let _ = feed.send(stream::Feed::Start { hotwords: stream::hotwords(&vocabulary()) });
+                    let _ = feed.send(stream::Feed::Start { hotwords: stream::hotwords(&vocabulary()), rate: mic.rate });
                 }
                 if beeps {
                     cue(cue_device.clone(), cue_volume, &CUE_OPEN);
