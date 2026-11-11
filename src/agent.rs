@@ -138,6 +138,15 @@ Other things of ours agent code can call (all globals, all in WowCompanion):
 - `WCPins.Set{...}`, `WCPins.Add{map=, x=, y=, r=}`, `WCPins.Clear()`: minimap and
   world map pins (docs/api-useful.md, Minimap pins).
 - `WCWheel.Set(name, {label=, slots={...}})`: the radial wheels.
+- Errands, the player's to-do list (Errands.lua; shown as a tracker under the board
+  and the Errands tab): only when they ask. `WC.Errands.Add{ text=, note=,
+  place={map,x,y,f}, item=, done={...} }` returns id or nil and why; it refuses an
+  errand without a `done` condition the game reports: have={item,count},
+  visit={npc,kind=merchant|trainer|gossip|bank|any}, reach={zone=} or {map,x,y,r},
+  quest={id,state=accepted|complete|turnedin}, level=n, skill={name,rank}. If you
+  cannot name one, say so and make none. Print the why when refused. Also
+  `.Remove(idOrText)`, `.Edit(idOrText, {text,note,place})`, `.List()`; the export's
+  `== errands ==` lists them. Pins go through `WC.Use('pins').set(layer, points)`.
 - `WowCompanion_SetFont(name)`: the interface font, live (Fonts.lua; the Tools tab
   button steps through them). Names in `WC.Fonts.list`; `Default` restores Blizzard's.
 Other addons are integrations, used only when installed. The request's

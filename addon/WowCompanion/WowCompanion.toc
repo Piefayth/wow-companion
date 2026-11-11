@@ -41,4 +41,5 @@ BagsStandIn.lua
 Interact.lua
 Fonts.lua
 Status.lua
+FocusLog.lua
 Modules.lua

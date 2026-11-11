@@ -659,6 +659,31 @@ local function exportContext()
 			line(("%s: %s"):format(cap.name, #cap.using > 0 and table.concat(cap.using, ", ") or "nothing loaded"))
 		end
 	end
+	-- providers whose self-check failed: the other addon changed; repair the provider
+	local okP, probs = pcall(function() return WC.ProviderProblems and WC.ProviderProblems() or {} end)
+	for _, p in ipairs(okP and probs or {}) do
+		line(("BROKEN %s provider %s: %s (fix Providers/)"):format(p.cap, p.provider, p.why))
+	end
+	-- the errands, so every conversation knows them (Errands.lua)
+	local okE, open = pcall(function() return WC.Errands and WC.Errands.List() or {} end)
+	section("errands")
+	line("-- the player's errands, newest first: WC.Errands.Add/Remove/Edit (rules)")
+	if not okE or #open == 0 then line("none") end
+	for _, e in ipairs(okE and open or {}) do
+		local kinds = {}
+		for k in pairs(e.done or {}) do kinds[#kinds + 1] = k end
+		table.sort(kinds)
+		line(("%d: %s%s  [done: %s]"):format(e.id, e.text, e.place and (" @%d %.1f,%.1f"):format(e.place.map, e.place.x, e.place.y) or "",
+			table.concat(kinds, ", ")))
+	end
+
+	section("focus log")
+	line("-- the controller's window focus, step by step (FocusLog.lua), oldest first:")
+	line("-- time, C in combat, method, frame | focused frame, ui focused, bars caught | list")
+	line("-- \"!!\" marks an impossible state, with why at the end")
+	local flog = WowCompanionDB.focusLog or {}
+	for _, l in ipairs(flog) do line(l) end
+	if #flog == 0 then line("none") end
 
 	section("code runs")
 	line("-- the last runs of agent code this session and before, oldest first")

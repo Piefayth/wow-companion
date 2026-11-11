@@ -10,7 +10,7 @@ local function nextSlot_now() return core.nextSlot_get() end
 -- Tabs along the bottom edge, as Blizzard's own panels have them
 -- (PanelTabButtonTemplate, PanelTemplates_SetTab), picked with the controller
 -- cursor. No shoulder buttons: L1 and R1 are talk-button slots.
-local TAB_NAMES = { "Chat", "Tools", "Status" }
+local TAB_NAMES = { "Chat", "Tools", "Status", "Errands" }
 local function buildTabs(frame, messages, pending)
 	local pages = {}
 	local function page()
@@ -20,7 +20,10 @@ local function buildTabs(frame, messages, pending)
 		p:Hide()
 		return p
 	end
-	pages[2], pages[3] = page(), page()
+	pages[2], pages[3], pages[4] = page(), page(), page()
+	-- Errands (Errands.lua fills it; display only)
+	WC.ErrandsPage = pages[4]
+	if WC.Errands and WC.Errands.Page then WC.Errands.Page(pages[4]) end
 
 	-- Tools (the player, 2026-11-10: "data-appropriate controls"): settings are
 	-- labelled rows with the control their data calls for, a dropdown for a
@@ -289,6 +292,9 @@ local function buildTabs(frame, messages, pending)
 		local plist = {}
 		for _, p in ipairs(probs) do plist[#plist + 1] = ("%s/%s: %s"):format(p.cap, p.provider, p.why) end
 		add("Addon links", #plist == 0 and "all working" or ("|cffff6060" .. table.concat(plist, "; ") .. "|r"))
+		local fp, flast = 0, nil
+		if WC.FocusLog then fp, flast = WC.FocusLog.Problems() end
+		add("Focus", fp == 0 and "ok" or ("|cffff6060%d problem%s|r, last %s"):format(fp, fp == 1 and "" or "s", tostring(flast)))
 		add("Combat", InCombatLockdown() and "|cffff6060yes|r " .. grey .. "(changes wait until it ends)|r" or "no")
 		status:SetText(table.concat(lines, "\n"))
 	end

@@ -41,4 +41,22 @@ WC.Provide("guide", "Polestar", {
 		end
 		return out
 	end,
+	-- the places the next n steps go: { { step, title, map, x, y, f }, ... }
+	places = function(n)
+		local E = engine()
+		if not (E and E.GetGuide and E.GetStepIndex) then return nil end
+		local ok, guide = pcall(E.GetGuide)
+		local okI, step = pcall(E.GetStepIndex)
+		if not (ok and okI and type(guide) == "table" and step and guide.steps) then return nil end
+		local out = {}
+		for i = step, math.min(#guide.steps, step + (n or 5)) do
+			local s = guide.steps[i]
+			for _, g in ipairs(type(s) == "table" and s.goals or {}) do
+				if type(g) == "table" and g.map and g.x and g.y then
+					out[#out + 1] = { step = i, title = s.title, map = g.map, x = g.x, y = g.y, f = g.f }
+				end
+			end
+		end
+		return out
+	end,
 }, { addon = "Polestar", rank = 10 })

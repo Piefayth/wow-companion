@@ -179,7 +179,9 @@ do
 	--          clear()
 	--   gear:  slots(), upgrades(slotName, n)          (Providers/Gear.lua)
 	--   itemSource: sources(itemID), npcName(id), questName(id) (Providers/ItemSource.lua)
-	--   guide: current() -> { title, step, steps, stepTitle }, upcoming(n) (Providers/Guide.lua)
+	--   guide: current() -> { title, step, steps, stepTitle }, upcoming(n), places(n) (Providers/Guide.lua)
+	--   nav also: eta(map, x, y) seconds, world(map, x, y, f) / here() -> continent, a, b yards
+	--   pins:  set(layer, points), clear(layer); point { map, x, y, f, label } (Providers/Pins.lua)
 	-- A module may declare WC.Module("Name", { wants = { "nav" } }): when nothing
 	-- provides one, the board says what it needs, and WC.List() shows it.
 	-- A provider is one file in Providers/ (WC.Provide below); one tied to an
@@ -201,6 +203,7 @@ do
 		gear = "a gear addon (such as GearQuest Forever)",
 		itemSource = "an item database addon (such as Polestar)",
 		guide = "a levelling guide addon (such as Polestar)",
+		pins = "a map addon (such as Polestar); our own minimap pins work without one",
 	}
 	function WC.Provide(cap, name, impl, opts)
 		opts = opts or {}
@@ -209,12 +212,40 @@ do
 		for i = #list, 1, -1 do
 			if list[i].name == name then table.remove(list, i) end
 		end
-		list[#list + 1] = { name = name, impl = impl, addon = opts.addon, rank = opts.rank or 0 }
+		list[#list + 1] = { name = name, impl = impl, addon = opts.addon, rank = opts.rank or 0, check = opts.check }
+	end
+	-- A provider may pass opts.check: a function saying whether the other addon
+	-- still has what the provider calls (ok, or false and why). It runs once its
+	-- addon is loaded; a failure takes the provider out of use for the session and
+	-- is reported (WC.ProviderProblems: the Status tab and the export), so an agent
+	-- repairs it instead of the feature degrading silently.
+	local function checked(p)
+		if not p.check then return true end
+		if p.ok == nil then
+			local ran, ok, why = pcall(p.check)
+			p.ok = ran and ok ~= false and ok ~= nil
+			p.problem = not p.ok and tostring(ran and why or ok or "check failed") or nil
+		end
+		return p.ok
 	end
 	local function live(p)
-		if not p.addon then return true end
-		local ok, loaded = pcall(C_AddOns.IsAddOnLoaded, p.addon)
-		return ok and loaded and true or false
+		if p.addon then
+			local ok, loaded = pcall(C_AddOns.IsAddOnLoaded, p.addon)
+			if not (ok and loaded) then return false end
+		end
+		return checked(p)
+	end
+	-- { { cap, provider, why }, ... } for every provider whose check failed
+	function WC.ProviderProblems()
+		local out = {}
+		for cap, list in pairs(providers) do
+			for _, p in ipairs(list) do
+				if p.addon and select(2, pcall(C_AddOns.IsAddOnLoaded, p.addon)) then checked(p) end
+				if p.problem then out[#out + 1] = { cap = cap, provider = p.name, why = p.problem } end
+			end
+		end
+		table.sort(out, function(a, b) return a.cap .. a.provider < b.cap .. b.provider end)
+		return out
 	end
 	local function ranked(cap)
 		local out = {}
