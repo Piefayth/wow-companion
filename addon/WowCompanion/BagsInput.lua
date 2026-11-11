@@ -59,7 +59,7 @@ function WC.BagsInput.Build(f)
 	pad:SetAttribute("cols", 8)
 	-- insecure halves, called from the snippets with CallMethod
 	function pad:Focus(i) f:Focus(i) end
-	function pad:Opened() if f.mirror then f:Mirror(nil) end if not f:IsShown() then f:Show() end end
+	function pad:Opened() if not f:IsShown() then f:Show() end end
 	function pad:Closed() if f:IsShown() then f:Hide() end f:Closed() end
 
 	pad:SetAttribute("move", [[
@@ -91,7 +91,7 @@ function WC.BagsInput.Build(f)
 		self:SetBindingClick(true, "PADDDOWN", "WCBagsDown")
 		self:SetBindingClick(true, "PADDLEFT", "WCBagsLeft")
 		self:SetBindingClick(true, "PADDRIGHT", "WCBagsRight")
-		self:SetBindingClick(true, "PAD2", self:GetAttribute("closekey") or "WCBagsClose")
+		self:SetBindingClick(true, "PAD2", "WCBagsClose")
 		self:SetBindingClick(true, "PAD4", "WCBagsMore")
 		self:SetBindingClick(true, "PADLSHOULDER", "WCBagsPrevBag")
 		self:SetBindingClick(true, "PADRSHOULDER", "WCBagsNextBag")
@@ -120,29 +120,12 @@ function WC.BagsInput.Build(f)
 	close:SetFrameRef("pad", pad)
 	close:SetAttribute("_onclick", [[ self:GetFrameRef("pad"):Hide() ]])
 	close:HookScript("PreClick", function() if CursorHasItem() then ClearCursor() end end)
-	-- circle closes Blizzard's bags too. Ours stands in for theirs, which stay
-	-- open but unseen; left open, the next bag press in a fight closed them, and
-	-- the bags opened only on the second press (the player, 2026-11-10). Their
-	-- own close button, clicked by a secure button of ours (type "click"), is
-	-- their trusted code; the wrap hides the pad first, as WCBagsClose does.
-	local closeTheirs = CreateFrame("Button", "WCBagsCloseTheirs", UIParent, "SecureActionButtonTemplate")
-	closeTheirs:RegisterForClicks("AnyDown")
-	local theirClose = ContainerFrameCombinedBags and ContainerFrameCombinedBags.CloseButton
-	WC.BagsInput.closeKey = "WCBagsClose"
-	if theirClose and SecureHandlerWrapScript then
-		closeTheirs:SetAttribute("type", "click")
-		closeTheirs:SetAttribute("clickbutton", theirClose)
-		SecureHandlerWrapScript(closeTheirs, "OnClick", pad, [[ owner:Hide() ]])
-		closeTheirs:HookScript("PreClick", function() if CursorHasItem() then ClearCursor() end end)
-		WC.BagsInput.closeKey = "WCBagsCloseTheirs"
-		pad:SetAttribute("closekey", "WCBagsCloseTheirs")
-	end
 	-- holding an item out of combat, circle only puts it back
 	local drop = CreateFrame("Button", "WCBagsDrop", UIParent)
 	drop:RegisterForClicks("AnyDown")
 	local function holdBindings()
 		if InCombatLockdown() or not pad:IsShown() then return end
-		SetOverrideBindingClick(pad, true, "PAD2", CursorHasItem() and "WCBagsDrop" or WC.BagsInput.closeKey)
+		SetOverrideBindingClick(pad, true, "PAD2", CursorHasItem() and "WCBagsDrop" or "WCBagsClose")
 	end
 	drop:SetScript("OnClick", function()
 		ClearCursor()
@@ -151,26 +134,17 @@ function WC.BagsInput.Build(f)
 	end)
 
 	-- opening: the Bags macro (/click WCBagsToggle) and the bag keys (WCBagsKey).
-	-- Secure, so in combat they show the pad's handler, whose show opens the window.
+	-- Secure, so the same in a fight and out of one: they show or hide the pad's
+	-- handler, whose show opens the window.
 	for _, name in ipairs({ "WCBagsToggle", "WCBagsKey" }) do
 		local t = CreateFrame("Button", name, UIParent, "SecureHandlerClickTemplate")
 		if name == "WCBagsToggle" then t:RegisterForClicks("AnyUp", "AnyDown") else t:RegisterForClicks("AnyDown") end
 		t:SetFrameRef("pad", pad)
 		t:SetAttribute("_onclick", [[
 			local pad = self:GetFrameRef("pad")
-			if PlayerInCombat() then
-				if pad:IsShown() then pad:Hide() else pad:Show() end
-			else pad:CallMethod("Toggle") end
+			if pad:IsShown() then pad:Hide() else pad:Show() end
 		]])
 	end
-	-- out of combat the window decides, not the pad: a pad left shown with the
-	-- window hidden (a reload, a close by plain code) made the first press a
-	-- Shut and the bags opened only on the second (the player, 2026-11-10)
-	function pad:Toggle()
-		if f:IsShown() and f:GetAlpha() > 0 then f:Shut() else f:Open() end
-	end
-	function pad:Open() f:Open() end
-	function pad:Shut() f:Shut() end
 
 	-- the window closed by plain code in a fight (a vendor walking off): the
 	-- pad's handler may only hide when the fight ends

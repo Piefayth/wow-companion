@@ -47,11 +47,9 @@ local function build()
 		edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 },
 	})
 	f:Hide()
-	-- out of combat a focusable controller panel, as before (marked focusable,
-	-- shown with ShowUIPanel with no UIPanelWindows area, FrameHidden on hide);
-	-- never useCustomNavigation or FocusGamepad fields (they taint the switch)
-	if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, f) end
-	if UIPanelWindows then UIPanelWindows["WCBags"] = nil end
+	-- one way in and out of combat (2026-11-10): the window is never a UI panel
+	-- of the controller's manager; the pad's secure handler (BagsInput.lua) takes
+	-- the pad whenever it is open, fight or not
 
 	local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	title:SetPoint("LEFT", f, "TOPLEFT", EDGE, -(EDGE + TITLE_H / 2))
@@ -122,7 +120,7 @@ local function build()
 			WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameIgnored, b) end)
 		end
 		-- ours on top of theirs: focus follows the mouse too, without writing to b
-		b:HookScript("OnEnter", function(self) if f.mirror then return end f:Focus(meta[self].index) end)
+		b:HookScript("OnEnter", function(self) f:Focus(meta[self].index) end)
 		buttons[key] = b
 		return b
 	end
@@ -320,7 +318,6 @@ local function build()
 		hl:ClearAllPoints()
 		hl:SetPoint("CENTER", b, "CENTER")
 		hl:Show()
-		if self.mirror then tip:Hide() self:Carry() return end
 		local m = meta[b]
 		tip:SetOwner(b, "ANCHOR_NONE")
 		tip:ClearAllPoints()
@@ -360,19 +357,6 @@ local function build()
 	end
 	function f:Closed() hl:Hide() tip:Hide() end
 
-	-- In a fight (BagsStandIn.lua): Blizzard's invisible bags hold the game's
-	-- focus, and their buttons' cursor anchors sit on our slots, so ours keeps its
-	-- own layout and only draws; the mouse is theirs. (The old overlay, our slots
-	-- laid over theirs in storage order, was removed 2026-11-10: when the anchors
-	-- are not ready, Blizzard's own bags show instead.) Mirror(nil) ends it.
-	function f:Mirror(blizz)
-		self.mirror = blizz and true or nil
-		for i, pr in ipairs(self.prompts) do pr:SetShown(not blizz or i < 5) end
-		for _, b in ipairs(self.order) do b:EnableMouse(not blizz) end
-		if not blizz then self:Layout() return end
-		self:Paint()
-	end
-
 	-- the pad's handler, its buttons and the triangle menu (BagsInput, BagsMenu)
 	local pad, holdBindings = WC.BagsInput.Build(f)
 	f.pad = pad
@@ -393,38 +377,24 @@ local function build()
 		if not InCombatLockdown() and pad:IsShown() then pad:Hide() end
 	end)
 
-	-- Opening and closing from plain code: always allowed now. Out of combat the
-	-- pad's handler comes too (it is protected, so in combat only our secure
-	-- toggle may show it).
+	-- Opening and closing from plain code: through the pad's handler, which is
+	-- protected, so only out of combat; in a fight the secure toggle, circle and
+	-- Blizzard's bag frame (BagsStandIn.lua) open and close it.
 	function f:Open()
-		if self.mirror then self:Mirror(nil) end
-		if not InCombatLockdown() then
-			ShowUIPanel(self)
-			if not pad:IsShown() then pad:Show() end
-		end
-		if not self:IsShown() then self:Show() end
+		if InCombatLockdown() then return end
+		if not pad:IsShown() then pad:Show() end
 	end
 	function f:Shut()
-		-- in a fight with the pad's bindings up, only circle (secure) may close
-		-- both; closing the window alone would leave the d-pad held
-		if InCombatLockdown() and pad:IsShown() then return end
-		if not InCombatLockdown() then
-			HideUIPanel(self)
-			if pad:IsShown() then pad:Hide() end
-		end
-		if self:IsShown() then self:Hide() end
+		if InCombatLockdown() then return end
+		if pad:IsShown() then pad:Hide() end
 	end
-	-- however it closes, the controller's manager hears (or the bars stay dead)
-	f:HookScript("OnHide", function(self) WC.FrameHidden(self) end)
-	-- circle with the window focused clicks its CloseButton (SmartNavigation)
+	-- the mouse's close button (the pad's is circle)
 	local x = CreateFrame("Button", "WCBagsCloseX", f, "UIPanelCloseButton")
 	x:SetPoint("TOPRIGHT", -6, -6)
 	x:SetScript("OnClick", function()
 		if CursorHasItem() then ClearCursor() f:Paint() return end
 		f:Shut()
 	end)
-	f.CloseButton = x
-	if SmartNavigation_MarkFrameIgnored then pcall(SmartNavigation_MarkFrameIgnored, x) end
 
 	-- the item viewers and the sort
 	local sort = CreateFrame("Button", "WCBagsSort", UIParent)
@@ -451,7 +421,7 @@ local function build()
 		if event == "BAG_UPDATE_DELAYED" or event == "PLAYER_REGEN_ENABLED" then
 			local n = 0
 			for bag = 0, MAXBAG do n = n + (C_Container.GetContainerNumSlots(bag) or 0) end
-			if not self.mirror and (n ~= #self.order or self.layoutOwed
+			if (n ~= #self.order or self.layoutOwed
 				or (self.settings.view == "sections" and not InCombatLockdown())) then self:Layout() return end
 			if event == "PLAYER_REGEN_ENABLED" and self.layoutOwed and WC.BagsInput.Publish then WC.BagsInput.Publish(self) end
 		end

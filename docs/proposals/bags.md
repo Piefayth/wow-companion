@@ -57,21 +57,9 @@ focus or bind the pad mid-fight, so ours could only lie over theirs in storage
 order (mirror mode); our sections never applied. The invisible-focus moment is
 theirs at alpha 0 keeping the cursor after ours went away.
 
-The way through, from Blizzard's own code (Blizzard_GamepadSmartNavigation):
-navigation is pure geometry over the focused frame's buttons (`IsButtonValid`
-uses each button's centre), **unless a button has a custom cursor anchor**,
-whose `relativeTo` frame's rect is used instead
-(`SmartNavigation_SetCustomCursorAnchorPointForFrame`, used by Blizzard's
-settings and dropdowns). It writes through SecureHelper, which allows insecure
-callers out of combat and stores the value securely (no taint).
-`SmartNavigation_SetNavigationOverride` likewise sets explicit neighbours.
-
-Plan: out of combat, anchor each of Blizzard's bag item buttons to our slot for the
-same bag and slot. In a fight their (invisible) frame keeps the native cursor, but
-the cursor moves over and draws on our sectioned layout, and cross and square press
-their own secure buttons: one focus, native, sorted. Their bag-bar cells are anchored
-to ours or marked ignored. Their buttons are pooled and re-acquired on every open, so
-each is anchored once to a proxy frame of ours, moved onto the right slot at each
-open (in combat too). Circle clicks their close. (Routing our opener through
-their backpack button broke opening, 2026-11-10: reverted.) Not anchored yet (their first
-open of a session in a fight): their own bags show. The old overlay is removed.
+The way through (built 2026-11-10, after cursor anchors failed: Blizzard
+creates its bag buttons only on its first open and re-pools them on every open):
+a secure handler of ours is a child of Blizzard's combined bags. Whatever shows
+theirs runs its `_onshow` securely, which shows our pad and hides their frame.
+One window, one input path, in and out of combat. The anchors, proxies, mirror
+mode and alpha stand-in are removed.

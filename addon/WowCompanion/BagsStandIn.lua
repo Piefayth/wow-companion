@@ -1,231 +1,50 @@
--- Bags split (2026-11-10): standing in for Blizzard's bags, and the vendor
--- legend. Loads after Bags.lua; shares nothing local with it (WCBags is global).
-
--- Our bags stand in for Blizzard's (the player, 2026-11-10): whatever opens
--- Blizzard's combined bags (a vendor, mail, the controller's bag radial or
--- shortcut) opens ours, and theirs stays open but unseen and out of the focus
--- cycle. Nothing of Blizzard's is closed or written from here:
---  * hiding: an alpha animation of ours aimed at their frame (ImprovedForever's
---    Focus.Fade): no property of theirs is set from Lua
---  * the focus cycle: GamepadMode.FrameControlsManager:FrameHidden(frame), the one
---    manager call Blizzard wraps for insecure callers (SecureHelper:WrapFunction)
---  * the trigger: EventRegistry callbacks (run through secureexecuterange) and
---    hooksecurefunc post-hooks, which leave the caller's secure state as it was
--- WowCompanionDB.standInBags = false turns it off.
+-- Bags (2026-11-10, the player: "make the bag work the same in and out of
+-- combat"): Blizzard's bag frame opens ours, by the same secure path in a fight
+-- or out of one. A secure handler of ours is a child of their combined bags, so
+-- whatever shows theirs (the bag radial, a vendor, the mailbox) shows it, and its
+-- _onshow runs in the restricted environment: it shows our pad's handler (which
+-- binds the pad and opens our window) and hides their frame at once. Their frame
+-- counts as protected while it holds our protected child, which is what lets the
+-- restricted code hide it in combat; hiding it there is secure, so the
+-- controller's focus manager lets it go cleanly. Nothing of theirs is written:
+-- no alpha, no FrameHidden, no hooks on their toggles.
+-- Replaces the stand-in (their frame kept open at alpha 0, ours laid over it,
+-- mirror mode and cursor anchors), removed the same day.
+-- WowCompanionDB.standInBags = false turns it off (at the next reload).
 do
-	local fader = CreateFrame("Frame")
-	local function fadeGroup(alpha)
-		local g = fader:CreateAnimationGroup()
-		local a = g:CreateAnimation("Alpha")
-		a:SetFromAlpha(alpha == 0 and 1 or 0)
-		a:SetToAlpha(alpha)
-		a:SetDuration(0.01)
-		g:SetToFinalAlpha(true)
-		return g, a
-	end
-	local hideGroup, hideAnim = fadeGroup(0)
-	local showGroup, showAnim = fadeGroup(1)
-	local function theirs() return ContainerFrameCombinedBags end
-	local function on() return WowCompanionDB.standInBags ~= false and WCBags and WCBags.ready end
-
-	local function restore()
-		local blizz = theirs()
-		if blizz then showAnim:SetTarget(blizz) showGroup:Play() end
-	end
-	-- In combat (the player, 2026-11-10: "I just want my bags all the time").
-	-- Our window is unprotected now (Bags.lua), so it may show in a fight; what a
-	-- fight forbids is binding the pad from this plain hook. So when the bag radial
-	-- or a vendor opens Blizzard's bags mid-fight, theirs keep the controller's
-	-- focus (the game's manager focused them itself), stay invisible, and take the
-	-- presses; ours is laid exactly over theirs (Mirror) and shows the same slots,
-	-- with the highlight following their focus (ContainerFrameItemButton.EnterButton).
-	-- Opened by our own secure toggle (the Bags macro), ours has its own pad
-	-- instead. When the fight ends, ours takes over as usual.
-	local function mirrorIn(blizz)
-		hideAnim:SetTarget(blizz)
-		hideGroup:Play()
-		if WCBags:IsShown() and not WCBags.mirror then
-			-- ours already up with its own pad (the secure toggle): keep it, and
-			-- drop theirs from the focus cycle
-			-- (not now: FrameHidden from addon code in a fight is "Interface action
-			-- failed"; our pad's bindings win meanwhile)
-			if GamepadMode and GamepadMode.FrameControlsManager then
-				WC.AfterCombat(function()
-					pcall(GamepadMode.FrameControlsManager.FrameHidden, GamepadMode.FrameControlsManager, blizz)
-				end)
-			end
-			return
+	local done
+	local function setup()
+	local blizz = ContainerFrameCombinedBags
+	local pad = WCBags and WCBags.pad
+	if done or InCombatLockdown() then return end
+	if blizz and pad and (WowCompanionDB == nil or WowCompanionDB.standInBags ~= false) then
+		done = true
+		local trigger = CreateFrame("Frame", "WCBagsTrigger", blizz, "SecureHandlerShowHideTemplate")
+		trigger:SetSize(1, 1)
+		trigger:SetPoint("TOPLEFT")
+		trigger:SetFrameRef("pad", pad)
+		trigger:SetFrameRef("bags", blizz)
+		-- always opens: a vendor opening their bags while ours is up must not
+		-- close ours (circle closes)
+		trigger:SetAttribute("_onshow", [[
+			local pad = self:GetFrameRef("pad")
+			if not pad:IsShown() then pad:Show() end
+			self:GetFrameRef("bags"):Hide(true)
+		]])
+		-- a vendor, mailbox or bank closing: Blizzard closes its bags then; ours
+		-- follows (out of combat; in one, circle closes)
+		local w = CreateFrame("Frame")
+		for _, e in ipairs({ "MERCHANT_CLOSED", "MAIL_CLOSED", "BANKFRAME_CLOSED", "TRADE_CLOSED", "AUCTION_HOUSE_CLOSED" }) do
+			pcall(w.RegisterEvent, w, e)
 		end
-		-- not anchored yet (their buttons are built on their first open, so the
-		-- first fight after a reload can come before it): their own bags show,
-		-- never a layout that presses something else than it shows
-		if not (WCBags.AnchoredTo and WCBags.AnchoredTo(blizz)) then
-			restore()
-			if WCBags:IsShown() then WCBags:Hide() end
-			return
-		end
-		WCBags:Mirror(blizz)
-		WCBags:Show()
+		w:SetScript("OnEvent", function() if WCBags then WCBags:Shut() end end)
 	end
-	local function standIn()
-		local blizz = theirs()
-		if not on() or not blizz or not blizz:IsShown() then return end
-		if InCombatLockdown() then mirrorIn(blizz) return end
-		if WCBags.mirror then WCBags:Mirror(nil) end
-		hideAnim:SetTarget(blizz)
-		hideGroup:Play()
-		if GamepadMode and GamepadMode.FrameControlsManager and InputUtil and InputUtil.IsGamepadUIEnabled() then
-			pcall(GamepadMode.FrameControlsManager.FrameHidden, GamepadMode.FrameControlsManager, blizz)
-		end
-		if not WCBags:IsShown() then WCBags:Open() end
 	end
-	-- no flicker (the player, 2026-11-10): their frame stays at alpha 0 between
-	-- opens while the stand-in is on, so it is already invisible when it shows.
-	-- Their ContainerFrame code never sets alpha, so ours holds.
-	if WowCompanionDB == nil or WowCompanionDB.standInBags ~= false then
-		local blizz = theirs()
-		if blizz then hideAnim:SetTarget(blizz) hideGroup:Play() end
-	end
-
-	if EventRegistry and EventRegistry.RegisterCallback then
-		EventRegistry:RegisterCallback("ContainerFrame.OpenBag", function()
-			C_Timer.After(0, standIn)
-		end, "WowCompanionStandIn")
-		EventRegistry:RegisterCallback("ContainerFrame.CloseBag", function()
-			C_Timer.After(0, function()
-				local blizz = theirs()
-				if blizz and not blizz:IsShown() then
-					if not on() then restore() end
-					if WCBags and WCBags.mirror then WCBags:Hide() return end
-					-- the vendor or mail closing their bags closes ours too
-					if on() and WCBags:IsShown() and WCBags.followBlizzard then WCBags:Shut() end
-				end
-			end)
-		end, "WowCompanionStandIn")
-	end
-	-- the radial and shortcut-bar bag button: a press there toggles ours, also
-	-- when their bags were already open (and so just closed)
-	local function toggled()
-		if not on() then return end
-		C_Timer.After(0, function()
-			local blizz = theirs()
-			if InCombatLockdown() then
-				if blizz and blizz:IsShown() then mirrorIn(blizz)
-				elseif WCBags.mirror then WCBags:Hide() end
-				return
-			end
-			if blizz and blizz:IsShown() then standIn()
-			elseif WCBags:IsShown() then WCBags:Shut()
-			else WCBags:Open() end
-		end)
-	end
-	-- a fight starting: their frame, held at alpha 0 between opens, is made
-	-- visible again so an open in combat shows; the fight over, it is hidden
-	-- again, and theirs still open hands over to ours
-	local combat = CreateFrame("Frame")
-	combat:RegisterEvent("PLAYER_REGEN_DISABLED")
-	combat:RegisterEvent("PLAYER_REGEN_ENABLED")
-	combat:SetScript("OnEvent", function(_, event)
-		if not on() then return end
-		local blizz = theirs()
-		if not blizz then return end
-		if event == "PLAYER_REGEN_DISABLED" then return end
-		if WCBags.mirror then
-			WCBags:Mirror(nil)
-			if blizz:IsShown() then WCBags:Hide() standIn() else WCBags:Hide() end
-		elseif blizz:IsShown() then
-			standIn()
-		end
-	end)
-	-- their focus, moving over their invisible slots, moves our highlight
-	if EventRegistry and EventRegistry.RegisterCallback then
-		EventRegistry:RegisterCallback("ContainerFrameItemButton.EnterButton", function(_, button)
-			if not (WCBags and WCBags.mirror and button) then return end
-			local ok, bag = pcall(button.GetBagID, button)
-			if ok and bag then WCBags:FocusOn(bag, button:GetID()) end
-		end, "WowCompanionMirror")
-	end
-	-- Combat, sorted (docs/proposals/bags.md): each of their slot buttons gets a
-	-- custom cursor anchor (SmartNavigation_SetCustomCursorAnchorPointForFrame,
-	-- Blizzard's own setter; SecureHelper takes it from addons out of combat and
-	-- stores it securely). The controller cursor then measures and draws their
-	-- buttons where the anchor is, so with their frame focused in a fight it moves
-	-- over our layout and the presses are their own buttons'.
-	-- Their buttons come from a pool that is released and re-acquired on every
-	-- open (ContainerFrame UpdateItemSlots), so a button is not tied to a slot:
-	-- each is anchored once to a proxy frame of ours, and the proxies (ours, free
-	-- to move in combat) are laid on our slot for whatever bag and slot the button
-	-- holds right now.
-	local proxies = {}
-	local ignored = {}
-	local function eachButton(blizz, fn)
-		local pool = blizz.itemButtonPool
-		if pool and pool.EnumerateActive then
-			for b in pool:EnumerateActive() do fn(b) end
-			if pool.EnumerateInactive then for _, b in pool:EnumerateInactive() do if type(b) == "table" then fn(b) end end end
-		elseif blizz.EnumerateValidItems then
-			for _, b in blizz:EnumerateValidItems() do if b then fn(b) end end
-		end
-	end
-	local function anchorTheirs()
-		if InCombatLockdown() or not on() then return end
-		if not (SmartNavigation_SetCustomCursorAnchorPointForFrame and CreateAnchor) then return end
-		local blizz = theirs()
-		if not blizz then return end
-		eachButton(blizz, function(b)
-			if proxies[b] then return end
-			local p = CreateFrame("Frame", nil, UIParent)
-			p:SetSize(1, 1)
-			p:SetPoint("CENTER")
-			if pcall(SmartNavigation_SetCustomCursorAnchorPointForFrame, b, CreateAnchor("CENTER", p, "CENTER")) then
-				proxies[b] = p
-			end
-		end)
-		if GamepadBagBar and GamepadBagBar.GetBagButton and SmartNavigation_MarkFrameIgnored then
-			for bag = 0, 4 do
-				local ok, btn = pcall(GamepadBagBar.GetBagButton, GamepadBagBar, bag)
-				if ok and btn and not ignored[btn] then
-					if pcall(SmartNavigation_MarkFrameIgnored, btn) then ignored[btn] = true end
-				end
-			end
-		end
-	end
-	-- lay each shown button's proxy on our slot for its bag and slot; true when
-	-- every shown one has a proxy (else the old overlay)
-	local function anchoredTo(blizz)
-		local any, all = false, true
-		eachButton(blizz, function(b)
-			if not b:IsShown() then return end
-			local p = proxies[b]
-			local ok, bag = pcall(b.GetBagID, b)
-			local ours = ok and bag and WCBags:SlotFor(bag, b:GetID())
-			if not (p and ours) then all = false return end
-			p:ClearAllPoints()
-			p:SetAllPoints(ours)
-			any = true
-		end)
-		WCBags.anchorDiag = ("any=%s all=%s proxies=%d"):format(tostring(any), tostring(all),
-			(function() local n = 0 for _ in pairs(proxies) do n = n + 1 end return n end)())
-		return any and all
-	end
-	if WCBags then WCBags.AnchoredTo = anchoredTo end
-	local anchorer = CreateFrame("Frame")
-	anchorer:RegisterEvent("BAG_UPDATE_DELAYED")
-	anchorer:RegisterEvent("PLAYER_ENTERING_WORLD")
-	anchorer:RegisterEvent("PLAYER_REGEN_ENABLED")
-	anchorer:SetScript("OnEvent", function()
-		if WCBags and not WCBags.AnchoredTo then WCBags.AnchoredTo = anchoredTo end
-		C_Timer.After(0.2, anchorTheirs)
-	end)
-	if EventRegistry and EventRegistry.RegisterCallback then
-		EventRegistry:RegisterCallback("ContainerFrame.OpenBag", function()
-			C_Timer.After(0.1, anchorTheirs)
-		end, "WowCompanionAnchor")
-	end
-
-	if ToggleBackpack_Combined then hooksecurefunc("ToggleBackpack_Combined", toggled) end
-	if ToggleAllBags then hooksecurefunc("ToggleAllBags", toggled) end
-	if WCBags then WCBags.followBlizzard = true end
+	setup()
+	-- the bag window builds after a fight when the UI loaded in one
+	local later = CreateFrame("Frame")
+	later:RegisterEvent("PLAYER_REGEN_ENABLED")
+	later:SetScript("OnEvent", function(self) setup() if done then self:UnregisterAllEvents() end end)
 end
 
 -- square sells while a vendor is open, so the legend says so (the player, 2026-11-10)

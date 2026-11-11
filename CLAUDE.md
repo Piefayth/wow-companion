@@ -199,8 +199,9 @@ goes to a detached process.
   tainted. And a window the controller manages must live in the addon's own files,
   never in a module (modules run ForceTaint_Strong). Both measured on the bag
   window, 2026-11-10; it now cycles focus cleanly.
-  **Standing in for a Blizzard window works** (the bag window, 2026-11-10, the
-  player: "works exceptionally"): never close or set anything of theirs. React with
+  **Standing in for a Blizzard window works** out of combat (the first bag
+  window, 2026-11-10; bags now use the secure child below): never close or set
+  anything of theirs. React with
   `EventRegistry:RegisterCallback` (dispatched through secureexecuterange) and
   `hooksecurefunc` post-hooks (the caller stays secure); hide theirs with an alpha
   animation of ours aimed at their frame (`anim:SetTarget`, `SetToFinalAlpha`);
@@ -212,14 +213,15 @@ goes to a detached process.
   Show/Hide in a fight. So keep the window itself **unprotected** and put
   bindings on a separate invisible `SecureHandlerShowHideTemplate` (`WCBagsPad`):
   its `_onshow` binds the pad with `SetBindingClick` by button name, `_onhide`
-  clears, and `CallMethod` shows or hides the window. The opener is a
-  `SecureHandlerClickTemplate` (a secure `type="click"` on their backpack button
-  instead left their bags open invisibly with focus and ours never showed,
-  2026-11-10); circle also clicks their close button. In a fight their invisible
-  frame keeps the native focus, and each of their pooled item buttons has a custom
-  cursor anchor (`SmartNavigation_SetCustomCursorAnchorPointForFrame`, set out of
-  combat) on a proxy frame of ours that we lay on our slot, so the native cursor
-  walks our layout. Their buttons are re-pooled on every open, hence the proxies. Item slots are
+  clears, and `CallMethod` shows or hides the window. **Blizzard's bags open
+  ours by a secure path, the same in a fight and out**: a `SecureHandlerShowHide`
+  of ours is a child of `ContainerFrameCombinedBags`, so whatever shows theirs
+  (radial, vendor, mail) runs its `_onshow`, which shows our pad and hides their
+  frame (`handle:Hide(true)`). Their frame counts as protected while it holds our
+  protected child, which is what lets restricted code hide it in combat. Our
+  toggles show or hide the pad; circle hides it. No alpha tricks, no FrameHidden,
+  no UI-panel registration for the bag window. (Replaced the alpha-0 stand-in,
+  mirror mode and cursor anchors, 2026-11-10.) Item slots are
   Blizzard's `ContainerFrameItemButtonTemplate` (bag from the parent's `GetID`,
   slot from the button's), the Bagnon way. Never write Lua fields on those
   buttons; keep our data in a side table. Attributes are written only out of
