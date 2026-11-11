@@ -715,8 +715,7 @@ local function build(p)
 		local e = current()
 		local nav = e and e.place and WC.Use("nav")
 		if nav and nav.aim(e.place.map, e.place.x, e.place.y, e.text) then
-			local toast = WC.Core and WC.Core.toast
-			if toast then toast("|cffffd100Arrow|r  " .. e.text, 0.9, 0.9, 0.9, 4) end
+			WC.Board.toast("|cffffd100Arrow|r  " .. e.text, 0.9, 0.9, 0.9, 4)
 		end
 	end)
 	detail.pin = button("Pin: On", 142, function()
@@ -938,8 +937,7 @@ end
 -- completing ---------------------------------------------------------------------------
 local function finish(e)
 	e.doneAt = time()
-	local toast = WC.Core and WC.Core.toast
-	if toast then toast("|cffffd100Errand done|r  " .. e.text, 0.9, 0.9, 0.9, 6) end
+	WC.Board.toast("|cffffd100Errand done|r  " .. e.text, 0.9, 0.9, 0.9, 6)
 end
 local function sweep()
 	local changed = false
