@@ -40,12 +40,22 @@ def periodic_noise(rng, period):
     return (a * (1 - wx) + b * wx) * (1 - wy) + (c * (1 - wx) + d * wx) * wy
 
 
-def stone(seed, base):
+def stone(seed, base, strata=0.0):
+    """Stone you can see from a couch: cloudy mottling at three scales, a fine
+    grain, sparse pale flecks, and (strata > 0) faint horizontal layering, so
+    the two tiles differ in kind as well as value. The first version, with
+    about +-3 levels of grain, read as a flat fill on the TV."""
     rng = np.random.default_rng(seed)
-    v = periodic_noise(rng, 64) * 5 + periodic_noise(rng, 32) * 4 + periodic_noise(rng, 8) * 2.5
-    v += rng.normal(0, 1.2, (SIZE, SIZE))  # fine grain
-    specks = rng.random((SIZE, SIZE)) < 0.004
-    v[specks] += 9
+    v = periodic_noise(rng, 128) * 9 + periodic_noise(rng, 32) * 7 + periodic_noise(rng, 8) * 4
+    v += rng.normal(0, 2.5, (SIZE, SIZE))  # fine grain
+    if strata:
+        # layers along the rows: noise varying slowly down the tile, stretched
+        # wide, still periodic both ways
+        rows = periodic_noise(rng, 16)[:, :1] * np.ones((1, SIZE))
+        wobble = periodic_noise(rng, 64) * 0.5
+        v += (rows + wobble) * strata
+    specks = rng.random((SIZE, SIZE)) < 0.006
+    v[specks] += 16
     rgb = np.stack([base[k] + v for k in range(3)], axis=-1)
     return np.clip(np.rint(rgb), 0, 255).astype(np.uint8)
 
@@ -69,6 +79,6 @@ if __name__ == "__main__":
     # textures, variants, not one with a lighter wash): the same recipe from
     # different seeds, so the grain differs, at two values; a cool charcoal,
     # warmth left to the gold dividers and headers
-    write_tga(os.path.join(OUT, "Slate-%s.tga" % v), stone(7, (26, 27, 30)))
-    write_tga(os.path.join(OUT, "SlateLight-%s.tga" % v), stone(23, (54, 55, 60)))
+    write_tga(os.path.join(OUT, "Slate-%s.tga" % v), stone(7, (28, 29, 33)))
+    write_tga(os.path.join(OUT, "SlateLight-%s.tga" % v), stone(23, (58, 59, 64), strata=8))
     print("wrote", os.path.abspath(OUT))

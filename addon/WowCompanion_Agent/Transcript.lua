@@ -26,7 +26,7 @@ local NOTE_FONT = "GameFontHighlightSmall"
 -- The game keeps a texture it has loaded for the session under its path, so
 -- a changed file needs a new name to show without a restart: each version of
 -- the stone gets its own names (tools/make_slate.py reads this number).
-local STONE_VERSION = 2
+local STONE_VERSION = 3
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\]]
 local STONE = {
 	you = ART .. "SlateLight-" .. STONE_VERSION,
