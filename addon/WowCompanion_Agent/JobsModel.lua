@@ -141,6 +141,16 @@ function M:CancelJob(id)
 end
 
 -- every queued message goes in one request, so one press sends them all
+-- the PC read a Send now press: no more redraws (the run it starts comes later)
+function M:Acked(verb, id)
+	local job = self.jobs[id]
+	if verb ~= "now" or not job then return end
+	for _, other in pairs(self.jobs) do
+		if other.slot == job.slot then other.sending = nil end
+	end
+	self:changed()
+end
+
 function M:SendNow(id)
 	local job = self.jobs[id]
 	if not job or job.state ~= "queued" then return end

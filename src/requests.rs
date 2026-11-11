@@ -113,6 +113,12 @@ pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool
         // the run in front is interrupted, not cancelled: its message joins the
         // queued ones in the next run (run_queued), which starts as it ends
         end_processes(&jobs::interrupt(slot));
+        // the press was read: the game stops drawing it again now, not when the
+        // next run starts seconds later (a redraw is only for a missed capture)
+        let ack = Msg::new("ack").text("verb", "now").text("slot", slot).int("job", req);
+        if let Err(err) = send(addons, &ack) {
+            eprintln!("  telling the game failed: {err}");
+        }
         return;
     }
     let done = jobs::cancel(&[req]);

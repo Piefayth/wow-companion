@@ -666,6 +666,12 @@ function handlers.progress(inbox)
 	return "progress"
 end
 
+-- The PC read a press (Send now): the window stops drawing it again.
+function handlers.ack(inbox)
+	if WC.Jobs and WC.Jobs.Model() then WC.Jobs.Model():Acked(inbox.verb, inbox.job) end
+	return "ack"
+end
+
 -- The PC's answer to a cancel or a stop: the states of the jobs it touched.
 function handlers.stopped(inbox)
 	local slot = inbox.slot or ""
