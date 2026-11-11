@@ -237,7 +237,10 @@ refresh = function()
 			line:SetWordWrap(false)
 			line:SetTextColor(0.6, 0.6, 0.6)
 			head:Hide() line:Hide()
-			ghosts[i] = { head = head, line = line }
+			-- each pending line is a turn like any other: its backing and divider
+			local band, divider = WC.Transcript.turnBand(transcript0.content, "you")
+			band:Hide() band.lift:Hide() divider:Hide()
+			ghosts[i] = { head = head, line = line, band = band, divider = divider }
 		end
 		transcript0.jobsGhosts = ghosts
 	end
@@ -299,7 +302,8 @@ refresh = function()
 	for i, g in ipairs(ghosts) do
 		local item = items[i]
 		if item then
-			y = y + 14 -- TURN_GAP, as Transcript.lua spaces a new message
+			local top = y + math.floor(WC.Transcript.TURN_GAP / 2)
+			y = y + WC.Transcript.TURN_GAP
 			g.head:ClearAllPoints()
 			g.head:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", WC.Transcript.PAD_L, -y)
 			g.head:SetText(item[1])
@@ -312,10 +316,21 @@ refresh = function()
 			g.line:SetText(item[2])
 			g.line:Show()
 			y = y + g.line:GetStringHeight()
+			local gutter = transcript0.Gutter and transcript0:Gutter() or WC.Transcript.PAD_R
+			WC.Transcript.tint(g.band, item[1]:find("You", 1, true) and "you" or "claude")
+			g.band:ClearAllPoints()
+			g.band:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -top)
+			g.band:SetPoint("TOPRIGHT", transcript0.content, "TOPRIGHT", -gutter, -top)
+			g.band:SetHeight(y + math.floor(WC.Transcript.TURN_GAP / 2) - top)
+			g.divider:ClearAllPoints()
+			g.divider:SetPoint("LEFT", g.band, "TOPLEFT", 0, 0)
+			g.divider:SetPoint("RIGHT", g.band, "TOPRIGHT", 0, 0)
+			g.band:Show() g.band.lift:Show() g.divider:Show()
 			if item.hearing then hearingLines[#hearingLines + 1] = { head = g.head, job = item.job } end
 		else
 			g.head:Hide()
 			g.line:Hide()
+			g.band:Hide() g.band.lift:Hide() g.divider:Hide()
 		end
 	end
 	local scroll = transcript0.scroll

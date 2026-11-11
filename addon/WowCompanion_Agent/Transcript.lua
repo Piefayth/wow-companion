@@ -368,4 +368,12 @@ end
 WC.Transcript = WC.Transcript or {}
 WC.Transcript.newTranscript = newTranscript
 WC.Transcript.PAD_L, WC.Transcript.PAD_R = PAD_L, PAD_R
+-- the pending lines (Jobs.lua) are turns too: the same backing and divider
+WC.Transcript.turnBand = turnBand
+WC.Transcript.tint = function(band, owner)
+	local t = TINT[owner] or TINT.claude
+	band:SetVertexColor(t[1], t[2], t[3])
+	band.lift:SetVertexColor(t[1], t[2], t[3])
+end
+WC.Transcript.TURN_GAP = TURN_GAP
 WC.Transcript.markRow = markRow
