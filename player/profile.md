@@ -35,6 +35,11 @@ none of this. When the player states a new preference or changes one, write it h
   feature should feel before building it, and never add pad bindings (d-pad,
   face buttons) to a window or feature unasked. Chat mode lasts one minus hold,
   never longer.
+- **One focus, always** (2026-11-10): a window of ours is focused the same way as
+  the game's own windows (the controller's native focus cycle), in combat too.
+  Never a second "focus this window" press or mode beside it; not acceptable,
+  ever. When the game seems to forbid it, research harder before calling
+  anything impossible.
 
 ## The player
 
