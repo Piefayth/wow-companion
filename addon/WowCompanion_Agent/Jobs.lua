@@ -1,7 +1,5 @@
--- Your messages while something can still be done to them (the player,
--- 2026-11-10: "give the individual messages their own panel ... and once a
--- message doesn't have anything you can do to it anymore, the majigger goes
--- away"), shown on the lines that already say so: the waiting line (hearing
+-- Your messages while something can still be done to them, their controls on
+-- the lines that already say so, gone once nothing can be done: the waiting line (hearing
 -- you, working) and each queued message's header. Reachable with the cursor:
 --   hearing: Cancel (the words are dropped when they arrive)
 --   queued:  Send now (ends the running request so this one starts), Cancel
@@ -66,11 +64,9 @@ local RANK_LIVE = { hearing = true, queued = true, running = true }
 local refresh
 WC.Jobs = WC.Jobs or {}
 
--- small icon buttons on the lines that already say what is going on (the
--- player, 2026-11-10: "you could have just used little smaller icons and the
--- existing working/running paradigm"): the game's own art, named in a tooltip
--- one family of flat icons from the game's own common set (the player,
--- 2026-11-10: the glowing loot X beside a plain arrow did not match)
+-- small icon buttons on the lines that already say what is going on: the
+-- game's own art, named in a tooltip; one family of flat icons from the game's
+-- own common set
 local orig = getmetatable(CreateFrame("Button")).__index
 local ICONS = { cancel = "common-icon-redx", now = "common-icon-forwardarrow" }
 local function icon(parent, kind, tip, onClick)
@@ -94,9 +90,8 @@ local function icon(parent, kind, tip, onClick)
 	end)
 	b:HookScript("OnEnter", function(self) self.hovered = true end)
 	b:SetScript("OnClick", function(self) if self.job then onClick(self.job) end end)
-	-- hiding the button under the cursor left the cursor aiming at nothing
-	-- (the player, 2026-11-10): it stays, dimmed and spent, until the cursor
-	-- moves off it. Blizzard's own focus code is never called
+	-- a button under the cursor is not hidden (the cursor would aim at
+	-- nothing): it stays, dimmed and spent, until the cursor moves off it. Blizzard's own focus code is never called
 	b.Hide = function(self)
 		if self.hovered and orig.IsShown(self) then
 			self.stale, self.job = true, nil
@@ -113,8 +108,7 @@ local function icon(parent, kind, tip, onClick)
 	return b
 end
 
--- A cancel is a pending intent (the player, 2026-11-10: "I'd like to truly
--- know that it actually got cancelled"): the header says "cancelling" at once,
+-- A cancel is a pending intent, so it is known whether it happened: the header says "cancelling" at once,
 -- the command is drawn again every few seconds while the job has not ended
 -- (the strip can be missed; the PC takes repeats as one), and the job's end
 -- resolves it: cancelled, too late (answered), or failed. The message stays
@@ -136,8 +130,8 @@ local function rowOf(job)
 	end
 end
 
--- What a message's header says, derived from its job alone (the player,
--- 2026-11-10: one source of truth, and a cancel must survive a reload)
+-- What a message's header says, derived from its job alone (one source of
+-- truth, so a cancel survives a reload)
 local WORDS = {
 	["cancelled"] = GOOD .. "cancelled|r", ["too late"] = BAD .. "too late: already answered|r",
 	["failed"] = BAD .. "failed|r", ["cancelling"] = GREY .. "cancelling...|r",
@@ -214,12 +208,11 @@ refresh = function()
 	-- the clips being heard in view, oldest first; drop ones whose words never
 	-- came (the PC drops a clip that held nothing, without a word)
 	local heard = model:Hearing(view)
-	-- In the chat itself (the player, 2026-11-10): the states the footer line
-	-- used to carry are lines at the end of the conversation, where the reply
-	-- will appear: the agent working, then your next clip being heard.
+	-- In the chat itself: the states are lines at the end of the conversation,
+	-- where the reply will appear: the agent working, then your next clip
+	-- being heard.
 	local transcript0 = frame.messages
-	-- each state laid out as a message (the player, 2026-11-10: "spaced like a
-	-- message"): the name and time as a header, what is happening under it
+	-- each state laid out as a message: the name and time as a header, what is happening under it
 	local ghosts = transcript0.jobsGhosts
 	if not ghosts then
 		ghosts = {}
@@ -317,8 +310,7 @@ refresh = function()
 	end
 	local scroll = transcript0.scroll
 	local following = scroll:GetVerticalScroll() >= scroll:GetVerticalScrollRange() - 30
-	-- a scroll frame only redraws its child's new area when told (the
-	-- player, 2026-11-10: "doesn't update till I move my cursor")
+	-- a scroll frame only redraws its child's new area when told
 	local want = math.max(y, base, 1)
 	if math.abs((transcript0.content:GetHeight() or 0) - want) > 0.5 then
 		transcript0.content:SetHeight(want)
@@ -367,8 +359,7 @@ refresh = function()
 		end
 	end
 	-- the request being worked on: an X on its own line, the newest of yours
-	-- that is not queued (the player, 2026-11-10: "on the chat message like it
-	-- is for everything else")
+	-- that is not queued
 	local running
 	for _, job in ipairs(list) do
 		if job.slot == view and job.state == "running" and not job.cancel then running = job end
@@ -385,9 +376,9 @@ refresh = function()
 		end
 		pair.x.job = running
 		pair.x:ClearAllPoints()
-		-- on the thinking line, the work it cancels (the player, 2026-11-10:
-		-- an X on a message already sent read as cancelling the message); the
-		-- message itself still carries the tombstone
+		-- on the thinking line, the work it cancels (on a message already sent
+		-- it would read as cancelling the message); the message itself still
+		-- carries the tombstone
 		local head = transcript0.live and transcript0.live.head
 		if head and head.fs:IsShown() then
 			pair.x:SetPoint("TOPRIGHT", head.fs, "TOPRIGHT", -4, 3)
@@ -402,7 +393,7 @@ refresh = function()
 		pairsPool[i].go:Hide()
 	end
 	-- an icon scrolled out of the view is clipped but still a button: the
-	-- cursor went to Xs drawn below the window (the player, 2026-11-10).
+	-- cursor would go to Xs drawn below the window.
 	-- Hide what lies outside the visible part, so the cursor can't reach it
 	local top, bottom = scroll:GetTop(), scroll:GetBottom()
 	if top and bottom then
@@ -438,8 +429,7 @@ end
 WC.Jobs.Model = getModel
 
 
--- Shortcuts while the Companion window has the controller's focus (the
--- player, 2026-11-10): square cancels, triangle sends now, each acting on the
+-- Shortcuts while the Companion window has the controller's focus: square cancels, triangle sends now, each acting on the
 -- newest message of the conversation in view. Live only while the UI is
 -- focused on our window (Blizzard's FrameControlsManager.isUIFocused and
 -- focusedFrame, read, never set): the d-pad and face buttons belong to the
@@ -478,8 +468,8 @@ local elapsed = 0
 local lastTab
 keyOwner:SetScript("OnUpdate", function(_, dt)
 	elapsed = elapsed + dt
-	-- a tab change redraws at once, in step with the tab (the player,
-	-- 2026-11-10: the legend lagged a beat behind); otherwise five times a second
+	-- a tab change redraws at once, in step with the tab; otherwise five times
+	-- a second
 	local frame = WC.Companion.window()
 	local tab = frame and frame:IsShown() and frame.currentTab or 0
 	if elapsed < 0.2 and tab == lastTab then return end
@@ -488,11 +478,10 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	if InCombatLockdown() then return end
 	local window = WC.Companion.window()
 	local focused = window and WC.IsFocused(window) or false
-	-- only on the Chat tab, where the messages they act on are (the player,
-	-- 2026-11-10: on Errands, "square to cancel, cancel what?")
+	-- only on the Chat tab, where the messages they act on are
 	if window and (window.currentTab or 1) ~= 1 then focused = false end
 	-- the legend: what square and triangle do right now, shown only while
-	-- they work (the player, 2026-11-10: "no input legend")
+	-- they work
 	if window then
 		-- one line with the game's own button glyphs inline, in the panel's
 		-- bottom strip, shown only with prompts
@@ -522,8 +511,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 			SetOverrideBindingClick(keyOwner, true, "PAD3", "WCJobsCancelKey")
 			SetOverrideBindingClick(keyOwner, true, "PAD4", "WCJobsNowKey")
 		end
-		-- L3 presses the offered button (the player, 2026-11-10: a prompt for
-		-- it, on L3, which they never use in menus); autorun comes back when
+		-- L3 presses the offered button (L3 is unused in menus); autorun comes back when
 		-- the window lets go. The button itself is secure and the press is theirs
 		if want == "offer" then
 			SetOverrideBindingClick(keyOwner, true, "PADLSTICK", WC.Offer.BUTTON, "LeftButton")
@@ -532,8 +520,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	end
 end)
 
--- The cursor and the icon column (the player, 2026-11-10: from the scroll
--- arrow, up did not reach Cancel). SmartNavigation picks the nearest button in
+-- The cursor and the icon column. SmartNavigation picks the nearest button in
 -- the direction pressed, and the arrows sit a little right of the icons, so up
 -- from the bottom arrow went to the top arrow. Static jump overrides chain them:
 -- top arrow, the icons top to bottom, bottom arrow. Blizzard's API for this,

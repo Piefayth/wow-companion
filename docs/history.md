@@ -502,6 +502,24 @@ History that sat in the addon's comments; the comments now say only what is true
 ### JobsModel.lua
 - The game's and the PC's clocks were measured 2.3 s apart (2026-11-10).
 
+### The Companion window and its messages (the player, 2026-11-10/11)
+- Each message got its own controls ("give the individual messages their own panel ... once a message doesn't have anything you can do to it anymore, the majigger goes away"), as small icons on the lines already there; the glowing loot X beside a plain arrow did not match, so both are one flat family.
+- A cancel is an intent until the job ends ("I'd like to truly know that it actually got cancelled"); an X on a message already sent read as cancelling the message, so the running job's X sits on the work line.
+- Hiding the button under the cursor left the cursor aiming at nothing; Xs scrolled out of view were still reached below the window; the scroll frame did not redraw until the cursor moved; up from the scroll arrow did not reach Cancel (the jump chain).
+- A line placed among ones already read made the conversation jump, and a queued line covered the working line: lines only append, the work entry changes in place.
+- Two shortcuts' legend lagged the tab; on Errands "square to cancel, cancel what?": they live on the Chat tab only. L3 presses the offered button.
+- A Reload from one agent replaced the Quit another had offered: one offer per conversation.
+- The window "randomly disappearing and sometimes showing up in combat": secure buttons are stowed for a fight (Stow.lua).
+- Replies waited unseen unless checked: the minimap button shows unread news.
+- The slate: the two darkest of three tried; Blizzard's tiles first (marble too busy and near black, rock flat grey, the neutral tile wooden planks); brown beside grey read as muddy. The warm off-white for replies was an experiment against halation on a TV.
+- Top tabs, not side tabs (tabs on tabs beside the list); the well's shadow; "one panel that you filled with stuff" (ButtonFrameTemplate); the window scale for a TV.
+
+### Other addon comments (2026-11-11)
+- Export: a quit released the character mid-export and wrote four "-- nil" lines; the export now says the character was released.
+- Fonts: SetFont's false on a first load was measured to mean "loading", not "refused".
+- Link: bells asked every frame made the game hold its sound files; at 0.1 s it never did, and 0.5 s was the earlier rate.
+- Offer: the click edge was measured one variable at a time: "AnyUp" ran PreClick and PostClick but not the macro, which read like a permissions refusal.
+
 ## The frame bell trial (2026-11-11)
 
 The player asked for the game to check for messages every frame instead of every

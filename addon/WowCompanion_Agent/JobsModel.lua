@@ -271,8 +271,7 @@ end
 -- "too late: already answered", "failed", "cancelling...", "cancel not
 -- confirmed", "queued", or nothing
 -- What a message's own line says. A job cancelled while it ran says it on its
--- work line instead (Jobs.lua, WorkStatus), and its message stays as said (the
--- player, 2026-11-11).
+-- work line instead (Jobs.lua, WorkStatus), and its message stays as said.
 function M:StatusOf(job)
 	local s = job.state
 	if job.asked == "running" then

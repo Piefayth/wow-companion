@@ -7,7 +7,7 @@ local function newTranscript(...) return WC.Transcript.newTranscript(...) end
 -- Tabs on the top edge, standing on the chat well (PanelTopTabButtonTemplate,
 -- PanelTemplates_SetTab, as the macro frame's). Top, not side: the
 -- conversation list is already a column of choices on the right, and side
--- tabs beside it read as tabs on tabs (the player, 2026-11-11). Picked with
+-- tabs beside it read as tabs on tabs. Picked with
 -- the controller cursor. No shoulder buttons: L1 and R1 are talk-button slots.
 local TAB_NAMES = { "Chat", "Tools", "Status", "Errands" }
 local function buildTabs(frame, messages)
@@ -463,7 +463,7 @@ local function buildTabs(frame, messages)
 	-- each message's own panel (Jobs.lua) docks at the bottom of the chat well
 	frame.chatWell = chatWell
 	-- A shadow cast down from the chat well's top edge, under the tabs, so the
-	-- well reads as sunk into the panel (the player, 2026-11-11): Blizzard's
+	-- well reads as sunk into the panel: Blizzard's
 	-- own ShadowOverlay-Top (SharedUIPanelTemplates.xml:195), above the
 	-- scrolling text so lines slide under it.
 	local lip = CreateFrame("Frame", nil, chatWell)
@@ -538,8 +538,7 @@ end
 local function buildLog()
 	-- One panel, Blizzard's own: ButtonFrameTemplate, as the macro frame is
 	-- built (its border, background, title bar and close button), with the
-	-- tabs standing on the wells inside it (the player, 2026-11-11: "one panel
-	-- that you filled with stuff"; docs/proposals/companion-window-frame.md).
+	-- tabs standing on the wells inside it (docs/proposals/companion-window-frame.md).
 	-- CreateFrame throws on a template this build lacks, and an ugly window
 	-- beats an addon that fails to load.
 	local made, frame = pcall(CreateFrame, "Frame", "WowCompanionLog", UIParent, "ButtonFrameTemplate")
@@ -760,8 +759,7 @@ local function buildLog()
 		applySize(index)
 	end
 	frame.SIZE_NAMES = { "Small", "Medium", "Large" }
-	-- The whole window, text and all, at its own scale (the player, 2026-11-11:
-	-- readable on a TV); the rest of the interface keeps its own.
+	-- The whole window, text and all, at its own scale (readable on a TV); the rest of the interface keeps its own.
 	function frame.SetWindowScale(k)
 		WowCompanionAgentDB.windowScale = k ~= 1 and k or nil
 		frame:SetScale(k)

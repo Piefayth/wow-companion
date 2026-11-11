@@ -3,9 +3,8 @@
 -- offers, the other files reach through WC.Offer: Show(slot) when the view changes, Waiting() (its
 -- label while a press waits, else nil), BUTTON (its name, for a binding).
 
--- One offered button per conversation (the player, 2026-11-10): a Reload from
--- one agent replaced the Quit another had just offered. Each keeps its own; the
--- one secure button shows the offer of the conversation in view.
+-- One offered button per conversation, so one agent's offer never replaces
+-- another's; the one secure button shows the offer of the conversation in view.
 local BUTTON = "WowCompanionDo"
 local offers = {}
 local actionButton
@@ -35,7 +34,7 @@ local function buildActionButton()
 		end
 		actionButton = button
 		-- at the foot of the conversation list, the list's width, under its
-		-- buttons (the player, 2026-11-10): it belongs to the conversation in view
+		-- buttons: it belongs to the conversation in view
 		local function place(b)
 			b:SetParent(frame)
 			b:ClearAllPoints()
@@ -51,13 +50,8 @@ local function buildActionButton()
 		end
 		place(actionButton)
 		WC.Companion.stow(actionButton, place)
-		-- Measured, one variable at a time. "AnyUp": the wrapper runs -- PreClick and
-		-- PostClick both fire -- and the macro does not, which reads exactly like a
-		-- permissions refusal and is not one. Both edges: runs, but twice, once down
-		-- and once up. "AnyDown" alone: runs once. That is the answer.
-		--
-		-- Attributes are still set first, which is cheap and conventional, but the
-		-- edge is what decides whether the macro fires at all.
+		-- "AnyDown" alone runs the macro once ("AnyUp" fires PreClick and
+		-- PostClick but not the macro; both edges run it twice).
 		actionButton:SetAttribute("type", "macro")
 		actionButton:RegisterForClicks("AnyDown")
 

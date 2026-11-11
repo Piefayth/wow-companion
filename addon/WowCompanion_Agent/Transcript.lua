@@ -19,12 +19,8 @@ local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 local NOTE_FONT = "GameFontHighlightSmall"
 
 -- Every turn on our own stone (Art/, made by tools/make_slate.py): a dark,
--- fine-grained slate in two values, the replies the lighter one (the player,
--- 2026-11-11: the two darkest of three tried). Owners
--- differ by value, never by hue (brown next to grey read as muddy). Blizzard's
--- tiles were tried first, 2026-11-11: marble too busy and near black, rock
--- flat grey, the neutral tile wooden planks. Turns parted by the quest log's
--- divider.
+-- fine-grained slate in two values, the replies the lighter one. Owners
+-- differ by value, never by hue. Turns parted by the quest log's divider.
 -- The game keeps a texture it has loaded for the session under its path, so
 -- a changed file needs a new name to show without a restart: each version of
 -- the stone gets its own names (tools/make_slate.py reads this number).
@@ -59,8 +55,8 @@ end
 local Transcript = {}
 Transcript.__index = Transcript
 
--- A message's state after its header (the player, 2026-11-10: a cancel must
--- leave a tombstone and say whether it really happened). `grey` dims the
+-- A message's state after its header (a cancel leaves a tombstone that says
+-- whether it really happened). `grey` dims the
 -- message's own lines too
 local function markRow(transcript, row, status, grey)
 	row.base = row.base or row.fs:GetText()
@@ -198,9 +194,7 @@ function Transcript:Row(font, text, indent, gap, r, g, b, owner)
 		header = owner and true or nil }
 	if owner then row.turn, row.divider = turnBand(self.content, owner) end
 	self.gap = nil
-	-- Confirmed lines are only ever appended (the player, 2026-11-10: the
-	-- view must be "predictable and non-disruptive"): a line placed among ones
-	-- already read made the conversation jump. What is still to come is shown
+	-- Confirmed lines are only ever appended, so the conversation never jumps. What is still to come is shown
 	-- below, as the waiting lines (Jobs.lua), and replaced there in place.
 	self.rows[#self.rows + 1] = row
 	-- appended rows are placed alone; only a resize walks them all
@@ -212,8 +206,7 @@ function Transcript:Row(font, text, indent, gap, r, g, b, owner)
 		self.content:SetHeight(math.max(self.height, 1))
 		if following then self:ToBottom() end
 		-- the progress lines after the last message move down at once, not
-		-- on the next tick (the player, 2026-11-10: a queued line covered the
-		-- agent's working line)
+		-- on the next tick, so none covers the agent's working line
 		if self.jobsGhosts and WC.Jobs and WC.Jobs.Refresh then WC.Jobs.Refresh() end
 	end
 	return row
@@ -264,7 +257,7 @@ end
 local WHO = {
 	you = { "You", "|cff9ad5ff", 0.74, 0.84, 0.96 },
 	-- a soft warm off-white, not white: near-white on near-black glows
-	-- (halation) and tires on a TV (the player, 2026-11-11, an experiment)
+	-- (halation) and tires on a TV
 	claude = { "Claude", "|cffffd100", 0.86, 0.83, 0.76 },
 }
 
@@ -305,8 +298,8 @@ function Transcript:Add(who, text, continued, at, job)
 	end
 end
 
--- The agent at work, as an entry of the conversation (the player,
--- 2026-11-10: one true order, nothing jumps): added at the moment the work
+-- The agent at work, as an entry of the conversation (one order, nothing
+-- jumps): added at the moment the work
 -- began, like any line, and only ever changed in place. Its text updates as
 -- the work goes on; at the end it is taken away if nothing came after it
 -- (the reply takes its place), else it says how the work ended and stays.

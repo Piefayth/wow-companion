@@ -98,8 +98,8 @@ renderPending = function()
 	turn = turn + 1
 	local dots = ("."):rep(turn % 4)
 	local now = GetTime()
-	-- One row per conversation with something going on, readable at a glance
-	-- (the player, 2026-11-10): the name in its state's colour, the state and
+	-- One row per conversation with something going on, readable at a glance:
+	-- the name in its state's colour, the state and
 	-- its seconds, then the detail in grey. Blue is hearing you (Whisper has the
 	-- clip), gold is working, green has answered, red went wrong.
 	local function clip(text, n)
@@ -143,14 +143,13 @@ end
 if WC.Jobs then WC.Jobs.Changed = function() renderPending() end end
 
 -- Kept in SavedVariables, so it is written on /reload or logout like everything else.
--- Conversations (the player, 2026-11-10): the talk button alone is the main one
+-- Conversations: the talk button alone is the main one
 -- (""), and with a trigger held each of L1, L2, R1, R2 is its own. Every line
 -- remembers which it belongs to; the window shows one at a time, picked with the
 -- buttons above the transcript, and a slot with news it has not shown glows.
 local viewSlot = ""
 -- which conversations have news not yet looked at, kept in SavedVariables so a
--- reload does not forget a reply waiting in another conversation (the player,
--- 2026-11-10). Read through this, since WowCompanionAgentDB exists only once loaded.
+-- reload does not forget a reply waiting in another conversation. Read through this, since WowCompanionAgentDB exists only once loaded.
 local function unreadSet()
 	if type(WowCompanionAgentDB) ~= "table" then return {} end
 	WowCompanionAgentDB.unread = WowCompanionAgentDB.unread or {}
@@ -166,11 +165,10 @@ local function paintConversations()
 	if not (frame and frame.convButtons) then return end
 	for key, button in pairs(frame.convButtons) do
 		local label = slotLabel(key)
-		-- each conversation shows its own progress in the list (the player,
-		-- 2026-11-10): the seconds while its agent works, "new" once it answered
+		-- each conversation shows its own progress in the list: the seconds while its agent works, "new" once it answered
 		local heard, running = work(key)
 		if heard then
-			-- Whisper still has this conversation's clip (the player, 2026-11-10)
+			-- Whisper still has this conversation's clip
 			label = label .. "  |cff9ad5ff" .. WC.Jobs.Age(heard.since) .. "s|r"
 		elseif running then
 			label = label .. "  |cffb0b0b0" .. WC.Jobs.Age(running.since) .. "s|r"
@@ -195,7 +193,7 @@ local function remember(who, text, continued, slot, job, quiet)
 		slot = slot ~= "" and slot or nil, job = job }
 	-- Each conversation keeps its own LOG_KEEP lines, so a busy one never pushes
 	-- out a quiet one; when one fills, its oldest third is compacted into one
-	-- line that keeps what was asked, not dropped (the player, 2026-11-10).
+	-- line that keeps what was asked, not dropped.
 	local key = slot ~= "" and slot or nil
 	local count = 0
 	for _, e in ipairs(entries) do
@@ -237,8 +235,7 @@ local function remember(who, text, continued, slot, job, quiet)
 		showLine(who, text, continued, entries[#entries].at, job)
 	end
 	-- news nobody has seen yet: a reply in another conversation, or in this one
-	-- while the window is closed (the player, 2026-11-10: replies waited unseen
-	-- unless they checked); the minimap button shows it (Status.lua)
+	-- while the window is closed; the minimap button shows it (Status.lua)
 	if not continued and not quiet and (who == "claude" or who == "error")
 		and (slot ~= viewSlot or not (logWindow and logWindow:IsShown())) then
 		setUnread(slot, true)
@@ -319,7 +316,8 @@ function handlers.log(inbox)
 	return ("logged %d line(s)"):format(lines)
 end
 
--- Closing in combat (the player, 2026-11-10: "can't close the companion window
+-- A plain Hide, which works in combat too (the window holds no secure button
+-- in a fight, Stow.lua)
 function WowCompanion_HideWindow()
 	local frame = logWindow
 	if not frame then return end

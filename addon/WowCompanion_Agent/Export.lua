@@ -557,7 +557,7 @@ local function exportContext()
 		-- C_SpellBook only: this build has no GetNumSpellTabs or GetSpellTabInfo
 		-- (docs/api-1.60.1.txt). A skill line the count promised but the game
 		-- gives no info for means it has released the character (a quit); say
-		-- so instead of writing nothing (four "-- nil" lines at a quit, 2026-11-11).
+		-- so instead of writing nothing.
 		local bank = Enum.SpellBookSpellBank.Player
 		for tab = 1, C_SpellBook.GetNumSpellBookSkillLines() do
 			local info = C_SpellBook.GetSpellBookSkillLineInfo(tab)

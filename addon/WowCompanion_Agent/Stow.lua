@@ -2,10 +2,9 @@
 -- What this needs from Agent.lua comes through WC.Companion; what it
 -- offers, the other files reach through WC.Companion.stow.
 
--- The window in combat (the player, 2026-11-10: "randomly disappearing and
--- sometimes showing up in combat is completely useless"). A secure button
--- inside a frame makes that frame protected, and a protected frame cannot be
--- shown or hidden by an addon mid-fight: that was the whole mess. So the
+-- The window in combat. A secure button inside a frame makes that frame
+-- protected, and a protected frame cannot be shown or hidden by an addon
+-- mid-fight. So the
 -- window's secure buttons (the offered press, Reload) are stowed in a hidden
 -- holder of their own as combat begins (PLAYER_REGEN_DISABLED runs just before
 -- the lockdown, the last moment protected frames can move), which leaves the

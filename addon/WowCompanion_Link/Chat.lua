@@ -316,8 +316,7 @@ end
 -- Not agent code, so it is not refused in combat as a lua step is.
 WC.Link.Handle("send", function(inbox) return chatLine(inbox.text or "") end)
 
--- Dictation (L1+R1, `wheel`) goes where the cursor is (the player,
--- 2026-11-11): a text box other than chat with the keyboard focus (the auction
+-- Dictation (L1+R1, `wheel`) goes where the cursor is: a text box other than chat with the keyboard focus (the auction
 -- house search, a mail recipient, any search field) gets the words as said,
 -- appended, no channel; otherwise the chat box on the wheel's channel. An
 -- agent's chat step (a whole line) goes only to the chat box. A chat line goes

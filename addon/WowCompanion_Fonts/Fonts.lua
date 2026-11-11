@@ -6,7 +6,7 @@
 -- titles (Morpheus) and damage numbers (Skurri) keep their look.
 -- The files are in Fonts/ (SIL OFL, see Fonts/README.md). SetFont answers
 -- false while a file loads, the first time it is asked for in the process,
--- and true once it has (measured 2026-11-11): so a switch is retried until
+-- and true once it has: so a switch is retried until
 -- every style took. A file the game cannot find raises instead (one that
 -- arrived after the game started: a full restart finds it).
 

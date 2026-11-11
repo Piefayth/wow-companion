@@ -194,9 +194,9 @@ end
 -- while its session runs. Every 0.1 s the next slot's bell is played and asked
 -- 20 ms later (the short bell plays within 2 ms); a ring takes the slot, and the
 -- slot after it is asked at once, so a burst drains a message per check.
--- Played every frame, bells made the game hold its sound files (2026-11-11); at
--- 0.1 s it never did. While the heartbeat is stale (Status.lua), which is what
--- held files look like, it asks every 0.5 s, the old rate. Polled from
+-- Asked every frame, the game holds its sound files open; at 0.1 s it does
+-- not. While the heartbeat is stale (Status.lua), which is what
+-- held files look like, it asks every 0.5 s. Polled from
 -- OnUpdate, which WoW keeps calling whatever happened the frame before, rather
 -- than a C_Timer ticker, which a callback error may cancel for good.
 -- The counts are saved at every reload.
