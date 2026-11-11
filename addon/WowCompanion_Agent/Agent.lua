@@ -6,7 +6,7 @@
 
 WC.Saved("WowCompanion_Agent", "WowCompanionAgentDB", function(db)
 	WC.MoveSaved(db, { "log", "unread", "board", "blocked", "blockedNotices", "blockedStacks",
-		"windowCombat", "modules", "runs", "pathTaint", "taint", "context", "spellForms", "chords",
+		"windowCombat", "modules", "runs", "taint", "context", "spellForms", "chords",
 		"chordStats", "chordMisses", "chordsFixed", "focusLog", "jobs", "jobModel", "lines", "audit",
 		"windowSize", "windowFontScale", "placeTests", "links", "tradeLinks", "api", "apidocs", "alive" })
 end)
@@ -713,7 +713,8 @@ end
 -- What a step did, in the window, so a refusal ("in combat", "no macro named")
 -- is seen rather than silently dropped. Only kinds whose result is news: chat,
 -- lua and press already show themselves.
-local REPORTED = { bar = true, macro = true, module = true }
+-- a lua or module step reports itself when it has run (Sandbox.lua)
+local REPORTED = { bar = true, macro = true }
 local function report(step, ok, outcome)
 	if not ok then
 		remember("error", ("%s failed: %s"):format(tostring(step.kind), tostring(outcome)))
@@ -724,11 +725,25 @@ end
 
 -- Several steps from one answer, in order, each reported. One failing does not
 -- stop the rest: they were asked for together, but each stands on its own, and
--- the report says which landed.
+-- the report says which landed. Agent code runs after a taint scan spread over
+-- frames (Sandbox.lua), so the steps after it wait for it, in the same
+-- conversation.
 function handlers.batch(inbox)
-	for _, step in ipairs(inbox.steps or {}) do
-		report(step, WC.Link.Run(step))
+	local slot = WC.Link.Current()
+	local steps = inbox.steps or {}
+	local function from(first)
+		for at = first, #steps do
+			if WC.Sandbox.Busy() then
+				WC.Sandbox.Queue(function(done)
+					WC.Link.As(slot, from, at)
+					done()
+				end)
+				return
+			end
+			report(steps[at], WC.Link.Run(steps[at]))
+		end
 	end
+	from(1)
 end
 
 local function dumpApi(...) return WC.Probes.dumpApi(...) end
@@ -942,14 +957,12 @@ slash("place", function(variant)
 end)
 slash("verdict", function(which) say(placeVerdict(which)) end)
 slash("taint", function()
-	local tainted, checked = taintScan()
-	local names = {}
-	for label, by in pairs(tainted) do
-		names[#names + 1] = ("%s (by %s)"):format(label, by)
-	end
-	table.sort(names)
-	WowCompanionAgentDB.taint = table.concat(names, "\n")
-	say(("%d tainted of %d checked; /reload to write the list"):format(#names, checked))
+	say("scanning, over a few seconds")
+	taintScan(function(tainted, checked)
+		local names = WC.Tests.fresh({}, tainted)
+		WowCompanionAgentDB.taint = table.concat(names, "\n")
+		say(("%d tainted of %d checked; /reload to write the list"):format(#names, checked))
+	end)
 end)
 -- the macro test target: no side effects, and unmistakable when it fires.
 -- remember() rather than say(), so the answer survives to SavedVariables

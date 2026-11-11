@@ -471,6 +471,14 @@ WC.Link = {
 		return pcall(handler, step)
 	end,
 	Current = function() return current end,
+	-- run fn(...) as part of the conversation `slot`, as a message of it would be
+	As = function(slot, fn, ...)
+		local was = current
+		current = slot
+		local ok, err = pcall(fn, ...)
+		current = was
+		if not ok then error(err, 0) end
+	end,
 	Slash = function(word, fn) slash[word] = fn end,
 	say = say,
 	record = record,

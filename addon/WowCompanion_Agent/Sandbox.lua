@@ -125,11 +125,13 @@ local function results(...)
 	return table.concat(parts, ", ")
 end
 
--- Run one chunk. Returns the outcome line now and, a moment later, reports any
--- taint it caused. Everything lands in the window and in WowCompanionAgentDB.runs, which
+-- Run one chunk. Returns the outcome line. With `before` (a taint scan taken
+-- just now), a moment later it scans again and reports any taint the chunk
+-- caused. Everything lands in the window and in WowCompanionAgentDB.runs, which
 -- reaches disk at the next reload -- the agent's way of seeing what happened.
-local function runCode(label, code, quiet)
+local function runCode(label, code, before)
 	if InCombatLockdown() then
+		remember("probe", label .. " refused: in combat")
 		return "refused: in combat"
 	end
 	local chunk, syntax = loadstring(code, "=" .. label)
@@ -139,9 +141,6 @@ local function runCode(label, code, quiet)
 	end
 	local output = {}
 	setfenv(chunk, sandbox(output))
-	-- the scan costs about a second; a module replayed at login was scanned when it
-	-- was first written, so it skips it
-	local before = not quiet and taintScan() or nil
 	local ok, outcome = (function(okay, ...)
 		return okay, okay and results(...) or tostring((...))
 	end)(pcall(chunk))
@@ -151,7 +150,7 @@ local function runCode(label, code, quiet)
 	for _, printed in ipairs(output) do
 		remember("probe", label .. ": " .. printed)
 	end
-	if not quiet or not ok then
+	if before or not ok then
 		remember("probe", ("%s %s"):format(label, line))
 	end
 	WowCompanionAgentDB.runs = WowCompanionAgentDB.runs or {}
@@ -164,26 +163,50 @@ local function runCode(label, code, quiet)
 		return line
 	end
 	local whose = replySlot_now()
-	C_Timer.After(1.5, function()
-		local after = taintScan()
-		local fresh = {}
-		for name, by in pairs(after) do
-			if before[name] == nil and not moduleGlobals[name] then
-				fresh[#fresh + 1] = ("%s (by %s)"):format(name, by)
-			end
-		end
-		table.sort(fresh)
+	C_Timer.After(1.5, function() taintScan(function(after)
+		local fresh = WC.Tests.fresh(before, after, function(name) return moduleGlobals[name] end)
 		run.taint = #fresh == 0 and "none" or table.concat(fresh, "; ")
 		if #fresh > 0 then
 			remember("probe", ("%s tainted %d variable(s): %s -- /reload clears it"):format(
 				label, #fresh, table.concat(fresh, "; ", 1, math.min(#fresh, 4))), nil, whose)
 		end
-	end)
+	end) end)
 	return line
 end
 
+-- Agent code waits for a taint scan, spread over frames (Tests.lua), so no frame
+-- freezes; whatever must follow it (the rest of its batch) waits in this queue.
+-- One job at a time; a job calls done() when it has finished.
+local queue, busy = {}, false
+local function pump()
+	if busy then return end
+	local job = table.remove(queue, 1)
+	if not job then return end
+	busy = true
+	job(function()
+		busy = false
+		pump()
+	end)
+end
+local function enqueue(job)
+	queue[#queue + 1] = job
+	pump()
+end
+
+-- a chunk from an agent: scanned before, run in its conversation, scanned after
+local function runMeasured(label, code)
+	local slot = WC.Link.Current()
+	enqueue(function(done)
+		taintScan(function(before)
+			WC.Link.As(slot, runCode, label, code, before)
+			done()
+		end)
+	end)
+	return "runs after a taint scan of a second or two"
+end
+
 function handlers.lua(inbox)
-	return runCode("code", inbox.code or "")
+	return runMeasured("code", inbox.code or "")
 end
 
 function handlers.module(inbox)
@@ -198,10 +221,11 @@ function handlers.module(inbox)
 		return "removed " .. name
 	end
 	WowCompanionAgentDB.modules[name] = { code = inbox.code or "", at = time() }
-	return runCode("module " .. name, inbox.code or "")
+	return runMeasured("module " .. name, inbox.code or "")
 end
 
--- at login: every stored module, in name order so the order is stable
+-- at login: every stored module, in name order so the order is stable; each was
+-- scanned when it was first written, so none is scanned again
 local function loadModules()
 	local all = effectiveModules()
 	local names = {}
@@ -210,52 +234,14 @@ local function loadModules()
 	end
 	table.sort(names)
 	for _, name in ipairs(names) do
-		runCode("module " .. name, all[name].code, true)
+		runCode("module " .. name, all[name].code)
 	end
 end
-
--- A path we have not measured gets the issecurevariable diff the first time it
--- runs in a session, and says so in the window if it tainted anything. Kept in
--- WowCompanionAgentDB.pathTaint, so the verdict survives into the export.
-local measured = {}
-local function measureOnce(label, action)
-	if measured[label] or InCombatLockdown() then
-		return action()
-	end
-	measured[label] = true
-	local before = taintScan()
-	action()
-	C_Timer.After(1.5, function()
-		local after = taintScan()
-		local fresh = {}
-		for name, by in pairs(after) do
-			if before[name] == nil and not moduleGlobals[name] then
-				fresh[#fresh + 1] = ("%s (by %s)"):format(name, by)
-			end
-		end
-		table.sort(fresh)
-		WowCompanionAgentDB.pathTaint = WowCompanionAgentDB.pathTaint or {}
-		WowCompanionAgentDB.pathTaint[label] = #fresh == 0 and "none" or table.concat(fresh, "; ")
-		-- the chat frames' fade clock is written by every line any addon prints to
-		-- chat, and nothing protected reads it; it stays in pathTaint for the
-		-- export, but is not worth a red line in the window every session
-		local shown = {}
-		for _, entry in ipairs(fresh) do
-			if not entry:find("%.oldestFadingLineTimestamp ") then
-				shown[#shown + 1] = entry
-			end
-		end
-		if #shown > 0 then
-			remember("error", ("%s tainted %d variable(s): %s -- /reload clears it"):format(
-				label, #shown, table.concat(shown, "; ", 1, math.min(#shown, 4))))
-		end
-	end)
-end
-
 
 WC.Sandbox = WC.Sandbox or {}
 WC.Sandbox.loadModules = loadModules
-WC.Sandbox.measureOnce = measureOnce
 WC.Sandbox.results = results
+WC.Sandbox.Busy = function() return busy or #queue > 0 end
+WC.Sandbox.Queue = enqueue
 
 for kind, fn in pairs(handlers) do WC.Companion.addHandler(kind, fn) end

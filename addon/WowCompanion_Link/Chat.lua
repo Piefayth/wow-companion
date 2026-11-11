@@ -4,12 +4,6 @@
 
 local function toast(...) return WC.Board.toast(...) end
 local function problem(text) toast("|cffff7777" .. text .. "|r", 1, 0.6, 0.6, 10) end
--- the taint measurement of a chat path, when WowCompanion_Agent is there to keep it
-local function measured(label, fn)
-	if WC.Sandbox then return WC.Sandbox.measureOnce(label, fn) end
-	return fn()
-end
-
 -- Whispers by the name the player knows someone by. "whisper Sage, on my way"
 -- arrives as "/w Sage, on my way"; this finds who Sage is among the people the
 -- game can see (Battle.net friends by BattleTag or the character they are on,
@@ -225,7 +219,7 @@ local function trace(what, box)
 	if WC.ChatChannel and WC.ChatChannel.Trace then WC.ChatChannel.Trace(what, box) end
 end
 local function into(box, text)
-	measured("line into chat box", function() box:SetText(text) end)
+	box:SetText(text)
 	trace("into chat box", box)
 	return ("chat box holds %q"):format(box:GetText() or "")
 end
@@ -325,7 +319,7 @@ WC.Link.Handle("send", function(inbox) return chatLine(inbox.text or "") end)
 local function onDictated(box)
 	local text = box:GetText() or ""
 	if text:find("^/%S+ ") and box.ParseText then
-		measured("chat channel", function() pcall(box.ParseText, box, 0) end)
+		pcall(box.ParseText, box, 0)
 	end
 end
 
@@ -400,7 +394,7 @@ if EventRegistry and EventRegistry.RegisterCallback then
 		if not (box and box.GetText and box.SetText) or (box:GetText() or "") == "" then return end
 		local chat = box.chatFrame
 		if chat and chat.IsGamepadMenuOpen and chat:IsGamepadMenuOpen() then return end
-		measured("draft clear", function() box:SetText("") end)
+		box:SetText("")
 	end, activeEditBox)
 end
 

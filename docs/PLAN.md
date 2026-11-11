@@ -223,7 +223,6 @@ MakeRoom; a reusable sell list the player confirms at the vendor (design to agre
 - Restarting the game: the last attempt failed; worth a look when it matters.
 - The offered button's controller shortcut (PADDRIGHT): confirm it fires.
 - Which form of a two-part name a whisper accepts.
-- Read the taint verdicts for the chat paths (`pathTaint` in the export).
 
 ## Done
 

@@ -78,36 +78,85 @@ local function ours(name)
 	return name:find("WowCompanion", 1, true) or name:find("WOWCOMPANION", 1, true)
 end
 
-local function taintScan()
-	local tainted, checked = {}, 0
-	local function check(label, tbl, key)
-		checked = checked + 1
-		local ok, secure, by
-		if tbl then
-			ok, secure, by = pcall(issecurevariable, tbl, key)
-		else
-			ok, secure, by = pcall(issecurevariable, key)
-		end
-		if ok and not secure then
-			tainted[label] = tostring(by)
-		end
-	end
+-- The scan asks about some 265,000 variables, about 300 ms in one go: a frame the
+-- player sees freeze. So it is spread over frames, at most BUDGET_MS of each, and
+-- done(tainted, checked) is called when it has asked about every one. The names
+-- are taken first (one pass over _G, and over a table's fields when it is reached),
+-- since a table must not be walked across frames while others add to it.
+local BUDGET_MS = 2
+local scanner = CreateFrame("Frame")
+local scans = {}
+local function startScan(scan)
+	local names = {}
 	for name, value in pairs(_G) do
-		if type(name) == "string" and not ours(name) then
-			check(name, nil, name)
-			-- forbidden frames refuse to be walked; pcall keeps one from ending the scan
-			if type(value) == "table" then
-				pcall(function()
-					for field in pairs(value) do
-						if type(field) == "string" and not ours(field) then
-							check(name .. "." .. field, value, field)
-						end
-					end
-				end)
+		if type(name) == "string" and not ours(name) then names[#names + 1] = name end
+	end
+	scan.names, scan.at, scan.fields, scan.f = names, 0, nil, 0
+end
+-- one variable asked about; false when the scan is through
+local function step(scan)
+	local fields = scan.fields
+	if fields and scan.f < #fields then
+		scan.f = scan.f + 1
+		local field = fields[scan.f]
+		local ok, secure, by = pcall(issecurevariable, scan.table, field)
+		scan.checked = scan.checked + 1
+		if ok and not secure then scan.tainted[scan.name .. "." .. field] = tostring(by) end
+		return true
+	end
+	scan.at = scan.at + 1
+	local name = scan.names[scan.at]
+	if not name then return false end
+	local ok, secure, by = pcall(issecurevariable, name)
+	scan.checked = scan.checked + 1
+	if ok and not secure then scan.tainted[name] = tostring(by) end
+	local value = rawget(_G, name)
+	scan.fields, scan.f, scan.name, scan.table = nil, 0, name, nil
+	if type(value) == "table" then
+		-- forbidden frames refuse to be walked; pcall keeps one from ending the scan
+		local list = {}
+		if pcall(function()
+			for field in pairs(value) do
+				if type(field) == "string" and not ours(field) then list[#list + 1] = field end
 			end
+		end) then
+			scan.fields, scan.table = list, value
 		end
 	end
-	return tainted, checked
+	return true
+end
+scanner:Hide()
+scanner:SetScript("OnUpdate", function(self)
+	local scan = scans[1]
+	if not scan then return self:Hide() end
+	if not scan.names then
+		startScan(scan)
+		return
+	end
+	local stop = debugprofilestop() + BUDGET_MS
+	repeat
+		if not step(scan) then
+			table.remove(scans, 1)
+			pcall(scan.done, scan.tainted, scan.checked)
+			return
+		end
+	until debugprofilestop() >= stop
+end)
+local function taintScan(done)
+	scans[#scans + 1] = { done = done, tainted = {}, checked = 0 }
+	scanner:Show()
+end
+
+-- the variables newly tainted between two scans, each with who tainted it
+local function fresh(before, after, skip)
+	local list = {}
+	for label, by in pairs(after) do
+		if before[label] == nil and not (skip and skip(label)) then
+			list[#list + 1] = ("%s (by %s)"):format(label, by)
+		end
+	end
+	table.sort(list)
+	return list
 end
 
 local PLACE_MACRO = "WCPLACE"
@@ -290,33 +339,31 @@ local function placeTest(variant)
 	end
 	placeRan = variant
 	WowCompanionAgentDB.placeTests = WowCompanionAgentDB.placeTests or {}
-	local before, checked = taintScan()
-	local ok, result = pcall(act, pickSlots())
-	if not ok then
-		result = "error: " .. tostring(result)
-	end
-	local entry = { at = time(), variant = variant, result = result, checked = checked }
-	placeEntry = entry
-	table.insert(WowCompanionAgentDB.placeTests, entry)
-	remember("probe", ("place %s: %s"):format(variant, tostring(result)))
-	-- long enough for whatever the action set off to have run: events, OnUpdate,
-	-- the deferred chat open
-	C_Timer.After(1.5, function()
-		local after = taintScan()
-		local fresh = {}
-		for label, by in pairs(after) do
-			if before[label] == nil then
-				fresh[#fresh + 1] = ("%s (by %s)"):format(label, by)
-			end
+	taintScan(function(before, checked)
+		if InCombatLockdown() then
+			remember("probe", ("place %s: refused, a fight began during the scan"):format(variant))
+			return
 		end
-		table.sort(fresh)
-		entry.tainted = #fresh
-		entry.taint = #fresh == 0 and "none" or table.concat(fresh, "; ")
-		remember("probe", ("place %s: %d newly tainted of %d checked%s"):format(variant, #fresh,
-			checked, #fresh > 0 and (": " .. table.concat(fresh, "; ", 1, math.min(#fresh, 6))) or ""))
-		remember("probe", "now A on an NPC, B out of a menu; then /wc verdict ok or /wc verdict broken")
+		local ok, result = pcall(act, pickSlots())
+		if not ok then
+			result = "error: " .. tostring(result)
+		end
+		local entry = { at = time(), variant = variant, result = result, checked = checked }
+		placeEntry = entry
+		table.insert(WowCompanionAgentDB.placeTests, entry)
+		remember("probe", ("place %s: %s"):format(variant, tostring(result)))
+		-- long enough for whatever the action set off to have run: events, OnUpdate,
+		-- the deferred chat open
+		C_Timer.After(1.5, function() taintScan(function(after)
+			local new = fresh(before, after)
+			entry.tainted = #new
+			entry.taint = #new == 0 and "none" or table.concat(new, "; ")
+			remember("probe", ("place %s: %d newly tainted of %d checked%s"):format(variant, #new,
+				checked, #new > 0 and (": " .. table.concat(new, "; ", 1, math.min(#new, 6))) or ""))
+			remember("probe", "now A on an NPC, B out of a menu; then /wc verdict ok or /wc verdict broken")
+		end) end)
 	end)
-	return result
+	return "scanning first; the result follows"
 end
 
 local function placeVerdict(word)
@@ -337,3 +384,4 @@ WC.Tests.placeVerdict = placeVerdict
 WC.Tests.probeChat = probeChat
 WC.Tests.probeMacro = probeMacro
 WC.Tests.taintScan = taintScan
+WC.Tests.fresh = fresh
