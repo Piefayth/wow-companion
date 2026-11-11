@@ -19,6 +19,12 @@ Copy-Item $Exe (Join-Path $stage "wow-companion.exe")
 Copy-Item $Setup (Join-Path $stage "wow-companion-setup.exe")
 if ($CpuExe) { Copy-Item $CpuExe (Join-Path $stage "wow-companion-cpu.exe") }
 foreach ($file in $Extra) { Copy-Item $file $stage }
+# the streaming engine's libraries (sherpa-onnx, ONNX Runtime): the build puts
+# them beside the exe, and the exe cannot start without them. Both builds use
+# the same ones.
+$dlls = @(Get-ChildItem (Split-Path -Parent $Exe) -Filter *.dll)
+if ($dlls.Count -eq 0) { throw "no DLLs beside $Exe: the streaming engine's libraries are missing from the build" }
+$dlls | Copy-Item -Destination $stage
 
 # what the companion and its agent read beside the exe (home() in src/main.rs)
 foreach ($dir in "addon", "modules", "integrations", "assets", "tools") {

@@ -1,7 +1,7 @@
-//! Push-to-talk voice capture. Hold a controller chord, speak, release: the whole
-//! clip goes to Whisper at once, which reads better than streaming dictation
-//! because the model gets to see the end of the sentence before committing to the
-//! start of it. Stays on this machine, so a hot mic can't leak the room.
+//! Push-to-talk voice capture. Hold a controller chord, speak, release: Whisper
+//! gets the whole clip at release, or the streaming engine on trial (stream.rs)
+//! hears it while the button is held and has the text at release. Stays on this
+//! machine, so a hot mic can't leak the room.
 
 use std::{
     io,
@@ -22,6 +22,7 @@ use wow_companion_pad::{self as pad, Pad, DEFAULT_PAD};
 mod bluetooth;
 mod mic;
 mod transcribe;
+mod stream;
 mod cue;
 use bluetooth::*;
 use mic::*;
@@ -30,6 +31,7 @@ use cue::*;
 pub use bluetooth::reconnect;
 pub use mic::{formats, miccheck, microphones, speakers};
 pub use transcribe::transcribe_file;
+pub use stream::transcribe_stream_file;
 
 const POLL: Duration = Duration::from_millis(16);
 /// A press released this quickly was a tap, not speech: it is reported as the
@@ -90,6 +92,32 @@ pub static DEAF: AtomicBool = AtomicBool::new(false);
 /// DEAF.
 pub static PAUSED: AtomicBool = AtomicBool::new(false);
 
+/// The speech engine the loop feeds: Whisper takes a whole clip at release; the
+/// streaming engine takes the audio while the button is held.
+enum Engine {
+    Whisper(std::sync::mpsc::Sender<Job>),
+    Streaming(std::sync::mpsc::Sender<stream::Feed>),
+}
+
+impl Engine {
+    /// A press that will not become a clip: the streaming engine forgets it.
+    fn drop_clip(&self) {
+        if let Engine::Streaming(feed) = self {
+            let _ = feed.send(stream::Feed::Drop);
+        }
+    }
+
+    /// The streaming engine gets what the mic captured since its last piece.
+    fn feed(&self, mic: &Microphone) {
+        if let Engine::Streaming(feed) = self {
+            let (rate, samples) = mic.take_new();
+            if !samples.is_empty() {
+                let _ = feed.send(stream::Feed::Audio { rate, samples });
+            }
+        }
+    }
+}
+
 pub fn listen(
     model: &Path,
     options: &[String],
@@ -143,26 +171,55 @@ pub fn listen(
         .and_then(|given| given.parse().ok())
         .unwrap_or(CUE_VOLUME);
 
-    // loading the model is the slow part, so do it once and keep it resident
-    let path = model.to_str().ok_or_else(|| io::Error::other("model path isn't UTF-8"))?;
-    println!("loading {path}");
-    let whisper = WhisperContext::new_with_params(path, WhisperContextParameters::default())
-        .map_err(|err| io::Error::other(format!("{err:?}")))?;
-    let (jobs, results) = {
-        let (jobs, inbox) = std::sync::mpsc::channel::<Job>();
-        let (outbox, results) = std::sync::mpsc::channel::<Done>();
-        std::thread::spawn(move || {
-            for job in inbox {
-                mark(&format!("whisper start ({:.1}s of audio, prompt {} chars)", job.seconds, job.prompt.len()));
-                let result = transcribe(&whisper, &job.clip, &job.prompt);
-                mark("whisper done");
-                let done = Done { role: job.role, level: job.level, seconds: job.seconds, result };
-                if outbox.send(done).is_err() {
-                    break;
+    // One engine, chosen in the setup window (`speech=`): Whisper, or the streaming
+    // engine on trial (stream.rs). Loading is the slow part, so it is done once
+    // and kept resident; results come back on `results` either way, in order.
+    let (outbox, results) = std::sync::mpsc::channel::<Done>();
+    let engine = match option(options, "speech").unwrap_or("whisper") {
+        "whisper" => {
+            let path = model.to_str().ok_or_else(|| io::Error::other("model path isn't UTF-8"))?;
+            println!("loading {path}");
+            let whisper = WhisperContext::new_with_params(path, WhisperContextParameters::default())
+                .map_err(|err| io::Error::other(format!("{err:?}")))?;
+            let (jobs, inbox) = std::sync::mpsc::channel::<Job>();
+            std::thread::spawn(move || {
+                for job in inbox {
+                    mark(&format!("whisper start ({:.1}s of audio, prompt {} chars)", job.seconds, job.prompt.len()));
+                    let result = transcribe(&whisper, &job.clip, &job.prompt);
+                    mark("whisper done");
+                    let done = Done { role: job.role, level: job.level, seconds: job.seconds, result };
+                    if outbox.send(done).is_err() {
+                        break;
+                    }
                 }
-            }
-        });
-        (jobs, results)
+            });
+            Engine::Whisper(jobs)
+        }
+        "streaming" => {
+            let dir = option(options, "stream_model")
+                .map(std::path::PathBuf::from)
+                .ok_or_else(|| io::Error::other("speech=streaming needs stream_model=<folder>: download it in the setup window"))?;
+            println!("loading the streaming model in {}", dir.display());
+            let (feed, inbox) = std::sync::mpsc::channel::<stream::Feed>();
+            let (loaded, outcome) = std::sync::mpsc::channel::<Result<(), String>>();
+            // the recognizer lives on its own thread from the start: loaded there,
+            // the load's outcome reported back before the loop reads the pad
+            std::thread::spawn(move || match stream::load(&dir, stream::THREADS) {
+                Ok(recognizer) => {
+                    let _ = loaded.send(Ok(()));
+                    stream::run(recognizer, inbox, outbox);
+                }
+                Err(err) => {
+                    let _ = loaded.send(Err(err.to_string()));
+                }
+            });
+            outcome
+                .recv()
+                .map_err(|_| io::Error::other("the streaming engine's thread ended while loading"))?
+                .map_err(io::Error::other)?;
+            Engine::Streaming(feed)
+        }
+        other => return Err(io::Error::other(format!("speech={other}: it is whisper or streaming"))),
     };
 
     for (role, press) in &bindings {
@@ -207,7 +264,9 @@ pub fn listen(
     let mut retry_mic = Instant::now();
     let mut healed_at: Option<Instant> = None;
     loop {
-        // transcripts finished by the Whisper thread, delivered in order
+        // transcripts finished by the engine's thread, delivered in order (the
+        // echo and silence checks below are for Whisper's habits; streaming text
+        // passes them unless a near-silent clip reads as one of Whisper's phrases)
         while let Ok(done) = results.try_recv() {
             let Done { role, level, seconds, result } = done;
             let role = role.as_str();
@@ -305,6 +364,7 @@ pub fn listen(
                 if let Some(mic) = &microphone {
                     mic.stop();
                 }
+                engine.drop_clip();
                 println!("  discarded the clip in progress");
             }
             continue;
@@ -314,6 +374,7 @@ pub fn listen(
                 if let Some(mic) = &microphone {
                     mic.stop();
                 }
+                engine.drop_clip();
             }
             HOLDING.store(false, Ordering::Relaxed);
             thread::sleep(POLL);
@@ -354,6 +415,9 @@ pub fn listen(
                 pressed_at = Instant::now();
                 slot = if role == "ask" { modifier } else { None };
                 mic.start();
+                if let Engine::Streaming(feed) = &engine {
+                    let _ = feed.send(stream::Feed::Start { hotwords: stream::hotwords(&vocabulary()) });
+                }
                 if beeps {
                     cue(cue_device.clone(), cue_volume, &CUE_OPEN);
                 }
@@ -362,6 +426,10 @@ pub fn listen(
             }
             (None, Some(role)) => {
                 mark(&format!("released {role}"));
+                // the recording ends first, so the streaming engine's last piece
+                // is the last of the audio
+                mic.end();
+                engine.feed(mic);
                 let clip = mic.stop();
                 if beeps {
                     // falling fifth on release: rising means live, falling means it has it
@@ -374,36 +442,49 @@ pub fn listen(
                 }
                 let seconds = clip.len() as f32 / WHISPER_RATE as f32;
                 if pressed_at.elapsed() < TAP {
+                    engine.drop_clip();
                     println!("tap: {role}");
                     if let Err(err) = heard(&format!("{role} tap"), "") {
                         eprintln!("  not delivered: {err}");
                     }
                 } else if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
                     // held long enough to mean it, yet almost no audio arrived
+                    engine.drop_clip();
                     println!("too short, ignored ({seconds:.2}s of audio)");
                     let _ = heard(&format!("{role} unheard"), &format!(
                         "I got only {seconds:.1}s of audio from that press, so nothing was sent. If you spoke, the mic may not be sending."
                     ));
                 } else {
-                    // Every clip goes to Whisper; none is judged by volume. A filter
-                    // on level dropped a real, quiet sentence (0.0024, the first
-                    // press after a restart) without a word to the player.
+                    // Every clip goes to the engine; none is judged by volume. A
+                    // filter on level dropped a real, quiet sentence (0.0024, the
+                    // first press after a restart) without a word to the player.
                     let level = loudness(&clip);
-                    // said at once, before Whisper runs: the player sees the clip
-                    // arrived instead of wondering whether it was dropped
+                    // said at once, before the engine has the text: the player sees
+                    // the clip arrived instead of wondering whether it was dropped
                     // the slot rides on the role: "ask@l2"
                     let tagged = match slot {
                         Some(name) if role == "ask" => format!("ask@{name}"),
                         _ => role.to_string(),
                     };
                     let _ = heard(&format!("{tagged} heard"), "");
-                    // Whisper runs on its own thread, so the pad and mic stay
+                    // The engine runs on its own thread, so the pad and mic stay
                     // live: slipping back onto the button while this clip is
                     // transcribed starts the next one at once (the player,
                     // 2026-11-10). Results come back in order, below.
-                    let prompt = prompt(&vocabulary());
-                    mark("prompt built");
-                    let _ = jobs.send(Job { role: tagged, clip, prompt, level, seconds });
+                    // a notice, not "unheard": the clip was already announced, so its job ends
+                    let notice = format!("{tagged} notice");
+                    let sent = match &engine {
+                        Engine::Whisper(jobs) => {
+                            let prompt = prompt(&vocabulary());
+                            mark("prompt built");
+                            jobs.send(Job { role: tagged, clip, prompt, level, seconds }).is_ok()
+                        }
+                        Engine::Streaming(feed) => feed.send(stream::Feed::Finish { role: tagged, level, seconds }).is_ok(),
+                    };
+                    if !sent {
+                        eprintln!("  the speech engine's thread has ended");
+                        let _ = heard(&notice, "The speech engine has stopped, so this was not transcribed: restart the companion.");
+                    }
                 }
             }
             (Some(role), Some(_)) => {
@@ -418,6 +499,7 @@ pub fn listen(
                 if role == "ask" && modifier == Some("say") && matches!(slot, Some("l1") | Some("r1")) {
                     slot = modifier;
                 }
+                engine.feed(mic);
                 if rumbles && !pulsed && pressed_at.elapsed() >= TAP {
                     // one firm pulse: past a tap, so listening
                     pulsed = true;

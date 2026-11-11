@@ -35,10 +35,7 @@ pub(crate) fn start() -> io::Result<()> {
             return Ok(());
         }
         let source = env::current_exe()?;
-        let bin = companion_dir()?.join("bin");
-        fs::create_dir_all(&bin)?;
-        let copy = bin.join(format!("watch-{}.exe", std::process::id()));
-        fs::copy(&source, &copy)?;
+        let copy = crate::copy_aside(&source, &format!("watch-{}", std::process::id()))?;
         let mut command = std::process::Command::new(&copy);
         command.arg("start").env(WATCHER, "1").env(WATCH_SOURCE, &source);
         platform::hide_window(&mut command).spawn()?;

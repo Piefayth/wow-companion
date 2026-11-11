@@ -166,6 +166,12 @@ fn main() {
         [command] if command == "mics" => voice::microphones(),
         // Whisper alone on a recorded clip, timed: checks a build on a new machine
         [command, model, wav] if command == "transcribe" => voice::transcribe_file(Path::new(model), Path::new(wav)),
+        // the streaming engine on a clip at the pace of speech, with this
+        // character's vocabulary as its hotwords
+        [command, folder, wav] if command == "transcribe-stream" => {
+            let vocabulary = Settings::load().get("addons").map(|addons| context::vocabulary(Path::new(addons))).unwrap_or_default();
+            voice::transcribe_stream_file(Path::new(folder), Path::new(wav), &vocabulary)
+        }
         [command] if command == "speakers" => voice::speakers(),
         [command, fragment] if command == "formats" => voice::formats(fragment),
         [command, fragment] if command == "miccheck" => voice::miccheck(Some(fragment), None),

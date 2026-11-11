@@ -26,6 +26,8 @@ pub(crate) struct Capture {
     // the last time the stream delivered anything, recording or not: a live
     // stream delivers every few milliseconds, so a gap means the link is dead
     pub(crate) last: Instant,
+    // how many raw samples of this recording a streaming engine has taken so far
+    pub(crate) taken: usize,
 }
 
 pub(crate) struct Microphone {
@@ -90,6 +92,7 @@ impl Microphone {
             started: None,
             first: None,
             last: Instant::now(),
+            taken: 0,
         }));
         let sink = Arc::clone(&capture);
         let dead = Arc::new(AtomicBool::new(false));
@@ -134,6 +137,7 @@ impl Microphone {
     pub(crate) fn start(&self) {
         let mut capture = self.capture.lock().unwrap();
         capture.samples.clear();
+        capture.taken = 0;
         capture.recording = true;
         capture.started = Some(Instant::now());
         capture.first = None;
@@ -149,6 +153,28 @@ impl Microphone {
     pub(crate) fn lag(&self) -> Option<Duration> {
         let capture = self.capture.lock().unwrap();
         Some(capture.first?.saturating_duration_since(capture.started?))
+    }
+
+    /// Stop taking in audio, keeping the recording for `take_new` and `stop`.
+    pub(crate) fn end(&self) {
+        self.capture.lock().unwrap().recording = false;
+    }
+
+    /// For a streaming engine: what this recording captured since the last call,
+    /// mixed to mono, whole frames only, at the device's own rate (the engine
+    /// resamples). Called while the button is held and once more after `end`, so
+    /// together the calls hand over every sample exactly once.
+    pub(crate) fn take_new(&self) -> (u32, Vec<f32>) {
+        let mut capture = self.capture.lock().unwrap();
+        let channels = self.channels.max(1) as usize;
+        let whole = capture.samples.len() - capture.samples.len() % channels;
+        let start = capture.taken.min(whole);
+        let mono = capture.samples[start..whole]
+            .chunks(channels)
+            .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+            .collect();
+        capture.taken = whole;
+        (self.rate, mono)
     }
 
     pub(crate) fn stop(&self) -> Vec<f32> {

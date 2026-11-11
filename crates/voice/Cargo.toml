@@ -6,11 +6,20 @@ publish = false
 
 [dependencies]
 wow-companion-pad = { path = "../pad" }
+wow-companion-settings = { path = "../settings" }
 cpal = "0.18.2"
 # the cuda feature builds ggml's CUDA backend from source: hundreds of .cu files,
 # each for every architecture ggml supports. Set CUDAARCHS=89 to build for this
 # GPU alone. Nothing outside this crate's manifest can invalidate it now.
 whisper-rs = { version = "0.16.0" }
+# The streaming engine on trial (docs/proposals/streaming-speech.md): sherpa-onnx
+# runs NVIDIA's Nemotron streaming model on the CPU, so it never competes with
+# the game for the GPU. Prebuilt libraries, downloaded into target/ at build time.
+# Shared, not static: its static libraries use the static C runtime (MT) and
+# Whisper's build the dynamic one (MD), which MSVC refuses to link together
+# (LNK2038, measured 2026-11-11); its DLLs carry their own runtime inside. So
+# sherpa-onnx-c-api.dll and onnxruntime.dll sit beside the exe, wherever it runs.
+sherpa-onnx = { version = "2.0.1", default-features = false, features = ["shared"] }
 
 # Whisper's backend, chosen at build time (one binary per backend):
 # cuda (NVIDIA; the default, set CUDAARCHS to the card's generation), vulkan (any

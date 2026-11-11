@@ -131,7 +131,7 @@ pub fn transcribe_file(model: &std::path::Path, wav: &std::path::Path) -> io::Re
 
 /// A WAV file's samples as f32, with its channel count and rate: 16-bit PCM or
 /// 32-bit float, the two formats anything records.
-fn read_wav(bytes: &[u8]) -> io::Result<(Vec<f32>, u16, u32)> {
+pub(crate) fn read_wav(bytes: &[u8]) -> io::Result<(Vec<f32>, u16, u32)> {
     let bad = |why: &str| io::Error::other(format!("not a usable WAV: {why}"));
     if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         return Err(bad("no RIFF/WAVE header"));
