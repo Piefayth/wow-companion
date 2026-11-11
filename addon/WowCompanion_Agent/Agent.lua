@@ -344,7 +344,7 @@ paintHook = paintConversations
 -- cannot write to the PC while it runs, so the request is drawn on the data
 -- strip, which the companion watches (src/strip.rs serve); it ends the agent,
 -- drops what was queued, and answers with a `stopped` message.
--- `sendNow`: end only the running request; the next queued one starts at once.
+-- `sendNow`: interrupt the running request; it and the queued ones run together.
 function WowCompanion_Stop(slot, sendNow)
 	slot = slot or viewSlot
 	if not (WowCompanion_Strip and WowCompanion_Strip.Send) then return end
@@ -673,12 +673,9 @@ function handlers.stopped(inbox)
 	settleTranscribing(slot)
 	-- the conversation works while a job of it runs (the ledger says)
 	if WC.Jobs and WC.Jobs.Running and not WC.Jobs.Running(slot) then setPending(nil, slot) end
-	-- a cancel shows on the message itself; only an interrupt or a stop says more
-	if inbox.sendNow then
-		remember("claude", "Interrupted. Sending your next message now.", nil, slot)
-	elseif inbox.dropped ~= nil then
-		remember("claude", inbox.dropped and "Stopped. Anything queued behind it was dropped."
-			or "Interrupted. Sending your next message now.", nil, slot)
+	-- a cancel shows on the message itself; a stop of the whole conversation says so
+	if inbox.dropped then
+		remember("claude", "Stopped. Anything queued behind it was dropped.", nil, slot)
 	end
 	return "stopped"
 end

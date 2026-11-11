@@ -83,6 +83,9 @@ pub(crate) struct Job {
     /// agent keeps, so the next request tells it they were withdrawn. Cleared
     /// once told.
     withdraw: bool,
+    /// Its run was interrupted by Send now: still running, it joins the next run
+    /// with the queued messages (take_queued), never cancelled.
+    interrupted: bool,
     /// When words last arrived (gathering waits for a quiet moment).
     last_words: Instant,
     pid: Option<u32>,
@@ -153,6 +156,7 @@ fn put(jobs: &mut BTreeMap<u64, Job>, id: u64, slot: &str, state: State, text: &
             clips: 0,
             last_release: now,
             withdraw: false,
+            interrupted: false,
             last_words: now,
             pid: None,
         },
@@ -308,26 +312,53 @@ pub(crate) fn state(id: u64) -> Option<State> {
 }
 
 /// Take every queued job of this conversation as one run, in order, led by
-/// `lead` (whose thread got the conversation). They become running together.
+/// `lead` (whose thread got the conversation), and with it any interrupted by
+/// Send now (marked true), which come first. They become running together.
 /// None when `lead` is no longer queued (another thread took it, or it was
 /// cancelled) or nothing queued is left.
-pub(crate) fn take_queued(slot: &str, lead: u64) -> Option<Vec<(u64, String)>> {
+pub(crate) fn take_queued(slot: &str, lead: u64) -> Option<Vec<(u64, String, bool)>> {
     with(|jobs| {
         if jobs.get(&lead).map(|job| job.state) != Some(State::Queued) {
             return None;
         }
-        let taken: Vec<(u64, String)> = jobs
+        let taken: Vec<(u64, String, bool)> = jobs
             .values()
-            .filter(|job| job.slot == slot && job.state == State::Queued)
-            .map(|job| (job.id, job.text.clone()))
+            .filter(|job| job.slot == slot && (job.state == State::Queued || (job.state == State::Running && job.interrupted)))
+            .map(|job| (job.id, job.text.clone(), job.interrupted))
             .collect();
-        for (id, _) in &taken {
+        for (id, _, _) in &taken {
             let job = jobs.get_mut(id).unwrap();
             job.state = State::Running;
             job.group = lead;
+            job.interrupted = false;
         }
         Some(taken).filter(|taken| !taken.is_empty())
     })
+}
+
+/// Send now: the conversation's running jobs stop being worked on but stay
+/// running, to join the next run (take_queued). Returns the agent processes to
+/// end.
+pub(crate) fn interrupt(slot: &str) -> Vec<u32> {
+    with(|jobs| {
+        let mut pids = Vec::new();
+        for job in jobs.values_mut().filter(|job| job.slot == slot && job.state == State::Running) {
+            job.interrupted = true;
+            if let Some(pid) = job.pid.take() {
+                if !pids.contains(&pid) {
+                    pids.push(pid);
+                }
+            }
+        }
+        pids
+    })
+}
+
+/// Whether the run led by `group` was interrupted (its jobs wait for, or have
+/// joined, the next run): its thread ends without an answer or a failure.
+pub(crate) fn interrupted(group: u64) -> bool {
+    with(|jobs| jobs.values().any(|job| job.group == group && job.interrupted)
+        || jobs.get(&group).is_some_and(|lead| lead.group != group))
 }
 
 /// The agent process now running this group. Returns false when the group was
@@ -527,7 +558,7 @@ mod tests {
         let gone = create("t-queue", "c", State::Queued);
         cancel(&[gone]);
         let taken = take_queued("t-queue", b).unwrap();
-        assert_eq!(taken.iter().map(|(id, _)| *id).collect::<Vec<_>>(), vec![a, b]);
+        assert_eq!(taken.iter().map(|(id, _, _)| *id).collect::<Vec<_>>(), vec![a, b]);
         assert!(take_queued("t-queue", a).is_none(), "already taken");
         set_pid(b, 9);
         let cancelled = cancel(&[a]);
@@ -559,4 +590,20 @@ mod tests {
         let b = next_id();
         assert!(b > a);
     }
+
+    #[test]
+    fn send_now_joins_the_interrupted_message_to_the_queued_ones() {
+        let running = create("t-now", "first", State::Running);
+        set_pid(running, 7);
+        let waiting = create("t-now", "second", State::Queued);
+        assert_eq!(interrupt("t-now"), vec![7]);
+        assert!(interrupted(running), "the run's thread ends quietly");
+        assert_eq!(state(running), Some(State::Running), "never cancelled");
+        let taken = take_queued("t-now", waiting).unwrap();
+        assert_eq!(taken, vec![(running, "first".to_string(), true), (waiting, "second".to_string(), false)]);
+        assert!(interrupted(running), "it now belongs to the new run");
+        assert!(!interrupted(waiting));
+        assert!(take_withdrawn("t-now").is_empty(), "nothing is withdrawn");
+    }
 }
+

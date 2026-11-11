@@ -106,14 +106,13 @@ pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool
     );
     if send_now {
         if before != Some(jobs::State::Queued) {
-            println!("  send now: request {req} is not waiting; nothing to end");
+            println!("  send now: request {req} is not waiting; nothing to do");
             tell_states(addons, slot, &[req], &[]);
             return;
         }
-        let running = jobs::live(slot, Some(jobs::State::Running));
-        let done = jobs::cancel(&running);
-        end_processes(&done.pids);
-        tell_states(addons, slot, &running, &[("sendNow", true)]);
+        // the run in front is interrupted, not cancelled: its message joins the
+        // queued ones in the next run (run_queued), which starts as it ends
+        end_processes(&jobs::interrupt(slot));
         return;
     }
     let done = jobs::cancel(&[req]);
@@ -128,14 +127,19 @@ pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool
 }
 
 
-/// Stop: end the running request; `drop_queue` drops everything waiting too
-/// (Send now on the conversation ends only the running one).
+/// Stop: end the running request and drop everything waiting; `drop_queue`
+/// false is Send now on the conversation: the running request is interrupted
+/// and joins the queued ones (cancel_request).
 pub(crate) fn stop(addons: &Path, slot: &str, drop_queue: bool) {
-    let ids = jobs::live(slot, if drop_queue { None } else { Some(jobs::State::Running) });
+    if !drop_queue {
+        end_processes(&jobs::interrupt(slot));
+        return;
+    }
+    let ids = jobs::live(slot, None);
     let done = jobs::cancel(&ids);
     println!("stop [{}]: {} ended", if slot.is_empty() { "main" } else { slot }, done.ended.len());
     end_processes(&done.pids);
-    tell_states(addons, slot, &ids, &[("dropped", drop_queue)]);
+    tell_states(addons, slot, &ids, &[("dropped", true)]);
 }
 
 /// Every queued request of this conversation, taken as one run led by `lead`,
@@ -143,16 +147,20 @@ pub(crate) fn stop(addons: &Path, slot: &str, drop_queue: bool) {
 pub(crate) fn run_queued(addons: &Path, slot: &str, lead: u64) -> Option<String> {
     let taken = jobs::take_queued(slot, lead)?;
     // the others' lines leave the queue too: their request starts with this one
-    for (id, _) in &taken {
-        if *id != lead {
+    for (id, _, interrupted) in &taken {
+        if *id != lead && !interrupted {
             let _ = send(addons, &started(slot, *id));
         }
     }
     if taken.len() == 1 {
-        return taken.into_iter().next().map(|(_, text)| text);
+        return taken.into_iter().next().map(|(_, text, _)| text);
     }
-    let mut out = String::from("(Several messages, said one after another while you were busy; answer them together:)");
-    for (i, (_, text)) in taken.iter().enumerate() {
+    let mut out = if taken.iter().any(|(_, _, interrupted)| *interrupted) {
+        String::from("(The player pressed Send now while you were on the first of these: that run was interrupted, not cancelled. Answer them all together:)")
+    } else {
+        String::from("(Several messages, said one after another while you were busy; answer them together:)")
+    };
+    for (i, (_, text, _)) in taken.iter().enumerate() {
         out.push_str(&format!("\n{}. {}", i + 1, text));
     }
     Some(out)
@@ -290,6 +298,11 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         let mut round = 0;
         let answer = loop {
             let finished = session.finish(waiting, &mut progress);
+            // Send now interrupted this run: the next one takes its messages
+            if jobs::interrupted(group) {
+                println!("  interrupted: the next run takes it");
+                return Ok(false);
+            }
             if jobs::state(group).is_some_and(jobs::State::ended) {
                 break Err(io::Error::other("stopped"));
             }
