@@ -636,7 +636,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
 /// A line the ledger has numbered already (the ones it made at the start):
 /// sent live if the game runs; it is in the mailbox either way.
 fn send_line_now(addons: &Path, line: Line) -> io::Result<()> {
-    if game_running()? {
+    if game_running() {
         send(addons, &line.msg(false))?;
     }
     Ok(())

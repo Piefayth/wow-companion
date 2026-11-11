@@ -307,7 +307,7 @@ pub(crate) fn serve_asks(addons: &Path) {
 }
 
 fn serve_one(addons: &Path, lua: &str, seconds: f64) -> Result<Vec<u8>, String> {
-    if !channel::game_running().map_err(|err| err.to_string())? {
+    if !channel::game_running() {
         return Err("the game is closed".into());
     }
     // a fresh id per read; the serving thread takes one ask at a time

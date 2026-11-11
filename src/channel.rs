@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::message::{Line, Msg, Out};
+use wow_companion_settings::platform::Process;
 
 pub(crate) const PROGRESS_STOP: u32 = 14;
 // 512, not 64: a session spent all 64 (progress lines were nearly half) and every
@@ -20,10 +21,22 @@ pub(crate) const SLOT_XML: &str = "<Ui xmlns=\"http://www.blizzard.com/wow/ui/\"
 // loads files a toc or xml points at
 pub(crate) const STATE: &str = "helper-state.txt";
 
-/// Whether the game runs: a native process walk (well under a millisecond),
-/// not `tasklist`, whose launch cost hundreds of ms on every send (2026-11-11).
-pub(crate) fn game_running() -> io::Result<bool> {
-    Ok(wow_companion_settings::platform::process_count("Wow.exe") > 0)
+/// The game, held while it runs: asking the held process costs microseconds,
+/// where finding it walks every process (about 50 ms, twice per send until
+/// 2026-11-11), so the walk happens only when no game is held or it has exited.
+static GAME: Mutex<Option<Process>> = Mutex::new(None);
+
+/// When the running game started, or None when it does not run.
+fn game() -> Option<u64> {
+    let mut held = GAME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if !held.as_ref().is_some_and(Process::running) {
+        *held = Process::find("Wow.exe");
+    }
+    held.as_ref().map(Process::started)
+}
+
+pub(crate) fn game_running() -> bool {
+    game().is_some()
 }
 
 /// One string-valued key out of SavedVariables, unescaped.
@@ -182,10 +195,8 @@ fn set_aside(addons: &Path, items: Vec<Pending>, why: &str) {
 
 fn deliver_batch(addons: &Path, batch: Vec<Pending>) {
     let mut batch = supersede(batch);
-    match game_running() {
-        Ok(true) => {}
-        Ok(false) => return set_aside(addons, batch, "the game is closed"),
-        Err(err) => return set_aside(addons, batch, &err.to_string()),
+    if !game_running() {
+        return set_aside(addons, batch, "the game is closed");
     }
     // the last slots are for replies: what a request is doing can go unsaid
     if slots_used(addons) + PROGRESS_STOP >= known_slots(addons) {
@@ -325,8 +336,7 @@ pub(crate) fn saved_variables_stamp(addons: &Path) -> Option<String> {
 
 /// When the running Wow.exe started, as Windows reports it; None if not running.
 pub(crate) fn game_started() -> Option<String> {
-    // native, not `wmic` (hundreds of ms per launch, twice per send)
-    wow_companion_settings::platform::process_started("Wow.exe").map(|started| started.to_string())
+    game().map(|started| started.to_string())
 }
 
 /// When the running UI session started, near enough: a `/reload` writes SavedVariables

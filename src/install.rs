@@ -121,7 +121,7 @@ fn remove_stale(source: &Path, installed: &Path, keep: &[&str]) -> io::Result<()
 pub(crate) fn probe(addons: &Path) -> io::Result<()> {
     let signals = addons.join(LINK).join("Signals");
     // a closed client swallows a whole run in silence, which looks identical to a broken channel
-    if !game_running()? {
+    if !game_running() {
         return Err(io::Error::other(
             "Wow.exe isn't running: log in first, or the probe writes into a dead client",
         ));
@@ -147,7 +147,7 @@ pub(crate) fn probe(addons: &Path) -> io::Result<()> {
     for slot in used.iter().rev().take(BELL_LINGER as usize) {
         bells::empty_message(&signals.join(bell_name(*slot)))?;
     }
-    if !game_running()? {
+    if !game_running() {
         println!("warning: the game closed partway through, so the run is incomplete");
     }
     println!("done: the game should have printed messages 1 to {PROBE_MESSAGES}");

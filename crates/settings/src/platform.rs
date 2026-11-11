@@ -17,13 +17,46 @@ pub struct Lock {
     handle: isize,
 }
 
+/// A running process, held open: whether it still runs and when it started are
+/// asked of its handle, in microseconds, where finding it walks every process
+/// on the machine (about 50 ms, measured 2026-11-11, twice per send until then).
+pub struct Process {
+    handle: isize,
+    started: u64,
+}
+
+impl Process {
+    /// The oldest running process with this image name (e.g. "Wow.exe").
+    pub fn find(image: &str) -> Option<Process> {
+        imp::find(image)
+    }
+
+    /// Whether it still runs.
+    pub fn running(&self) -> bool {
+        imp::running(self.handle)
+    }
+
+    /// When it started: an opaque, exact timestamp, equal for the same process
+    /// and different for a new one.
+    pub fn started(&self) -> u64 {
+        self.started
+    }
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        imp::close(self.handle);
+    }
+}
+
 #[cfg(windows)]
 mod imp {
-    use super::Lock;
+    use super::{Lock, Process};
     use std::{ffi::c_void, io, os::windows::process::CommandExt, path::Path, process::Command};
 
     const SYNCHRONIZE: u32 = 0x0010_0000;
     const WAIT_OBJECT_0: u32 = 0;
+    const WAIT_TIMEOUT: u32 = 0x102;
     const WAIT_ABANDONED: u32 = 0x80;
     const INFINITE: u32 = u32::MAX;
     const TH32CS_SNAPPROCESS: u32 = 2;
@@ -84,25 +117,40 @@ mod imp {
         found
     }
 
-    /// When the oldest running process with this image name started (Windows
-    /// FILETIME, 100 ns since 1601), or None when none runs.
-    pub fn process_started(image: &str) -> Option<u64> {
+    /// The started time is the creation FILETIME (100 ns since 1601).
+    pub fn find(image: &str) -> Option<Process> {
         pids(image)
             .into_iter()
             .filter_map(|pid| {
-                // SAFETY: a query handle closed at once; the times are four u64s
+                // SAFETY: the handle is owned by the Process made from it, or
+                // closed here when its times cannot be read; the times are four u64s
                 unsafe {
-                    let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-                    if process == 0 {
+                    let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid);
+                    if handle == 0 {
                         return None;
                     }
                     let (mut creation, mut exit, mut kernel, mut user) = (0u64, 0u64, 0u64, 0u64);
-                    let ok = GetProcessTimes(process, &mut creation, &mut exit, &mut kernel, &mut user) != 0;
-                    CloseHandle(process);
-                    ok.then_some(creation)
+                    if GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) == 0 {
+                        CloseHandle(handle);
+                        return None;
+                    }
+                    Some(Process { handle, started: creation })
                 }
             })
-            .min()
+            // the others are dropped, which closes them
+            .min_by_key(Process::started)
+    }
+
+    pub fn running(handle: isize) -> bool {
+        // SAFETY: a process handle opened with SYNCHRONIZE, still open
+        unsafe { WaitForSingleObject(handle, 0) == WAIT_TIMEOUT }
+    }
+
+    pub fn close(handle: isize) {
+        // SAFETY: the handle is closed once, by its Process's drop
+        unsafe {
+            CloseHandle(handle);
+        }
     }
 
     fn wide(text: &str) -> Vec<u16> {
@@ -189,7 +237,7 @@ mod imp {
 
 #[cfg(not(windows))]
 mod imp {
-    use super::Lock;
+    use super::{Lock, Process};
     use std::{io, path::Path, process::Command};
 
     fn unsupported() -> io::Error {
@@ -204,9 +252,13 @@ mod imp {
     pub fn process_count(_image: &str) -> usize {
         0
     }
-    pub fn process_started(_image: &str) -> Option<u64> {
+    pub fn find(_image: &str) -> Option<Process> {
         None
     }
+    pub fn running(_handle: isize) -> bool {
+        false
+    }
+    pub fn close(_handle: isize) {}
     pub fn hide_window(command: &mut Command) -> &mut Command {
         command
     }
@@ -239,12 +291,6 @@ pub fn take_lock(name: &str, wait: bool) -> Option<Lock> {
 /// How many processes run the program `image` (e.g. "Wow.exe").
 pub fn process_count(image: &str) -> usize {
     imp::process_count(image)
-}
-
-/// When the oldest running process with this image name started (an opaque,
-/// exact timestamp: equal for the same process, different for a new one).
-pub fn process_started(image: &str) -> Option<u64> {
-    imp::process_started(image)
 }
 
 /// Start `command` with no window of its own.
@@ -317,14 +363,28 @@ mod tests {
 
 #[cfg(test)]
 mod live {
-    /// Run with the game open (`--ignored`): its start time is found, and the
-    /// same on every call, so the session stamp only changes with a new game.
+    /// Run with the game open (`--ignored`): it is found, held, and its start
+    /// time is the same when found again, so the session stamp only changes
+    /// with a new game.
     #[test]
     #[ignore]
-    fn the_running_games_start_is_found_and_stable() {
-        let first = super::process_started("Wow.exe").expect("the game is running");
-        assert_eq!(super::process_started("Wow.exe"), Some(first));
-        assert_eq!(super::process_count("Wow.exe"), 1);
-        assert_eq!(super::process_started("NoSuchProcess.exe"), None);
+    fn the_running_game_is_found_held_and_stable() {
+        let game = super::Process::find("Wow.exe").expect("the game is running");
+        assert!(game.running());
+        assert_eq!(super::Process::find("Wow.exe").map(|again| again.started()), Some(game.started()));
+        assert!(super::Process::find("NoSuchProcess.exe").is_none());
+    }
+
+    #[test]
+    fn a_process_that_exited_is_seen_to_have_exited() {
+        let mut child = std::process::Command::new("ping")
+            .args(["-n", "2", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let held = super::Process::find("PING.EXE").expect("ping is running");
+        assert!(held.running());
+        child.wait().unwrap();
+        assert!(!held.running());
     }
 }

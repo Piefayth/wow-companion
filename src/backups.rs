@@ -302,7 +302,7 @@ pub(crate) fn lua_sound(text: &str) -> Result<(), String> {
 /// the highest load count, the last save before the count went down (newest
 /// of equals). The current file is copied first, so this can be undone.
 pub(crate) fn restore(addons: &Path, chosen: Option<&Path>) -> io::Result<()> {
-    if crate::game_running()? {
+    if crate::game_running() {
         return Err(io::Error::other("close the game first: it would overwrite the restored file at logout"));
     }
     let save = crate::saved_variables(addons, crate::LINK).ok_or_else(|| io::Error::other("no WowCompanion_Link.lua save file found"))?;
