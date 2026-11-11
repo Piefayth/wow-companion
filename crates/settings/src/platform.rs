@@ -54,6 +54,55 @@ mod imp {
         fn CreateToolhelp32Snapshot(flags: u32, pid: u32) -> isize;
         fn Process32FirstW(snapshot: isize, entry: *mut ProcessEntry) -> i32;
         fn Process32NextW(snapshot: isize, entry: *mut ProcessEntry) -> i32;
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> isize;
+        fn GetProcessTimes(process: isize, creation: *mut u64, exit: *mut u64, kernel: *mut u64, user: *mut u64) -> i32;
+    }
+
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+
+    /// The ids of the running processes with this image name.
+    fn pids(image: &str) -> Vec<u32> {
+        let mut found = Vec::new();
+        // SAFETY: a process snapshot walked with a sized entry, then closed
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot == -1 || snapshot == 0 {
+                return found;
+            }
+            let mut entry: ProcessEntry = std::mem::zeroed();
+            entry.size = std::mem::size_of::<ProcessEntry>() as u32;
+            let mut more = Process32FirstW(snapshot, &mut entry) != 0;
+            while more {
+                let len = entry.exe.iter().position(|&c| c == 0).unwrap_or(entry.exe.len());
+                if String::from_utf16_lossy(&entry.exe[..len]).eq_ignore_ascii_case(image) {
+                    found.push(entry.pid);
+                }
+                more = Process32NextW(snapshot, &mut entry) != 0;
+            }
+            CloseHandle(snapshot);
+        }
+        found
+    }
+
+    /// When the oldest running process with this image name started (Windows
+    /// FILETIME, 100 ns since 1601), or None when none runs.
+    pub fn process_started(image: &str) -> Option<u64> {
+        pids(image)
+            .into_iter()
+            .filter_map(|pid| {
+                // SAFETY: a query handle closed at once; the times are four u64s
+                unsafe {
+                    let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+                    if process == 0 {
+                        return None;
+                    }
+                    let (mut creation, mut exit, mut kernel, mut user) = (0u64, 0u64, 0u64, 0u64);
+                    let ok = GetProcessTimes(process, &mut creation, &mut exit, &mut kernel, &mut user) != 0;
+                    CloseHandle(process);
+                    ok.then_some(creation)
+                }
+            })
+            .min()
     }
 
     fn wide(text: &str) -> Vec<u16> {
@@ -99,26 +148,7 @@ mod imp {
     }
 
     pub fn process_count(image: &str) -> usize {
-        let mut count = 0;
-        // SAFETY: a process snapshot walked with a sized entry, then closed
-        unsafe {
-            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            if snapshot == -1 || snapshot == 0 {
-                return 0;
-            }
-            let mut entry: ProcessEntry = std::mem::zeroed();
-            entry.size = std::mem::size_of::<ProcessEntry>() as u32;
-            let mut more = Process32FirstW(snapshot, &mut entry) != 0;
-            while more {
-                let len = entry.exe.iter().position(|&c| c == 0).unwrap_or(entry.exe.len());
-                if String::from_utf16_lossy(&entry.exe[..len]).eq_ignore_ascii_case(image) {
-                    count += 1;
-                }
-                more = Process32NextW(snapshot, &mut entry) != 0;
-            }
-            CloseHandle(snapshot);
-        }
-        count
+        pids(image).len()
     }
 
     pub fn hide_window(command: &mut Command) -> &mut Command {
@@ -174,6 +204,9 @@ mod imp {
     pub fn process_count(_image: &str) -> usize {
         0
     }
+    pub fn process_started(_image: &str) -> Option<u64> {
+        None
+    }
     pub fn hide_window(command: &mut Command) -> &mut Command {
         command
     }
@@ -206,6 +239,12 @@ pub fn take_lock(name: &str, wait: bool) -> Option<Lock> {
 /// How many processes run the program `image` (e.g. "Wow.exe").
 pub fn process_count(image: &str) -> usize {
     imp::process_count(image)
+}
+
+/// When the oldest running process with this image name started (an opaque,
+/// exact timestamp: equal for the same process, different for a new one).
+pub fn process_started(image: &str) -> Option<u64> {
+    imp::process_started(image)
 }
 
 /// Start `command` with no window of its own.
@@ -273,5 +312,19 @@ mod tests {
         let image = me.file_name().unwrap().to_string_lossy().to_string();
         assert!(process_count(&image) >= 1);
         assert_eq!(process_count("surely-not-running-12345.exe"), 0);
+    }
+}
+
+#[cfg(test)]
+mod live {
+    /// Run with the game open (`--ignored`): its start time is found, and the
+    /// same on every call, so the session stamp only changes with a new game.
+    #[test]
+    #[ignore]
+    fn the_running_games_start_is_found_and_stable() {
+        let first = super::process_started("Wow.exe").expect("the game is running");
+        assert_eq!(super::process_started("Wow.exe"), Some(first));
+        assert_eq!(super::process_count("Wow.exe"), 1);
+        assert_eq!(super::process_started("NoSuchProcess.exe"), None);
     }
 }

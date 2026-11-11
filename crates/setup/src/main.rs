@@ -867,12 +867,7 @@ fn program_folder() -> String {
 
 /// Whether World of Warcraft is running.
 fn game_running() -> bool {
-    Command::new("tasklist")
-        .args(["/FI", "IMAGENAME eq Wow.exe", "/NH"])
-        .creation_flags(NO_WINDOW)
-        .output()
-        .map(|out| String::from_utf8_lossy(&out.stdout).to_lowercase().contains("wow.exe"))
-        .unwrap_or(false)
+    platform::process_count("Wow.exe") > 0
 }
 
 // the pad: its name, the talk button, learning one

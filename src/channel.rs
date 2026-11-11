@@ -20,17 +20,10 @@ pub(crate) const SLOT_XML: &str = "<Ui xmlns=\"http://www.blizzard.com/wow/ui/\"
 // loads files a toc or xml points at
 pub(crate) const STATE: &str = "helper-state.txt";
 
-#[cfg(windows)]
+/// Whether the game runs: a native process walk (well under a millisecond),
+/// not `tasklist`, whose launch cost hundreds of ms on every send (2026-11-11).
 pub(crate) fn game_running() -> io::Result<bool> {
-    let listed = std::process::Command::new("tasklist")
-        .args(["/FI", "IMAGENAME eq Wow.exe", "/NH"])
-        .output()?;
-    Ok(String::from_utf8_lossy(&listed.stdout).contains("Wow.exe"))
-}
-
-#[cfg(not(windows))]
-pub(crate) fn game_running() -> io::Result<bool> {
-    Ok(true)
+    Ok(wow_companion_settings::platform::process_count("Wow.exe") > 0)
 }
 
 /// One string-valued key out of SavedVariables, unescaped.
@@ -331,15 +324,8 @@ pub(crate) fn saved_variables_stamp(addons: &Path) -> Option<String> {
 
 /// When the running Wow.exe started, as Windows reports it; None if not running.
 pub(crate) fn game_started() -> Option<String> {
-    let out = std::process::Command::new("wmic")
-        .args(["process", "where", "name='Wow.exe'", "get", "CreationDate"])
-        .output()
-        .ok()?;
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::trim)
-        .find(|line| line.chars().next().is_some_and(|c| c.is_ascii_digit()))
-        .map(str::to_string)
+    // native, not `wmic` (hundreds of ms per launch, twice per send)
+    wow_companion_settings::platform::process_started("Wow.exe").map(|started| started.to_string())
 }
 
 /// When the running UI session started, near enough: a `/reload` writes SavedVariables
