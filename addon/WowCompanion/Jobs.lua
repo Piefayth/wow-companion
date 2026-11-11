@@ -292,9 +292,28 @@ refresh = function()
 		end
 		if cancelling and not live then entry = nil end
 	end
+	-- the work in view: an entry added when it began, changed in place
+	local live = transcript0.live
+	if live and (live.slot ~= view or not entry) then
+		local ended = model:Running(live.slot) and "stopped" or "answered below"
+		for _, job in pairs(jobs) do
+			if job.slot == live.slot and job.state == "cancelled" and (job.endedAt or 0) >= live.began then
+				ended = "cancelled"
+			end
+		end
+		transcript0:EndLive(live, GREY .. ended .. "|r")
+		transcript0.live, live = nil, nil
+	end
 	if entry then
 		local doing = tostring(entry.text or "thinking"):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-		items[#items + 1] = { "|cffffd100Claude|r" .. stamp, ("%s%s  %ds"):format(doing, dots, now - (entry.since or now)) }
+		local text = ("%s%s  %ds"):format(doing, dots, now - (entry.since or now))
+		if not live then
+			live = transcript0:AddLive("|cffffd100Claude|r" .. stamp, text)
+			live.slot, live.began = view, nowMs()
+			transcript0.live = live
+		else
+			live.line.fs:SetText(text)
+		end
 	end
 	for _, p in ipairs(heard) do
 		if #items >= #ghosts then break end
@@ -307,46 +326,11 @@ refresh = function()
 	end
 	local base = transcript0.height or 0
 	local width = transcript0.Width and transcript0:Width() or 300
-	local rows = transcript0.rows or {}
-	-- everything still to come stands at the end, where it will appear
-	local afterIndex
-	local GHOST_H = 46
-	local relayout = false
-	for i, row in ipairs(rows) do
-		local want = (i == afterIndex) and GHOST_H or nil
-		if row.extra ~= want then row.extra = want relayout = true end
-	end
-	if relayout and transcript0.Layout then
-		transcript0:Layout()
-		base = transcript0.height or base
-	end
-	local insertY
-	if afterIndex then
-		local _, _, _, _, oy = rows[afterIndex].fs:GetPoint(1)
-		if oy then insertY = -oy - (rows[afterIndex].gap or 0) - GHOST_H end
-	end
 	local y = base
 	local hearingLines = {}
 	for i, g in ipairs(ghosts) do
 		local item = items[i]
 		if item then
-			if i == 1 and entry and insertY then
-				-- the working line, in the room kept for it
-				local saved = y
-				y = insertY + 14
-				g.head:ClearAllPoints()
-				g.head:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -y)
-				g.head:SetText(item[1])
-				g.head:Show()
-				g.head.y = y
-				y = y + g.head:GetStringHeight() + 3
-				g.line:ClearAllPoints()
-				g.line:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -y)
-				g.line:SetWidth(math.max(50, width - 4))
-				g.line:SetText(item[2])
-				g.line:Show()
-				y = saved
-			else
 			y = y + 14 -- TURN_GAP, as Transcript.lua spaces a new message
 			g.head:ClearAllPoints()
 			g.head:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -y)
@@ -360,7 +344,6 @@ refresh = function()
 			g.line:SetText(item[2])
 			g.line:Show()
 			y = y + g.line:GetStringHeight()
-			end
 			if item.hearing then hearingLines[#hearingLines + 1] = { head = g.head, clip = item.clip } end
 		else
 			g.head:Hide()
@@ -453,9 +436,9 @@ refresh = function()
 		-- on the thinking line, the work it cancels (the player, 2026-11-10:
 		-- an X on a message already sent read as cancelling the message); the
 		-- message itself still carries the tombstone
-		local head = entry and ghosts[1] and ghosts[1].head
-		if head and head:IsShown() and head.y then
-			pair.x:SetPoint("TOPRIGHT", transcript0.content, "TOPLEFT", width - 4, -(head.y - 3))
+		local head = transcript0.live and transcript0.live.head
+		if head and head.fs:IsShown() then
+			pair.x:SetPoint("TOPRIGHT", head.fs, "TOPRIGHT", -4, 3)
 		else
 			pair.x:SetPoint("TOPRIGHT", runRow.fs, "TOPRIGHT", -4, 3)
 		end
@@ -490,7 +473,15 @@ refresh = function()
 	end
 end
 
-WC.Jobs.Refresh = function() pcall(refresh) if WC.Jobs.Chain then pcall(WC.Jobs.Chain) end end
+-- not re-entered: adding the work's entry adds rows, and rows ask to refresh
+local refreshing = false
+WC.Jobs.Refresh = function()
+	if refreshing then return end
+	refreshing = true
+	pcall(refresh)
+	refreshing = false
+	if WC.Jobs.Chain then pcall(WC.Jobs.Chain) end
+end
 
 -- the old entry points, kept so callers cost nothing: each message's `job`
 -- and `state` carry everything
