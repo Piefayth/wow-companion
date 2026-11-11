@@ -85,6 +85,8 @@ if __name__ == "__main__":
     # of the text's, and only broad, soft variation survives; the game feel is
     # carried by the frame, dividers and headers, not the fill. The owners a
     # small value step apart, both dark.
-    write_tga(os.path.join(OUT, "Slate-%s.tga" % v), stone(7, (26, 27, 30), calm=0.45))
-    write_tga(os.path.join(OUT, "SlateLight-%s.tga" % v), stone(23, (37, 38, 42), calm=0.45))
+    # the two darkest of three tried (the player, 2026-11-11): replies on the
+    # former dark stone, the player's on a darker one still
+    write_tga(os.path.join(OUT, "Slate-%s.tga" % v), stone(23, (17, 18, 20), calm=0.45))
+    write_tga(os.path.join(OUT, "SlateLight-%s.tga" % v), stone(7, (26, 27, 30), calm=0.45))
     print("wrote", os.path.abspath(OUT))

@@ -19,7 +19,7 @@ local NOTE_FONT = "GameFontHighlightSmall"
 
 -- Every turn on our own stone (Art/, made by tools/make_slate.py): a dark,
 -- fine-grained slate in two values, the replies the lighter one (the player,
--- 2026-11-11: theirs too light). Owners
+-- 2026-11-11: the two darkest of three tried). Owners
 -- differ by value, never by hue (brown next to grey read as muddy). Blizzard's
 -- tiles were tried first, 2026-11-11: marble too busy and near black, rock
 -- flat grey, the neutral tile wooden planks. Turns parted by the quest log's
@@ -27,7 +27,7 @@ local NOTE_FONT = "GameFontHighlightSmall"
 -- The game keeps a texture it has loaded for the session under its path, so
 -- a changed file needs a new name to show without a restart: each version of
 -- the stone gets its own names (tools/make_slate.py reads this number).
-local STONE_VERSION = 4
+local STONE_VERSION = 5
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\]]
 local STONE = {
 	you = ART .. "Slate-" .. STONE_VERSION,
