@@ -697,35 +697,18 @@ function handlers.log(inbox)
 	-- the voice loop's notices (a dropped clip) end a dictation's wait
 	if who == "error" and WC.ChatChannel and WC.ChatChannel.Dropped then WC.ChatChannel.Dropped(text) end
 	local lines = 0
+	-- every line names its conversation and its number (src/ledger.rs): one
+	-- already held, from a slot or the mailbox, is not applied again
+	local islot = inbox.slot or ""
+	if WC.Jobs and not WC.Jobs.Hold(islot, inbox.n) then return HELD end
 	-- `pending` starts the waiting line; any message without it clears it, so the
 	-- reply arriving is what stops the spinner
-	-- the conversation a line belongs to; lines that name none (chat lines,
-	-- notices) go to whichever is in view
-	local islot = inbox.slot or viewSlot
 	-- the view never jumps on its own (the player, 2026-11-10): a reply in
 	-- another conversation lights it up in the list, and what you said does not
 	-- `pending` starts this conversation's waiting line; a line without it ends it
 	-- a queued request leaves the running one's waiting line alone
 	if (inbox.slot or inbox.pending) and inbox.state ~= "queued" then setPending(inbox.pending, islot) end
-	-- what a clip became ends its "transcribing": the request's own line in its
-	-- conversation, or a line that names none (a chat line, a dropped-clip
-	-- notice), which cannot say whose clip it was and so ends them all
-	if inbox.slot then
-		if who == "you" then setTranscribing(inbox.slot, false) end
-	elseif who == "you" or who == "error" then
-		setTranscribing(nil)
-		if WC.Jobs and WC.Jobs.DropHearing then pcall(WC.Jobs.DropHearing) end
-	end
-	-- your words for a clip you cancelled while it was heard stay hidden; a
-	-- message already shown (as that clip's tombstone) is not shown twice; a
-	-- reply is placed after the run it answers (Jobs.lua, Claim)
-	local verdict = WC.Jobs and WC.Jobs.Claim and WC.Jobs.Claim(inbox, islot)
-	if verdict == "dup" then
-		if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
-		return "already shown"
-	elseif verdict == "hidden" then
-		text = "|cff9d9d9d(cancelled while it was still being heard)|r"
-	end
+	if who == "you" then setTranscribing(islot, false) end
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
 	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
@@ -818,7 +801,6 @@ tapButton:SetScript("OnClick", function(self, _, down)
 		-- dictation (L1+R1) is no conversation's: its line arrives on its own
 		if slot == "say" then return end
 		if setTranscribing then setTranscribing(slot, true) end
-		if WC.Jobs and WC.Jobs.Released then pcall(WC.Jobs.Released, slot) end
 		if renderPending then renderPending() end
 	elseif self.downAt and GetTime() - self.downAt <= TAP_MAX then
 		self.downAt = nil
@@ -864,6 +846,14 @@ function handlers.show()
 	return "shown"
 end
 
+-- A clip let go, named by the job the PC made for it (src/jobs.rs): the
+-- hearing line is drawn from it and its X cancels that job.
+function handlers.heard(inbox)
+	setTranscribing(inbox.slot or "", false)
+	if WC.Jobs then WC.Jobs.Apply(inbox) end
+	return "heard"
+end
+
 -- What the agent is doing right now, on the waiting line: "reading StanceBar.lua".
 -- Not logged; the reply is what stays.
 function handlers.progress(inbox)
@@ -877,34 +867,10 @@ function handlers.progress(inbox)
 	return "progress"
 end
 
--- After a reload the companion says which conversations are still working
--- (`resync` in src/main.rs). It is the whole truth: one restored from the save
--- but not listed here has finished since, and is cleared.
-function handlers.board(inbox)
-	local listed = {}
-	for _, e in ipairs(inbox.working or {}) do
-		if type(e) == "table" and e.slot then
-			listed[e.slot] = true
-			setPending(e.text or "thinking", e.slot, e.since)
-		end
-	end
-	for slot in pairs(working) do
-		if not listed[slot] then working[slot] = nil end
-	end
-	-- every recent job's state, merged forward only like any other message
-	if WC.Jobs and WC.Jobs.Apply then pcall(WC.Jobs.Apply, inbox) end
-	renderPending()
-	return "board"
-end
-
--- A clip released and handed to Whisper, for the conversation it belongs to
--- ("" is the main one): shown in the list and on the waiting line until the
--- words arrive.
+-- The PC's answer to a cancel or a stop: the states of the jobs it touched.
 function handlers.stopped(inbox)
 	local slot = inbox.slot or ""
-	setTranscribing(slot, false)
-	-- the cancelled message keeps its line, marked with what the PC answered
-	if WC.Jobs and WC.Jobs.Stopped then pcall(WC.Jobs.Stopped, inbox) end
+	if WC.Jobs then WC.Jobs.Apply(inbox) end
 	-- the conversation works while a job of it runs (the ledger says)
 	if WC.Jobs and WC.Jobs.Running and not WC.Jobs.Running(slot) then setPending(nil, slot) end
 	-- a cancel shows on the message itself; only an interrupt or a stop says more
@@ -1013,6 +979,9 @@ end
 -- `catchingUp`: the slot was taken on a catch-up bell, so it must have been
 -- written this session; one left from an earlier session is skipped, not run.
 -- Returns false when the slot was not taken.
+-- a line that was held already (JobsModel Hold): nothing of it runs again
+local HELD = "held already"
+local dispatch
 local function receive(catchingUp)
 	local slot = nextSlot
 	nextSlot = nextSlot + 1
@@ -1029,9 +998,20 @@ local function receive(catchingUp)
 		record("slot " .. slot, "catch-up found an earlier session's message; skipped")
 		return false
 	end
+	if inbox.kind ~= "list" or type(inbox.messages) ~= "table" then
+		record("slot " .. slot, "not a list: " .. tostring(inbox.kind))
+		return
+	end
+	for _, message in ipairs(inbox.messages) do
+		if type(message) == "table" then dispatch(message, "slot " .. slot) end
+	end
+end
+
+-- One message, as if it had come alone (from a slot's list or the mailbox).
+function dispatch(inbox, label)
 	local handler = handlers[inbox.kind or ""]
 	if not handler then
-		record("slot " .. slot, "unknown kind: " .. tostring(inbox.kind))
+		record(label, "unknown kind: " .. tostring(inbox.kind))
 		return
 	end
 	replySlot = inbox.slot
@@ -1048,7 +1028,12 @@ local function receive(catchingUp)
 	local ok, result = pcall(handler, inbox)
 	-- only probe traffic is worth narrating in chat; the window is where the rest goes
 	if inbox.kind == "probe" or not ok then
-		record("slot " .. slot, ok and tostring(result) or ("error: " .. tostring(result)))
+		record(label, ok and tostring(result) or ("error: " .. tostring(result)))
+	end
+	-- a line held already: its steps ran when it first came
+	if result == HELD then
+		replySlot = nil
+		return
 	end
 	-- A reply and the action it describes are one thought, so they ride in one
 	-- message: two sends would mean two bells and two seconds of waiting between
@@ -1060,7 +1045,7 @@ local function receive(catchingUp)
 		local done, outcome = pcall(handlers[following.kind], following)
 		offerSlot = nil
 		if not done then
-			record("slot " .. slot .. " follow-up", "error: " .. tostring(outcome))
+			record(label .. " follow-up", "error: " .. tostring(outcome))
 		end
 		report(following, done, outcome)
 	end
@@ -1394,20 +1379,29 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- build the window and refill it before anything can write to it
 		logFrame()
 		replayLog()
-		-- The board as it stood when the reload saved (the player, 2026-11-10:
-		-- after a reload every agent looked idle until its next update). Shown at
-		-- once; the companion's `board` message corrects it a few seconds later.
+		-- The mailbox (WowCompanion_Mailbox, src/ledger.rs): every line the game
+		-- has not saved yet, and every job not yet seen ended. Its lines apply as
+		-- a slot's would; the conversations at work are the ones with a job running.
+		local mail = WowCompanion_Mail
+		WowCompanion_Mail = nil
+		if type(mail) == "table" then
+			for _, line in ipairs(type(mail.lines) == "table" and mail.lines or {}) do
+				if type(line) == "table" then dispatch(line, "mailbox") end
+			end
+			if WC.Jobs then pcall(WC.Jobs.Mail, mail.jobs) end
+			for _, slot in ipairs(SLOT_ORDER) do
+				local running = WC.Jobs and WC.Jobs.Running(slot)
+				if running and not working[slot] then setPending("thinking", slot)
+				elseif not running and working[slot] then setPending(nil, slot) end
+			end
+		end
+		-- the last reply per conversation, as it stood when the reload saved
 		pcall(function()
 			local board = WowCompanionDB.board
 			WowCompanionDB.board = nil
 			if type(board) ~= "table" then return end
 			local gone = time() - (tonumber(board.at) or 0)
-			if gone < 0 or gone > 300 then return end
-			for slot, e in pairs(board.working or {}) do
-				if type(e) == "table" and e.text then
-					setPending(e.text, slot, (tonumber(e.age) or 0) + gone)
-				end
-			end
+			if gone < 0 then return end
 			for slot, e in pairs(board.recent or {}) do
 				local age = type(e) == "table" and (tonumber(e.age) or 0) + gone
 				if age and e.text and age < RECENT_FOR then
@@ -1441,10 +1435,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- the board lives in memory only; keep it for the next session to show
 		pcall(function()
 			local now, clock = time(), GetTime()
-			local board = { at = now, working = {}, recent = {} }
-			for slot, entry in pairs(working) do
-				board.working[slot] = { text = entry.text, age = clock - entry.since }
-			end
+			local board = { at = now, recent = {} }
 			for slot, done in pairs(recent) do
 				board.recent[slot] = { text = done.text, age = clock - done.at }
 			end

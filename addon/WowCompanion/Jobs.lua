@@ -23,8 +23,6 @@ local jobs = {} -- the model's jobs (JobsModel.lua), once it is made
 local made = {} -- every icon button, for marking after a fight
 
 
--- `at`: the press, in seconds (the nonce opens with it; a hearing cancel is
--- matched to its clip by it, so a retry must carry the first press's time)
 -- The game's half of the audit trail (src/audit.rs; tools/audit.py merges
 -- both): what arrived, what was drawn, what the window predicted. Kept in the
 -- save file, the newest 600 lines; readable after a reload.
@@ -33,44 +31,24 @@ function WowCompanion_Audit(what, slot, detail)
 	if type(WowCompanionDB) ~= "table" then return end
 	local log = WowCompanionDB.audit or {}
 	WowCompanionDB.audit = log
-	local ms = WC.Jobs and WC.Jobs.NowMs and WC.Jobs.NowMs() or wallMs()
-	log[#log + 1] = ("%.0f game %s %s %s"):format(ms, (slot == nil or slot == "") and "main" or slot, what, tostring(detail or ""))
+	log[#log + 1] = ("%.0f game %s %s %s"):format(wallMs(), (slot == nil or slot == "") and "main" or slot, what, tostring(detail or ""))
 	while #log > 600 do table.remove(log, 1) end
 end
 local function audit(what, slot, detail) pcall(WowCompanion_Audit, what, slot, detail) end
 
-local function command(verb, slot, id, at)
-	audit("draw", slot, ("%s%s%s"):format(verb, id and (" %.0f"):format(id) or "", at and (" press=" .. at) or ""))
+local function command(verb, slot, id)
+	audit("draw", slot, ("%s%s"):format(verb, id and (" %.0f"):format(id) or ""))
 	if not (WowCompanion_Strip and WowCompanion_Strip.Send) then return end
-	WowCompanion_Strip.Send(("WCCMD %d%04d %s %s%s"):format(at or time(), math.random(0, 9999), verb,
+	WowCompanion_Strip.Send(("WCCMD %d%04d %s %s%s"):format(time(), math.random(0, 9999), verb,
 		slot ~= "" and slot or "main", id and (" " .. ("%.0f"):format(id)) or ""), 2.5)
 end
 
--- The wall clock in ms, the clock job ids are made of: time() gives seconds,
--- so its tick is caught once to line GetTime() up with it
-local wallOffset
-do
-	local seen = time()
-	local f = CreateFrame("Frame")
-	f:SetScript("OnUpdate", function(self)
-		if time() ~= seen then
-			wallOffset = time() - GetTime()
-			self:SetScript("OnUpdate", nil)
-		end
-	end)
-end
-local function nowMs()
-	if wallOffset then return math.floor((GetTime() + wallOffset) * 1000) end
-	return time() * 1000 + 500
-end
+local function nowMs() return GetTime() * 1000 end
 WC.Jobs = WC.Jobs or {}
-WC.Jobs.NowMs = nowMs
 
--- The model (JobsModel.lua) holds every job, every clip being heard, and every
--- decision about them; it is tested on its own (tools/test_jobs.py). This file
+-- The model (JobsModel.lua) holds every job and every decision about them; it is tested on its own (tools/test_jobs.py). This file
 -- draws it. It is made once the save file is loaded (its ledger is kept there).
 local model
-local placeholders = {}
 local function getModel()
 	if model then return model end
 	if type(WowCompanionDB) ~= "table" or not WC.JobsModel then return nil end
@@ -78,19 +56,14 @@ local function getModel()
 	WowCompanionDB.jobs = nil
 	model = WC.JobsModel.new({
 		now = nowMs,
-		command = function(verb, slot, id) command(verb, slot, id) end,
-		remember = function(text, slot, job, who)
-			if job then
-				WC.Companion.remember("you", "|cff9d9d9d" .. text .. "|r", nil, slot, nil, job)
-			else
-				WC.Companion.remember(who or "note", text, nil, slot)
-			end
-		end,
+		wall = wallMs,
+		command = command,
 		audit = audit,
 		store = WowCompanionDB.jobModel,
+		lines = WowCompanionDB.lines,
 		changed = function() if WC.Jobs.Refresh then WC.Jobs.Refresh() end end,
 	})
-	jobs, placeholders = model.jobs, model.clips
+	jobs = model.jobs
 	return model
 end
 
@@ -192,11 +165,7 @@ end
 
 local function cancel(job)
 	if not job or not getModel() then return end
-	if job.placeholder then
-		model:CancelClip(job.slot, job.placeholder)
-	else
-		model:CancelJob(job.id)
-	end
+	model:CancelJob(job.id)
 end
 local function sendNow(job)
 	if job and getModel() then model:SendNow(job.id) end
@@ -205,10 +174,9 @@ end
 function WC.Jobs.Running(slot) return getModel() and model:Running(slot) or false end
 function WC.Jobs.Ended(id) return getModel() and model:Ended(id) or false end
 function WC.Jobs.Apply(inbox) if getModel() then model:Apply(inbox) end end
-function WC.Jobs.Claim(inbox, slot) if getModel() then return model:Claim(inbox, slot) end end
-function WC.Jobs.Stopped(inbox) if getModel() then model:Stopped(inbox) end end
-function WC.Jobs.Released(slot) if getModel() then model:Released(slot) end end
-function WC.Jobs.DropHearing() if getModel() then model:DropHearing() end end
+-- a numbered line: true to apply it, false when it is held already
+function WC.Jobs.Hold(slot, n) if getModel() then return model:Hold(slot, n) end return true end
+function WC.Jobs.Mail(jobs) if getModel() then model:Mail(jobs) end end
 
 -- time passing: the model's retries and settling, in combat too
 local ticker = CreateFrame("Frame")
@@ -222,8 +190,7 @@ end)
 
 -- the waiting line (hearing you / working) gets an X at its end; each queued
 -- message's own header line in the transcript gets a play and an X
--- one X per clip being heard (the player, 2026-11-10: a second clip took
--- the first one's X away)
+-- one X per clip being heard, cancelling its job
 local hearXs = {}
 local pairsPool = {}
 
@@ -247,7 +214,7 @@ refresh = function()
 	-- on the waiting line; a request being worked on has it on its own line
 	-- the clips being heard in view, oldest first; drop ones whose words never
 	-- came (the PC drops a clip that held nothing, without a word)
-	local heard = model:Clips(view)
+	local heard = model:Hearing(view)
 	-- In the chat itself (the player, 2026-11-10): the states the footer line
 	-- used to carry are lines at the end of the conversation, where the reply
 	-- will appear: the agent working, then your next clip being heard.
@@ -280,7 +247,7 @@ refresh = function()
 		local live, cancelling = false, false
 		for _, job in pairs(jobs) do
 			if job.slot == view and job.state == "running" then
-				if job.cancel or job.heardCancel then cancelling = true else live = true end
+				if job.cancel then cancelling = true else live = true end
 			end
 		end
 		if cancelling and not live then entry = nil end
@@ -308,14 +275,10 @@ refresh = function()
 			live.line.fs:SetText(text)
 		end
 	end
-	for _, p in ipairs(heard) do
+	for _, job in ipairs(heard) do
 		if #items >= #ghosts then break end
-		if p.cancelled then
-			items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp .. "  " .. GOOD .. "cancelled|r", GREY .. "(cancelled while it was still being heard)|r" }
-		else
-			items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp, ("hearing you%s  %ds"):format(dots, (nowMs() - p.release) / 1000), hearing = true }
-			items[#items].clip = p
-		end
+		local word = job.cancel and (GREY .. "cancelling|r") or ("hearing you%s  %ds"):format(dots, (nowMs() - job.at) / 1000)
+		items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp, word, hearing = not job.cancel, job = job }
 	end
 	local base = transcript0.height or 0
 	local width = transcript0.Width and transcript0:Width() or 300
@@ -337,7 +300,7 @@ refresh = function()
 			g.line:SetText(item[2])
 			g.line:Show()
 			y = y + g.line:GetStringHeight()
-			if item.hearing then hearingLines[#hearingLines + 1] = { head = g.head, clip = item.clip } end
+			if item.hearing then hearingLines[#hearingLines + 1] = { head = g.head, job = item.job } end
 		else
 			g.head:Hide()
 			g.line:Hide()
@@ -359,7 +322,7 @@ refresh = function()
 			x = icon(transcript0.content, "cancel", CANCEL or "Cancel", cancel)
 			hearXs[i] = x
 		end
-		x.job = { placeholder = line.clip, slot = view }
+		x.job = line.job
 		x:ClearAllPoints()
 		x:SetPoint("TOPRIGHT", transcript0.content, "TOPLEFT", width - 4, -(line.head.y - 3))
 		x:SetFrameLevel(transcript0.content:GetFrameLevel() + 5)
@@ -375,7 +338,7 @@ refresh = function()
 	local runningThere = WC.Jobs.Running(view)
 	local list = model:Ordered()
 	for _, job in ipairs(list) do
-		local row = job.slot == view and job.state == "queued" and not job.cancel and not job.heardCancel
+		local row = job.slot == view and job.state == "queued" and not job.cancel
 			and rowOf(job)
 		if row then
 			used = used + 1
@@ -399,7 +362,7 @@ refresh = function()
 	-- is for everything else")
 	local running
 	for _, job in ipairs(list) do
-		if job.slot == view and job.state == "running" and not job.cancel and not job.heardCancel then running = job end
+		if job.slot == view and job.state == "running" and not job.cancel then running = job end
 	end
 	-- bound once to the message it belongs to (its queued line, or your newest
 	-- line not bound to another job), so it can never wander onto an older one
@@ -491,20 +454,15 @@ function WC.Jobs.Gone() WC.Jobs.Refresh() end
 -- focusedFrame, read, never set): the d-pad and face buttons belong to the
 -- cursor then anyway, so nothing of the bars is taken. Set and cleared out of
 -- combat only; the window cannot hold focus in a fight.
+local RANK_LIVE = { hearing = true, queued = true, running = true }
 local function newest(state)
 	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
 	if not getModel() then return end
-	if not state then
-		local list = model:Clips(view)
-		for i = #list, 1, -1 do
-			if not list[i].cancelled then return { placeholder = list[i], slot = view } end
-		end
-	end
 	local list = model:Ordered()
 	for i = #list, 1, -1 do
 		local job = list[i]
-		if job.slot == view and not job.cancel and not job.heardCancel
-			and (state and job.state == state or (not state and (job.state == "queued" or job.state == "running"))) then
+		if job.slot == view and not job.cancel
+			and (state and job.state == state or (not state and RANK_LIVE[job.state])) then
 			return job
 		end
 	end
