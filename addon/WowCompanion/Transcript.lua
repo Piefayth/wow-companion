@@ -261,7 +261,7 @@ local WHO = {
 	claude = { "Claude", "|cffffd100", 0.93, 0.93, 0.93 },
 }
 
-function Transcript:Add(who, text, continued, at, queued)
+function Transcript:Add(who, text, continued, at, queued, job)
 	local voice = WHO[who]
 	if not continued then
 		self.code = false
@@ -272,6 +272,7 @@ function Transcript:Add(who, text, continued, at, queued)
 			-- your own message's header carries its controls (Jobs.lua)
 			if who == "you" then row.you = true end
 			row.header = true
+			row.job = job
 			if queued and queuedLive[queued] then
 				row.base, row.queued = header, queued
 				watchQueued(row)

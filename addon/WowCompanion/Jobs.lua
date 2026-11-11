@@ -43,6 +43,7 @@ local function ordered()
 end
 
 local refresh
+local restored = false
 local queuedRow
 WC.Jobs = WC.Jobs or {}
 
@@ -112,12 +113,68 @@ end
 local function rowOf(job)
 	if job.row and job.row.fs:IsShown() then return job.row end
 	local transcript = transcriptNow()
-	if job.queueId and transcript and queuedRow then return queuedRow(transcript, job.queueId) end
+	if not transcript then return end
+	-- each message line carries its job's id (Transcript.lua), saved with it
+	for i = #(transcript.rows or {}), 1, -1 do
+		local row = transcript.rows[i]
+		if row.job == job.id and row.fs:IsShown() then return row end
+	end
+	if job.queueId and queuedRow then return queuedRow(transcript, job.queueId) end
 end
-local function mark(job, status, grey)
-	local row, transcript = rowOf(job), transcriptNow()
-	if transcript and row and WC.Transcript.markRow then
+
+-- What a message's header says, derived from its job alone (the player,
+-- 2026-11-10: one source of truth, and a cancel must survive a reload)
+local function statusOf(job, row)
+	local s = job.state
+	if s == "cancelled" or (job.cancel and job.cancel.hearing and s ~= "answered" and s ~= "failed") then
+		return "  " .. GOOD .. "cancelled|r", true
+	elseif s == "answered" and job.asked then
+		return "  " .. BAD .. "too late: already answered|r"
+	elseif s == "failed" then
+		return "  " .. BAD .. "failed|r"
+	elseif job.cancel then
+		return "  " .. GREY .. "cancelling...|r"
+	elseif job.unconfirmed and RANK[s] < 3 then
+		return "  " .. BAD .. "cancel not confirmed|r"
+	elseif s == "queued" and row and not row.queued then
+		-- the live "queued..." mark is gone after a reload: the ledger says it
+		return "  " .. GREY .. "queued|r"
+	end
+end
+local function paint(job)
+	local transcript = transcriptNow()
+	local row = rowOf(job)
+	if not (transcript and row and WC.Transcript.markRow) then return end
+	local status, grey = statusOf(job, row)
+	if row.status ~= status or (grey and not row.greyed) then
+		row.greyed = row.greyed or grey
 		pcall(WC.Transcript.markRow, transcript, row, status, grey)
+	end
+end
+local function mark(job) paint(job) end
+
+-- The ledger is saved (WowCompanionDB.jobs): each job's state and whether you
+-- asked to cancel it, so tombstones and queued marks come back after a reload.
+-- A day of jobs is kept.
+local function saved()
+	if type(WowCompanionDB) ~= "table" then return nil end
+	WowCompanionDB.jobs = WowCompanionDB.jobs or {}
+	return WowCompanionDB.jobs
+end
+local function save(job)
+	local db = saved()
+	if db then db[job.id] = { slot = job.slot, state = job.state, asked = job.asked or nil } end
+end
+local function restore()
+	local db = saved()
+	if not db then return end
+	local cutoff = (time() - 86400) * 1000
+	for id, e in pairs(db) do
+		if type(id) ~= "number" or id < cutoff or type(e) ~= "table" or not RANK[e.state] then
+			db[id] = nil
+		elseif not jobs[id] then
+			jobs[id] = { id = id, slot = e.slot or "", state = e.state, asked = e.asked, at = GetTime() }
+		end
 	end
 end
 local hearingAsked = {} -- slot -> GetTime() of a hearing cancel not yet answered
@@ -145,15 +202,10 @@ local function apply(id, slot, state, text)
 	end
 	if RANK[state] == 3 then
 		job.endedAt = GetTime()
-		if state == "cancelled" then
-			mark(job, "  " .. GOOD .. "cancelled|r", true)
-		elseif job.cancel and state == "answered" then
-			mark(job, "  " .. BAD .. "too late: already answered|r")
-		elseif state == "failed" then
-			mark(job, "  " .. BAD .. "failed|r")
-		end
 		job.cancel = nil
 	end
+	save(job)
+	paint(job)
 	return true
 end
 
@@ -179,9 +231,10 @@ local function cancel(job)
 	if not live or live.cancel or RANK[live.state] == 3 then return end
 	if not live.row then live.row = rowOf(live) end
 	local intent = { tries = 1 }
-	live.cancel = intent
+	live.cancel, live.asked, live.unconfirmed = intent, true, nil
+	save(live)
 	command("cancel", live.slot, live.id)
-	mark(live, "  " .. GREY .. "cancelling...|r")
+	paint(live)
 	local function again()
 		if live.cancel ~= intent then return end -- resolved by the job's end
 		if intent.tries < TRIES then
@@ -189,8 +242,8 @@ local function cancel(job)
 			command("cancel", live.slot, live.id)
 			C_Timer.After(RETRY_EVERY, again)
 		else
-			live.cancel = nil
-			mark(live, "  " .. BAD .. "cancel not confirmed|r")
+			live.cancel, live.unconfirmed = nil, true
+			paint(live)
 			refresh()
 		end
 	end
@@ -237,9 +290,10 @@ function WC.Jobs.Apply(inbox)
 					end
 				end
 			end
-			job.cancel = { tries = TRIES, hearing = true }
+			job.cancel, job.asked = { tries = TRIES, hearing = true }, true
+			save(job)
 			command("cancel", slotKey, job.id)
-			mark(job, "  " .. GOOD .. "cancelled|r", true)
+			paint(job)
 		end
 		if job and inbox.queueId and not job.queueId then
 			job.queueId = inbox.queueId
@@ -262,7 +316,7 @@ function WC.Jobs.Apply(inbox)
 	-- ends older than a quarter hour have nothing left to show
 	local now = GetTime()
 	for id, job in pairs(jobs) do
-		if job.endedAt and now - job.endedAt > 900 then jobs[id] = nil end
+		if job.endedAt and now - job.endedAt > 86400 then jobs[id] = nil end
 	end
 	WC.Jobs.Refresh()
 end
@@ -330,6 +384,15 @@ refresh = function()
 	local now = GetTime()
 	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
 	local working = core.working or {}
+	if not restored then restored = true restore() end
+	-- every message line's status comes from its job
+	for _, row in ipairs(frame.messages.rows or {}) do
+		local job = row.job and jobs[row.job]
+		if job and row.fs:IsShown() then
+			if not job.row then job.row = row end
+			paint(job)
+		end
+	end
 	-- the waiting line: hearing first (the newest thing), else the running request
 	statusX = statusX or icon(frame, "cancel", CANCEL or "Cancel", cancel)
 	-- only a clip still being heard has no line of its own yet: its X sits

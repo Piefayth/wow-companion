@@ -248,8 +248,8 @@ local function colouredFor(who)
 	return "|cffffe08a"
 end
 
-local function showLine(who, text, continued, at, queued)
-	logFrame().messages:Add(who, text, continued, at, queued)
+local function showLine(who, text, continued, at, queued, job)
+	logFrame().messages:Add(who, text, continued, at, queued, job)
 end
 
 -- Spinning while the agent thinks. Several seconds of silence after you speak is
@@ -421,12 +421,12 @@ function WowCompanion_Stop(slot, sendNow)
 	setPending("stopping", slot)
 end
 
-local function remember(who, text, continued, slot, queued)
+local function remember(who, text, continued, slot, queued, job)
 	slot = slot or replySlot or viewSlot
 	WowCompanionDB.log = WowCompanionDB.log or {}
 	local entries = WowCompanionDB.log
 	entries[#entries + 1] = { at = time(), who = who, text = text, continued = continued or nil,
-		slot = slot ~= "" and slot or nil, queued = queued }
+		slot = slot ~= "" and slot or nil, queued = queued, job = job }
 	-- Each conversation keeps its own LOG_KEEP lines, so a busy one never pushes
 	-- out a quiet one; when one fills, its oldest third is compacted into one
 	-- line that keeps what was asked, not dropped (the player, 2026-11-10).
@@ -468,7 +468,7 @@ local function remember(who, text, continued, slot, queued)
 		table.remove(entries, 1)
 	end
 	if slot == viewSlot then
-		showLine(who, text, continued, entries[#entries].at, queued)
+		showLine(who, text, continued, entries[#entries].at, queued, job)
 	end
 	-- news nobody has seen yet: a reply in another conversation, or in this one
 	-- while the window is closed (the player, 2026-11-10: replies waited unseen
@@ -485,7 +485,7 @@ local function replayLog()
 	messages:Hold(true)
 	for _, entry in ipairs(WowCompanionDB.log or {}) do
 		if (entry.slot or "") == viewSlot then
-			showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at, entry.queued)
+			showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at, entry.queued, entry.job)
 		end
 	end
 	messages:Hold(false)
@@ -794,11 +794,11 @@ function handlers.log(inbox)
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
 	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-		remember(who, line, lines > 0, islot, lines == 0 and queued or nil)
+		remember(who, line, lines > 0, islot, lines == 0 and queued or nil, lines == 0 and who == "you" and inbox.job or nil)
 		lines = lines + 1
 	end
 	if lines == 0 then
-		remember(who, text, nil, islot, queued)
+		remember(who, text, nil, islot, queued, who == "you" and inbox.job or nil)
 	end
 	-- the job's state, once its line is in the transcript to carry its controls
 	if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
