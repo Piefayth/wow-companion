@@ -173,9 +173,6 @@ end
 
 -- Spinning while the agent thinks. Several seconds of silence after you speak is
 -- indistinguishable from a broken channel, which is the whole reason this exists.
--- when the current wait began: kept across progress updates, so the count is the
--- whole request, not the time since the last "reading ..."
-local pendingSince
 -- One waiting line per conversation (the player, 2026-11-10): several agents can
 -- work at once, and one shared line muddled them. Each slot keeps its own text
 -- and start time; the toast shows a labelled line for every one at work, and
@@ -277,15 +274,6 @@ renderPending = function()
 		end
 	end
 	if paintHook then paintHook() end
-	pendingSince = view and GetTime() or nil
-	frame.pendingShown = view ~= nil
-	if view then
-		frame.pending:SetText(view)
-		-- shown in the chat itself now, as the line the reply will take
-		-- (Jobs.lua, the player, 2026-11-10); the footer line stays hidden
-	else
-		frame.pending:Hide()
-	end
 	if #lines > 0 then
 		if not frame:IsShown() then
 			toastBoard(lines,("tap %s to read"):format(WowCompanion_Glyph(WowCompanion_TalkKey)))

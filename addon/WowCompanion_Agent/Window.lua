@@ -4,16 +4,16 @@
 local effectiveModules = WC.Companion.modules
 local function newTranscript(...) return WC.Transcript.newTranscript(...) end
 
--- Tabs along the bottom edge, as Blizzard's own panels have them
--- (PanelTabButtonTemplate, PanelTemplates_SetTab), picked with the controller
--- cursor. No shoulder buttons: L1 and R1 are talk-button slots.
+-- Tabs on the top edge, as the macro frame and the auction house have them
+-- (PanelTopTabButtonTemplate, PanelTemplates_SetTab), picked with the
+-- controller cursor. No shoulder buttons: L1 and R1 are talk-button slots.
 local TAB_NAMES = { "Chat", "Tools", "Status", "Errands" }
-local function buildTabs(frame, messages, pending)
+local function buildTabs(frame, messages)
 	local pages = {}
+	-- Tools, Status and Errands stand in a page well of their own, an inset
+	-- over both wells' area (anchored below, once the wells exist)
 	local function page()
 		local p = CreateFrame("Frame", nil, frame)
-		p:SetPoint("TOPLEFT", 20, -42)
-		p:SetPoint("BOTTOMRIGHT", -20, 34)
 		p:Hide()
 		return p
 	end
@@ -302,8 +302,9 @@ local function buildTabs(frame, messages, pending)
 	local WELL = 130
 	local made, well = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not made or not well then well = CreateFrame("Frame", nil, frame) end
-	well:SetPoint("TOPRIGHT", -16, -40)
-	well:SetPoint("BOTTOMRIGHT", -16, 32)
+	-- no box around the window: the wells are its edges
+	well:SetPoint("TOPRIGHT", 0, -40)
+	well:SetPoint("BOTTOMRIGHT", 0, 36)
 	well:SetWidth(WELL)
 	local back = well:CreateTexture(nil, "BACKGROUND", nil, 1)
 	back:SetAtlas("auctionhouse-background-categories")
@@ -316,8 +317,8 @@ local function buildTabs(frame, messages, pending)
 	-- keeps only the waiting line.
 	local madeChat, chatWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not madeChat or not chatWell then chatWell = CreateFrame("Frame", nil, frame) end
-	chatWell:SetPoint("TOPLEFT", 16, -40)
-	chatWell:SetPoint("BOTTOMRIGHT", -(16 + WELL + 6), 32)
+	chatWell:SetPoint("TOPLEFT", 0, -40)
+	chatWell:SetPoint("BOTTOMRIGHT", -(WELL + 6), 36)
 	table.insert(frame.chatParts, chatWell)
 	messages.scroll:ClearAllPoints()
 	-- edge to edge inside the inset, so the turns' backings reach it; the
@@ -388,16 +389,29 @@ local function buildTabs(frame, messages, pending)
 	-- each message's own panel (Jobs.lua) docks at the bottom of the chat well
 	frame.chatWell = chatWell
 
-	-- the tabs, hanging under the bottom edge like the character sheet's
+	-- the page well, over both wells' area, for the other tabs
+	local madePage, pageWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
+	if not madePage or not pageWell then pageWell = CreateFrame("Frame", nil, frame) end
+	pageWell:SetPoint("TOPLEFT", chatWell, "TOPLEFT")
+	pageWell:SetPoint("BOTTOMRIGHT", well, "BOTTOMRIGHT")
+	pageWell:Hide()
+	for _, p in pairs(pages) do
+		p:SetParent(pageWell)
+		p:SetPoint("TOPLEFT", 12, -10)
+		p:SetPoint("BOTTOMRIGHT", -12, 10)
+	end
+
+	-- the tabs, standing on the chat well's top edge (the page well's on the
+	-- other tabs, at the same place, so nothing moves when switching)
 	for i, name in ipairs(TAB_NAMES) do
-		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTabButtonTemplate")
+		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTopTabButtonTemplate")
 		if not made or not tab then return end
 		tab:SetID(i)
 		tab:SetText(name)
 		if i == 1 then
-			tab:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 14, 6)
+			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 8, -2)
 		else
-			tab:SetPoint("TOPLEFT", frame.Tabs[i - 1], "TOPRIGHT", 3, 0)
+			tab:SetPoint("LEFT", frame.Tabs[i - 1], "RIGHT", 0, 0)
 		end
 		tab:SetScript("OnClick", function(self) frame.SelectTab(self:GetID()) end)
 		WC.MarkFocusable(tab)
@@ -411,7 +425,7 @@ local function buildTabs(frame, messages, pending)
 		local chat = id == 1
 		messages.scroll:SetShown(chat)
 		for _, part in ipairs(frame.chatParts or {}) do part:SetShown(chat) end
-		pending:Hide() -- its state shows in the chat itself (Jobs.lua)
+		pageWell:SetShown(not chat)
 		for i, p in pairs(pages) do p:SetShown(i == id) end
 		if id == 2 then makeReload() end
 	end
@@ -431,13 +445,11 @@ end
 -- Deliberately not registered in UISpecialFrames: Escape handling is where the
 -- gamepad taint lives, and this frame has a close button instead.
 local function buildLog()
-	-- the game's own dialog art, so it sits in the UI rather than on top of it.
-	-- CreateFrame throws on a template this build lacks, and an ugly window beats
-	-- an addon that fails to load.
-	local made, frame = pcall(CreateFrame, "Frame", "WowCompanionLog", UIParent, "BackdropTemplate")
-	if not made or not frame then
-		frame = CreateFrame("Frame", "WowCompanionLog", UIParent)
-	end
+	-- No box of its own: the wells are its edges, Blizzard's dialog header its
+	-- title, the tabs stand on top (docs/proposals/companion-window-frame.md).
+	-- CreateFrame throws on a template this build lacks, and an ugly window
+	-- beats an addon that fails to load.
+	local frame = CreateFrame("Frame", "WowCompanionLog", UIParent)
 	frame:SetSize(560, 340)
 	-- top left, where Blizzard docks its own left panels (the character sheet,
 	-- the spellbook); the panel manager places it there on every open
@@ -445,55 +457,34 @@ local function buildLog()
 	frame:SetFrameStrata("DIALOG")
 	frame:SetClampedToScreen(true)
 	frame:Hide()
-	if frame.SetBackdrop then
-		frame:SetBackdrop({
-			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-			edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-			edgeSize = 32,
-			insets = { left = 11, right = 12, top = 12, bottom = 11 },
-		})
-	end
-
-	-- the header strip is the drag handle, so a drag inside the transcript is free
-	-- to select text instead of hauling the window around
-	local header = CreateFrame("Frame", nil, frame)
-	header:SetPoint("TOPLEFT", 12, -12)
-	header:SetPoint("TOPRIGHT", -12, -12)
-	header:SetHeight(26)
-	header:EnableMouse(true)
-	header:RegisterForDrag("LeftButton")
-	frame:SetMovable(true)
-	header:SetScript("OnDragStart", function() frame:StartMoving() end)
-	header:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
-
-	local crest = header:CreateTexture(nil, "ARTWORK")
-	crest:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Header")
-	crest:SetPoint("TOP", frame, "TOP", 0, 12)
-	crest:SetSize(230, 64)
-	local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	title:SetPoint("TOP", crest, "TOP", 0, -14)
-	title:SetText("Companion")
-
 	local closed, close = pcall(CreateFrame, "Button", nil, frame, "UIPanelCloseButton")
 	if closed and close then
-		close:SetPoint("TOPRIGHT", -6, -6)
+		close:SetPoint("TOPRIGHT", 0, -6)
 		close:SetScript("OnClick", function() if WowCompanion_HideWindow then WowCompanion_HideWindow() else frame:Hide() end end)
 		-- the controller's back button (circle) closes a focused window by clicking
 		-- its frame.CloseButton (SmartNavigation:AttemptClose), so name it that
 		frame.CloseButton = close
 	end
 
-	-- the waiting line: the agent takes seconds, and silence reads as broken
-	local pending = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	-- A fixed box, text pinned left and never wrapping: with one anchor the region
-	-- resizes to its text on every tick, and the dots coming and going make the
-	-- line jump. This way only the dots move.
-	pending:SetPoint("BOTTOMLEFT", 18, 16)
-	pending:SetPoint("BOTTOMRIGHT", -180, 16)
-	pending:SetJustifyH("LEFT")
-	pending:SetWordWrap(false)
-	pending:Hide()
-	frame.pending = pending
+	-- the title: Blizzard's dialog header, standing on the conversation well
+	-- beside the close button; it is the drag handle, so a drag inside the
+	-- transcript stays free
+	frame:SetMovable(true)
+	local madeHeader, header = pcall(CreateFrame, "Frame", nil, frame, "DialogHeaderTemplate")
+	if madeHeader and header then
+		header:Setup("Companion")
+		header:SetHeaderFont(GameFontNormalLarge)
+		header:ClearAllPoints()
+		if closed and close then
+			header:SetPoint("BOTTOMRIGHT", close, "BOTTOMLEFT", -2, -4)
+		else
+			header:SetPoint("TOPRIGHT", 0, 0)
+		end
+		header:EnableMouse(true)
+		header:RegisterForDrag("LeftButton")
+		header:SetScript("OnDragStart", function() frame:StartMoving() end)
+		header:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+	end
 
 	local messages = newTranscript(frame)
 	messages.scroll:SetPoint("TOPLEFT", 20, -42)
@@ -686,7 +677,7 @@ local function buildLog()
 	end
 	local grip = CreateFrame("Button", nil, frame)
 	grip:SetSize(16, 16)
-	grip:SetPoint("BOTTOMRIGHT", -8, 8)
+	grip:SetPoint("BOTTOMRIGHT", 0, 4)
 	grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
 	grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
 	-- A mouse drags it; the controller can only click it, so a
@@ -748,7 +739,7 @@ local function buildLog()
 	end
 	applySize(WowCompanionAgentDB.windowSize or 2)
 
-	buildTabs(frame, messages, pending)
+	buildTabs(frame, messages)
 	return frame
 end
 
