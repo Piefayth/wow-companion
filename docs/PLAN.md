@@ -104,11 +104,6 @@ paging and modifiers still work in combat, then styled our own way. Also: the
 experience bar, which floats at the bottom out of keeping with everything else.
 Start from the three things on screen that bother the player most.
 
-### Waiting on the player
-
-  Installed since: Polestar 0.3.5, GearQuest Forever (DRUID module), Auctionator.
-- **Old bell files**: none left in the installed Signals; doctor lists any that
-  appear.
 
 ## Decided
 
