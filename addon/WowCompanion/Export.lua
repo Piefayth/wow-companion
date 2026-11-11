@@ -45,25 +45,25 @@ local function shapeshiftForms()
 	return names, set
 end
 
--- The context export (split out of Companion.lua, 2026-11-10): what the agent
+-- The context export: what the agent
 -- reads after every reload, written into SavedVariables at logout, and the form
--- notes it rests on. Companion.lua shares what this needs through WC.Core and
--- calls WC.Export.Context() / WC.Export.NoteForms().
+-- notes it rests on. It reads Chords, Probes and Companion through their named
+-- functions; Companion.lua calls WC.Export.Context() / WC.Export.NoteForms().
 
-local core = WC.Core
-local GAMEPAD_BARS = core.GAMEPAD_BARS
-local LAST_ACTION_SLOT = core.LAST_ACTION_SLOT
-local PAD_WORDS = core.PAD_WORDS
-local actionFrames = core.actionFrames
-local barLabel = core.barLabel
-local barModifier = core.barModifier
-local bookEntries = core.bookEntries
-local chordFor = core.chordFor
-local cvar = core.cvar
-local effectiveModules = core.effectiveModules
-local itemName = core.itemName
-local slotHas = core.slotHas
-local spellName = core.spellName
+local chords = WC.Chords
+local GAMEPAD_BARS = chords.GAMEPAD_BARS
+local LAST_ACTION_SLOT = chords.LAST_ACTION_SLOT
+local PAD_WORDS = chords.PAD_WORDS
+local actionFrames = chords.actionFrames
+local barLabel = chords.barLabel
+local barModifier = chords.barModifier
+local bookEntries = chords.bookEntries
+local chordFor = chords.chordFor
+local itemName = chords.itemName
+local slotHas = chords.slotHas
+local spellName = chords.spellName
+local cvar = WC.Probes.cvar
+local effectiveModules = WC.Companion.modules
 
 local function noteForms()
 	if InCombatLockdown() then
@@ -281,8 +281,8 @@ local function exportContext()
 	if GetMoney then
 		line(("copper: %s"):format(tostring(GetMoney())))
 	end
-	-- The facts advice rests on (the player, 2026-11-10: an off-hand suggested
-	-- beside a two-hander, a pouch already worn, Skinning said to be missing).
+	-- The facts advice rests on, so it never suggests an off-hand beside a
+	-- two-hander, a pouch already worn, or a profession already known.
 	-- Each part under pcall: one bad read must not lose the whole export.
 	pcall(function()
 		local xp, xpMax = UnitXP("player"), UnitXPMax("player")
@@ -448,7 +448,7 @@ local function exportContext()
 			local modifier, presses = barModifier(name)
 			line(("%s: %s"):format(name, modifier and ("%s (seen %d times)"):format(modifier, presses) or "?"))
 		end
-		-- Measured, and corrected by the player: the frames named StanceBar are not
+		-- Measured: the frames named StanceBar are not
 		-- a bar of their own. They are the in-form page of whichever bar the
 		-- GamepadStanceBarOverride setting names (here the R2 bar), which is why they
 		-- learn the same chord.

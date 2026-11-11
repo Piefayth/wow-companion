@@ -1,15 +1,12 @@
--- Split out of Companion.lua (2026-11-10). What it needs from there comes
--- through WC.Core; what Companion.lua calls here is WC.Probes.
+-- What this needs from Companion.lua comes
+-- through its named functions (WC.Companion.<verb>); what Companion.lua calls here is WC.Probes.
 
-local core = WC.Core
-local SIGNALS = core.SIGNALS
-local listen = core.listen
-local logFrame = core.logFrame
-local record = core.record
-local results = core.results
-local say = core.say
-local function actionButton_now() return core.actionButton_get() end
-local function blocked_now() return core.blocked_get() end
+local logFrame = WC.Companion.window
+local record = WC.Companion.record
+local say = WC.Companion.say
+local actionButton_now = WC.Companion.offerButton
+local blocked_now = WC.Companion.blockedCount
+local listenSignal = WC.Companion.listenSignal
 
 local function cvar(name)
 	local get = C_CVar and C_CVar.GetCVar or GetCVar
@@ -23,10 +20,10 @@ local function probeSound()
 	record("sound enabled", cvar("Sound_EnableAllSound"))
 	record("background sound", cvar("Sound_EnableSoundWhenGameIsInBG"))
 	record("master volume", cvar("Sound_MasterVolume"))
-	listen(SIGNALS .. "always.wav", function(playing)
+	listenSignal("always.wav", function(playing)
 		record("always.wav plays (want true)", playing)
 	end)
-	listen(SIGNALS .. "never.wav", function(playing)
+	listenSignal("never.wav", function(playing)
 		record("never.wav plays (want false)", playing)
 	end)
 end
@@ -289,13 +286,13 @@ end
 --
 -- Batched across frames so a few thousand calls do not hitch the game.
 --
--- The first version called every such read in the client, and one of them crashed
--- it outright: ACCESS_VIOLATION reading address 0 inside Wow.exe, from a plain pcall
--- -- pcall catches Lua errors, not a C null dereference. Seven others were refused
--- as ADDON_ACTION_FORBIDDEN. The crash report named only "call 58 of a batch". So:
--- only the namespaces this project would use, nothing the docs flag as restricted,
--- and the name of each function in a plain local while it runs, because the crash
--- report prints the locals of the Lua frame that was executing.
+-- Calling every such read is unsafe: one of them crashes the client outright
+-- (ACCESS_VIOLATION reading address 0 inside Wow.exe, under a plain pcall:
+-- pcall catches Lua errors, not a C null dereference), and others are refused
+-- as ADDON_ACTION_FORBIDDEN. So: only the namespaces this project would use,
+-- nothing the docs flag as restricted, and the name of each function in a plain
+-- local while it runs, because the crash report prints the locals of the Lua
+-- frame that was executing.
 -- "%u" after the verb: "^Can" alone matched CancelEmote, which is not a read
 local READS = { "^Get%u", "^Is%u", "^Has%u", "^Can%u", "^Should%u", "^Are%u", "^Does%u" }
 local SURVEYED = {

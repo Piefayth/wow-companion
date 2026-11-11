@@ -3,7 +3,7 @@
 -- they talk through globals (WC, WowCompanion_*, WCPins, WCBags).
 
 ---------------------------------------------------------------------------
--- WC, the engine modules hang off (the player, 2026-11-10; the shape of the
+-- WC, the engine modules hang off (the shape of the
 -- big UI packs: one table, a module registry with a lifecycle, a message bus,
 -- per-module settings). Agent modules in modules/*.lua register here:
 --
@@ -52,8 +52,8 @@ do
 
 	-- The controller's focus API, for the whole addon. SmartNavigation's
 	-- SecureHelper wraps these: called by addon code in a fight they do nothing
-	-- and show "Interface action failed", which pcall does not stop (40 notices
-	-- on 2026-11-10). So nothing outside this block calls them: each helper runs
+	-- and show "Interface action failed", which pcall does not stop.
+	-- So nothing outside this block calls them: each helper runs
 	-- its call now out of combat, and in a fight keeps the latest call per frame
 	-- and makes it when the fight ends. tools/luarules.py holds the rest of the
 	-- addon to that.
@@ -262,7 +262,7 @@ do
 		return out
 	end
 
-	-- Capabilities (the player, 2026-11-10): other addons are factored into what
+	-- Capabilities: other addons are factored into what
 	-- they do, so a feature works with whatever is installed. A capability is a
 	-- small fixed interface named by its job:
 	--   price: auction(itemID) -> copper per item | nil, vendor(itemID) -> copper | nil
@@ -391,7 +391,7 @@ do
 		return out
 	end
 
-	-- one place for what agent code may call; the old global names stay
+	-- one place for what agent code may call, each wrapping its global
 	-- (looked up at call time: some are defined further down this file)
 	WC.Board = { Post = function(...) return WowCompanion_Recent(...) end }
 	WC.Chat = {

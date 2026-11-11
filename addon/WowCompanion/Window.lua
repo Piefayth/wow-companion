@@ -1,11 +1,8 @@
--- Split out of Companion.lua (2026-11-10). What it needs from there comes
--- through WC.Core; what Companion.lua calls here is WC.Window.
+-- What this file needs from Companion.lua comes
+-- through its named functions (WC.Companion.<verb>); what Companion.lua calls here is WC.Window.
 
-local core = WC.Core
-local effectiveModules = core.effectiveModules
-local frame = core.frame
-local newTranscript = core.newTranscript
-local function nextSlot_now() return core.nextSlot_get() end
+local effectiveModules = WC.Companion.modules
+local function newTranscript(...) return WC.Transcript.newTranscript(...) end
 
 -- Tabs along the bottom edge, as Blizzard's own panels have them
 -- (PanelTabButtonTemplate, PanelTemplates_SetTab), picked with the controller
@@ -25,7 +22,7 @@ local function buildTabs(frame, messages, pending)
 	WC.ErrandsPage = pages[4]
 	if WC.Errands and WC.Errands.Page then WC.Errands.Page(pages[4]) end
 
-	-- Tools (the player, 2026-11-10: "data-appropriate controls"): settings are
+	-- Tools: settings are
 	-- labelled rows with the control their data calls for, a dropdown for a
 	-- choice, a slider for a range; actions stay buttons, under their own
 	-- heading. The slider is Blizzard's MinimalSliderWithSteppers, whose
@@ -62,8 +59,8 @@ local function buildTabs(frame, messages, pending)
 		return top
 	end
 	-- A choice from a list, as a dropdown built from parts the controller
-	-- already reaches (the player, 2026-11-10: Blizzard's DropdownButton and a
-	-- cover over it both stayed out of the focus cycle). The face is a plain
+	-- already reaches (Blizzard's DropdownButton, and a cover over it, both stay
+	-- out of the focus cycle). The face is a plain
 	-- Button in Blizzard's dropdown art showing the current value; pressing it
 	-- opens a list of UIPanelButtons under it, the same kind as the Actions
 	-- buttons, which focus fine. Picking one sets it and closes the list.
@@ -234,8 +231,8 @@ local function buildTabs(frame, messages, pending)
 		frame.reloadButton = b
 		-- out of the window for the length of a fight, so the window stays an
 		-- ordinary frame that opens and closes in combat (Companion.lua, stow)
-		if core.stow then
-			core.stow(b, function(button)
+		do
+			WC.Companion.stow(b, function(button)
 				button:SetParent(tools)
 				button:ClearAllPoints()
 				button:SetPoint("TOPLEFT", 0, -reloadY)
@@ -267,7 +264,7 @@ local function buildTabs(frame, messages, pending)
 		local up = WowCompanion_IsUp and WowCompanion_IsUp()
 		add("Companion app", up and "|cff40ff40connected|r"
 			or "|cffff6060not heard from|r " .. grey .. "(is it running on the PC?)|r")
-		add("Messages this session", ("%d of 64 %s(a reload resets it)|r"):format(nextSlot_now() - 1, grey))
+		add("Messages this session", ("%d of 64 %s(a reload resets it)|r"):format(WC.Companion.messagesSent(), grey))
 		local pins = WowCompanionDB.pins and #WowCompanionDB.pins or 0
 		add("Map pins", pins == 0 and "none" or tostring(pins))
 		local wheels = {}
@@ -317,7 +314,7 @@ local function buildTabs(frame, messages, pending)
 	table.insert(frame.chatParts, well)
 	-- The transcript sits in a well of its own, an inset like the conversation
 	-- list's, with its scroll arrows inside it; the raised frame around them
-	-- keeps only the waiting line (the player, 2026-11-10).
+	-- keeps only the waiting line.
 	local madeChat, chatWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not madeChat or not chatWell then chatWell = CreateFrame("Frame", nil, frame) end
 	chatWell:SetPoint("TOPLEFT", 16, -40)
@@ -419,9 +416,8 @@ local function buildTabs(frame, messages, pending)
 	end
 	frame.SelectTab(1)
 
-	-- Tabs are picked with the controller cursor. L1 and R1 used to page them,
-	-- but they are talk-button slots now (the player, 2026-11-10), so the window
-	-- binds nothing. The reload button waits out combat, being secure.
+	-- Tabs are picked with the controller cursor; L1 and R1 are talk-button
+	-- slots, so the window binds nothing. The reload button waits out combat, being secure.
 	local keys = CreateFrame("Frame")
 	keys:RegisterEvent("PLAYER_REGEN_ENABLED")
 	keys:SetScript("OnEvent", function() makeReload() end)
@@ -489,8 +485,8 @@ local function buildLog()
 	-- the waiting line: the agent takes seconds, and silence reads as broken
 	local pending = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	-- A fixed box, text pinned left and never wrapping: with one anchor the region
-	-- resized to its text on every tick, so the dots coming and going made the
-	-- line jump. Now only the dots move.
+	-- resizes to its text on every tick, and the dots coming and going make the
+	-- line jump. This way only the dots move.
 	pending:SetPoint("BOTTOMLEFT", 18, 16)
 	pending:SetPoint("BOTTOMRIGHT", -180, 16)
 	pending:SetJustifyH("LEFT")
@@ -522,7 +518,7 @@ local function buildLog()
 			arrows[#arrows + 1] = arrow
 		end
 	end
-	-- The scroll bar between the arrows (the player, 2026-11-10): a thumb sized to
+	-- The scroll bar between the arrows: a thumb sized to
 	-- the share of the transcript in view and placed at the scroll position, in
 	-- Blizzard's own scroll bar art. Shown only, never dragged: the arrows scroll.
 	if #arrows == 2 then
@@ -534,11 +530,11 @@ local function buildLog()
 		groove:SetPoint("TOPLEFT", 3, 0)
 		groove:SetPoint("BOTTOMRIGHT", -3, 0)
 		groove:SetColorTexture(0, 0, 0, 0.45)
-		-- Nothing is stretched (the player, 2026-11-10). The thumb is drawn as
+		-- Nothing is stretched. The thumb is drawn as
 		-- Blizzard's WowTrimScrollBar thumb is (TrimScrollBar.xml and .lua): the
 		-- round end caps at their own size, and the centre *tiled*: its texture
 		-- coordinate runs past 1 by the height over the art's own height, so the
-		-- art repeats instead of growing. Without those atlases the old knob is
+		-- art repeats instead of growing. Without those atlases a knob is
 		-- shown at one fixed size, which only moves.
 		local thumb = CreateFrame("Frame", nil, track)
 		thumb:SetWidth(math.min(18, track:GetWidth()))
@@ -608,8 +604,8 @@ local function buildLog()
 	-- shown panel turns on the "fallthrough catcher" binding group, which takes the
 	-- d-pad and face buttons away from the bars, and only FrameHidden turns it off.
 	-- HideUIPanel sends that; a plain Hide (our close button, /wc log) does not, so
-	-- the manager kept a closed window in its list and the bars stayed dead after
-	-- it was gone. That is why it broke with the window shut. Blizzard's own
+	-- the manager keeps a closed window in its list and the bars stay dead after
+	-- it is gone. Blizzard's own
 	-- non-panel windows (ColorPickerFrame, BuffFrame) call FrameHidden from OnHide,
 	-- and it is wrapped by SecureHelper for exactly such callers, so we do the same:
 	-- however the window goes away, the manager hears about it.
@@ -622,11 +618,11 @@ local function buildLog()
 		}
 	end
 	-- The transcript is text, no buttons: without this flag a right-stick
-	-- scroll went looking for a button inside it, found none, and left the
+	-- scroll goes looking for a button inside it, finds none, and leaves the
 	-- cursor drawn on the close button while nothing was selected
 	-- (UpdateScrollSelection). Set once; a tick later, once buildTabs below has
 	-- set frame.messages. (Not handed to SmartNavigation as a scroll frame: that
-	-- gave it the right stick and took the camera away.)
+	-- gives it the right stick and takes the camera away.)
 	C_Timer.After(0, function()
 		if frame.messages then WC.MarkTextScroll(frame.messages.scroll) end
 	end)
@@ -643,8 +639,8 @@ local function buildLog()
 	grip:SetPoint("BOTTOMRIGHT", -8, 8)
 	grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
 	grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-	-- A mouse drags it; the controller can only click it, which used to do
-	-- nothing. So a click that did not resize steps through three sizes. A drag
+	-- A mouse drags it; the controller can only click it, so a
+	-- click that did not resize steps through three sizes. A drag
 	-- also ends in a click, which is why the size at mouse-down is compared.
 	local SIZES = { { 560, 340 }, { 760, 520 }, { 980, 700 } }
 	local sizeBefore
@@ -662,14 +658,14 @@ local function buildLog()
 		frame.CycleSize()
 	end)
 	-- The corner grip steps the size for now; the Tools tab's button sets the
-	-- default the window opens at, kept in WowCompanionDB.windowSize (the player,
-	-- 2026-11-10: medium unless they pick otherwise).
+	-- default the window opens at, kept in WowCompanionDB.windowSize
+	-- (medium unless the player picks otherwise).
 	local function applySize(index)
 		local pick = SIZES[index] or SIZES[2]
 		-- grow from the top-left corner, so the window stays where it is
 		local left, top = frame:GetLeft(), frame:GetTop()
 		-- never taller than the screen below its top, with room for the tabs
-		-- that hang under it (the large size ran off the bottom, measured)
+		-- that hang under it (the large size runs off the bottom)
 		local room = (top or (UIParent:GetHeight() - 116)) - 44
 		frame:SetSize(pick[1], math.min(pick[2], math.max(240, room)))
 		if left and top then

@@ -1,5 +1,5 @@
--- Interface fonts, switched live (the player, 2026-11-10: readable on a TV
--- without a bigger UI). Blizzard's own text-size code walks GetFonts() and
+-- Interface fonts, switched live (readable on a TV without a bigger UI).
+-- Blizzard's own text-size code walks GetFonts() and
 -- changes each font object (TextSizeManager.lua); this does the same with
 -- SetFont, keeping each object's size and outline, so no restart and no
 -- reload. Only the text fonts change (Friz Quadrata, Arial Narrow): quest
@@ -38,8 +38,7 @@ local function eachTextFont(fn)
 	for _, name in ipairs(GetFonts()) do
 		local object = _G[name]
 		-- each object read under pcall: one odd entry (a font family, a
-		-- forbidden object) must not stop the rest (the player saw a Lua error
-		-- on switching, 2026-11-10)
+		-- forbidden object) must not stop the rest
 		local ok, path, size, flags = pcall(function() return object:GetFont() end)
 		if ok and type(object) == "table" then
 			if original[name] == nil then
@@ -115,8 +114,8 @@ set = function(name)
 end
 
 
--- The text size, a step over the original sizes (the player, 2026-11-10:
--- readable on a TV). Applies with whichever font is chosen.
+-- The text size, a step over the original sizes (readable on a TV).
+-- Applies with whichever font is chosen.
 Fonts.scales = SCALES
 function Fonts.Scale() return scale() end
 function Fonts.SetScale(k)

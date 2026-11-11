@@ -1,4 +1,4 @@
--- Buffs to watch for (2026-11-11, class-neutral): a per-character list, empty
+-- Buffs to watch for (class-neutral): a per-character list, empty
 -- until the player asks ("remind me when X is missing"). Read by the export
 -- ("buffs missing at export") and by the BuffGlow module. Kept in
 -- WowCompanionCharDB (SavedVariablesPerCharacter), so another character, class

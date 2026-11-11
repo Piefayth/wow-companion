@@ -1,12 +1,11 @@
--- Split out of Companion.lua (2026-11-10). What it needs from there comes
--- through WC.Core; what Companion.lua calls here is WC.Sandbox.
+-- What this needs from Companion.lua comes
+-- through its named functions (WC.Companion.<verb>); what Companion.lua calls here is WC.Sandbox.
 
-local core = WC.Core
-local effectiveModules = core.effectiveModules
-local handlers = core.handlers
-local remember = core.remember
-local taintScan = core.taintScan
-local function replySlot_now() return core.replySlot_get() end
+local effectiveModules = WC.Companion.modules
+local remember = WC.Companion.remember
+local function taintScan(...) return WC.Tests.taintScan(...) end
+local replySlot_now = WC.Companion.replySlot
+local handlers = {}
 
 -- Code the agent writes, run here.
 --
@@ -258,3 +257,5 @@ WC.Sandbox = WC.Sandbox or {}
 WC.Sandbox.loadModules = loadModules
 WC.Sandbox.measureOnce = measureOnce
 WC.Sandbox.results = results
+
+for kind, fn in pairs(handlers) do WC.Companion.addHandler(kind, fn) end

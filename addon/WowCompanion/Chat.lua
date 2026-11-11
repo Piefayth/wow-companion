@@ -1,10 +1,9 @@
--- Split out of Companion.lua (2026-11-10). What it needs from there comes
--- through WC.Core; what Companion.lua calls here is WC.Chat.
+-- What this file needs from Companion.lua comes
+-- through its named functions (WC.Companion.<verb>); what Companion.lua calls here is WC.Chat.
 
-local core = WC.Core
-local remember = core.remember
-local spoken = core.spoken
-local toast = core.toast
+local function remember(...) return WC.Companion.remember(...) end
+local function spoken(...) return WC.Chords.spoken(...) end
+local function toast(...) return WC.Board.toast(...) end
 
 -- Whispers by the name the player knows someone by. "whisper Sage, on my way"
 -- arrives as "/w Sage, on my way"; this finds who Sage is among the people the
@@ -20,7 +19,7 @@ local function plain(text)
 end
 
 -- Speech-to-text gets invented names a letter or two wrong ("Orihine" for
--- Orihime; the player, 2026-11-10), and the game is the only side that knows
+-- Orihime), and the game is the only side that knows
 -- the real spelling. Edit distance on the plain forms; close enough is about
 -- one slip per three letters, and the best must be the only one that close.
 local function distance(a, b)
@@ -88,8 +87,7 @@ local function people()
 		local count = BNGetNumFriends() or 0
 		for i = 1, count do
 			local ok, info = pcall(C_BattleNet.GetFriendAccountInfo, i)
-			-- A Battle.net whisper cannot go out from a macro (the player,
-			-- 2026-11-10), so a line whispers the character the friend is
+			-- A Battle.net whisper cannot go out from a macro, so a line whispers the character the friend is
 			-- on, by name and realm. Not in WoW means no whisper.
 			if ok and info and info.gameAccountInfo and info.gameAccountInfo.isOnline then
 				local game = info.gameAccountInfo
@@ -196,8 +194,7 @@ function WowCompanion_ResolveWhisper(rest)
 		.. (#names > 0 and ("I can see: " .. table.concat(names, ", ")) or "Nobody on your friends list, guild or group is online.")
 end
 
--- Lines for other players go into Blizzard's chat box, and only there (the
--- player, 2026-11-11: "just the chat box"; it replaced our send preview). A line
+-- Lines for other players go into Blizzard's chat box, and only there. A line
 -- (dictated, an agent's `send` step, an agent's WowCompanion_ChatLine) goes into
 -- the box the player has open. With none open it waits, and goes into the box
 -- the next time they open one, oldest first, one at a time: the next goes in
@@ -282,7 +279,7 @@ do
 	end)
 end
 
--- The item viewer (the player, 2026-11-10): an item someone linked, shown in a
+-- The item viewer: an item someone linked, shown in a
 -- window the controller can focus, closed with a button or circle, with
 -- Previous / Next through the links remembered from chat (WowCompanionDB.links,
 -- filled by the LinkCatcher module). The tooltip is our own GameTooltip, a

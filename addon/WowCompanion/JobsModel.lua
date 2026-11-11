@@ -13,7 +13,7 @@
 --   settles to an honest "not confirmed" (client-side prediction with
 --   reconciliation, as in networked games).
 -- * A clip's identity is when it was let go. The game's clock is not the PC's
---   (2.3 s apart, measured 2026-11-10), so the offset is learned from each
+--   (measured 2.3 s apart), so the offset is learned from each
 --   clip the PC confirms and kept in the save file.
 --
 -- deps: now() game ms; command(verb, slot, id); remember(text, slot, job);

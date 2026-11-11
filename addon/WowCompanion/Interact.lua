@@ -1,4 +1,4 @@
--- Combat interact (the player, 2026-11-10): one press of a key (theirs: Home)
+-- Combat interact: one press of a key
 -- loots the nearest corpse, else interacts with the nearest thing, in combat too.
 --
 -- Why it needs a trick: Blizzard's gamepad code turns soft interact off while
@@ -7,7 +7,7 @@
 -- cannot set it in combat, nor can /console (it runs forceinsecure()). Blizzard
 -- re-checks it only when the target changes.
 --
--- How (measured working 2026-11-10; the story and the failed designs are in
+-- How (measured working; the designs that fail, and why, are in
 -- docs/api-useful.md, "Looting in combat on the gamepad"):
 --   down: in a fight with a live enemy targeted, keep it in focus and target
 --         yourself, so Blizzard turns soft interact on (the corpse is picked in
@@ -30,7 +30,7 @@ do
 		WowCompanionDB = WowCompanionDB or {}
 		WowCompanionDB.interact = WowCompanionDB.interact or {}
 		local d = WowCompanionDB.interact
-		-- 2026-11-10: the earlier designs' saved fields go
+		-- saved fields nothing reads are cleared
 		d.mode, d.takeKey, d.holdTested, d.tapMoved = nil, nil, nil, nil
 		if not d.traceOn then d.trace = nil end
 		return d

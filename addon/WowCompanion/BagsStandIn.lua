@@ -1,5 +1,4 @@
--- Bags (2026-11-10, the player: "make the bag work the same in and out of
--- combat"): Blizzard's bag frame opens ours, by the same secure path in a fight
+-- Bags, the same in and out of combat: Blizzard's bag frame opens ours, by the same secure path in a fight
 -- or out of one. A secure handler of ours is a child of their combined bags, so
 -- whatever shows theirs (the bag radial, a vendor, the mailbox) shows it, and its
 -- _onshow runs in the restricted environment: it shows our pad's handler (which
@@ -8,8 +7,6 @@
 -- restricted code hide it in combat; hiding it there is secure, so the
 -- controller's focus manager lets it go cleanly. Nothing of theirs is written:
 -- no alpha, no FrameHidden, no hooks on their toggles.
--- Replaces the stand-in (their frame kept open at alpha 0, ours laid over it,
--- mirror mode and cursor anchors), removed the same day.
 -- WowCompanionDB.standInBags = false turns it off (at the next reload).
 do
 	local done
@@ -47,7 +44,7 @@ do
 	later:SetScript("OnEvent", function(self) setup() if done then self:UnregisterAllEvents() end end)
 end
 
--- square sells while a vendor is open, so the legend says so (the player, 2026-11-10)
+-- square sells while a vendor is open, so the legend says so
 do
 	local w = CreateFrame("Frame")
 	w:RegisterEvent("MERCHANT_SHOW")

@@ -2,7 +2,7 @@
 -- Pins, Strip, Bags, Status, Modules. A file shares nothing local with another:
 -- they talk through globals (WC, WowCompanion_*, WCPins, WCBags).
 
--- The data strip (the player, 2026-11-10): game-to-PC without a reload. Bytes
+-- The data strip: game-to-PC without a reload. Bytes
 -- drawn as solid colour cells, three bytes a cell, in the very bottom-right
 -- corner, shown only for a moment and then gone; the PC screenshots that corner
 -- and decodes it (src/strip.rs). Pixel-exact: the frame ignores the UI scale

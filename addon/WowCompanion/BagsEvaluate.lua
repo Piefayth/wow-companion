@@ -1,4 +1,4 @@
--- Bags: a verdict for every item (docs/proposals/bags.md, the player, 2026-11-10).
+-- Bags: a verdict for every item (docs/proposals/bags.md).
 -- Loads before Bags.lua, which draws the verdicts (the junk coin, recoloured) and
 -- groups slots by them in the Sections view.
 --

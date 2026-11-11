@@ -1,4 +1,4 @@
--- Bags: the pad while our bags are open (2026-11-10 rebuild). Loads before
+-- Bags: the pad while our bags are open. Loads before
 -- Bags.lua, which calls WC.BagsInput.Build(f) and WC.BagsInput.Publish(f).
 --
 -- WCBagsPad is an invisible secure handler that owns the bindings, apart from

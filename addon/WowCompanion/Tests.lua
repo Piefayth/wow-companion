@@ -1,14 +1,12 @@
--- Split out of Companion.lua (2026-11-10). What it needs from there comes
--- through WC.Core; what Companion.lua calls here is WC.Tests.
+-- What this needs from Companion.lua comes
+-- through its named functions (WC.Companion.<verb>); what Companion.lua calls here is WC.Tests.
 
-local core = WC.Core
-local LAST_ACTION_SLOT = core.LAST_ACTION_SLOT
-local actionFrames = core.actionFrames
-local activeEditBox = core.activeEditBox
-local record = core.record
-local remember = core.remember
-local say = core.say
-local slotHas = core.slotHas
+local function actionFrames(...) return WC.Chords.actionFrames(...) end
+local function slotHas(...) return WC.Chords.slotHas(...) end
+local activeEditBox = WC.Companion.activeEditBox
+local record = WC.Companion.record
+local remember = WC.Companion.remember
+local say = WC.Companion.say
 
 local function probeChat()
 	local open = ChatFrame_OpenChat or (ChatFrameUtil and ChatFrameUtil.OpenChat)
@@ -72,7 +70,7 @@ end
 -- and is not one of our own names, is taint we caused, named by variable.
 --
 -- That is a claim about the scanner, so it gets a positive control: `chatopen`
--- does the one thing we know broke A and B. If the scan cannot see that, a clean
+-- does the one thing known to break A and B. If the scan cannot see that, a clean
 -- scan for PlaceAction proves nothing.
 
 local function ours(name)
@@ -126,7 +124,7 @@ end
 local function pickSlots()
 	local frames = actionFrames()
 	local picked = {}
-	for slot = 1, LAST_ACTION_SLOT do
+	for slot = 1, WC.Chords.LAST_ACTION_SLOT do
 		local drawn = frames[slot] and frames[slot].visible
 		if not slotHas(slot) then
 			if drawn and not picked.emptyVisible then
@@ -231,7 +229,7 @@ placeVariants.clean = function()
 	local removed = 0
 	local index = GetMacroIndexByName(PLACE_MACRO)
 	if index and index > 0 then
-		for slot = 1, LAST_ACTION_SLOT do
+		for slot = 1, WC.Chords.LAST_ACTION_SLOT do
 			local ok, kind, id = pcall(GetActionInfo, slot)
 			if ok and kind == "macro" and id == index then
 				PickupAction(slot)
@@ -247,8 +245,7 @@ end
 local PLACE_ORDER = { "none", "chatopen", "pickup", "hidden", "visible", "put", "move", "clean" }
 
 -- One per UI session. Taint lasts until /reload, so a second test inherits the
--- first one's damage and the hand check cannot tell them apart -- which is how the
--- first full run was spoiled: chatopen's taint was still live for every test after it.
+-- first one's damage and the hand check cannot tell them apart.
 local placeRan
 -- the test in flight, so a blocked-action notice can be pinned to it
 local placeEntry
@@ -274,7 +271,7 @@ if hooksecurefunc and DisplayInterfaceActionBlockedMessage then
 		if placeEntry then
 			placeEntry.notices = (placeEntry.notices or 0) + 1
 		end
-		-- the window's log must never break this hook (a Transcript error, 2026-11-10)
+		-- the window's log must never break this hook
 		pcall(remember, "probe", "interface action failed notice at " .. stamp
 			.. (placeEntry and (" during place " .. placeEntry.variant) or ""))
 	end)

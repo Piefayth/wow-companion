@@ -2,14 +2,13 @@
 -- Pins, Strip, Bags, Status, Modules. A file shares nothing local with another:
 -- they talk through globals (WC, WowCompanion_*, WCPins, WCBags).
 
--- Destroying an item (the player, 2026-11-10: "even as a button press?"). Agent
+-- Destroying an item. Agent
 -- code cannot delete (DeleteCursorItem is refused in its sandbox), but it may
 -- open this confirmation; the deletion happens only in the Destroy button's own
 -- click, which is the player's press (DeleteCursorItem needs a hardware event).
 -- Cross destroys, circle cancels, while it is shown and out of combat. The item
 -- is checked again at the press, so a sort in between cannot destroy the wrong one.
--- Blizzard's own look for our windows (the player, 2026-11-10: "not properly in
--- the Blizzard style"). Only virtual templates are inherited, into frames of
+-- Blizzard's own look for our windows. Only virtual templates are inherited, into frames of
 -- ours: the dark dialog border StaticPopups use (DialogTemplates.xml), the
 -- controller button prompt with the pad's real glyph (InputPrompts.xml), and the
 -- context menu's art (MenuStyle2Mixin, MenuTemplates.lua). Each falls back to
@@ -26,9 +25,8 @@ WowCompanion_TalkKey = "PADSOCIAL"
 -- device's labelStyle, Shp shapes, Ltr letters, Rev Nintendo), from the strings
 -- SharedConstants.lua defines (KEY_ABBR_PAD1_SHP...). Never a fixed name, so any
 -- controller reads right. Falls back to the generic glyph, then the key name.
--- labelStyle reads "Shapes" on this client (measured 2026-11-10), not "Shp":
--- unmatched, every glyph fell back to the generic numbered one, which is the
--- "numbers instead of Sony shapes" the player saw. Both spellings map.
+-- labelStyle reads "Shapes" on this client, not "Shp": unmatched, every glyph
+-- falls back to the generic numbered one. Both spellings map.
 local GLYPH_SUFFIX = { Shp = "_SHP", Shapes = "_SHP", Ltr = "_LTR", Letters = "_LTR",
 	Rev = "_REV", Reverse = "_REV", Reversed = "_REV" }
 function WowCompanion_Glyph(key)
@@ -80,7 +78,7 @@ function WowCompanion_Style.Menu(frame)
 	local bg = frame:CreateTexture(nil, "BACKGROUND")
 	if pcall(bg.SetAtlas, bg, "common-dropdown-c-bg") then
 		bg:SetPoint("TOPLEFT", -17, 12)
-		bg:SetPoint("BOTTOMRIGHT", 17, -14) -- the atlas reads as more padding below than above at -22 (the player, 2026-11-10)
+		bg:SetPoint("BOTTOMRIGHT", 17, -14) -- the atlas reads as more padding below than above at -22
 	else
 		bg:SetAllPoints()
 		bg:SetColorTexture(0, 0, 0, 0.9)

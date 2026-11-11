@@ -13,8 +13,6 @@
 -- nothing of Blizzard's is shown, hidden, moved or set; no secure code.
 
 local SIGNALS = "Interface\\AddOns\\WowCompanion\\Signals\\"
--- new names: the first heartbeat used 10 s bells, which the game held open for
--- good, so those files could never be replaced or removed
 local BELLS = { SIGNALS .. "pulse-a.wav", SIGNALS .. "pulse-b.wav" }
 local STALE = 12
 local ICON = "Interface\\Icons\\UI_Chat"
@@ -91,8 +89,8 @@ border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 border:SetSize(53, 53)
 border:SetPoint("TOPLEFT")
 
--- news waiting (the player, 2026-11-10: a reply sat unseen unless they opened
--- the window): Blizzard's own notification dot, as on the Communities button
+-- news waiting, so a reply is seen without opening the window: Blizzard's own
+-- notification dot, as on the Communities button
 local badge = button:CreateTexture(nil, "OVERLAY", nil, 7)
 badge:SetAtlas("communities-icon-notification")
 badge:SetSize(14, 14)

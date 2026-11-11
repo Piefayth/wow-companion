@@ -3,8 +3,8 @@
 -- they talk through globals (WC, WowCompanion_*, WCPins, WCBags).
 
 do
--- Our bag window, rebuilt the way Bagnon, AdiBags and BetterBags build theirs
--- (the player, 2026-11-10: "I just want my bags all the time, no matter what").
+-- Our bag window, built the way Bagnon, AdiBags and BetterBags build theirs,
+-- usable all the time, in combat too.
 --
 -- The window holds nothing secure, so it is not protected: anything may show
 -- or hide it, in combat too. Each slot is Blizzard's own ContainerFrameItemButton
@@ -47,7 +47,7 @@ local function build()
 		edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 },
 	})
 	f:Hide()
-	-- one way in and out of combat (2026-11-10): the window is never a UI panel
+	-- one way in and out of combat: the window is never a UI panel
 	-- of the controller's manager; the pad's secure handler (BagsInput.lua) takes
 	-- the pad whenever it is open, fight or not
 
@@ -113,8 +113,8 @@ local function build()
 		b:Show()
 		meta[b] = { bag = bag, slot = slot }
 		-- our own highlight and tooltip follow the pad; the game's controller
-		-- cursor must not also land here (two markers and two tooltips, the
-		-- player, 2026-11-10). Blizzard's template is a focusable item button.
+		-- cursor must not also land here (two markers and two
+		-- tooltips). Blizzard's template is a focusable item button.
 		WC.MarkIgnored(b)
 		-- ours on top of theirs: focus follows the mouse too, without writing to b
 		b:HookScript("OnEnter", function(self) f:Focus(meta[self].index) end)
@@ -128,7 +128,7 @@ local function build()
 	end
 	-- the template's own overlays, shown by Blizzard's ContainerFrame updates we
 	-- do not run: the store highlight (BattlepayItemTexture, a soft blue outline,
-	-- shown by default: on every slot, 2026-11-10), the new-item glow, the flash,
+	-- shown by default, on every slot), the new-item glow, the flash,
 	-- the quest, upgrade and junk marks. Hidden through the regions' own methods.
 	local OVERLAYS = { "BattlepayItemTexture", "NewItemTexture", "flash", "IconQuestTexture", "UpgradeIcon", "JunkIcon" }
 	local function plain(b)

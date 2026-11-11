@@ -1,11 +1,10 @@
--- The focus log (the player's go, 2026-11-11): every step of the controller's
+-- The focus log: every step of the controller's
 -- window focus, recorded the moment it happens, so a focus bug (the invisible
 -- focus, bars left blocked, a window that cannot be reached) is in the export
 -- instead of described afterwards.
 --
--- Driven by events only (the player: "as long as your validation is not running
--- every single frame"): post-hooks on GamepadMode.FrameControlsManager's public
--- methods (hooksecurefunc keeps Blizzard's caller secure) and the fight's start
+-- Driven by events only, nothing runs every frame: post-hooks on
+-- GamepadMode.FrameControlsManager's public methods (hooksecurefunc keeps Blizzard's caller secure) and the fight's start
 -- and end. Nothing of the manager's is set or called; its fields are only read.
 -- Nothing is recorded while the gamepad UI is off.
 --

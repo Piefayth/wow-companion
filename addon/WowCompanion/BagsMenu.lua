@@ -1,6 +1,5 @@
--- Bags split (2026-11-10): the triangle menu (put on a bar, split, destroy,
--- sort), moved out of Bags.lua build() as is. Loads before Bags.lua, which calls
--- WC.BagsMenu.Build(f, holdBindings, MAXBAG) and keeps the menu it returns.
+-- Bags: the triangle menu (put on a bar, split, destroy, sort). Loads before
+-- Bags.lua, which calls WC.BagsMenu.Build(f, holdBindings, MAXBAG) and keeps the menu it returns.
 
 WC.BagsMenu = WC.BagsMenu or {}
 
@@ -67,7 +66,7 @@ function WC.BagsMenu.Build(f, holdBindings, MAXBAG)
 		if info and WCSwapBag and select(4, C_Item.GetItemInfoInstant(info.itemID)) == "INVTYPE_BAG" then
 			list[#list + 1] = { "Equip this bag", function() WCSwapBag(info.itemID) end }
 		end
-		-- linking is by voice (\"link X to Y\"), not a menu entry (the player, 2026-11-10)
+		-- linking is by voice (\"link X to Y\"), not a menu entry
 		if info and WowCompanion_ConfirmDestroy then
 			list[#list + 1] = { "|cffff6060Destroy|r", function()
 				-- the confirmation takes cross and circle; ours come back when it closes

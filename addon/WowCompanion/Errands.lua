@@ -1,4 +1,4 @@
--- Part of WowCompanion. Errands (the player, 2026-11-10; design:
+-- Part of WowCompanion. Errands (design:
 -- docs/proposals/capabilities-errands.md): a to-do list the player and every
 -- conversation share, per character, in WowCompanionDB.errands. Our own feature;
 -- around it, it uses capabilities, each optional: pins (where), nav (take me
@@ -146,7 +146,7 @@ local function checkDone(done)
 	if allHold(done) then return "already done now: it would vanish at once" end
 end
 
--- distance, travel time and "on your route" (the player, 2026-11-10): decoration
+-- distance, travel time and "on your route": decoration
 -- to decide by. Straight-line yards always (nav.world/here, our own fallback);
 -- travel time from Polestar's public estimate; the route flag from the guide's next
 -- steps' places. Measured every few seconds; never part of the route itself.
@@ -194,8 +194,7 @@ local function measure(full)
 		end
 	end
 end
--- colours for the detail line (the player, 2026-11-10: one grey blob was hard to
--- parse): place soft blue, distance light grey, time soft gold, count white
+-- colours for the detail line, so it does not read as one grey blob: place soft blue, distance light grey, time soft gold, count white
 local C_PLACE, C_DIST, C_TIME, C_COUNT = "|cff8fc8ff", "|cffd8d8d8", "|cffffd27a", "|cffffffff"
 local function decoration(e)
 	local m = measured[e.id]
@@ -236,7 +235,7 @@ local function buildTracker()
 	f.title:SetText("Errands")
 	f.lineFont = line
 	-- a soft dark backing that fades out to the right, so the lines read on
-	-- bright ground (the player, 2026-11-10: grey on sand was unreadable)
+	-- bright ground (grey on sand is unreadable)
 	f.back = f:CreateTexture(nil, "BACKGROUND", nil, -1)
 	f.back:SetTexture("Interface/Tooltips/UI-Tooltip-Background")
 	f.back:SetPoint("TOP", 0, -22)
@@ -277,8 +276,7 @@ function E.List()
 	table.sort(out, function(a, b) return a.added > b.added end)
 	return out
 end
--- The tracker as Blizzard's objective tracker lays out a quest (the player,
--- 2026-11-10, after comparing the two): an icon, the title in the tracker's
+-- The tracker as Blizzard's objective tracker lays out a quest: an icon, the title in the tracker's
 -- title colour, then short indented "- " lines in its objective grey, one fact
 -- each and never wrapped: what is left, where and how far, the route flag.
 local T_TITLE, T_OBJ = { 1, 0.82, 0 }, { 0.8, 0.8, 0.8 }
@@ -300,9 +298,8 @@ local function objectiveLine(e)
 	if d.visit then return "Talk to them" end
 	return ""
 end
--- the facts about getting there, as categories (the player, 2026-11-10: not a
--- list item, no commas): one row of fixed columns under the objective, each a
--- small flat glyph of Blizzard's own and its value in its colour, so the same
+-- the facts about getting there, as categories (not a list item, no commas):
+-- one row of fixed columns under the objective, each a small flat glyph of Blizzard's own and its value in its colour, so the same
 -- fact sits in the same place in every errand. Glyphs are separate textures
 -- centred on the text, not inline markup (which sat off the baseline).
 local FACT_GLYPHS = {
@@ -311,12 +308,11 @@ local FACT_GLYPHS = {
 	route = "QuestNormal",
 }
 local FACT_KEYS = { "where", "time", "route" }
--- the arrow: the minimap's own player arrow (Interface/Minimap/MinimapArrow), the
--- one the player liked (2026-11-10; the chevron, curved and tutorial arrows were worse)
+-- the arrow: the minimap's own player arrow (Interface/Minimap/MinimapArrow)
 local ARROW, ARROW_SIZE, ARROW_TURN = "Interface/Minimap/MinimapArrow", 20, 0
 -- the tracker's measures, Blizzard's own (Blizzard_ObjectiveTracker: module header
 -- 26 tall, text at 7; blocks at x=20 from the module, 10 below the header; lines 4
--- apart, blocks 10 after; the POI hangs left of the title; a design pass, 2026-11-10)
+-- apart, blocks 10 after; the POI hangs left of the title)
 local MX = 6                          -- module origin; room for the hanging icon
 local T, RIGHT = MX + 20, MX + 260    -- title edge; module width
 local LINE_SPACING, BLOCK_SPACING, FIRST_BLOCK = 4, 10, 26 + 10
@@ -495,7 +491,7 @@ end
 
 -- the Errands tab (Window.lua makes the page and calls this)
 local page
--- where the item comes from, in words (the player saw "object 100%; object 100%")
+-- where the item comes from, in words, not "object 100%; object 100%"
 local SOURCE_WORDS = { vendor = "Sold by", drop = "Drops from", object = "Found in a container",
 	quest = "Quest reward", gift = "Given by", craft = "Crafted", rep = "Reputation vendor",
 	pvp = "PvP vendor", container = "Inside another item", world = "World drop" }
@@ -535,7 +531,7 @@ local function describeDone(done)
 	if done.skill then parts[#parts + 1] = ("%s %d"):format(done.skill.name, done.skill.rank) end
 	return table.concat(parts, ", ")
 end
--- The Errands tab (design: a designer agent from a screenshot, 2026-11-10): a
+-- The Errands tab: a
 -- list well on the left like the quest log, the chosen errand's details in a well
 -- on the right, three buttons along its bottom. The details follow the cursor;
 -- every colour names a kind of fact. Nothing secure: works in combat.
@@ -583,7 +579,7 @@ local function rowFor(i)
 	local b = CreateFrame("Button", nil, list)
 	b:SetSize(198, 48)
 	-- the nav-button art, its select glow and highlight all cover the title
-	-- band only, one size (the player: the glow was bigger than the art)
+	-- band only, one size (a bigger glow overhangs the art)
 	b.band = CreateFrame("Frame", nil, b)
 	b.band:SetPoint("TOPLEFT")
 	b.band:SetPoint("TOPRIGHT")
@@ -613,9 +609,9 @@ local function rowFor(i)
 	b.hl:Hide()
 	b:SetScript("OnLeave", function(self) self.hl:Hide() end)
 	-- one line at the art's own height, as the conversation picker has it: the
-	-- art stretched to two lines turned the select glow into a thick slab. The
+	-- art stretched to two lines makes the select glow a thick slab. The
 	-- full name is in the detail pane.
-	-- one button per errand (the player, 2026-11-10): the name on the left, its
+	-- one button per errand: the name on the left, its
 	-- detail ("19 min away") on the band itself, right-aligned short of the pin
 	b.l2 = font(b.band, "GameFontHighlightSmall")
 	b.l2:SetPoint("RIGHT", b.band, "RIGHT", -30, 0)
@@ -988,13 +984,13 @@ watch:SetScript("OnEvent", function(_, event)
 end)
 -- a place to reach: looked at every two seconds, only while one is open
 -- the first full measure soon after login, then every 10 s (3 s while a time is owed)
--- the live arrow and yards (the player, 2026-11-10: "live GPS" beside each distance):
+-- the live arrow and yards ("live GPS" beside each distance):
 -- 20 times a second while the tracker shows, a few multiplications per errand.
 -- UnitPosition and GetWorldPosFromMapPos both give (north, west) yards; facing is
 -- 0 at north and grows counter-clockwise, as SetRotation does.
 -- Positions come from the nav capability (Polestar's own frames when it is loaded,
 -- the same ones its working arrow uses; they honour a place's frame f, which the
--- raw map API ignored: the first live arrow pointed wrong, 2026-11-10).
+-- raw map API ignores, so an arrow from it points wrong).
 local targets = {} -- errand id -> { c, n, w, map, x, y, f }
 local function targetOf(e, nav)
 	local p, t = e.place, targets[e.id]

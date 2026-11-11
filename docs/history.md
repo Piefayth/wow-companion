@@ -441,3 +441,63 @@ Open:
 - **The agent never waits on the player inside a turn.** Its answer is invisible
   until finished, so its first restart sat ten minutes waiting for a Quit press and
   looked hung. Waiting goes to a detached process; the turn ends at once.
+
+---
+
+## From the code's comments (moved 2026-11-11)
+
+History that sat in the addon's comments; the comments now say only what is true.
+
+### Errands.lua
+- The raw map API ignores a place's frame `f`, so the first live arrow pointed wrong; positions now come from the nav capability (Polestar's frames). A later "wrong arrow" was a test errand pinned at a different spot than Polestar's target: measure before swapping art.
+- Arrow art tried: supertrack chevron (too wide), the tracker's waypoint arrow (curved), NPE_ArrowUp (disliked); the minimap player arrow stayed.
+- One grey detail line was unreadable on bright ground: each fact got its colour, the tracker a dark backing. The layout follows Blizzard's objective tracker metrics, set by a design pass from its source.
+
+### Window.lua
+- Blizzard's DropdownButton (and a cover over it) stayed out of the controller's focus cycle; the dropdown is plain Buttons.
+- A plain Hide left the window on FrameControlsManager's list and the bars dead; OnHide calls FrameHidden.
+- L1/R1 once paged the tabs; they became talk-button slots, so the window binds nothing.
+
+### Board.lua
+- Anchoring to the 10x10 GamepadPersistentInputLegend put the board on top of the legend; it anchors to the widest visible child background.
+- A non-wrapping font string anchored only left and right drew just its first line.
+- Hiding the board mid-fight read as a lost panel; it shows in combat (the old hold-until-the-fight-ends path was removed).
+
+### ChatWheel.lua
+- The player gave up on a slow line and spoke another, so a "transcribing" tag shows; a 30 s wait looked stuck, so it times out at 6 s.
+
+### Chat.lua
+- A Battle.net whisper cannot go out from a macro: the line whispers the friend's character instead.
+
+### Style.lua
+- labelStyle reads "Shapes" on this client, not "Shp" (measured); unmatched, the player saw numbered glyphs instead of Sony shapes.
+
+### Bags.lua, BagsStandIn.lua
+- BattlepayItemTexture (the store highlight) showed on every slot by default.
+- The controller cursor and our own highlight both landed on a slot (two markers, two tooltips).
+- The secure child of ContainerFrameCombinedBags replaced the first stand-in (their frame at alpha 0 under ours, mirror mode, cursor anchors).
+
+### Interact.lua
+- Earlier combat-interact designs saved `mode`, `takeKey`, `holdTested`, `tapMoved`; `db()` clears them.
+
+### Fonts.lua
+- An odd entry in `GetFonts()` raised a Lua error on a font switch; each object is read under pcall.
+
+### Engine.lua
+- SecureHelper calls made in a fight showed "Interface action failed" 40 times in one night: the deferred focus helpers.
+
+### Tests.lua
+- The first PlaceAction run was spoiled by chatopen's taint living on: one test per UI session.
+
+### Export.lua
+- Advice the export now prevents: an off-hand beside a two-hander, a pouch already worn, Skinning called missing.
+- StanceBar frames are the in-form page of the bar `GamepadStanceBarOverride` names, not a bar of their own (the player's correction).
+
+### Status.lua
+- The first heartbeat used 10 s bells the game held open for good; it moved to `pulse-a.wav` / `pulse-b.wav`.
+
+### Probes.lua
+- The first probe called every read-shaped API; one crashed the client in C, seven were ADDON_ACTION_FORBIDDEN, and the crash named only "call 58 of a batch": the name is now held in a local while it runs.
+
+### JobsModel.lua
+- The game's and the PC's clocks were measured 2.3 s apart (2026-11-10).

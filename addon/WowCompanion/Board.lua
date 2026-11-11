@@ -1,32 +1,28 @@
--- Split out of Companion.lua (2026-11-10). What it needs from there comes
--- through WC.Core; what Companion.lua calls here is WC.Board.
+-- What this file needs from Companion.lua comes
+-- through its named functions (WC.Companion.<verb>); what Companion.lua calls here is WC.Board.
 
-local core = WC.Core
-local working = core.working
 
 -- A one-line notice at the top of the screen, instead of opening the window:
 -- the window only opens when the player asks for it (a minus tap, /wc log).
 -- It cannot take the mouse or the gamepad focus, so it never gets in the way,
--- and in combat it holds what arrives until the fight is over.
-local toastFrame, toastHeld, toastTimer
--- Styled like the game's own tooltips (the player, 2026-11-10: the plain-text
--- board "really isn't very WoW native"): tooltip background and border, a gold
+-- and it shows in combat too.
+local toastFrame, toastTimer
+-- Styled like the game's own tooltips: tooltip background and border, a gold
 -- title over a thin divider, then one aligned row per conversation with the
 -- ready-check mark for its state. A plain notice is one wrapped string instead.
--- Bottom left, under the chat box; it cannot take the mouse or gamepad focus.
 local TOAST_W, ROW_H, PAD = 420, 16, 10
 -- Top left, just right of the gamepad's controls legend
 -- (GamepadPersistentInputLegend, Blizzard's, anchored TOPLEFT 5,-5), or in the
--- top-left corner when the legend is off (the player, 2026-11-10: the bottom
--- right is where tooltips go). Re-placed at every show, so turning the legend
+-- top-left corner when the legend is off (the bottom right is where tooltips
+-- go). Re-placed at every show, so turning the legend
 -- on or off is followed. Only our frame is anchored: the legend is read, never
 -- changed.
 local function placeToast(frame)
 	frame:ClearAllPoints()
 	-- the legend frame itself is 10x10; its size is in its children, one
 	-- background per group of prompts, shown or hidden by Blizzard. The board
-	-- goes right of the widest one showing (seen 2026-11-10: anchoring to the
-	-- 10x10 frame laid the board over the legend).
+	-- goes right of the widest one showing (anchored to the 10x10 frame, the
+	-- board lies over the legend).
 	local legend = GamepadPersistentInputLegend
 	local right, top
 	if legend and legend:IsVisible() then
@@ -65,7 +61,7 @@ local function buildToast()
 		frame:SetBackdropBorderColor(1, 1, 1, 1)
 	end
 	-- a notice: one string that fills the frame and wraps (a non-wrapping one
-	-- anchored only left and right drew its first line alone, 2026-11-10)
+	-- anchored only left and right draws its first line alone)
 	frame.text = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	frame.text:SetPoint("TOPLEFT", PAD + 2, -PAD)
 	frame.text:SetPoint("BOTTOMRIGHT", -PAD - 2, PAD)
@@ -87,17 +83,6 @@ local function buildToast()
 	frame.rule:SetPoint("TOPLEFT", PAD, -PAD - 17)
 	frame.rule:SetPoint("TOPRIGHT", -PAD, -PAD - 17)
 	frame.rows = {}
-	-- shown in combat too (the player, 2026-11-10: hiding it mid-fight was the
-	-- "disappearing" panel). It is a plain frame with no mouse, so nothing
-	-- restricts it; toastHeld stays for anything that still defers.
-	frame:RegisterEvent("PLAYER_REGEN_ENABLED")
-	frame:SetScript("OnEvent", function()
-		if toastHeld then
-			local held = toastHeld
-			toastHeld = nil
-			held()
-		end
-	end)
 	return frame
 end
 

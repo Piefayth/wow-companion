@@ -1,13 +1,12 @@
--- Talking to people without an agent in the loop (the player, 2026-11-10).
+-- Talking to people without an agent in the loop.
 -- Hold minus with L1 and R1 together and speak: the PC sends the words straight
 -- here (no agent) and they go into the chat box (Chat.lua's chat line): the one
 -- the player has open, or the next one they open. Cross sends.
--- The channel is picked on the same hold (the player: "combine the speaking
--- trigger and the channel selection"): while the chord is held a small ring of
+-- The channel is picked on the same hold: while the chord is held a small ring of
 -- channels shows, and the right stick points at one. Let go: that channel is
 -- kept for next time; leave the stick alone and the last one stays. A line that
 -- opens with a channel word ("trade, LF enchanter") still wins for that line.
--- Nothing goes on the action bars (the player's rule, 2026-11-10).
+-- Nothing goes on the action bars.
 --
 --   WCChatChannel("/p")         pick a channel
 --   WC.ChatChannel.Line(text)   text with the picked channel in front
@@ -179,8 +178,8 @@ do
 	end
 
 	-- From letting go of minus until the line has arrived (in the chat box, or
-	-- waiting for it): the tag says it is on its way (the player, 2026-11-10: a
-	-- slow line popped up after they had given up and spoken another). Shown out
+	-- waiting for it): the tag says it is on its way, so a slow line
+	-- is not given up on and spoken again. Shown out
 	-- of turn of the Say-only rule; gone when the line arrives, a clip is
 	-- dropped, or after 6 s.
 	local waiting = _G["WCChatWaiting"] or CreateFrame("Frame", "WCChatWaiting")
@@ -188,8 +187,8 @@ do
 	waiting:SetScript("OnUpdate", function(self, elapsed)
 		self.t = self.t + elapsed
 		local dots = ("."):rep(math.floor(self.t * 2) % 4)
-		-- transcription takes about a second; past 6 s nothing is coming (the
-		-- player, 2026-11-10: a 30 s wait looked stuck)
+		-- transcription takes about a second; past 6 s nothing is coming (a
+		-- longer wait looks stuck)
 		if self.t > 6 then
 			self:Hide()
 			showTag()
@@ -205,9 +204,8 @@ do
 		showTag()
 		print("|cffffd100Chat:|r " .. tostring(why))
 	end
-	-- A trace for the first fight with dictation into the chat box (the
-	-- player, 2026-11-11): which chat tab was selected and whether the box had
-	-- focus when the chord went down and when the line landed. L1 and R1 page
+	-- A trace of dictation into the chat box in a fight: which chat tab was
+	-- selected and whether the box had focus when the chord went down and when the line landed. L1 and R1 page
 	-- chat tabs while the box has focus (FloatingChatFrame.lua, the dock's
 	-- footer), so the chord may move the tab. WowCompanionDB.chatBoxTrace, 30 lines.
 	WC.ChatChannel.ActiveBox = function()

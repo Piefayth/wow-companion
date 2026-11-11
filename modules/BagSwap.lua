@@ -1,5 +1,5 @@
--- Bag swap (WC module, 2026-11-10, the player: "reshuffle everything so you can
--- switch the bag, and if it's impossible say so"). WCSwapBag(what, into, dry):
+-- Bag swap (WC module): reshuffles everything so a bag can be switched, and
+-- says so if that is impossible. WCSwapBag(what, into, dry):
 --   what  the spare bag in the bags: a name ("Linen Bag"), an item ID, or nil for
 --         the biggest spare
 --   into  which bag slot to replace (1-4), or nil: an empty bag slot first, else
