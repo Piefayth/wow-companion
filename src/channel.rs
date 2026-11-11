@@ -244,6 +244,7 @@ fn ring(addons: &Path, msg: &Msg) -> io::Result<()> {
     deliver(addons, slot, msg)?;
     println!("sent in slot {slot}: {}", msg.lua());
     ring_catch_up(&signals, slot);
+    ring_frame_bell(&signals, slot);
     voice::mark(&format!("bell rung, slot {slot}"));
     thread::sleep(BELL_HEARD);
     bells::empty_message(&signals.join(bell_name(slot)))?;
@@ -442,11 +443,46 @@ pub(crate) fn catch_up_name(n: u32) -> String {
     format!("c{}.wav", (n - 1) % BELLS + 1)
 }
 
-/// Silence every catch-up bell (a new UI session starts its cursor at 1, and a
-/// catch-up bell left from the old one would point it at stale slots).
-pub(crate) fn clear_catch_up(signals: &Path) -> io::Result<()> {
+// The frame bells, beside the message bells (CLAUDE.md, "Changing the channel"),
+// on trial from 2026-11-11: the addon checks one every frame and reads the answer
+// the next (the game says a ringing bell plays within 2 ms, measured), where the
+// message bell's poll waits up to 0.5 s and then 0.15 s. The same files as the
+// message bells (10 s of silence ringing, empty idle) under their own names,
+// rung for every slot on a thread of their own: a frame bell the game holds must
+// never hold up the message channel.
+pub(crate) fn frame_bell_name(n: u32) -> String {
+    format!("f{}.wav", (n - 1) % BELLS + 1)
+}
+
+/// One frame bell thread at a time, so two sends never ring two frame bells.
+static FRAME_BELLS: Mutex<()> = Mutex::new(());
+
+/// Ring `slot`'s frame bell as `ring` rings its message bell: every other one
+/// emptied first, its own emptied after `BELL_HEARD`.
+pub(crate) fn ring_frame_bell(signals: &Path, slot: u32) {
+    let signals = signals.to_path_buf();
+    thread::spawn(move || {
+        let _turn = FRAME_BELLS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let rung = (|| {
+            for bell in (1..=BELLS).filter(|bell| *bell != (slot - 1) % BELLS + 1) {
+                bells::empty_message(&signals.join(frame_bell_name(bell)))?;
+            }
+            bells::ring_message(&signals.join(frame_bell_name(slot)))?;
+            thread::sleep(BELL_HEARD);
+            bells::empty_message(&signals.join(frame_bell_name(slot)))
+        })();
+        if let Err(err) = rung {
+            println!("frame bell for slot {slot}: {err}");
+        }
+    });
+}
+
+/// Silence every catch-up and frame bell (a new UI session starts its cursor at
+/// 1, and a bell left from the old one would point it at stale slots).
+pub(crate) fn clear_session_bells(signals: &Path) -> io::Result<()> {
     for bell in 1..=BELLS {
         bells::empty_message(&signals.join(catch_up_name(bell)))?;
+        bells::empty_message(&signals.join(frame_bell_name(bell)))?;
     }
     Ok(())
 }

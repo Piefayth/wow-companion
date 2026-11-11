@@ -38,7 +38,7 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     // messages the addon had not read yet: "Inbox.lua is empty", "slot 4 failed:
     // nil" (2026-11-10). Bells and inboxes belong to the sender alone.
     let missing = |path: &Path| !path.exists();
-    for bell in (1..=BELLS).flat_map(|bell| [bell_name(bell), catch_up_name(bell)]) {
+    for bell in (1..=BELLS).flat_map(|bell| [bell_name(bell), catch_up_name(bell), frame_bell_name(bell)]) {
         let path = signals.join(bell);
         if missing(&path) {
             bells::empty_message(&path)?;

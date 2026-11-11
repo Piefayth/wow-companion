@@ -37,14 +37,14 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
         let mut session = None;
         while BEATING.load(Ordering::SeqCst) {
             // a new UI session (the save file was just written): clear the catch-up
-            // bells so the fresh addon is not pointed at the old session's slots
+            // and frame bells so the fresh addon is not pointed at the old session's slots
             let began = crate::session_began(&addons);
             if began != session {
                 // a save landed (or the companion started): the ledger drops what
-                // the game now holds and checks it took its mailbox
+                // the game now holds
                 crate::ledger::confirm(&addons);
                 session = began;
-                if let Err(err) = crate::clear_catch_up(&addons.join(crate::LINK).join("Signals")) {
+                if let Err(err) = crate::clear_session_bells(&addons.join(crate::LINK).join("Signals")) {
                     eprintln!("heartbeat: {err}");
                 }
                 // a save just landed (or the companion started): copy it, and say

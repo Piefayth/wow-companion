@@ -206,9 +206,13 @@ because the game held them open. The message channel is the 2026-11-09 protocol
 `m1`..`m8`) until a replacement is proven. A replacement runs **beside** it, on
 its own files, and switches over only after the addon's channel counts show it
 delivering for a whole session. The **catch-up bells** (`c1`..`c8`, `ring_catch_up`
-in main.rs) are such a replacement, beside it since 2026-11-10: the newest slot's
+in channel.rs) are such a replacement, beside it since 2026-11-10: the newest slot's
 rings until the next send, so a missed message bell is taken late instead of
-stalling the rest; their count is `channel.caughtUp`. Renaming files to escape a wedged one is a sign
+stalling the rest; their count is `channel.caughtUp`. The **frame bells** (`f1`..`f8`,
+`ring_frame_bell`) are on trial beside it since 2026-11-11: the same files as the
+message bells, checked every frame and answered the next (the game says a ringing
+bell plays within 2 ms; a check costs about a microsecond), against the message
+poll's 0.5 s + 0.15 s. Renaming files to escape a wedged one is a sign
 the change should not have shipped, not a fix.
 
 ## The agent

@@ -193,7 +193,7 @@ fn current_bell(name: &str) -> bool {
     let stem = name.trim_end_matches(".wav");
     matches!(stem, "always" | "never" | "doctor" | "pulse-a" | "pulse-b")
         || (stem.len() == 2
-            && (stem.starts_with('m') || stem.starts_with('c'))
+            && (stem.starts_with('m') || stem.starts_with('c') || stem.starts_with('f'))
             && stem[1..].parse::<u32>().is_ok_and(|n| (1..=8).contains(&n)))
 }
 
@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn only_todays_bell_names_are_current() {
-        for name in ["m1.wav", "m8.wav", "c3.wav", "pulse-a.wav", "always.wav", "never.wav", "doctor.wav"] {
+        for name in ["m1.wav", "m8.wav", "c3.wav", "f5.wav", "pulse-a.wav", "always.wav", "never.wav", "doctor.wav"] {
             assert!(current_bell(name), "{name}");
         }
         for name in ["1.wav", "m9.wav", "alive-a.wav", "show.wav", "m10.wav"] {
