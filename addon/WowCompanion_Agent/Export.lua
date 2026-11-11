@@ -278,10 +278,15 @@ local function exportContext()
 		end
 		return ok
 	end
-	local function section(name, fn)
+	-- a section's heading; a section that shares another's reading (the empty
+	-- slots and the controller, inside the action slots) is a heading only
+	local function heading(name)
 		current = name
 		line("")
 		line("== " .. name .. " ==")
+	end
+	local function section(name, fn)
+		heading(name)
 		part(fn)
 	end
 
@@ -467,7 +472,7 @@ local function exportContext()
 			end
 			line(("-- %d filled"):format(filled))
 
-			section("empty slots on screen")
+			heading("empty slots on screen")
 			line("-- where a new action can go and be seen")
 			local open = {}
 			for slot = 1, LAST_ACTION_SLOT do
@@ -480,7 +485,7 @@ local function exportContext()
 			end
 			line(#open > 0 and table.concat(open, ", ") or "none")
 
-			section("controller")
+			heading("controller")
 			line("-- the chord for each bar. Buttons 1-4 are the d-pad left, up, right, down;")
 			line("-- 5-8 the face buttons square, triangle, circle, cross (from each button's")
 			line("-- icon). The modifier is learned by watching which triggers are held when a")
