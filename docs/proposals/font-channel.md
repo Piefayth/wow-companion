@@ -27,6 +27,21 @@ each second's font a few seconds ahead (same machine, same clock).
   1.87 s, 1.84 to 1.92, over 26 world loads) is saved in
   `%LOCALAPPDATA%\wow-companion\loadtimes\baseline-512`.
 
+## Measured so far (13:00)
+
+- **Fonts load here.** A name that existed at launch, written after it, loads:
+  `SetFont` answers false the first time (the file is loading) and true on
+  the next try a moment later, and only for text laid out on screen (alpha 0
+  is fine; off screen it never loads). The first trial broke both rules, and its
+  fonts had no vertical metrics in OS/2. The widths came back as written:
+  '!' to '"' measured 254.44 against 255 steps, at UI scale 0.64.
+- **A name made after launch is "file not found"**, as wow-forever-codex found.
+- **4,096 folders and 16,384 font names cost the launch nothing measurable**:
+  launch to login 4.56 s (4.72 before), addons loading 1.88 s median (1.87).
+  The old UI's closing at a reload took 0.86 s (0.43 before), cause unknown yet.
+- The old client loaded the new trial addon's folder at a /reload (12:48): a new
+  addon folder was found without a restart. Not yet repeated.
+
 ## What decides it
 
 1. Do the fonts arrive (ok count, no errors) and how fast is a read?
