@@ -1,9 +1,7 @@
--- Split out of Companion.lua (2026-11-10). What it needs from there comes
--- through WC.Core; what Companion.lua calls here is WC.Chords.
+-- What Companion.lua calls here is WC.Chords; what it needs from others is
+-- their named functions (WC.<File>.<verb>).
 
-local core = WC.Core
-local cvar = core.cvar
-local effectiveModules = core.effectiveModules
+local function cvar(...) return WC.Probes.cvar(...) end
 
 -- Name lookups, asked rather than assumed.
 --
@@ -412,23 +410,15 @@ local function bookEntries()
 	return found
 end
 
--- what Export.lua needs from this file (it loads after it; see its header)
-WC.Core = WC.Core or {}
-WC.Core.GAMEPAD_BARS = GAMEPAD_BARS
-WC.Core.LAST_ACTION_SLOT = LAST_ACTION_SLOT
-WC.Core.PAD_WORDS = PAD_WORDS
-WC.Core.actionFrames = actionFrames
-WC.Core.barLabel = barLabel
-WC.Core.barModifier = barModifier
-WC.Core.bookEntries = bookEntries
-WC.Core.chordFor = chordFor
-WC.Core.cvar = cvar
-WC.Core.effectiveModules = effectiveModules
-WC.Core.itemName = itemName
-WC.Core.slotHas = slotHas
-WC.Core.spellName = spellName
 
 WC.Chords = WC.Chords or {}
+WC.Chords.GAMEPAD_BARS = GAMEPAD_BARS
+WC.Chords.LAST_ACTION_SLOT = LAST_ACTION_SLOT
+WC.Chords.PAD_WORDS = PAD_WORDS
+WC.Chords.barLabel = barLabel
+WC.Chords.barModifier = barModifier
+WC.Chords.bookEntries = bookEntries
+WC.Chords.chordFor = chordFor
 WC.Chords.actionFrames = actionFrames
 WC.Chords.itemName = itemName
 WC.Chords.learnChords = learnChords
