@@ -54,6 +54,7 @@ local function getModel()
 	if type(WowCompanionAgentDB) ~= "table" or not WC.JobsModel then return nil end
 	WowCompanionAgentDB.jobModel = WowCompanionAgentDB.jobModel or { jobs = WowCompanionAgentDB.jobs }
 	WowCompanionAgentDB.jobs = nil
+	WowCompanionAgentDB.lines = WowCompanionAgentDB.lines or {}
 	model = WC.JobsModel.new({
 		now = nowMs,
 		wall = wallMs,

@@ -5,7 +5,7 @@
 -- The channel itself is WowCompanion_Link's.
 
 WC.Saved("WowCompanion_Agent", "WowCompanionAgentDB", function(db)
-	WC.MoveSaved(db, { "log", "unread", "board", "errors", "blocked", "blockedNotices", "blockedStacks",
+	WC.MoveSaved(db, { "log", "unread", "board", "blocked", "blockedNotices", "blockedStacks",
 		"windowCombat", "modules", "runs", "pathTaint", "taint", "context", "spellForms", "chords",
 		"chordStats", "chordMisses", "chordsFixed", "focusLog", "jobs", "jobModel", "lines", "audit",
 		"windowSize", "windowFontScale", "placeTests", "links", "tradeLinks", "api", "apidocs", "alive" })
@@ -823,63 +823,7 @@ end
 
 local function loadModules(...) return WC.Sandbox.loadModules(...) end
 
--- Lua errors, so the agent sees what its code broke instead of writing blind.
--- Blizzard's own hook for this (AddLuaErrorHandler) is secure-only, and replacing
--- the error handler would run Blizzard's error window tainted. A post-hook on the
--- method its handler ends in (ScriptErrors:AddUnhandledError) gets the message,
--- the stack and the locals without touching that path. Only errors whose stack
--- names a non-Blizzard addon are kept: Blizzard's own are not ours to fix.
-local ERRORS_KEPT = 25
-local function keepError(_, message, stack)
-	message = tostring(message or "")
-	stack = tostring(stack or "")
-	local where = message .. "\n" .. stack
-	local foreign = false
-	for addon in where:gmatch("AddOns[/\\]([%w_%-]+)") do
-		if not addon:find("^Blizzard_") then
-			foreign = true
-			break
-		end
-	end
-	if not foreign then
-		return
-	end
-	WowCompanionAgentDB.errors = WowCompanionAgentDB.errors or {}
-	local errors = WowCompanionAgentDB.errors
-	for _, seen in ipairs(errors) do
-		if seen.message == message then
-			seen.count = (seen.count or 1) + 1
-			seen.at = time()
-			return
-		end
-	end
-	-- the first lines of a stack say where; the rest is the engine's frames
-	local lines, kept = {}, 0
-	for text in stack:gmatch("[^\n]+") do
-		kept = kept + 1
-		if kept > 8 then
-			break
-		end
-		lines[#lines + 1] = text
-	end
-	errors[#errors + 1] = { at = time(), count = 1, message = message:sub(1, 400), stack = table.concat(lines, "\n") }
-	while #errors > ERRORS_KEPT do
-		table.remove(errors, 1)
-	end
-end
-
-local function watchErrors()
-	if ScriptErrors and ScriptErrors.AddUnhandledError then
-		hooksecurefunc(ScriptErrors, "AddUnhandledError", function(...)
-			pcall(keepError, ...)
-		end)
-		-- hooked once: from here on this does nothing
-		watchErrors = function() end
-	end
-end
-
 local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 -- fires on /reload as well as logout, just before SavedVariables is written: the
 -- one moment worth exporting at, since nothing reaches disk any other time
@@ -889,10 +833,6 @@ frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
 -- the spellbook shows a form's own spells only while in it
 frame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 frame:SetScript("OnEvent", function(_, event, ...)
-	if event == "ADDON_LOADED" then
-		-- Blizzard_ScriptErrors may load before or after us
-		pcall(watchErrors)
-	end
 	if event == "UPDATE_SHAPESHIFT_FORM" then
 		-- a moment later, once the book has swapped its entries
 		C_Timer.After(0.2, function() pcall(noteForms) end)

@@ -265,7 +265,7 @@ if hooksecurefunc and DisplayInterfaceActionBlockedMessage then
 		table.insert(WowCompanionAgentDB.blockedNotices, stamp .. (ours and (" " .. ours) or ""))
 		-- the whole stack, kept apart: the caller is often Blizzard code run for us
 		WowCompanionAgentDB.blockedStacks = WowCompanionAgentDB.blockedStacks or {}
-		table.insert(WowCompanionAgentDB.blockedStacks, stamp .. " " .. (stack:gsub("\n", " | ")):sub(1, 600))
+		table.insert(WowCompanionAgentDB.blockedStacks, stamp .. " " .. (stack:gsub("\n", " | ")):sub(1, 2000))
 		while #WowCompanionAgentDB.blockedStacks > 10 do table.remove(WowCompanionAgentDB.blockedStacks, 1) end
 		while #WowCompanionAgentDB.blockedNotices > 40 do table.remove(WowCompanionAgentDB.blockedNotices, 1) end
 		if placeEntry then

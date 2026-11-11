@@ -66,7 +66,7 @@ pub(crate) fn saved_string(addons: &Path, key: &str) -> io::Result<String> {
 /// 500 lines answering questions we asked while mapping the UI, not ones the agent
 /// asks. Those stay in the file for us and out of the prompt.
 pub(crate) const AGENT_SECTIONS: &[&str] =
-    &["character", "equipped", "bags", "bag contents", "skills", "quest log", "action slots", "empty slots on screen", "controller", "macros", "spellbook", "reach", "modules", "capabilities", "code runs", "lua errors"];
+    &["character", "equipped", "bags", "bag contents", "skills", "quest log", "action slots", "empty slots on screen", "controller", "macros", "spellbook", "reach", "modules", "capabilities", "code runs", "blocked"];
 
 pub(crate) fn sections<'a>(context: &'a str, wanted: &[&str]) -> Vec<(&'a str, Vec<&'a str>)> {
     let mut kept: Vec<(&str, Vec<&str>)> = Vec::new();
@@ -88,7 +88,7 @@ pub(crate) fn sections<'a>(context: &'a str, wanted: &[&str]) -> Vec<(&'a str, V
 
 /// The quick conversation's export: what chat, links and buttons need, so the
 /// prompt is a fraction of the size and the answer comes sooner.
-pub(crate) const QUICK_SECTIONS: &[&str] = &["character", "bags", "bag contents", "skills", "macros", "capabilities", "lua errors"];
+pub(crate) const QUICK_SECTIONS: &[&str] = &["character", "bags", "bag contents", "skills", "macros", "capabilities", "blocked"];
 
 pub(crate) fn agent_context(addons: &Path) -> Option<String> {
     agent_context_for(addons, "")
@@ -103,6 +103,8 @@ pub(crate) fn agent_context_for(addons: &Path, slot: &str) -> Option<String> {
         out.push(format!("== {name} =="));
         out.extend(lines.iter().map(|line| line.to_string()));
     }
+    out.push("== lua errors ==".to_string());
+    out.push(lua_errors(addons));
     out.push("== player profile ==".to_string());
     out.push(
         fs::read_to_string(profile())
@@ -112,6 +114,44 @@ pub(crate) fn agent_context_for(addons: &Path, slot: &str) -> Option<String> {
     out.push(integrations(addons));
     Some(out.join("
 "))
+}
+
+/// Every Lua error since the game launched, from the game's own log: Blizzard's
+/// error handler writes each one to `Logs\General.log` through `C_Log` as it
+/// happens (Blizzard_ScriptErrors), and the game starts that file afresh at each
+/// launch. So this is live, needs no reload, and holds errors no addon could
+/// catch: those from save files and addons loaded before ours. Repeats are
+/// counted, newest last.
+pub(crate) fn lua_errors(addons: &Path) -> String {
+    let log = addons.parent().and_then(Path::parent).map(|client| client.join("Logs").join("General.log"));
+    let Some(text) = log.and_then(|log| fs::read(log).ok()) else {
+        return r"(the game's log, Logs\General.log, could not be read)".to_string();
+    };
+    errors_in(&String::from_utf8_lossy(&text))
+}
+
+/// The error handler's lines of a General.log (`[E][Lua] Lua Error: `; other
+/// `C_Log` lines share the tag, the bridge probe's among them), each message once
+/// with its count and its last time, the newest ten.
+fn errors_in(log: &str) -> String {
+    let mut seen: Vec<(String, String, usize)> = Vec::new();
+    for line in log.lines() {
+        let Some((stamp, message)) = line.split_once("  [E][Lua] Lua Error: ") else { continue };
+        let message = message.trim().to_string();
+        match seen.iter().position(|(_, m, _)| *m == message) {
+            Some(at) => {
+                let (_, m, n) = seen.remove(at);
+                seen.push((stamp.to_string(), m, n + 1));
+            }
+            None => seen.push((stamp.to_string(), message, 1)),
+        }
+    }
+    if seen.is_empty() {
+        return "none since the game launched".to_string();
+    }
+    let skip = seen.len().saturating_sub(10);
+    seen[skip..].iter().map(|(stamp, message, n)| format!("{stamp} x{n}: {message}")).collect::<Vec<_>>().join("
+")
 }
 
 /// The notes in integrations/<folder>.md for each addon whose folder is in the
@@ -197,4 +237,27 @@ pub(crate) fn profile() -> PathBuf {
         let _ = fs::copy(dir.join("profile.template.md"), &path);
     }
     path
+}
+
+#[cfg(test)]
+mod lua_error_tests {
+    use super::errors_in;
+
+    #[test]
+    fn counts_repeats_and_keeps_only_lua_errors() {
+        let log = "11/11 00:27:04.716  [N][AccountData] PreLoadGameCVars
+11/11 00:27:11.222  [E][Lua] Lua Error: WowCompanion.lua:10924: attempt to call a nil value
+
+11/11 00:29:00.000  [E][Lua] WCPROBE log 1001
+11/11 00:30:00.000  [E][Lua] Lua Error: Bags.lua:5: boom
+11/11 00:31:00.000  [E][Lua] Lua Error: WowCompanion.lua:10924: attempt to call a nil value
+";
+        assert_eq!(
+            errors_in(log),
+            "11/11 00:30:00.000 x1: Bags.lua:5: boom
+11/11 00:31:00.000 x2: WowCompanion.lua:10924: attempt to call a nil value"
+        );
+        assert_eq!(errors_in("11/11 00:00:00.000  [N][Lua] fine
+"), "none since the game launched");
+    }
 }

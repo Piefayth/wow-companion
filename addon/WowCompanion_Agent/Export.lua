@@ -732,33 +732,21 @@ local function exportContext()
 
 	end)
 
-	section("lua errors", function()
-		line("-- errors from addons that are not Blizzard's (ours, the agent's, the player's),")
-		line("-- newest first, with how often each repeated. Read the stack, fix the cause")
-		local errors = WowCompanionAgentDB.errors or {}
-		for at = #errors, math.max(1, #errors - 9), -1 do
-			local err = errors[at]
-			line(("%s x%d: %s"):format(date("%m-%d %H:%M:%S", err.at or 0), err.count or 1, tostring(err.message)))
-			if err.stack and err.stack ~= "" then
-				line("    " .. (err.stack:gsub(newline, newline .. "    ")))
-			end
-		end
+	-- Lua errors are not here: the PC reads them live from the game's own log
+	-- (src/context.rs, Logs/General.log), where Blizzard writes every one
+	section("blocked", function()
 		local wc = WowCompanionAgentDB.windowCombat
 		if wc then
 			line(("-- Companion window at the last fight's start: still protected=%s, extra secure children stowed: %s; last close: %s; last hidden: %s")
 				:format(tostring(wc.protectedAfter), wc.stowedExtra ~= "" and tostring(wc.stowedExtra) or "none", tostring(wc.lastHide), tostring(wc.lastOnHide)))
 		end
 		local blocked = WowCompanionAgentDB.blocked or {}
-		if #blocked > 0 then
-			line("-- actions the game blocked (\"Interface action failed\"), newest first")
-			for at = #blocked, math.max(1, #blocked - 9), -1 do
-				local b = blocked[at]
-				line(("%s x%d: %s %s%s"):format(date("%m-%d %H:%M:%S", b.at or 0), b.count or 1, tostring(b.event), tostring(b.what), b.combat and " (in combat)" or ""))
-			end
+		line("-- actions the game blocked (\"Interface action failed\"), newest first")
+		for at = #blocked, math.max(1, #blocked - 9), -1 do
+			local b = blocked[at]
+			line(("%s x%d: %s %s%s"):format(date("%m-%d %H:%M:%S", b.at or 0), b.count or 1, tostring(b.event), tostring(b.what), b.combat and " (in combat)" or ""))
 		end
-		if #errors == 0 then
-			line("none")
-		end
+		if #blocked == 0 then line("none") end
 	end)
 
 	if released and WowCompanionAgentDB.context then

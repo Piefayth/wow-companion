@@ -27,11 +27,12 @@ local RETRY_MS, TRIES = 4000, 3
 
 function M.new(deps)
 	local m = setmetatable({ deps = deps, jobs = {} }, M)
-	local store = deps.store or {}
+	-- both are saved tables the caller owns: a table made here would be lost at
+	-- the next reload, and every line in the mailbox applied again
+	local store = assert(deps.store, "JobsModel: no store")
 	m.store = store
 	store.jobs = store.jobs or {}
-	store.offset = nil -- a learned clock offset, from before clips had an identity
-	m.lines = deps.lines or {}
+	m.lines = assert(deps.lines, "JobsModel: no lines")
 	local cutoff = deps.wall() - 86400000
 	for id, e in pairs(store.jobs) do
 		if type(id) ~= "number" or id < cutoff or type(e) ~= "table" or not RANK[e.state] then

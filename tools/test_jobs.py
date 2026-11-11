@@ -15,7 +15,8 @@ After each random schedule runs to quiet, these must hold:
   2. nothing still shown as being heard
   3. a cancel hits only its own job: every job the PC cancelled was one you
      cancelled
-  4. each numbered line is applied exactly once
+  4. each numbered line is applied exactly once, also across a reload: a new
+     model on the same saved tables, the mailbox replaying every line
 """
 import os
 import random
@@ -42,17 +43,23 @@ class Sim:
         self.problems = []
         self.lua = luajit21.LuaRuntime(unpack_returned_tuples=True)
         self.lua.execute("WC = {}")
-        model = self.lua.execute(open(MODEL, encoding="utf-8").read())
+        self.model = self.lua.execute(open(MODEL, encoding="utf-8").read())
+        self.sent = []  # every numbered line, as the mailbox would replay it
         sim = self
 
         def command(verb, slot, ident):
             sim.later(sim.rng.uniform(500, 2000), lambda: sim.pc_command(verb, slot, int(ident)), drop=0.25)
 
-        deps = self.lua.table_from({"now": lambda: sim.t, "wall": lambda: 1.79e12 + sim.t,
-                                    "command": command,
-                                    "store": self.lua.table(), "lines": self.lua.table(),
-                                    "changed": lambda: None})
-        self.m = model.new(deps)
+        self.deps = self.lua.table_from({"now": lambda: sim.t, "wall": lambda: 1.79e12 + sim.t,
+                                         "command": command,
+                                         "store": self.lua.table(), "lines": self.lua.table(),
+                                         "changed": lambda: None})
+        self.m = self.model.new(self.deps)
+
+    def reload(self):
+        self.m = self.model.new(self.deps)
+        for msg in self.sent:
+            self.game_receive(msg)
 
     def later(self, delay, fn, drop=0.0):
         if self.rng.random() < drop:
@@ -78,6 +85,7 @@ class Sim:
     def line(self, slot, **fields):
         self.numbers[slot] = self.numbers.get(slot, 0) + 1
         msg = dict(kind="log", slot=slot, n=self.numbers[slot], **fields)
+        self.sent.append(msg)
         self.send(msg)
 
     def game_receive(self, msg):
@@ -200,6 +208,7 @@ def one(seed):
         step += 200
         s.run(step)
         s.m.Tick(s.m)
+    s.reload()
     return s.check()
 
 
