@@ -568,6 +568,13 @@ function handlers.log(inbox)
 	-- already held, from a slot or the mailbox, is not applied again
 	local islot = inbox.slot or ""
 	if WC.Jobs and not WC.Jobs.Hold(islot, inbox.n) then return WC.Link.HELD end
+	-- a line without `pending` ends the waiting line before its words go in, so
+	-- a reply takes the work entry's place instead of landing under it
+	-- (its jobs' end applied first, so the entry knows it was answered)
+	if inbox.slot and not inbox.pending and inbox.state ~= "queued" then
+		if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
+		setPending(nil, islot)
+	end
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
 	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
@@ -579,11 +586,9 @@ function handlers.log(inbox)
 	end
 	-- the job's state, once its line is in the transcript to carry its controls
 	if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
-	-- then the waiting line, so the work entry it draws comes after the words it
-	-- answers (a fast cancel left "stopped" above them, 2026-11-11): `pending`
-	-- starts this conversation's waiting line, a line without it ends it, and a
-	-- queued request leaves the running one's alone
-	if (inbox.slot or inbox.pending) and inbox.state ~= "queued" then setPending(inbox.pending, islot) end
+	-- a line with `pending` starts the waiting line after its words, so the work
+	-- entry comes below what it answers (2026-11-11)
+	if inbox.pending and inbox.state ~= "queued" then setPending(inbox.pending, islot) end
 	settleTranscribing(islot)
 	-- reveal, not Show: ShowUIPanel returns at once for a frame already shown, so a
 	-- window opened by a plain Show never becomes a panel and the controller's
