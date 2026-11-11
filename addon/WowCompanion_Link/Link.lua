@@ -49,6 +49,11 @@ local function catchUpPath(n)
 	return SIGNALS .. "c" .. ((n - 1) % BELLS + 1) .. ".wav"
 end
 
+-- frame bells, on trial beside the message bells: see ring_frame_bell in src/channel.rs
+local function frameBellPath(n)
+	return SIGNALS .. "f" .. ((n - 1) % BELLS + 1) .. ".wav"
+end
+
 -- when this UI session began, to tell this session's messages from a slot's old one
 local sessionStart = time()
 
@@ -252,6 +257,15 @@ end
 -- What the poll has seen, saved at every reload, so a stuck channel can be read
 -- from the save file instead of guessed at.
 local channel = { polls = 0, heard = 0, caughtUp = 0 }
+-- which path took each slot first: frame, message or catchUp (a slot is taken once)
+local function take(path, catchingUp)
+	local taken = receive(catchingUp)
+	if taken ~= false then
+		channel.took = channel.took or {}
+		channel.took[path] = (channel.took[path] or 0) + 1
+	end
+	return taken
+end
 local loadedAt = GetTime()
 local catchUpTurn = 0
 
@@ -266,7 +280,7 @@ local function poll()
 	safely("bell poll", listen, bellPath(waiting), function(rang)
 		if rang and nextSlot == waiting then
 			channel.heard = channel.heard + 1
-			safely("a message from the companion", receive)
+			safely("a message from the companion", take, "message")
 		end
 	end)
 	-- The catch-up bells, beside the message bells: one per poll, in turn over
@@ -288,7 +302,7 @@ local function poll()
 				channel.caughtUp = channel.caughtUp + 1
 				channel.lastCaughtUp = ("waiting on slot %d, took %d at %s"):format(waiting, ahead + 1, date("%H:%M:%S"))
 				for _ = 0, ahead do
-					local ok, taken = pcall(receive, true)
+					local ok, taken = pcall(take, "catchUp", true)
 					if not ok or taken == false then
 						break
 					end
@@ -296,6 +310,41 @@ local function poll()
 			end
 		end)
 	end
+end
+
+-- The frame bell trial (the player's yes, 2026-11-11): the next slot's f bell,
+-- played one frame and asked the next (IsPlaying says yes 2 ms after a ringing
+-- bell starts; a check costs about a microsecond). One play in flight at a time.
+-- A ring takes the slot with the catch-up path's session check. Off with
+-- `/wc frames off` (saved), if the companion cannot write a bell the game holds.
+local frameHandle, frameSlot, framePlayedAt
+local function frameCheck()
+	if frameHandle then
+		local playing = C_Sound.IsPlaying(frameHandle)
+		StopSound(frameHandle)
+		if playing then
+			if nextSlot == frameSlot then
+				local lag = (GetTime() - framePlayedAt) * 1000
+				local taken = take("frame", true)
+				if taken == false then
+					channel.frameEmpty = (channel.frameEmpty or 0) + 1
+				else
+					channel.frameHeard = (channel.frameHeard or 0) + 1
+					channel.frameLagMs = (channel.frameLagMs or 0) + lag
+					channel.frameLagMaxMs = math.max(channel.frameLagMaxMs or 0, math.floor(lag))
+				end
+			else
+				-- rang for a slot another path took already
+				channel.frameLate = (channel.frameLate or 0) + 1
+			end
+		end
+	end
+	frameHandle = nil
+	if WowCompanionLinkDB.frameBells == false then return end
+	channel.framePolls = (channel.framePolls or 0) + 1
+	frameSlot, framePlayedAt = nextSlot, GetTime()
+	local _, handle = PlaySoundFile(frameBellPath(frameSlot), "Master")
+	frameHandle = handle
 end
 
 -- Polled from OnUpdate, which WoW keeps calling whatever happened the frame
@@ -306,6 +355,7 @@ local function setPolling(on)
 	polling = on
 	local since = 0
 	pollFrame:SetScript("OnUpdate", on and function(_, elapsed)
+		safely("frame bell", frameCheck)
 		since = since + elapsed
 		if since >= 0.5 then
 			since = 0
@@ -327,6 +377,21 @@ SlashCmdList.WOWCOMPANION = function(command)
 	say(table.concat(words, ", "))
 end
 slash.talkkey = learnTalkKey
+-- the frame bell trial's counts, said and drawn on the strip (read without a reload)
+slash.frames = function(rest)
+	if rest == "off" or rest == "on" then
+		WowCompanionLinkDB.frameBells = rest == "on"
+		say("frame bells " .. rest)
+		return
+	end
+	local c, t = channel, channel.took or {}
+	local text = ("frame bells %s: polls %d, heard %d, rang for a slot taken already %d, empty or stale %d, lag avg %.0f ms max %d ms; slots taken by frame %d, message %d, catch-up %d; message polls %d"):format(
+		WowCompanionLinkDB.frameBells == false and "off" or "on", c.framePolls or 0, c.frameHeard or 0,
+		c.frameLate or 0, c.frameEmpty or 0, (c.frameLagMs or 0) / math.max(1, c.frameHeard or 0),
+		c.frameLagMaxMs or 0, t.frame or 0, t.message or 0, t.catchUp or 0, c.polls)
+	say(text)
+	if WowCompanion_Strip and WowCompanion_Strip.Send then WowCompanion_Strip.Send(text, 15) end
+end
 -- the bell poll is the only thing the bridge does continuously
 slash.quiet = function()
 	setPolling(false)
