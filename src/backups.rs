@@ -151,24 +151,47 @@ fn prune(folder: &Path, kind: impl Fn(&str) -> bool) {
     }
 }
 
-/// How many conversation lines a save holds (each log entry has one `who`).
-fn lines(save: &str) -> usize {
-    save.matches("[\"who\"] = ").count()
+/// `WowCompanionDB.loads`: the addon adds one each time it loads its saved
+/// table, and nothing else writes it, so it only ever grows unless the addon
+/// loaded empty. Read at the table's top level only (the game writes nested
+/// tables without indentation, so depth is counted, strings skipped).
+pub(crate) fn loads(save: &str) -> Option<u64> {
+    let start = save.find("WowCompanionDB = {")? + "WowCompanionDB = {".len();
+    let bytes = save.as_bytes();
+    let (mut at, mut depth) = (start, 1usize);
+    while at < bytes.len() && depth > 0 {
+        match bytes[at] {
+            b'"' => {
+                at += 1;
+                while at < bytes.len() && bytes[at] != b'"' {
+                    at += if bytes[at] == b'\\' { 2 } else { 1 };
+                }
+            }
+            b'{' => depth += 1,
+            b'}' => depth -= 1,
+            b'[' if depth == 1 && save[at..].starts_with("[\"loads\"] = ") => {
+                let digits = &save[at + "[\"loads\"] = ".len()..];
+                return digits.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok();
+            }
+            _ => {}
+        }
+        at += 1;
+    }
+    None
 }
 
-/// Why `now` looks like a reset of `before`, if it does: the conversation
-/// lost most of its lines and the file most of its size, or the addon's table
-/// is gone. A trimmed history (each conversation keeps its last 300) never
-/// loses this much at once.
+/// Why `now` is a reset of `before`, if it is: the addon's load count went
+/// down (it restarts at 1 when the addon loaded empty), or the table is gone.
+/// Nothing is said for a save from before the counter existed.
 pub(crate) fn reset_suspected(before: &str, now: &str) -> Option<String> {
     if before.contains("WowCompanionDB = {") && !now.contains("WowCompanionDB = {") {
         return Some("the addon's table is missing".into());
     }
-    let (was, is) = (lines(before), lines(now));
-    if was >= 20 && is * 4 < was && now.len() * 3 < before.len() {
-        return Some(format!("{was} conversation lines before, {is} now"));
+    match (loads(before), loads(now)) {
+        (Some(was), Some(is)) if is < was => Some(format!("the addon had loaded {was} times; this save counts {is}")),
+        (Some(was), None) => Some(format!("the addon had loaded {was} times; this save has no count")),
+        _ => None,
     }
-    None
 }
 
 /// Whether `text` is sound enough for the game to load: every string, comment
@@ -276,8 +299,9 @@ pub(crate) fn lua_sound(text: &str) -> Result<(), String> {
 }
 
 /// Put the newest good copy of the main save back (`wow-companion restore-save
-/// [copy]`), with the game closed. Good: sound Lua and not a reset of the
-/// fullest copy kept. The current file is copied first, so this can be undone.
+/// [copy]`), with the game closed. Without a named copy: the sound copy with
+/// the highest load count, the last save before the count went down (newest
+/// of equals). The current file is copied first, so this can be undone.
 pub(crate) fn restore(addons: &Path, chosen: Option<&Path>) -> io::Result<()> {
     if crate::game_running()? {
         return Err(io::Error::other("close the game first: it would overwrite the restored file at logout"));
@@ -290,13 +314,19 @@ pub(crate) fn restore(addons: &Path, chosen: Option<&Path>) -> io::Result<()> {
             let kept = copies(&folder, |_| true);
             let texts: Vec<(PathBuf, String)> =
                 kept.into_iter().filter_map(|path| fs::read_to_string(&path).ok().map(|text| (path, text))).collect();
-            let fullest = texts.iter().map(|(_, text)| lines(text)).max().unwrap_or(0);
+            // oldest first, so max_by_key keeps the newest of equal counts
             texts
                 .iter()
-                .rev()
-                .find(|(_, text)| lua_sound(text).is_ok() && lines(text) * 4 >= fullest)
-                .map(|(path, _)| path.clone())
-                .ok_or_else(|| io::Error::other(format!("no good copy in {}", folder.display())))?
+                .filter(|(_, text)| lua_sound(text).is_ok())
+                .filter_map(|(path, text)| loads(text).map(|count| (count, path)))
+                .max_by_key(|(count, _)| *count)
+                .map(|(_, path)| path.clone())
+                .ok_or_else(|| {
+                    io::Error::other(format!(
+                        "no copy in {} carries a load count to choose by: name the copy to restore",
+                        folder.display()
+                    ))
+                })?
         }
     };
     let text = fs::read_to_string(&pick)?;
@@ -326,14 +356,20 @@ mod tests {
     }
 
     #[test]
-    fn a_reset_is_told_from_a_trim() {
-        let entry = "{ [\"who\"] = \"claude\", [\"text\"] = \"some reply text that takes room\", },\n";
-        let full = format!("WowCompanionDB = {{\n[\"log\"] = {{\n{}}},\n}}\n", entry.repeat(300));
-        let trimmed = format!("WowCompanionDB = {{\n[\"log\"] = {{\n{}}},\n}}\n", entry.repeat(250));
-        let reset = "WowCompanionDB = {\n[\"log\"] = {\n},\n}\n";
-        assert_eq!(reset_suspected(&full, &trimmed), None);
-        assert!(reset_suspected(&full, reset).unwrap().contains("300"));
-        assert!(reset_suspected(&full, "").unwrap().contains("missing"));
+    fn a_reset_is_the_load_count_going_down() {
+        // nested tables are written without indentation: a nested "loads" and
+        // one inside a string must not be read as the addon's
+        let save = |count: u64| {
+            format!(
+                "WowCompanionDB = {{\n[\"log\"] = {{\n{{\n[\"text\"] = \"[\\\"loads\\\"] = 999\",\n[\"loads\"] = 7,\n}},\n}},\n[\"loads\"] = {count},\n}}\n"
+            )
+        };
+        assert_eq!(loads(&save(41)), Some(41));
+        assert_eq!(reset_suspected(&save(41), &save(42)), None);
+        assert!(reset_suspected(&save(41), &save(1)).unwrap().contains("41"));
+        assert!(reset_suspected(&save(41), "").unwrap().contains("missing"));
+        // a save from before the counter existed says nothing
+        assert_eq!(reset_suspected("WowCompanionDB = {\n}\n", &save(1)), None);
     }
 
     /// The check must pass what the game itself writes, or every closed-game
@@ -347,7 +383,7 @@ mod tests {
         for save in found {
             let text = fs::read_to_string(&save).unwrap();
             assert_eq!(lua_sound(&text), Ok(()), "{}", save.display());
-            println!("sound: {} ({} bytes, {} lines)", save.display(), text.len(), lines(&text));
+            println!("sound: {} ({} bytes, loads {:?})", save.display(), text.len(), loads(&text));
         }
     }
 
