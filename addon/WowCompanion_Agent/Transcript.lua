@@ -14,6 +14,23 @@ local TURN_GAP, PARA_GAP, LINE_SPACING = 14, 7, 2
 local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 local NOTE_FONT = "GameFontHighlightSmall"
 
+-- Each turn sits on its own backing, two tones by whose it is (the player,
+-- 2026-11-11: still dark, textured like the rest): your messages on Blizzard's
+-- rock, the replies on its marble, both tiled and dimmed far down.
+local TONES = {
+	you = { [[Interface\FrameGeneral\UI-Background-Rock]], 0.62 },
+	claude = { [[Interface\FrameGeneral\UI-Background-Marble]], 0.2 },
+}
+local function turnBand(content, owner)
+	local tone = TONES[owner] or TONES.claude
+	local band = content:CreateTexture(nil, "BACKGROUND", nil, -1)
+	band:SetTexture(tone[1], "REPEAT", "REPEAT")
+	band:SetHorizTile(true)
+	band:SetVertTile(true)
+	band:SetVertexColor(tone[2], tone[2], tone[2])
+	return band
+end
+
 local function inline(text)
 	text = text:gsub("%*%*(.-)%*%*", "|cffffffff%1|r")
 	text = text:gsub("`([^`]+)`", "|cff9ad5ff%1|r")
@@ -67,7 +84,17 @@ end
 
 -- place one row below the last; returns the new bottom
 function Transcript:Place(row, y, width)
+	local turnTop = y
 	y = y + (y > 0 and row.gap or 0)
+	if row.turn then
+		-- the backing starts halfway into the gap above, so turns meet edge to edge
+		local top = turnTop + math.floor((y - turnTop) / 2)
+		row.turn:ClearAllPoints()
+		row.turn:SetPoint("TOPLEFT", self.content, "TOPLEFT", -6, -top)
+		row.turn:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", 0, -top)
+		row.turn:SetHeight(1)
+		self.turnBand, self.turnTop = row.turn, top
+	end
 	local fs = row.fs
 	fs:ClearAllPoints()
 	fs:SetPoint("TOPLEFT", self.content, "TOPLEFT", row.indent, -y)
@@ -83,6 +110,9 @@ function Transcript:Place(row, y, width)
 		row.band:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", 0, -y + 3)
 		row.band:SetHeight(height + 6)
 		height = height + 3
+	end
+	if self.turnBand then
+		self.turnBand:SetHeight(y + height + math.floor(TURN_GAP / 2) - self.turnTop)
 	end
 	return y + height
 end
@@ -101,6 +131,7 @@ function Transcript:Layout()
 	local following = range <= 0 or offset >= range - 4
 	local fraction = range > 0 and offset / range or 1
 	self.content:SetWidth(width)
+	self.turnBand = nil
 	local y = 0
 	for _, row in ipairs(self.rows) do
 		y = self:Place(row, y, width)
@@ -212,6 +243,7 @@ function Transcript:Add(who, text, continued, at, job)
 			-- your own message's header carries its controls (Jobs.lua)
 			if who == "you" then row.you = true end
 			row.header = true
+			row.turn = turnBand(self.content, who)
 			row.job = job
 			self.gap = 3
 		end
@@ -232,6 +264,7 @@ function Transcript:Add(who, text, continued, at, job)
 			row.fs:Hide()
 			if row.marker then row.marker:Hide() end
 			if row.band then row.band:Hide() end
+			if row.turn then row.turn:Hide() end
 		end
 		self:Layout()
 	end
@@ -245,6 +278,7 @@ end
 function Transcript:AddLive(header, text)
 	local head = self:Row("GameFontNormalSmall", header, 0, TURN_GAP)
 	head.header = true
+	head.turn = turnBand(self.content, "claude")
 	self.gap = 3
 	local line = self:Row(BODY_FONT, text, 0, 2, 0.6, 0.6, 0.6)
 	return { head = head, line = line }
@@ -256,6 +290,7 @@ function Transcript:EndLive(live, text, answered)
 	local n = #self.rows
 	if answered and self.rows[n] == live.line and self.rows[n - 1] == live.head then
 		live.head.fs:Hide()
+		live.head.turn:Hide()
 		live.line.fs:Hide()
 		self.rows[n] = nil
 		self.rows[n - 1] = nil
@@ -279,7 +314,9 @@ function Transcript:Clear()
 		row.fs:Hide()
 		if row.marker then row.marker:Hide() end
 		if row.band then row.band:Hide() end
+		if row.turn then row.turn:Hide() end
 	end
+	self.turnBand = nil
 	self.rows, self.height, self.code, self.gap = {}, 0, false, nil
 	self.live = nil
 	self.content:SetHeight(1)
