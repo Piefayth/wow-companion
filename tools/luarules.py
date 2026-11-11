@@ -21,8 +21,9 @@ files (it never runs in the game) and reports each place a rule is broken:
                          force-tainted; such windows live in the addon's files)
   warn   combat-focus    a SecureHelper-wrapped focus call (SmartNavigation_Mark*,
                          FrameControlsManager, ShowUIPanel/HideUIPanel) with no
-                         InCombatLockdown check before it in its function: in a
-                         fight it fails with "Interface action failed"
+                         InCombatLockdown check before it in its function, and
+                         not handed to WC.AfterCombat: in a fight it fails with
+                         "Interface action failed"
 
 A line (or the line above it) holding `rules: ok <why>` in a comment is
 accepted: say why the rule does not apply there.
@@ -149,7 +150,11 @@ def check(path, ours):
         m = FOCUS_CALL.search(line)
         if m and not re.match(r"\s*(local\s+)?function\b", line) and "hooksecurefunc" not in line:
             start = function_start(lines, index)
-            if not any("InCombatLockdown" in lines[at] for at in range(start, index + 1)):
+            # WC.AfterCombat(fn) is the shared guard (Engine.lua): fn runs now
+            # out of combat, else when the fight ends. A call inside it, or an
+            # `if <name> then` whose next line hands it to it, is guarded.
+            guard = range(start, min(index + 2, len(lines)))
+            if not any("InCombatLockdown" in lines[at] or "AfterCombat" in lines[at] for at in guard):
                 report(index, "warn", "combat-focus", f"{m.group(1).replace(' ', '')} with no InCombatLockdown check before it in its function")
     return found
 

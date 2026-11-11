@@ -17,4 +17,9 @@ local function fine()
 	GameTooltip:Show()                                   -- shared tooltip: not reported
 	SlashCmdList.WCCONTROL = function() end              -- sanctioned: not reported
 end
+local function deferred()
+	if SmartNavigation_MarkFrameFocusable then
+		WC.AfterCombat(function() SmartNavigation_MarkFrameFocusable(f) end) -- after the fight: not reported
+	end
+end
 CloseAllBags() -- rules: ok (the control's accepted line: not reported)
