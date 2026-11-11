@@ -494,6 +494,68 @@ pub(crate) fn tend_slot_bells(addons: &Path) {
 mod tests {
     use super::*;
     use crate::jobs::State;
+    use std::time::{Duration, SystemTime};
+
+    /// A throwaway game folder: <root>/Interface/AddOns/WowCompanion and the
+    /// account's SavedVariables, which is where the slot cursor's reset comes from.
+    fn game(name: &str, slot_count: u32) -> (PathBuf, PathBuf) {
+        let root = env::temp_dir().join(format!("wc-test-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let addons = root.join("Interface").join("AddOns");
+        fs::create_dir_all(addons.join(ADDON)).unwrap();
+        fs::create_dir_all(addons.join(LINK)).unwrap();
+        let saved_dir = root.join("WTF").join("Account").join("A").join("SavedVariables");
+        fs::create_dir_all(&saved_dir).unwrap();
+        // Core's save marks the session; Link's holds the slot count it can see
+        let saved = saved_dir.join(format!("{ADDON}.lua"));
+        fs::write(&saved, "WowCompanionDB = { }").unwrap();
+        fs::write(
+            saved_dir.join(format!("{LINK}.lua")),
+            format!("WowCompanionLinkDB = {{ [\"slotCount\"] = {slot_count}, }}"),
+        )
+        .unwrap();
+        (addons, saved)
+    }
+
+    #[test]
+    fn slots_count_up_and_start_over_when_the_game_saves() {
+        let (addons, saved) = game("cursor", 100);
+        assert_eq!(slots_used(&addons), 0);
+        assert_eq!(next_slot(&addons).unwrap(), 1);
+        assert_eq!(next_slot(&addons).unwrap(), 2);
+        assert_eq!(slots_used(&addons), 2);
+        // a /reload writes SavedVariables: the addon's cursor is back at slot 1
+        let later = SystemTime::now() + Duration::from_secs(5);
+        fs::File::options().write(true).open(&saved).unwrap().set_modified(later).unwrap();
+        assert_eq!(slots_used(&addons), 0);
+        assert_eq!(next_slot(&addons).unwrap(), 1);
+    }
+
+    #[test]
+    fn sends_stop_at_the_slots_the_game_can_see() {
+        let (addons, _) = game("limit", 2);
+        assert_eq!(known_slots(&addons), 2);
+        next_slot(&addons).unwrap();
+        next_slot(&addons).unwrap();
+        let err = next_slot(&addons).unwrap_err().to_string();
+        assert!(err.contains("slots are spent"), "{err}");
+    }
+
+    #[test]
+    fn every_slot_has_its_own_bell_in_each_set() {
+        assert_eq!(slot_bell_name(0, 1), "g0-001.wav");
+        assert_eq!(slot_bell_name(2, 512), "g2-512.wav");
+        let names: std::collections::HashSet<String> =
+            (0..SETS).flat_map(|set| (1..=SLOTS).map(move |slot| slot_bell_name(set, slot))).collect();
+        assert_eq!(names.len(), (SETS * SLOTS as u64) as usize);
+    }
+
+    #[test]
+    fn lua_strings_survive_quotes_backslashes_and_newlines() {
+        assert_eq!(lua_string(r#"say "hi""#), r#""say \"hi\"""#);
+        assert_eq!(lua_string(r"C:\x"), r#""C:\\x""#);
+        assert_eq!(lua_string("a\nb"), r#""a\nb""#);
+    }
 
     #[test]
     fn only_the_idle_sets_slot_bells_are_emptied() {

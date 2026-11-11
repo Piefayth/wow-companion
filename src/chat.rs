@@ -108,3 +108,26 @@ pub(crate) fn say_inbox(raw: &str, routed: &str) -> Msg {
 pub(crate) fn chat_inbox(text: &str) -> Msg {
     Msg::new("chat").text("text", text)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spoken_channels_become_slash_commands() {
+        assert_eq!(channeled("Party, on my way."), "/p on my way.");
+        assert_eq!(channeled("To guild: anyone selling bags?"), "/g anyone selling bags?");
+        assert_eq!(channeled("Slash P hello there"), "/p hello there");
+        assert_eq!(channeled("Raid warning, stack on me"), "/rw stack on me");
+        assert_eq!(channeled("raid pull in ten"), "/raid pull in ten");
+        assert_eq!(channeled("Reply, sure thing"), "/r sure thing");
+    }
+
+    #[test]
+    fn ordinary_sentences_are_left_alone() {
+        assert_eq!(channeled("Hello everyone."), "Hello everyone.");
+        assert_eq!(channeled("Partying is fun"), "Partying is fun");
+        assert_eq!(channeled("my guild is great"), "my guild is great");
+        assert_eq!(channeled("Party."), "Party.");
+    }
+}

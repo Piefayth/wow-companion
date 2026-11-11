@@ -18,7 +18,7 @@ use std::{
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-use wow_companion_pad::{self as pad, Pad, DEFAULT_PAD};
+use wow_companion_pad::{self as pad, Pad};
 
 mod bluetooth;
 mod mic;
@@ -191,12 +191,9 @@ pub fn listen(
     vocabulary: impl Fn() -> Vec<String>,
     mut heard: impl FnMut(Event) -> io::Result<()>,
 ) -> io::Result<()> {
-    // the pad: `pad=vid:pid` or `pad=xinput` (the setup window picks it), else
-    // this setup's own; button names mean different bits on an Xbox pad
-    let (vid, pid) = match option(options, "pad") {
-        Some(id) => pad::split(id)?,
-        None => DEFAULT_PAD,
-    };
+    // the pad: `pad=vid:pid` or `pad=xinput`, picked in the setup window; button
+    // names mean different bits on an Xbox pad
+    let (vid, pid) = pad::split(option(options, "pad").ok_or_else(|| io::Error::other("no controller chosen (`pad=`): pick it in the setup window"))?)?;
     let talk = pad::press_for(option(options, "ask").unwrap_or(pad::default_talk(vid, pid)), vid, pid)?;
     let wanted_mic = option(options, "mic");
     // Neither has to be there at startup: the model loads either way, and each device

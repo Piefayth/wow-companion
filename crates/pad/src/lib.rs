@@ -22,8 +22,6 @@ mod xinput;
 /// which has no HID face worth reading. Also accepted as `pad=xinput`.
 pub const XINPUT: (u16, u16) = (0xffff, 0x0001);
 
-// the pad as switch2connect presents it; `pads` lists what is actually attached
-pub const DEFAULT_PAD: (u16, u16) = (0x054c, 0x0ce6);
 
 const REPORT: usize = 128;
 const POLL: Duration = Duration::from_millis(4);
@@ -204,9 +202,10 @@ impl Rumbler {
     }
 }
 
-/// One short pulse on the pad, to see whether rumble reaches it at all.
-pub fn buzz() -> io::Result<()> {
-    let (vid, pid) = DEFAULT_PAD;
+/// One short pulse on the pad `id` (`vid:pid` or `xinput`), to see whether
+/// rumble reaches it at all.
+pub fn buzz(id: &str) -> io::Result<()> {
+    let (vid, pid) = split(id)?;
     let pad = Pad::open(vid, pid)?;
     pad.rumble(0xc0, 0xc0)?;
     thread::sleep(Duration::from_millis(250));

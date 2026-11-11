@@ -147,7 +147,10 @@ fn main() {
         // the agents' detached reader (src/strip.rs)
         [command, rest @ ..] if command == "strip" => strip::command(rest),
         [command] if command == "pads" => pad::list(),
-        [command] if command == "buzz" => pad::buzz(),
+        [command] if command == "buzz" => match Settings::load().get("pad") {
+            Some(id) => pad::buzz(id),
+            None => Err(io::Error::other("no controller chosen: pick it in the setup window")),
+        },
         [command] if command == "reconnect" => voice::reconnect(),
         // every link of the chain, checked: is it broken, and where
         [command, addons] if command == "doctor" => doctor::run(Path::new(addons)),
@@ -573,125 +576,4 @@ fn send_line_now(addons: &Path, line: Line) -> io::Result<()> {
         send(addons, &line.msg(false))?;
     }
     Ok(())
-}
-
-fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
-    fs::create_dir_all(to)?;
-    for entry in fs::read_dir(from)? {
-        let entry = entry?;
-        let target: PathBuf = to.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_dir(&entry.path(), &target)?;
-        } else {
-            // write only when the bytes differ: the addon's mtime is how we tell a
-            // stale UI session from a current one, so a pointless copy would lie
-            let source = fs::read(entry.path())?;
-            if fs::read(&target).is_ok_and(|existing| existing == source) {
-                continue;
-            }
-            fs::write(&target, &source)?;
-        }
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::channeled;
-    use super::*;
-    use std::time::{Duration, SystemTime};
-
-    /// A throwaway game folder: <root>/Interface/AddOns/WowCompanion and the
-    /// account's SavedVariables, which is where the slot cursor's reset comes from.
-    fn game(name: &str, slot_count: u32) -> (PathBuf, PathBuf) {
-        let root = env::temp_dir().join(format!("wc-test-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        let addons = root.join("Interface").join("AddOns");
-        fs::create_dir_all(addons.join(ADDON)).unwrap();
-        fs::create_dir_all(addons.join(LINK)).unwrap();
-        let saved_dir = root.join("WTF").join("Account").join("A").join("SavedVariables");
-        fs::create_dir_all(&saved_dir).unwrap();
-        // Core's save marks the session; Link's holds the slot count it can see
-        let saved = saved_dir.join(format!("{ADDON}.lua"));
-        fs::write(&saved, "WowCompanionDB = { }").unwrap();
-        fs::write(
-            saved_dir.join(format!("{LINK}.lua")),
-            format!("WowCompanionLinkDB = {{ [\"slotCount\"] = {slot_count}, }}"),
-        )
-        .unwrap();
-        (addons, saved)
-    }
-
-    #[test]
-    fn slots_count_up_and_start_over_when_the_game_saves() {
-        let (addons, saved) = game("cursor", 100);
-        assert_eq!(slots_used(&addons), 0);
-        assert_eq!(next_slot(&addons).unwrap(), 1);
-        assert_eq!(next_slot(&addons).unwrap(), 2);
-        assert_eq!(slots_used(&addons), 2);
-        // a /reload writes SavedVariables: the addon's cursor is back at slot 1
-        let later = SystemTime::now() + Duration::from_secs(5);
-        fs::File::options().write(true).open(&saved).unwrap().set_modified(later).unwrap();
-        assert_eq!(slots_used(&addons), 0);
-        assert_eq!(next_slot(&addons).unwrap(), 1);
-    }
-
-    #[test]
-    fn sends_stop_at_the_slots_the_game_can_see() {
-        let (addons, _) = game("limit", 2);
-        assert_eq!(known_slots(&addons), 2);
-        next_slot(&addons).unwrap();
-        next_slot(&addons).unwrap();
-        let err = next_slot(&addons).unwrap_err().to_string();
-        assert!(err.contains("slots are spent"), "{err}");
-    }
-
-    /// The release script runs only when a release is made, so a mistake in it
-    /// waits there unseen (a `"$Exe:"` stopped it parsing, 2026-11-11): parse it.
-    #[cfg(windows)]
-    #[test]
-    fn the_release_script_parses() {
-        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("packaging").join("package.ps1");
-        let check = format!(
-            "$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile('{}', [ref]$null, [ref]$e); \
-             if ($e) {{ $e | ForEach-Object {{ $_.Message }}; exit 1 }}",
-            script.display()
-        );
-        let out = std::process::Command::new("powershell").args(["-NoProfile", "-Command", &check]).output().unwrap();
-        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stdout));
-    }
-
-    #[test]
-    fn every_slot_has_its_own_bell_in_each_set() {
-        assert_eq!(slot_bell_name(0, 1), "g0-001.wav");
-        assert_eq!(slot_bell_name(2, 512), "g2-512.wav");
-        let names: std::collections::HashSet<String> =
-            (0..SETS).flat_map(|set| (1..=SLOTS).map(move |slot| slot_bell_name(set, slot))).collect();
-        assert_eq!(names.len(), (SETS * SLOTS as u64) as usize);
-    }
-
-    #[test]
-    fn lua_strings_survive_quotes_backslashes_and_newlines() {
-        assert_eq!(lua_string(r#"say "hi""#), r#""say \"hi\"""#);
-        assert_eq!(lua_string(r"C:\x"), r#""C:\\x""#);
-        assert_eq!(lua_string("a\nb"), r#""a\nb""#);
-    }
-
-    #[test]
-    fn spoken_channels_become_slash_commands() {
-        assert_eq!(channeled("Party, on my way."), "/p on my way.");
-        assert_eq!(channeled("To guild: anyone selling bags?"), "/g anyone selling bags?");
-        assert_eq!(channeled("Slash P hello there"), "/p hello there");
-        assert_eq!(channeled("Raid warning, stack on me"), "/rw stack on me");
-        assert_eq!(channeled("raid pull in ten"), "/raid pull in ten");
-        assert_eq!(channeled("Reply, sure thing"), "/r sure thing");
-    }
-
-    #[test]
-    fn ordinary_sentences_are_left_alone() {
-        assert_eq!(channeled("Hello everyone."), "Hello everyone.");
-        assert_eq!(channeled("Partying is fun"), "Partying is fun");
-        assert_eq!(channeled("my guild is great"), "my guild is great");
-        assert_eq!(channeled("Party."), "Party.");
-    }
 }

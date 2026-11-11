@@ -23,7 +23,7 @@ can be offered, and put it last. Each step has a `kind`:
   step does not). For a whisper the addon resolves the spoken name itself
   (friends, Battle.net friends' characters, guild, group) and, when it cannot,
   says why in the window. In Forever every character has a first and last name
-  ('Cecil Sorrowheart'): always pass both. Any other slash command (/roll, /cast)
+  ('Aren Valecrest'): always pass both. Any other slash command (/roll, /cast)
   is not chat: offer it as a `press`. From agent Lua the same is
   `WowCompanion_ChatLine(line)`; resolve a whisper first with
   `WowCompanion_ResolveWhisper('Name message')` (target, message, label, or nil
@@ -38,12 +38,12 @@ Other things of ours agent code can call (all globals):
   (in WowCompanion_Agent) keeps the last 10 in `WowCompanionAgentDB.tradeLinks` (newest first: label, from,
   where), through reloads. To open one, offer a `press` step with macro
   `/run WCOpenTradeLink()` (newest), `WCOpenTradeLink(n)`, or a name:
-  `/run WCOpenTradeLink("Orihime")` matches who linked it or the profession
+  `/run WCOpenTradeLink("Mira")` matches who linked it or the profession
   ("Enchanting"), newest first, and lists what it has when nothing matches. It
   opens the profession window as a chat click would (measured working 2026-11-10).
   For anything a name cannot say, pass a test, newest first:
   `/run WCOpenTradeLink(function(e) return e.label:find("Enchanting") and e.from:find("^O") end)`
-  (e.label "[Enchanting]", e.from "Orihime Shishun", e.where, e.at; keep it under 255).
+  (e.label "[Enchanting]", e.from "Mira Thornwell", e.where, e.at; keep it under 255).
   `& $env:WOW_COMPANION_EXE strip --chat` prints recent chat lines and the caught
   links, read from the game now. Pick the one meant from that and give
   `/run WCOpenTradeLink(n)` with its number; no test function needed.

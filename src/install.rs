@@ -151,10 +151,45 @@ fn remove_stale(source: &Path, installed: &Path, keep: &[&str]) -> io::Result<()
     walk(source, installed, true, keep)
 }
 
+pub(crate) fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let target: PathBuf = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            // write only when the bytes differ: the addon's mtime is how we tell a
+            // stale UI session from a current one, so a pointless copy would lie
+            let source = fs::read(entry.path())?;
+            if fs::read(&target).is_ok_and(|existing| existing == source) {
+                continue;
+            }
+            fs::write(&target, &source)?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use wow_companion_settings::changes::Changes;
+
+    /// The release script runs only when a release is made, so a mistake in it
+    /// waits there unseen (a `"$Exe:"` stopped it parsing, 2026-11-11): parse it.
+    #[cfg(windows)]
+    #[test]
+    fn the_release_script_parses() {
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("packaging").join("package.ps1");
+        let check = format!(
+            "$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile('{}', [ref]$null, [ref]$e); \
+             if ($e) {{ $e | ForEach-Object {{ $_.Message }}; exit 1 }}",
+            script.display()
+        );
+        let out = std::process::Command::new("powershell").args(["-NoProfile", "-Command", &check]).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stdout));
+    }
 
     #[test]
     fn dictation_only_leaves_out_the_agent_and_what_needs_it() {
