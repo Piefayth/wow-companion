@@ -257,7 +257,9 @@ pub(crate) fn game_clients() -> usize {
 pub(crate) fn deliver(addons: &Path, slot: u32, msg: &Msg) -> io::Result<()> {
     // the inbox lands first: the bell is what tells the addon to go read it
     write_reporting(&addons.join(slot_name(slot)).join("Inbox.lua"), format!("WowCompanion_Inbox = {}\n", msg.lua()).as_bytes())?;
-    bells::ring(&addons.join(LINK).join("Signals").join(slot_bell_name(current_set(addons), slot)))
+    let bell = slot_bell_name(current_set(addons), slot);
+    crate::audit::note("bell", "", &format!("ring {bell}"));
+    bells::ring(&addons.join(LINK).join("Signals").join(bell))
 }
 
 // Slots load once per UI session, so the helper has to know where the addon's cursor
@@ -277,6 +279,20 @@ pub(crate) fn next_slot(addons: &Path) -> io::Result<u32> {
         .unwrap_or((1, String::new()));
     if stamp != seen {
         cursor = 1;
+        // A new UI session, and nothing sent in it yet: its set starts silent.
+        // The other sets are emptied as they go idle (tend_slot_bells), but a
+        // ring that reached this set while it was idle (a send across a
+        // reload) would be taken as a message before it was written, the old
+        // inbox read in its place and the real one never read (2026-11-11).
+        let set = current_set(addons);
+        let signals = addons.join(LINK).join("Signals");
+        for slot in 1..=SLOTS {
+            let path = signals.join(slot_bell_name(set, slot));
+            if fs::metadata(&path).is_ok_and(|meta| meta.len() > 0) {
+                crate::audit::note("bell", "", &format!("stale {} cleared at the session's start", slot_bell_name(set, slot)));
+                bells::empty(&path)?;
+            }
+        }
     }
     if cursor > known_slots(addons) {
         return Err(io::Error::other(format!(
@@ -438,6 +454,7 @@ fn empty_idle_sets(signals: &Path, keep: Option<u64>) -> io::Result<()> {
         for slot in 1..=SLOTS {
             let path = signals.join(slot_bell_name(set, slot));
             if fs::metadata(&path).is_ok_and(|meta| meta.len() > 0) {
+                crate::audit::note("bell", "", &format!("empty {} (idle set)", slot_bell_name(set, slot)));
                 bells::empty(&path)?;
             }
         }

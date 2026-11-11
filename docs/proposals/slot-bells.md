@@ -51,6 +51,11 @@ milder form, which is why they need the catch-up bells and a 2 s wait per send.
   the PC sees either (it watches the save's time 4 times a second; a reload takes
   seconds). When the game exits, all three sets are emptied; and a crashed
   session's set, used again by the next one, is emptied then too.
+- **And a session's set starts silent** (2026-11-11): the first send of a new UI
+  session empties any bell of its set still rung, before writing slot 1. A ring
+  left there (a send across a reload) was taken as slot 3 eighty seconds before
+  the PC wrote it, the old inbox read in its place and the real line never read.
+  Every bell the PC rings or empties is in audit.log (`bell`), with its name.
 - **The game** (`WowCompanion_Link/Link.lua`): every 0.1 s, the next slot's bell
   of this session's set, asked 20 ms later. A ring takes the slot, and the slot
   after it is asked at once, so a burst drains a message per check. Nothing

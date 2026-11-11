@@ -179,7 +179,7 @@ reaches the game with two tricks, and the game reaches the PC only at a reload.
 - **Slot bells** say "this slot is written" (docs/proposals/slot-bells.md): a bell
   per slot, `Signals\g<set>-<slot>.wav`, a set per session (`loads % 3`), each
   empty until the PC writes that slot and rings it, never emptied while its
-  session runs. The addon plays the next slot's bell every 0.1 s and asks
+  session runs; the first send of a session empties any of its set left rung. The addon plays the next slot's bell every 0.1 s and asks
   `C_Sound.IsPlaying` 20 ms later; a ring takes the slot, and the next is asked at
   once. While the heartbeat is stale it asks every 0.5 s. **All bell files go
   through `src/bells.rs`, which holds the rules the game forced on us** (a bell
