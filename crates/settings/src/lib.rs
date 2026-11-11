@@ -8,15 +8,18 @@
 //! Keys: `addons` (the game's Interface\AddOns folder), `model` (the Whisper
 //! model file), `engine` (`cpu` to use the CPU build a release ships beside the
 //! GPU one), and the run options: `pad` (vid:pid), `ask` (the talk button: a
-//! name or byte:mask), `chat`, `mic`, `cue`, `volume`, `agent`.
+//! name or byte:mask), `chat`, `mic`, `cue`, `volume`, `agent`, `speech`
+//! (`whisper` or `streaming`, the engine on trial) and `stream_model` (the
+//! streaming model's folder).
 
 pub mod changes;
 pub mod platform;
+pub mod stream_model;
 
 use std::{fs, io, path::PathBuf};
 
 /// The run options a settings file may carry, in the order they are written.
-pub const OPTIONS: &[&str] = &["pad", "ask", "chat", "mic", "cue", "volume", "agent"];
+pub const OPTIONS: &[&str] = &["pad", "ask", "chat", "mic", "cue", "volume", "agent", "speech", "stream_model"];
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Settings {

@@ -1,11 +1,14 @@
-//! Getting a Whisper model onto a new PC: which one suits it, and a download
-//! that is checked before it is used.
+//! Getting a speech model onto a new PC: which Whisper model suits it, the
+//! streaming engine's model (on trial), and a download that is checked before it
+//! is used.
 //!
-//! The files are whisper.cpp's own, from Hugging Face, pinned to one commit and
-//! checked against the SHA-256 Hugging Face lists for them, so a moved or
-//! changed file fails loudly instead of loading as something else. A download
-//! is written to `<name>.part` and renamed only once it checks out, so a
-//! cancelled or broken one never looks like a model; the next try resumes it.
+//! Whisper's files are whisper.cpp's own, from Hugging Face, pinned to one commit
+//! and checked against the SHA-256 Hugging Face lists for them; the streaming
+//! model is k2-fsa's sherpa-onnx release archive, checked against the SHA-256 of
+//! the copy the benchmark measured. A moved or changed file fails loudly instead
+//! of loading as something else. A download is written to `<name>.part` and
+//! renamed only once it checks out, so a cancelled or broken one never looks like
+//! a model; the next try resumes it.
 
 use std::{
     fs,
@@ -21,15 +24,14 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
-/// ggerganov/whisper.cpp on Hugging Face, the commit the hashes below are from.
-const COMMIT: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
-
 pub struct Model {
     pub file: &'static str,
     pub name: &'static str,
     pub about: &'static str,
     pub bytes: u64,
     sha256: &'static str,
+    /// where it is downloaded from, pinned (a commit, a release)
+    url: &'static str,
 }
 
 pub const MODELS: &[Model] = &[
@@ -39,6 +41,7 @@ pub const MODELS: &[Model] = &[
         about: "the most accurate; for a graphics card with 4 GB or more",
         bytes: 1_624_555_275,
         sha256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo.bin",
     },
     Model {
         file: "ggml-large-v3-turbo-q5_0.bin",
@@ -46,6 +49,7 @@ pub const MODELS: &[Model] = &[
         about: "nearly as accurate, a third of the size; for a smaller graphics card",
         bytes: 574_041_195,
         sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin",
     },
     Model {
         file: "ggml-small.bin",
@@ -53,11 +57,32 @@ pub const MODELS: &[Model] = &[
         about: "for the CPU: quick enough without a graphics card, less accurate",
         bytes: 487_601_967,
         sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small.bin",
     },
 ];
 
+/// The streaming engine's model, on trial (docs/proposals/streaming-speech.md):
+/// NVIDIA's Nemotron streaming 0.6B (160 ms chunks, int8) as k2-fsa's sherpa-onnx
+/// release packs it. An archive: unpacked into a folder named after it, then
+/// deleted. Licensed by NVIDIA Corporation under the NVIDIA Open Model License,
+/// which the window shows before the download.
+pub const STREAMING: Model = Model {
+    file: "sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25.tar.bz2",
+    name: "Nemotron streaming (NVIDIA)",
+    about: "the streaming engine: runs on the CPU, so the game keeps the graphics card",
+    bytes: 463_945_198,
+    sha256: "0ae73a41cd51599dc7cac9ac083d9d35de53d762ca45923505fde47a3751814b",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25.tar.bz2",
+};
+pub const STREAMING_LICENSE: &str = "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/";
+
+/// The folder the streaming model unpacks into: the archive's own name.
+pub fn streaming_folder() -> Option<PathBuf> {
+    Some(folder()?.join(STREAMING.file.trim_end_matches(".tar.bz2")))
+}
+
 pub fn by_file(file: &str) -> Option<&'static Model> {
-    MODELS.iter().find(|model| model.file == file)
+    MODELS.iter().chain([&STREAMING]).find(|model| model.file == file)
 }
 
 /// The model to offer: the small one on the CPU, the compressed large one on a
@@ -120,7 +145,14 @@ pub fn start(model: &'static Model, state: Arc<Mutex<Download>>, cancel: Arc<Ato
     cancel.store(false, Ordering::Relaxed);
     *state.lock().unwrap() = Download::Running { file: model.file, done: 0, total: model.bytes };
     thread::spawn(move || {
-        let result = fetch(model, &state, &cancel);
+        let result = fetch(model, &state, &cancel).and_then(|path| {
+            if model.file == STREAMING.file {
+                *state.lock().unwrap() = Download::Checking { file: model.file };
+                unpack_streaming(&path)
+            } else {
+                Ok(path)
+            }
+        });
         *state.lock().unwrap() = match result {
             Ok(path) => Download::Done(path),
             Err(why) => Download::Failed(why),
@@ -132,18 +164,18 @@ fn fetch(model: &'static Model, state: &Mutex<Download>, cancel: &AtomicBool) ->
     let dir = folder().ok_or("No folder to save the model in.")?;
     let path = dir.join(model.file);
     let part = dir.join(format!("{}.part", model.file));
-    let url = format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/{COMMIT}/{}", model.file);
 
     // resume what an earlier try left, hashing it again from the start
     let mut have = fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
     if have > model.bytes {
         have = 0;
     }
-    let mut request = ureq::get(&url);
+    let url = model.url;
+    let mut request = ureq::get(url);
     if have > 0 {
         request = request.header("Range", &format!("bytes={have}-"));
     }
-    let response = request.call().map_err(|e| format!("Could not reach Hugging Face: {e}"))?;
+    let response = request.call().map_err(|e| format!("Could not reach {url}: {e}"))?;
     if response.status() != 206 {
         // the server sent the whole file: start over
         have = 0;
@@ -192,6 +224,34 @@ fn fetch(model: &'static Model, state: &Mutex<Download>, cancel: &AtomicBool) ->
     }
     fs::rename(&part, &path).map_err(|e| format!("Could not put the model in place: {e}"))?;
     Ok(path)
+}
+
+/// Unpack the checked streaming archive: its four model files into
+/// `streaming_folder()`, then the bpe.vocab made from its tokens, then the
+/// archive is deleted. Any file missing from the archive is an error by name.
+fn unpack_streaming(archive: &Path) -> Result<PathBuf, String> {
+    use wow_companion_settings::stream_model::{missing, write_bpe_vocab, FILES};
+    let target = streaming_folder().ok_or("No folder to unpack the model into.")?;
+    fs::create_dir_all(&target).map_err(|e| format!("Could not make {}: {e}", target.display()))?;
+    let file = fs::File::open(archive).map_err(|e| e.to_string())?;
+    let mut entries = tar::Archive::new(bzip2::read::BzDecoder::new(file));
+    for entry in entries.entries().map_err(|e| format!("The archive could not be read: {e}"))? {
+        let mut entry = entry.map_err(|e| format!("The archive could not be read: {e}"))?;
+        let path = entry.path().map_err(|e| e.to_string())?.into_owned();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        if FILES.contains(&name) {
+            entry.unpack(target.join(name)).map_err(|e| format!("Could not unpack {name}: {e}"))?;
+        }
+    }
+    write_bpe_vocab(&target).map_err(|e| format!("Could not write the model's bpe.vocab: {e}"))?;
+    let gone = missing(&target);
+    if !gone.is_empty() {
+        return Err(format!("The archive lacked {}; nothing was changed in your settings.", gone.join(", ")));
+    }
+    fs::remove_file(archive).map_err(|e| {
+        format!("The model is ready, but its download {} could not be deleted ({e}): delete it by hand.", archive.display())
+    })?;
+    Ok(target)
 }
 
 fn hex(bytes: &[u8]) -> String {

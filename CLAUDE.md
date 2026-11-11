@@ -40,10 +40,16 @@ yes; don't reinvent what Claude Code has.
   (`pad=xinput`, `crates/pad/src/xinput.rs`): their state becomes a 4-byte report
   so learning and names work the same; Guide (the default talk button there) via
   `XInputGetStateEx`; rumble works. Button names follow the pad (`press_for`).
-- `crates/voice`: mic (`cpal`) and Whisper (the model and GPU backend the setup window chose), its own crate
-  so the CUDA build is not invalidated by edits elsewhere.
-  Files: `lib.rs` (the push-to-talk loop), `mic.rs`, `transcribe.rs`, `cue.rs`,
-  `bluetooth.rs` (the hands-free reconnect).
+- `crates/voice`: mic (`cpal`) and speech, its own crate
+  so the CUDA build is not invalidated by edits elsewhere. Two engines **on trial**
+  (the player, 2026-11-11; `speech=whisper|streaming`, chosen in the setup window):
+  Whisper (the model and GPU backend the setup window chose) and the streaming
+  engine (NVIDIA Nemotron via sherpa-onnx on the CPU, fed while the button is held;
+  `stream_model=` its folder). The losing one is deleted after the player's verdict.
+  sherpa-onnx is linked as DLLs (its static build's C runtime clashes with
+  Whisper's), so they sit beside every exe: the bin copy and the release copy them.
+  Files: `lib.rs` (the push-to-talk loop), `mic.rs`, `transcribe.rs`, `stream.rs`,
+  `cue.rs`, `bluetooth.rs` (the hands-free reconnect).
 - `src/`: the helper, one job per file: `main.rs` (command dispatch, `run`'s
   wiring of the voice loop), `channel.rs` (slots, the cursor, bells; one sender
   thread takes everything pending into one slot and one bell, a `list`),
@@ -133,8 +139,8 @@ Tests: `cargo test --workspace`.
   request to that slot's own conversation (`thread-l2.txt`…), shown as "[L2] …";
   slots run side by side. **L2+R2 together is Quick** (`agent::QUICK_SLOT`): Sonnet at low effort (Haiku was too weak, the player, 2026-11-10), 12 turns, a trimmed export, for chat, links and buttons. Saying "start over" alone in a conversation begins it
   fresh. Home is free. Only the main conversation can `look`.
-  starts the companion. It runs from a copy in `%LOCALAPPDATA%\wow-companion\bin`,
-  so `cargo build` works while it runs.
+  starts the companion. It runs from a copy (with its DLLs) in its own folder under
+  `%LOCALAPPDATA%\wow-companion\bin`, so `cargo build` works while it runs.
 - **For players: `wow-companion start`** (the setup window's Start with Windows):
   a watcher with a tray icon starts `run` hidden when Wow.exe appears; the
   companion exits cleanly when the game closes (only when the watcher started
@@ -150,7 +156,8 @@ Tests: `cargo test --workspace`.
   something seems broken.
 - Also: `install <AddOns>`, `send <AddOns> …`, `think <AddOns> <text>` (the agent's
   answer, sent nowhere), `context <AddOns>` (what the agent and Whisper are given),
-  `miccheck <mic>`, `reconnect`, `buzz`.
+  `miccheck <mic>`, `reconnect`, `buzz`, `transcribe-stream <model folder> <clip.wav>`
+  (the streaming engine on a clip at the pace of speech, with its time to final text).
 - `bridge-probe report` reads back the bridge probe (docs/proposals/bridge-probe.md;
   src/bridge_probe.rs runs it while the game does); `bridge-probe clean` deletes its
   fonts and data, only when the player says so.

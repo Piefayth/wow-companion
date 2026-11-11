@@ -29,33 +29,63 @@ pub(crate) fn request_restart() -> io::Result<()> {
 // set on the copy, naming the build it came from
 pub(crate) const SOURCE_EXE: &str = "WOW_COMPANION_SOURCE_EXE";
 
+/// Copy the build aside into `bin\<name>\`: the exe as `<name>.exe` and every DLL
+/// beside it (the streaming engine's sherpa-onnx and ONNX Runtime). A folder per
+/// copy, because Windows locks a loaded DLL: during a restart's overlap the old
+/// copy holds its own while the new one loads its own.
+pub(crate) fn copy_aside(source: &Path, name: &str) -> io::Result<PathBuf> {
+    let folder = companion_dir()?.join("bin").join(name);
+    fs::create_dir_all(&folder)?;
+    let exe = folder.join(format!("{name}.exe"));
+    fs::copy(source, &exe)?;
+    if let Some(beside) = source.parent() {
+        for entry in fs::read_dir(beside)?.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("dll")) {
+                fs::copy(&path, folder.join(entry.file_name()))?;
+            }
+        }
+    }
+    Ok(exe)
+}
+
+/// Remove the copies in `bin` that are not running, keeping `keep`'s folder. A
+/// copy's folder goes only once its exe could be deleted (a running exe cannot
+/// be), so a running copy never loses a DLL it has not loaded yet.
+fn clear_bin(keep: Option<&Path>) -> io::Result<()> {
+    let Ok(entries) = fs::read_dir(companion_dir()?.join("bin")) else { return Ok(()) };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if keep.is_some_and(|keep| keep.starts_with(&path)) {
+            continue;
+        }
+        if path.is_dir() {
+            let exes: Vec<PathBuf> = fs::read_dir(&path)
+                .map(|inside| inside.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|ext| ext == "exe")).collect())
+                .unwrap_or_default();
+            if exes.iter().all(|exe| fs::remove_file(exe).is_ok()) {
+                let _ = fs::remove_dir_all(&path);
+            }
+        } else {
+            let _ = fs::remove_file(&path);
+        }
+    }
+    Ok(())
+}
+
 /// Started from the build itself: copy it aside, run the copy, and step away.
 /// Returns Some when this process handed over and should exit.
 pub(crate) fn run_from_copy() -> io::Result<Option<io::Result<()>>> {
     if env::var_os(SOURCE_EXE).is_some() {
         // a copy: the generations before it are done (each is 180 MB in debug);
         // a predecessor still exiting is locked and goes next time
-        let me = env::current_exe().ok();
-        if let Ok(entries) = fs::read_dir(companion_dir()?.join("bin")) {
-            for entry in entries.flatten() {
-                if Some(entry.path()) != me {
-                    let _ = fs::remove_file(entry.path());
-                }
-            }
-        }
+        clear_bin(env::current_exe().ok().as_deref())?;
         return Ok(None);
     }
     let source = env::current_exe()?;
-    let bin = companion_dir()?.join("bin");
-    fs::create_dir_all(&bin)?;
     // earlier copies: whichever are not running can go
-    if let Ok(entries) = fs::read_dir(&bin) {
-        for entry in entries.flatten() {
-            let _ = fs::remove_file(entry.path());
-        }
-    }
-    let copy = bin.join(format!("companion-{}.exe", std::process::id()));
-    fs::copy(&source, &copy)?;
+    clear_bin(None)?;
+    let copy = copy_aside(&source, &format!("companion-{}", std::process::id()))?;
     // Not waited on: a launcher that waited would itself be the running build,
     // holding the lock this exists to free. The copy inherits the console, so its
     // output still lands where the companion was started.
@@ -75,14 +105,9 @@ pub(crate) fn watch_for_restart(args: Vec<String>) {
             continue;
         }
         // copy the new build now; if it is mid-build the copy fails, so try again
-        let bin = match companion_dir() {
-            Ok(dir) => dir.join("bin"),
-            Err(_) => continue,
-        };
-        let next = bin.join(format!("companion-next-{}.exe", std::process::id()));
-        if fs::copy(&source, &next).is_err() {
+        let Ok(next) = copy_aside(Path::new(&source), &format!("companion-next-{}", std::process::id())) else {
             continue;
-        }
+        };
         let _ = fs::remove_file(&request);
         println!("restarting onto the new build");
         // Overlap, never a gap. Closing the mic before the next copy opened its own

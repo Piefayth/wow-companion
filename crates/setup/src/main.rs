@@ -71,6 +71,9 @@ struct Setup {
     agent: String,
     /// `cpu` when the player chose the CPU build
     engine: String,
+    /// `whisper` or `streaming` (the engine on trial), and the streaming model's folder
+    speech: String,
+    stream_model: String,
     found_addons: Vec<String>,
     models: Vec<String>,
     /// a model file typed by hand, outside the folders searched
@@ -141,6 +144,8 @@ impl Setup {
             mic: value("mic"),
             agent: value("agent"),
             engine: value("engine"),
+            speech: value("speech"),
+            stream_model: value("stream_model"),
             settings,
             found_addons: find_addons(),
             models: find_models(),
@@ -206,6 +211,8 @@ impl Setup {
             ("mic", &self.mic),
             ("agent", &self.agent),
             ("engine", &self.engine),
+            ("speech", &self.speech),
+            ("stream_model", &self.stream_model),
         ] {
             self.settings.set(key, value.trim());
         }
@@ -422,99 +429,179 @@ impl Setup {
             Talk::Heard { .. } => Status::Ready("works"),
             Talk::Failed { .. } => Status::Problem("failed"),
             Talk::Listening(_) | Talk::Transcribing => Status::Busy("testing"),
-            Talk::Idle if self.model.is_empty() => Status::Todo("needs a model"),
+            Talk::Idle if self.speech == "streaming" && !self.streaming_ready() => Status::Todo("needs a model"),
+            Talk::Idle if self.speech != "streaming" && self.model.is_empty() => Status::Todo("needs a model"),
             Talk::Idle => Status::Todo("try it"),
         };
         look::card(ui, 4, "Speech recognition", status, |ui| {
-            ui.label(RichText::new("Whisper model").color(look::MUTED));
-            egui::ComboBox::from_id_salt("model")
-                .width(ui.available_width())
-                .selected_text(if self.other_model { "Another file...".to_string() } else { model_label(&self.model) })
-                .show_ui(ui, |ui| {
-                    for found in &self.models {
-                        if ui.selectable_label(!self.other_model && &self.model == found, model_label(found)).clicked() {
-                            self.model = found.clone();
-                            self.other_model = false;
-                        }
-                    }
-                    if ui.selectable_label(self.other_model, "Another file...").clicked() {
-                        self.other_model = true;
-                    }
-                });
-            if self.other_model {
-                ui.add(egui::TextEdit::singleline(&mut self.model).desired_width(f32::INFINITY).hint_text(r"C:\...\ggml-large-v3-turbo.bin"));
-            }
-            self.downloads(ui);
-
-            ui.add_space(10.0);
-            ui.label(RichText::new("Try it").color(look::MUTED));
-            let via_pad = !self.companion_running && !self.ask.is_empty();
-            let hint = match (&talk, via_pad) {
-                (Talk::Listening(_), _) => "Listening... let go when you're done.".to_string(),
-                (Talk::Transcribing, _) => "Working out what you said...".to_string(),
-                (_, true) => format!("Hold your talk button ({}) or this button, and say something.", self.talk_name()),
-                (_, false) => "Hold this button and say something.".to_string(),
-            };
-            let busy = matches!(talk, Talk::Transcribing);
-            let mouse_held = look::hold_button(ui, &hint, matches!(talk, Talk::Listening(_)), busy, self.meter.level());
-            if self.companion_running && !self.ask.is_empty() {
-                ui.label(
-                    RichText::new("The companion is running and listens to your talk button too, so only the button above records here.")
-                        .small()
-                        .color(look::MUTED),
-                );
-            }
-            let held = !busy && (mouse_held || (via_pad && self.held_on_pad.load(Ordering::Relaxed)));
-            self.hold(held);
-
-            match &talk {
-                Talk::Heard { text, timing, device } => {
-                    ui.add_space(6.0);
-                    look::quote(ui, if text.is_empty() { "(nothing)" } else { text });
-                    ui.label(RichText::new(format!("{timing} on {device}")).small().color(look::MUTED));
-                    if device == "CPU" && self.engine != "cpu" {
-                        ui.colored_label(look::WARN, "This ran on the CPU: the GPU build found no usable graphics card.");
-                    }
-                }
-                Talk::Failed { why, details } => {
-                    ui.add_space(6.0);
-                    ui.colored_label(look::BAD, why);
-                    if !details.is_empty() {
-                        ui.collapsing("Details", |ui| {
-                            ui.label(RichText::new(details).monospace().small());
-                        });
-                    }
-                }
-                _ => {}
-            }
-
-            ui.add_space(8.0);
-            let cpu_ready = companion().is_some_and(|exe| exe.with_file_name("wow-companion-cpu.exe").exists());
+            // The streaming engine is on trial against Whisper (the player,
+            // 2026-11-11): both are offered until the player has compared them in
+            // play; then the one they keep stays and the other is removed.
+            ui.label(RichText::new("Engine").color(look::MUTED));
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Runs on").small().color(look::MUTED));
-                if self.engine == "cpu" {
-                    ui.label(RichText::new("CPU").small().strong());
-                    if ui.small_button("Use the graphics card").clicked() {
-                        self.engine.clear();
-                        self.save();
-                    }
-                } else {
-                    ui.label(RichText::new("graphics card").small().strong());
-                    if cpu_ready && matches!(talk, Talk::Failed { .. }) && ui.small_button("Use the CPU instead (slower)").clicked() {
-                        self.engine = "cpu".into();
-                        self.save();
-                    }
+                if ui.radio(self.speech != "streaming", "Whisper (graphics card)").clicked() {
+                    self.speech = "whisper".into();
+                }
+                if ui.radio(self.speech == "streaming", "Streaming (CPU, on trial)").clicked() {
+                    self.speech = "streaming".into();
                 }
             });
+            ui.label(
+                RichText::new("Streaming hears you while you talk and has the text the moment you let go, and leaves the graphics card to the game. On trial: try both in play, and the one you keep stays.")
+                    .small()
+                    .color(look::MUTED),
+            );
+            ui.add_space(6.0);
+            if self.speech == "streaming" {
+                self.streaming(ui);
+            } else {
+                self.whisper_model(ui);
+            }
+            ui.add_space(10.0);
+            self.try_it(ui, &talk);
+        });
+    }
+
+    /// The streaming model: downloaded and complete, or the offer to download it.
+    fn streaming_ready(&self) -> bool {
+        !self.stream_model.is_empty() && wow_companion_settings::stream_model::missing(Path::new(&self.stream_model)).is_empty()
+    }
+
+    fn streaming(&mut self, ui: &mut egui::Ui) {
+        if self.download_progress(ui) {
+            return;
+        }
+        // downloaded before (or by another window): found in its folder
+        if !self.streaming_ready() {
+            if let Some(found) = models::streaming_folder() {
+                if wow_companion_settings::stream_model::missing(&found).is_empty() {
+                    self.stream_model = found.display().to_string();
+                    self.save();
+                }
+            }
+        }
+        if self.streaming_ready() {
+            ui.label(RichText::new(format!("{}: downloaded", models::STREAMING.name)).color(look::GOOD));
+            return;
+        }
+        egui::Frame::new()
+            .fill(look::ACCENT.gamma_multiply(0.08))
+            .stroke(egui::Stroke::new(1.0, look::ACCENT.gamma_multiply(0.4)))
+            .corner_radius(8)
+            .inner_margin(egui::Margin::same(12))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(RichText::new(format!("{} ({})", models::STREAMING.name, size(models::STREAMING.bytes))).strong());
+                ui.label(RichText::new(models::STREAMING.about).small().color(look::MUTED));
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Licensed by NVIDIA Corporation under the").small().color(look::MUTED));
+                    ui.hyperlink_to(RichText::new("NVIDIA Open Model License").small(), models::STREAMING_LICENSE);
+                    ui.label(RichText::new("(downloading it means you accept it).").small().color(look::MUTED));
+                });
+                if ui.add(look::primary("Download")).clicked() {
+                    models::start(&models::STREAMING, Arc::clone(&self.download), Arc::clone(&self.cancel));
+                }
+            });
+    }
+
+    fn whisper_model(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("Whisper model").color(look::MUTED));
+        egui::ComboBox::from_id_salt("model")
+            .width(ui.available_width())
+            .selected_text(if self.other_model { "Another file...".to_string() } else { model_label(&self.model) })
+            .show_ui(ui, |ui| {
+                for found in &self.models {
+                    if ui.selectable_label(!self.other_model && &self.model == found, model_label(found)).clicked() {
+                        self.model = found.clone();
+                        self.other_model = false;
+                    }
+                }
+                if ui.selectable_label(self.other_model, "Another file...").clicked() {
+                    self.other_model = true;
+                }
+            });
+        if self.other_model {
+            ui.add(egui::TextEdit::singleline(&mut self.model).desired_width(f32::INFINITY).hint_text(r"C:\...\ggml-large-v3-turbo.bin"));
+        }
+        if !self.download_progress(ui) {
+            self.whisper_offers(ui);
+        }
+    }
+
+    /// Hold to talk with the engine chosen above, what it heard, and (for
+    /// Whisper) where it ran.
+    fn try_it(&mut self, ui: &mut egui::Ui, talk: &Talk) {
+        ui.label(RichText::new("Try it").color(look::MUTED));
+        let via_pad = !self.companion_running && !self.ask.is_empty();
+        let hint = match (talk, via_pad) {
+            (Talk::Listening(_), _) => "Listening... let go when you're done.".to_string(),
+            (Talk::Transcribing, _) => "Working out what you said...".to_string(),
+            (_, true) => format!("Hold your talk button ({}) or this button, and say something.", self.talk_name()),
+            (_, false) => "Hold this button and say something.".to_string(),
+        };
+        let busy = matches!(talk, Talk::Transcribing);
+        let mouse_held = look::hold_button(ui, &hint, matches!(talk, Talk::Listening(_)), busy, self.meter.level());
+        if self.companion_running && !self.ask.is_empty() {
+            ui.label(
+                RichText::new("The companion is running and listens to your talk button too, so only the button above records here.")
+                    .small()
+                    .color(look::MUTED),
+            );
+        }
+        let held = !busy && (mouse_held || (via_pad && self.held_on_pad.load(Ordering::Relaxed)));
+        self.hold(held);
+        let whisper = self.speech != "streaming";
+
+        match talk {
+            Talk::Heard { text, timing, device } => {
+                ui.add_space(6.0);
+                look::quote(ui, if text.is_empty() { "(nothing)" } else { text });
+                ui.label(RichText::new(format!("{timing} on {device}")).small().color(look::MUTED));
+                if whisper && device == "CPU" && self.engine != "cpu" {
+                    ui.colored_label(look::WARN, "This ran on the CPU: the GPU build found no usable graphics card.");
+                }
+            }
+            Talk::Failed { why, details } => {
+                ui.add_space(6.0);
+                ui.colored_label(look::BAD, why);
+                if !details.is_empty() {
+                    ui.collapsing("Details", |ui| {
+                        ui.label(RichText::new(details).monospace().small());
+                    });
+                }
+            }
+            _ => {}
+        }
+        if !whisper {
+            return;
+        }
+
+        ui.add_space(8.0);
+        let cpu_ready = companion().is_some_and(|exe| exe.with_file_name("wow-companion-cpu.exe").exists());
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Runs on").small().color(look::MUTED));
             if self.engine == "cpu" {
-                // measured: large-v3-turbo on the CPU took 16.5 s for 6 s of speech
-                ui.label(
-                    RichText::new("On the CPU the large model takes about 16 s per sentence: pick ggml-small.bin or ggml-base.en.bin.")
-                        .small()
-                        .color(look::WARN),
-                );
+                ui.label(RichText::new("CPU").small().strong());
+                if ui.small_button("Use the graphics card").clicked() {
+                    self.engine.clear();
+                    self.save();
+                }
+            } else {
+                ui.label(RichText::new("graphics card").small().strong());
+                if cpu_ready && matches!(talk, Talk::Failed { .. }) && ui.small_button("Use the CPU instead (slower)").clicked() {
+                    self.engine = "cpu".into();
+                    self.save();
+                }
             }
         });
+        if self.engine == "cpu" {
+            // measured: large-v3-turbo on the CPU took 16.5 s for 6 s of speech
+            ui.label(
+                RichText::new("On the CPU the large model takes about 16 s per sentence: pick ggml-small.bin or ggml-base.en.bin.")
+                    .small()
+                    .color(look::WARN),
+            );
+        }
     }
 
     fn agent(&mut self, ui: &mut egui::Ui) {
@@ -874,7 +961,9 @@ static VIDEO_MEMORY: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new
 
 // getting a model
 impl Setup {
-    fn downloads(&mut self, ui: &mut egui::Ui) {
+    /// The one download at a time, either engine's: its progress (true while it
+    /// runs, so the offers wait), its result put in the settings, or why it failed.
+    fn download_progress(&mut self, ui: &mut egui::Ui) -> bool {
         let state = self.download.lock().unwrap().clone();
         match state {
             models::Download::Running { file, done, total } => {
@@ -886,26 +975,36 @@ impl Setup {
                 if ui.small_button("Cancel").clicked() {
                     self.cancel.store(true, Ordering::Relaxed);
                 }
-                return;
+                true
             }
             models::Download::Checking { file } => {
-                ui.label(RichText::new(format!("Checking {file}...")).color(look::MUTED));
-                return;
+                let name = models::by_file(file).map(|m| m.name).unwrap_or(file);
+                ui.label(RichText::new(format!("Checking {name}...")).color(look::MUTED));
+                true
             }
             models::Download::Done(path) => {
                 *self.download.lock().unwrap() = models::Download::Idle;
-                self.models = find_models();
-                self.model = path.display().to_string();
-                self.other_model = false;
+                if models::streaming_folder().is_some_and(|folder| folder == path) {
+                    self.stream_model = path.display().to_string();
+                } else {
+                    self.models = find_models();
+                    self.model = path.display().to_string();
+                    self.other_model = false;
+                }
                 self.save();
                 *self.report.lock().unwrap() = "Model downloaded and checked. Hold the button below and say something.".into();
+                false
             }
             models::Download::Failed(why) => {
                 ui.colored_label(look::BAD, why);
+                false
             }
-            models::Download::Idle => {}
+            models::Download::Idle => false,
         }
+    }
 
+    /// The Whisper model this PC should have, if it lacks it, and the others.
+    fn whisper_offers(&mut self, ui: &mut egui::Ui) {
         let installed = self.models.clone();
         let have = |file: &str| installed.iter().any(|m| Path::new(m).file_name().is_some_and(|n| n == file));
         let video = VIDEO_MEMORY.get().copied().flatten();
@@ -984,6 +1083,8 @@ impl Setup {
         // saved first: the companion reads `engine` to pick its build
         self.save();
         let model = self.model.clone();
+        let streaming = self.speech == "streaming";
+        let stream_model = self.stream_model.clone();
         let talk = Arc::clone(&self.talk);
         *talk.lock().unwrap() = Talk::Transcribing;
         thread::spawn(move || {
@@ -991,9 +1092,12 @@ impl Setup {
                 let exe = companion().ok_or("wow-companion.exe was not found next to this window.")?;
                 let wav = std::env::temp_dir().join("wow-companion-setup-test.wav");
                 std::fs::write(&wav, clip.wav()).map_err(|e| format!("Could not save the recording: {e}"))?;
+                // the engine chosen above: Whisper on its model file, or the
+                // streaming engine on its folder, fed at the pace of speech
+                let (command, model) = if streaming { ("transcribe-stream", &stream_model) } else { ("transcribe", &model) };
                 let out = Command::new(exe)
-                    .arg("transcribe")
-                    .arg(&model)
+                    .arg(command)
+                    .arg(model)
                     .arg(&wav)
                     .creation_flags(NO_WINDOW)
                     .output()
@@ -1189,7 +1293,9 @@ impl Meter {
 /// What the companion's `transcribe` heard, how fast, and on which device.
 fn judge(output: &str) -> Talk {
     let text = output.lines().find_map(|l| l.strip_prefix("text: ")).map(str::trim);
-    let timing = output.lines().find(|l| l.contains("transcribed in")).unwrap_or("").trim().to_string();
+    // Whisper: "<n>s of audio transcribed in <t>s"; the streaming engine: "<n>s
+    // of audio; final text <t> ms after the audio ended"
+    let timing = output.lines().find(|l| l.contains("transcribed in") || l.contains("final text")).unwrap_or("").trim().to_string();
     let device = if output.contains("using Vulkan") || output.contains("ggml_vulkan: Found") {
         "Vulkan (graphics card)"
     } else if output.contains("using CUDA") {

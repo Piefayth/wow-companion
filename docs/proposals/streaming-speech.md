@@ -74,9 +74,37 @@ streaming; here both engines get them or neither does.
   modified_beam_search"), and unbiased it was far behind (16% on commands). Out.
 - **Memory:** Nemotron with hotwords peaks at 748 MB of RAM on the longest clip
   (14 s), on the CPU, against Whisper's ~1.6 GB of video memory beside the game.
-- **Not yet measured:** the lag of partial words behind the voice (the websocket
-  client prints its results only at the end, so the timing script read nothing);
-  measured inside the companion instead, with the integration.
+- **The lag of partial words** could not be read from the websocket client (it
+  prints its results only at the end); it was measured inside the companion
+  instead (below).
+
+## The trial in the companion (stage 2, 2026-11-11)
+
+**Built, beside Whisper, for the player to compare in play.** Both engines are in
+every build; the setup window's Speech card picks one (Engine: Whisper or
+Streaming), or `settings.toml` says `speech = "streaming"` and `stream_model =
+"<folder>"`. The window downloads the model from k2-fsa's release (checked by
+SHA-256, unpacked, the archive deleted) after showing NVIDIA's licence. After the
+player's verdict the losing engine is deleted, code and setting both.
+
+- **How it runs:** the voice loop feeds the mic's audio to the engine's thread
+  while the button is held (`crates/voice/src/stream.rs`); partial words go to the
+  log only; at release the final text goes the way Whisper's does (same checks,
+  same routing). Each utterance gets the same words Whisper's prompt carries
+  (`context::vocabulary`: spell and macro names, the command words) as hotwords,
+  score 3.0.
+- **Measured inside the companion** (debug build, the bench's clips fed at the
+  pace of speech, `wow-companion transcribe-stream`): **final text 178 ms after the
+  audio ends** (median, max 251 ms, 24 clips), against Whisper's 637 / 1,160 ms
+  live. Partial words trail the voice by about 60 ms of compute per 100 ms piece.
+- **Linking:** sherpa-onnx's static libraries are built with the static C runtime
+  and whisper-rs with the dynamic one, which MSVC refuses to link together
+  (LNK2038), so the crate's `shared` feature is used: four DLLs (ONNX Runtime and
+  sherpa-onnx's) beside every exe. The companion's bin copy and the release zip
+  carry them.
+- **Not yet known:** the player's own voice, in game, with the game on the CPU
+  too. The live vocabulary also lacks spells until the export's spellbook section
+  is fixed (it is empty; Whisper is short of them the same way).
 
 ## Licences
 
@@ -94,11 +122,13 @@ streaming; here both engines get them or neither does.
 - **Engine:** sherpa-onnx (Apache-2.0) with Nemotron streaming (NVIDIA Open Model
   License: check its terms before shipping it to other players), on the CPU through
   ONNX Runtime. The official `sherpa-onnx` crate (2.0.1, k2-fsa) downloads prebuilt
-  static libraries at build time (or `SHERPA_ONNX_LIB_DIR`): no C++ or CUDA build,
-  one exe, macOS libraries exist. Its CUDA build needs cuDNN 9 (not on this PC); the
-  CPU is the point anyway, since it keeps the GPU for the game.
+  libraries at build time (or `SHERPA_ONNX_LIB_DIR`): no C++ or CUDA build, macOS
+  libraries exist. Beside Whisper it links as DLLs (above); with Whisper gone its
+  static build would make one exe again. Its CUDA build needs cuDNN 9 (not on this
+  PC); the CPU is the point anyway, since it keeps the GPU for the game.
 - **Whisper:** kept only if the player's voice shows Nemotron with hotwords still
-  falls short on commands; otherwise it goes (one engine).
+  falls short on commands; otherwise it goes (one engine), and the setup window's
+  Engine choice with it.
 - **The game side:** each message is one of 512 slots per session, picked up on a 0.5 s
   poll, so partial words cannot be sent as they come (two a second would spend the
   session in about four minutes). Worth sending: the finished line at release (one
