@@ -537,7 +537,8 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		-- bottom strip under the chat well, shown only with prompts
 		if not window.jobsLegend then
 			local fs = window:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-			fs:SetPoint("BOTTOMRIGHT", window.chatWell or window, "BOTTOMRIGHT", -4, -20)
+			-- centred in the 26-px strip under the wells (ButtonFrameTemplate)
+			fs:SetPoint("RIGHT", window.chatWell or window, "BOTTOMRIGHT", -4, -13)
 			fs:SetJustifyH("RIGHT")
 			window.jobsLegend = fs
 		end

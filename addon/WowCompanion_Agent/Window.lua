@@ -410,7 +410,9 @@ local function buildTabs(frame, messages)
 		tab:SetID(i)
 		tab:SetText(name)
 		if i == 1 then
-			tab:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -28)
+			-- the tab's foot on the well's top border, so the picked tab opens
+			-- into it instead of hovering in the strip above
+			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 8, -2)
 		else
 			tab:SetPoint("LEFT", frame.Tabs[i - 1], "RIGHT", 0, 0)
 		end
