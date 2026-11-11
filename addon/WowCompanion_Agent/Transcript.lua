@@ -50,7 +50,7 @@ local function turnBand(content, owner)
 end
 
 local function inline(text)
-	text = text:gsub("%*%*(.-)%*%*", "|cffffffff%1|r")
+	text = text:gsub("%*%*(.-)%*%*", "|cfff4ecdc%1|r")
 	text = text:gsub("`([^`]+)`", "|cff9ad5ff%1|r")
 	return text
 end
@@ -272,7 +272,9 @@ end
 
 local WHO = {
 	you = { "You", "|cff9ad5ff", 0.74, 0.84, 0.96 },
-	claude = { "Claude", "|cffffd100", 0.93, 0.93, 0.93 },
+	-- a soft warm off-white, not white: near-white on near-black glows
+	-- (halation) and tires on a TV (the player, 2026-11-11, an experiment)
+	claude = { "Claude", "|cffffd100", 0.86, 0.83, 0.76 },
 }
 
 function Transcript:Add(who, text, continued, at, job)
