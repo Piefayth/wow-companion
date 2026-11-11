@@ -132,7 +132,9 @@ end
 function M:CancelJob(id)
 	local job = self.jobs[id]
 	if not job or job.cancel or RANK[job.state] == 3 then return end
-	job.cancel, job.asked, job.unconfirmed = { tries = 1, sentAt = self.deps.now() }, true, nil
+	-- `asked`: the state it was cancelled from; a running job's cancel shows on
+	-- the work it stopped, an earlier one's on the message (StatusOf)
+	job.cancel, job.asked, job.unconfirmed = { tries = 1, sentAt = self.deps.now() }, job.state, nil
 	self:save(job)
 	self.deps.command("cancel", job.slot, id)
 	self:changed()
@@ -216,14 +218,32 @@ end
 -- What a message's header says, from its job alone: "cancelled" (and grey),
 -- "too late: already answered", "failed", "cancelling...", "cancel not
 -- confirmed", "queued", or nothing
+-- What a message's own line says. A job cancelled while it ran says it on its
+-- work line instead (Jobs.lua, WorkStatus), and its message stays as said (the
+-- player, 2026-11-11).
 function M:StatusOf(job)
 	local s = job.state
+	if job.asked == "running" then
+		if s == "failed" then return "failed" end
+		return nil
+	end
 	if s == "cancelled" then return "cancelled", true
 	elseif s == "answered" and job.asked then return "too late"
 	elseif s == "failed" then return "failed"
 	elseif job.cancel then return "cancelling"
 	elseif job.unconfirmed and RANK[s] < 3 then return "not confirmed"
 	elseif s == "queued" then return "queued"
+	end
+end
+
+-- What the work line of a conversation says about a cancel pressed on it:
+-- "cancelling", "not confirmed", or nil.
+function M:WorkStatus(slot)
+	for _, job in pairs(self.jobs) do
+		if job.slot == slot and job.asked == "running" and RANK[job.state] < 3 then
+			if job.cancel then return "cancelling" end
+			if job.unconfirmed then return "not confirmed" end
+		end
 	end
 end
 

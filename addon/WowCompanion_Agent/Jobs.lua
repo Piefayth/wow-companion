@@ -243,32 +243,39 @@ refresh = function()
 	local dots = ("."):rep(math.floor(now * 2) % 4)
 	local stamp = "  |cff5c6370" .. date("%H:%M") .. "|r"
 	local entry = WC.Companion.working(view)
-	-- a run whose every message is being cancelled shows no working line: the
-	-- cancel is already the answer (the player, 2026-11-10)
+	-- a message cancelled before its run began never gets a working line: the
+	-- cancel on the message is the answer. One cancelled while it ran keeps its
+	-- line, which says so (the player, 2026-11-11)
 	if entry then
-		local live, cancelling = false, false
+		local live, early = false, false
 		for _, job in pairs(jobs) do
 			if job.slot == view and RANK_LIVE[job.state] then
-				if job.cancel then cancelling = true else live = true end
+				if not job.cancel then live = true
+				elseif job.asked ~= "running" then early = true end
 			end
 		end
-		if cancelling and not live then entry = nil end
+		if early and not live and not model:WorkStatus(view) then entry = nil end
 	end
 	-- the work in view: an entry added when it began, changed in place
 	local live = transcript0.live
 	if live and (live.slot ~= view or not entry) then
-		local ended = model:Running(live.slot) and "stopped" or "answered below"
+		local ended = GREY .. (model:Running(live.slot) and "stopped" or "answered below") .. "|r"
 		for _, job in pairs(jobs) do
-			if job.slot == live.slot and job.state == "cancelled" and (job.endedAt or 0) >= live.began then
-				ended = "cancelled"
+			if job.slot == live.slot and (job.endedAt or 0) >= live.began and job.asked == "running" then
+				if job.state == "cancelled" then ended = WORDS["cancelled"]
+				elseif job.state == "answered" then ended = WORDS["too late"] end
+			elseif job.slot == live.slot and job.state == "cancelled" and (job.endedAt or 0) >= live.began then
+				ended = WORDS["cancelled"]
 			end
 		end
-		transcript0:EndLive(live, GREY .. ended .. "|r")
+		transcript0:EndLive(live, ended)
 		transcript0.live, live = nil, nil
 	end
 	if entry then
 		local doing = tostring(entry.text or "thinking"):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
 		local text = ("%s%s  %ds"):format(doing, dots, now - (entry.since or now))
+		local work = model:WorkStatus(view)
+		if work then text = WORDS[work] end
 		if not live then
 			live = transcript0:AddLive("|cffffd100Claude|r" .. stamp, text)
 			live.slot, live.began = view, nowMs()
