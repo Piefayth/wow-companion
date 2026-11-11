@@ -27,7 +27,10 @@ First run
 4. Press "Install the addon into the game" (in the Game step), then fully
    restart the game: a reload does not see new addons.
 5. Save, then "Save and check everything".
-6. Start the companion: wow-companion.exe run
+6. Tick Start with Windows (or press Start now). The companion wakes when you
+   start WoW and sleeps when you close it; its tray icon shows its state
+   (green listening, amber paused, grey waiting for WoW, red if it kept
+   stopping). Right-click it to pause listening, open setup, see the log or quit.
 7. In game: /wc talkkey, then press your talk button once.
 
 Graphics cards
@@ -40,24 +43,29 @@ request.
 
 Updating
 --------
-Unzip the new release over this folder, replacing files, then press "Install
-the addon into the game" again. Your profile (player\profile.md), settings,
+Quit the companion first (its tray icon's Quit), so its files are free. Unzip
+the new release over this folder, replacing files, then press "Install the
+addon into the game" again. Your profile (player\profile.md), settings,
 conversations and downloaded model are kept.
 
 What this changes on your PC (and how to undo it)
 --------------------------------------------------
 The setup window lists all of it under "What this put on your PC, and
 uninstall", and its Uninstall removes it (addons the agent installed for you
-only if you tick the box). Close the game and the companion first. In detail:
+only if you tick the box). Close the game and quit the companion (its tray icon) first. In detail:
 - This folder: everything here. Delete it to remove the programs.
 - Your game's Interface\AddOns folder: WowCompanion, WowCompanion_Wheel, and
   512 small folders WowCompanion_S001 to WowCompanion_S512 (how messages reach
   the game; they show grouped in the addon list). Delete those folders to undo.
   Addons the agent installs for you are listed in
   %LOCALAPPDATA%\wow-companion\addons.json, with where each came from.
-- %LOCALAPPDATA%\wow-companion: your settings, conversations, logs and backups.
-  Delete the folder to undo.
-- Nothing in the registry, no services, nothing starts with Windows.
+- %LOCALAPPDATA%\wow-companion: your settings, conversations, logs (companion.log,
+  and crash.log if it ever stopped unexpectedly) and backups. Delete the folder
+  to undo.
+- Only if you tick Start with Windows: one entry in the registry,
+  HKCU\Software\Microsoft\Windows\CurrentVersion\Run\WowCompanion, which
+  starts the watcher at login. Untick it (or Uninstall) to remove it. No
+  services.
 
 The agent
 ---------

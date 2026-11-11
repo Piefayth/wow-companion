@@ -275,7 +275,7 @@ pub(crate) fn watch_commands(addons: &Path) {
 
 /// A request that failed: its job ends failed and the game is told, unless a
 /// cancel ended it first (then the failure is only the kill, and is dropped).
-fn failed(addons: &Path, slot: &str, group: u64, err: io::Error) -> io::Result<bool> {
+pub(crate) fn failed(addons: &Path, slot: &str, group: u64, err: io::Error) -> io::Result<bool> {
     if !jobs::finish(group, jobs::State::Failed) {
         println!("  ended by a cancel");
         return Ok(false);
@@ -293,6 +293,8 @@ fn failed(addons: &Path, slot: &str, group: u64, err: io::Error) -> io::Result<b
 pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool, job: Option<u64>) -> io::Result<bool> {
     println!("asking: {spoken}");
     let group = job.unwrap_or_else(|| jobs::create(&session.slot, spoken, jobs::State::Queued));
+    // a panic on this thread ends this job failed (src/crash.rs)
+    let _working = crate::crash::working_on(group);
     if let Err(state) = jobs::advance(group, jobs::State::Running) {
         println!("  dropped: {} before it started", state.name());
         return Ok(false);

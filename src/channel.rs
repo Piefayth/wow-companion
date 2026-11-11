@@ -59,8 +59,19 @@ pub(crate) fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
             // nothing can reach the game to say so; the pad can
             voice::ALERT.store(true, Ordering::SeqCst);
         }
+        // a conversation line that could not go out waits for the next game
+        // session instead of being lost (src/undelivered.rs)
+        if inbox.starts_with("{ kind = \"log\"") {
+            crate::undelivered::keep(addons, inbox, err);
+            return Ok(());
+        }
     }
     sent
+}
+
+/// How many game clients are running (multiboxing: each reads every message).
+pub(crate) fn game_clients() -> usize {
+    wow_companion_settings::platform::process_count("Wow.exe")
 }
 
 pub(crate) fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {

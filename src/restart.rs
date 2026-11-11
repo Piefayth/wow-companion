@@ -131,6 +131,7 @@ pub(crate) fn watch_for_restart(args: Vec<String>) {
         }
         let _ = fs::remove_file(&flag);
         println!("handed over to the new build");
+        lifecycle::exited("handover");
         std::process::exit(0);
     }
 }

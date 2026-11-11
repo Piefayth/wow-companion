@@ -11,6 +11,7 @@
 //! name or byte:mask), `chat`, `mic`, `cue`, `volume`, `agent`.
 
 pub mod changes;
+pub mod platform;
 
 use std::{fs, io, path::PathBuf};
 

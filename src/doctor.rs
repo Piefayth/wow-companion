@@ -10,10 +10,11 @@ use std::{
     time::Duration,
 };
 
-fn running(image: &str) -> bool {
+/// A companion copy (companion-<pid>.exe) by its image name, at a line's start.
+fn copy_running() -> bool {
     Command::new("tasklist")
         .output()
-        .map(|out| String::from_utf8_lossy(&out.stdout).to_lowercase().contains(&image.to_lowercase()))
+        .map(|out| String::from_utf8_lossy(&out.stdout).lines().any(|line| line.to_lowercase().starts_with("companion-")))
         .unwrap_or(false)
 }
 
@@ -32,9 +33,31 @@ fn line(ok: bool, what: &str, detail: &str) {
 pub fn run(addons: &Path) -> std::io::Result<()> {
     let signals = addons.join(crate::ADDON).join("Signals");
 
-    line(running("wow.exe"), "game", if running("wow.exe") { "running" } else { "not running" });
-    let companion = running("companion-");
-    line(companion, "companion", if companion { "running" } else { "not running: start it with `run`" });
+    let clients = crate::game_clients();
+    line(clients > 0, "game", if clients > 0 { "running" } else { "not running" });
+    if clients > 1 {
+        line(false, "game clients", &format!("{clients} running: every message goes to all of them; one client per install for now"));
+    }
+    // the lock the running companion holds (a name search matched the setup
+    // window, wow-companion-setup.exe, too); copies from before it by name
+    let companion = crate::lifecycle::running() || copy_running();
+    line(companion, "companion", if companion { "running" } else { "not running: start it with `start` (or `run`)" });
+    let watcher = wow_companion_settings::platform::watcher_status();
+    line(true, "watcher", &match watcher {
+        Some(status) if !status.is_empty() => format!("running ({status})"),
+        Some(_) => "running".into(),
+        None => "not running (`start`, or the setup window's Start with Windows)".into(),
+    });
+    if let Some(crashes) = crate::crash::log_path().filter(|path| path.exists()) {
+        let last = fs::read_to_string(&crashes)
+            .unwrap_or_default()
+            .lines()
+            .rev()
+            .find(|line| line.starts_with("20"))
+            .map(|line| line.chars().take(120).collect::<String>())
+            .unwrap_or_default();
+        line(true, "crashes", &format!("last: {last} ({})", crashes.display()));
+    }
     let pending = crate::companion_dir().map(|dir| dir.join("restart.request").exists()).unwrap_or(false);
     line(!pending, "restart", if pending { "a restart is waiting for the companion to go idle" } else { "none pending" });
     line(true, "agent", if agent_busy() { "working on a request" } else { "idle" });

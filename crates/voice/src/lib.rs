@@ -85,6 +85,10 @@ pub static READY: AtomicBool = AtomicBool::new(false);
 /// this one stops reading the pad, so a press is never handled twice, while its
 /// requests in flight finish (two copies answering one clip, measured 2026-11-10).
 pub static DEAF: AtomicBool = AtomicBool::new(false);
+/// Paused by the player (the tray's "Pause listening"): the talk button does
+/// nothing until resumed. Its own flag, so a resume can never undo a hand-over's
+/// DEAF.
+pub static PAUSED: AtomicBool = AtomicBool::new(false);
 
 pub fn listen(
     model: &Path,
@@ -305,7 +309,7 @@ pub fn listen(
             }
             continue;
         }
-        if DEAF.load(Ordering::SeqCst) {
+        if DEAF.load(Ordering::SeqCst) || PAUSED.load(Ordering::SeqCst) {
             if holding.take().is_some() {
                 if let Some(mic) = &microphone {
                     mic.stop();

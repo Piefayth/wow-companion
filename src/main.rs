@@ -17,6 +17,12 @@ mod offline;
 mod jobs;
 mod audit;
 mod strip;
+mod crash;
+mod lifecycle;
+mod logfile;
+mod tray;
+mod undelivered;
+mod watcher;
 mod backups;
 use channel::*;
 use requests::*;
@@ -85,6 +91,10 @@ fn main() {
         [command, addons] if command == "install" => install(Path::new(addons)),
         // ask the running companion to move onto the newest build once it is idle
         [command] if command == "restart" => request_restart(),
+        // the watcher: the companion wakes with WoW and sleeps without it, with a
+        // tray icon (src/watcher.rs); `stop` ends companion and watcher cleanly
+        [command] if command == "start" => watcher::start(),
+        [command] if command == "stop" => lifecycle::stop(),
         // a request typed into a conversation (main, l1, l2, r1, r2), taken by the
         // running companion as if spoken there
         [command, slot, words @ ..] if command == "tell" && !words.is_empty() => tell(slot, &words.join(" ")),
@@ -181,6 +191,8 @@ fn main() {
             eprintln!("  speakers                         list output devices");
             eprintln!("  voice <model> [options]          hold the button and speak");
             eprintln!("  run <AddOns> <model> [options]   the whole thing");
+            eprintln!("  start                            wake with WoW, hidden, with a tray icon");
+            eprintln!("  stop                             end the companion (and the watcher) cleanly");
             eprintln!("  dictate <AddOns> <model> [options]");
             eprintln!("                                   speak into the open chat box");
             eprintln!("  ask <AddOns> <text>              one question, no voice");
@@ -203,10 +215,19 @@ fn main() {
 /// continuing conversation with the agent. Hold one button to dictate into the chat
 /// box, the other to ask.
 fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
+    // one companion at a time (src/lifecycle.rs)
+    lifecycle::refuse_second()?;
     // run from a copy, so `cargo build` can replace the real one while we run
     if let Some(handed_over) = run_from_copy()? {
         return handed_over;
     }
+    // what it prints also goes to companion.log; a panic goes to crash.log
+    logfile::tee();
+    crash::install(addons);
+    lifecycle::hold()?;
+    lifecycle::watch(addons);
+    undelivered::watch(addons);
+    crash::after_start(addons);
     {
         let args: Vec<String> = env::args().skip(1).collect();
         thread::spawn(move || watch_for_restart(args));

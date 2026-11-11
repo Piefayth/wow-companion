@@ -10,6 +10,7 @@
 //! - our addon's saved data in the game's WTF folder (`WowCompanion*.lua`).
 //! - addons the agent installed (`addons.json`), only when asked to.
 //! - `%LOCALAPPDATA%\wow-companion`: settings, conversations, logs, backups.
+//! - starting with Windows (the setup window's checkbox), if it was ticked.
 //!
 //! The program folder (the unzipped release, with any model in it) is left for
 //! the player to delete: a program can't delete the folder it runs from.
@@ -64,6 +65,9 @@ pub struct Changes {
     pub saved: Vec<PathBuf>,
     /// Addons the agent installed: name, and its folders that exist.
     pub agent_addons: Vec<(String, Vec<PathBuf>)>,
+    /// What starts with the user's session (the setup window's "Start with
+    /// Windows"), and where that is kept.
+    pub startup: Option<(String, String)>,
     /// `%LOCALAPPDATA%\wow-companion`, if it exists.
     pub data: Option<PathBuf>,
 }
@@ -72,7 +76,9 @@ impl Changes {
     pub fn find(addons: Option<&Path>) -> Changes {
         let ledger = ledger().and_then(|path| fs::read_to_string(path).ok()).unwrap_or_default();
         let agent = data_dir().and_then(|dir| fs::read_to_string(dir.join("addons.json")).ok()).unwrap_or_default();
-        Changes::find_in(addons, &ledger, &agent, data_dir())
+        let mut changes = Changes::find_in(addons, &ledger, &agent, data_dir());
+        changes.startup = crate::platform::autostart().map(|command| (command, crate::platform::autostart_place()));
+        changes
     }
 
     /// `find` with the ledger, the agent's addons.json and the data folder given.
@@ -99,7 +105,7 @@ impl Changes {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.folders.is_empty() && self.saved.is_empty() && self.agent_addons.is_empty() && self.data.is_none()
+        self.folders.is_empty() && self.saved.is_empty() && self.agent_addons.is_empty() && self.data.is_none() && self.startup.is_none()
     }
 
     /// Remove it all (the agent's addons only if `agent_addons`). Returns what
@@ -124,6 +130,9 @@ impl Changes {
             for folder in self.agent_addons.iter().flat_map(|(_, folders)| folders) {
                 gone(folder, fs::remove_dir_all(folder));
             }
+        }
+        if let Some((_, place)) = &self.startup {
+            gone(Path::new(place), crate::platform::set_autostart(None));
         }
         if let Some(data) = &self.data {
             gone(data, fs::remove_dir_all(data));

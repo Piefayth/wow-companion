@@ -23,7 +23,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui::{self, RichText};
 use look::Status;
 use wow_companion_pad as pad;
-use wow_companion_settings::{Settings, changes::Changes};
+use wow_companion_settings::{Settings, changes::Changes, platform};
 
 /// Child processes (claude, the companion, tasklist) open no console window.
 const NO_WINDOW: u32 = 0x0800_0000;
@@ -38,6 +38,12 @@ const AGENT_MODELS: &[(&str, &str, &str)] = &[
 ];
 
 fn main() -> eframe::Result<()> {
+    // what "Start with Windows" runs: start the watcher with no window at all
+    // (this exe has none; wow-companion.exe would flash a console), then leave
+    if std::env::args().any(|arg| arg == "--start") {
+        start_watcher();
+        return Ok(());
+    }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([720.0, 860.0])
@@ -97,6 +103,12 @@ struct Setup {
     uninstalled: Option<Vec<String>>,
     /// the game and the companion running, when the changes were looked up
     running: (bool, bool),
+    /// "Start with Windows", as the system has it
+    autostart: bool,
+    /// what the watcher says (waiting, listening, paused...), None if none runs
+    watcher: Option<String>,
+    /// when the companion's state was last looked at
+    looked: Instant,
 }
 
 #[derive(Clone, Default)]
@@ -153,6 +165,9 @@ impl Setup {
             confirm_uninstall: false,
             uninstalled: None,
             running: (false, false),
+            autostart: platform::autostart().is_some(),
+            watcher: platform::watcher_status(),
+            looked: Instant::now(),
         };
         setup.refresh_devices();
         if setup.addons.is_empty() {
@@ -197,7 +212,7 @@ impl Setup {
         *self.report.lock().unwrap() = match self.settings.save() {
             Ok(path) => {
                 self.saved = true;
-                format!("Saved to {}.\nStart the companion with: wow-companion run", path.display())
+                format!("Saved to {}.\nNext: tick Start with Windows below (or press Start now).", path.display())
             }
             Err(err) => format!("Could not save: {err}"),
         };
@@ -223,7 +238,7 @@ impl eframe::App for Setup {
                         |ui| {
                             ui.label(RichText::new("WoW Companion").size(26.0).strong().color(look::TEXT));
                             ui.label(
-                                RichText::new("Hold a button, speak, and it happens in game. Five things to set up.")
+                                RichText::new("Hold a button, speak, and it happens in game. Six things to set up.")
                                     .color(look::MUTED),
                             );
                             ui.add_space(14.0);
@@ -232,6 +247,7 @@ impl eframe::App for Setup {
                             self.microphone(ui);
                             self.speech(ui);
                             self.agent(ui);
+                            self.starting(ui);
                             ui.add_space(6.0);
                             let header = egui::CollapsingHeader::new(
                                 RichText::new("What this put on your PC, and uninstall").color(look::MUTED),
@@ -584,6 +600,55 @@ impl Setup {
     }
 }
 
+// starting the companion: it wakes with WoW (wow-companion start, the watcher)
+impl Setup {
+    fn starting(&mut self, ui: &mut egui::Ui) {
+        if self.looked.elapsed() > Duration::from_secs(2) {
+            self.looked = Instant::now();
+            self.watcher = platform::watcher_status();
+            self.companion_running = companion_running();
+        }
+        let status = match self.watcher.as_deref() {
+            Some("listening") => Status::Ready("listening"),
+            Some("paused") => Status::Busy("paused"),
+            Some("waiting") => Status::Ready("waiting for WoW"),
+            Some("gave-up") => Status::Problem("stopped after crashes"),
+            Some(_) => Status::Busy("starting"),
+            None if self.companion_running => Status::Ready("running"),
+            None => Status::Todo("not started"),
+        };
+        look::card(ui, 6, "Start", status, |ui| {
+            ui.label(
+                RichText::new("The companion wakes when you start WoW and sleeps when you close it. Its icon in the notification area shows its state; right-click it to pause or quit.")
+                    .color(look::MUTED),
+            );
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let mut wanted = self.autostart;
+                if ui.checkbox(&mut wanted, "Start with Windows").changed() {
+                    let command = std::env::current_exe().ok().map(|exe| format!("\"{}\" --start", exe.display()));
+                    let result = if wanted { platform::set_autostart(command.as_deref()) } else { platform::set_autostart(None) };
+                    match result {
+                        Ok(()) => {
+                            self.autostart = wanted;
+                            self.changes = None;
+                        }
+                        Err(err) => *self.report.lock().unwrap() = format!("Could not change Start with Windows: {err}"),
+                    }
+                }
+                if self.watcher.is_none() && ui.button("Start now").clicked() {
+                    start_watcher();
+                    self.looked = Instant::now() - Duration::from_secs(10);
+                    *self.report.lock().unwrap() = "Started: the companion wakes when you start WoW.".into();
+                }
+            });
+            if self.watcher.as_deref() == Some("gave-up") {
+                ui.colored_label(look::BAD, "It stopped 3 times in 10 minutes. Restart WoW to try again; crash.log in %LOCALAPPDATA%\\wow-companion has why.");
+            }
+        });
+    }
+}
+
 // installing, and what it changed (crates/settings/src/changes.rs)
 impl Setup {
     fn install(&mut self) {
@@ -655,7 +720,13 @@ impl Setup {
         }
         ui.label("This program's folder (and a speech model downloaded into it)");
         muted(ui, format!("{}  (delete it yourself afterwards)", program_folder()));
-        muted(ui, "Nothing in the registry, no services, nothing starts with Windows.".into());
+        match &changes.startup {
+            Some((command, place)) => {
+                ui.label("Starts with Windows (the checkbox above)");
+                muted(ui, format!("{place} = {command}"));
+            }
+            None => muted(ui, "Nothing in the registry, no services, nothing starts with Windows.".into()),
+        }
         if changes.is_empty() {
             return;
         }
@@ -666,9 +737,9 @@ impl Setup {
             ui.colored_label(
                 look::WARN,
                 match (game, companion) {
-                    (true, true) => "Close the game and stop the companion to uninstall.",
+                    (true, true) => "Close the game and quit the companion (its tray icon) to uninstall.",
                     (true, false) => "Close the game to uninstall: it holds these files.",
-                    _ => "Stop the companion to uninstall.",
+                    _ => "Quit the companion to uninstall (its tray icon's Quit).",
                 },
             );
             if ui.small_button("Look again").clicked() {
@@ -1214,13 +1285,23 @@ fn claude_version() -> String {
     }
 }
 
-/// Whether the companion is running (it runs as companion-*.exe copies).
+/// Whether the companion is running: the lock it holds, or (a copy from
+/// before the lock) a companion-*.exe at the start of a line. Not a name search
+/// anywhere in the list: this window, wow-companion-setup.exe, matched it.
 fn companion_running() -> bool {
-    Command::new("tasklist")
-        .creation_flags(NO_WINDOW)
-        .output()
-        .map(|out| String::from_utf8_lossy(&out.stdout).to_lowercase().contains("companion-"))
-        .unwrap_or(false)
+    platform::lock_exists(platform::COMPANION_LOCK)
+        || Command::new("tasklist")
+            .creation_flags(NO_WINDOW)
+            .output()
+            .map(|out| String::from_utf8_lossy(&out.stdout).lines().any(|line| line.to_lowercase().starts_with("companion-")))
+            .unwrap_or(false)
+}
+
+/// `wow-companion start`, with no window.
+fn start_watcher() {
+    if let Some(exe) = companion() {
+        let _ = Command::new(exe).arg("start").creation_flags(NO_WINDOW).spawn();
+    }
 }
 
 /// wow-companion.exe, beside this window's exe.

@@ -51,7 +51,13 @@ yes; don't reinvent what Claude Code has.
   and replies race there, and every message about a request carries `job` and `state`),
   `context.rs` (the export, profile and integrations the agent gets), `chat.rs`
   (spoken chat lines), `restart.rs`, `install.rs`, `agent.rs` (the agent and its
-  rules), `bells.rs`, `heartbeat.rs`, `doctor.rs`, `modules.rs`.
+  rules), `bells.rs`, `heartbeat.rs`, `doctor.rs`, `modules.rs`; its life:
+  `lifecycle.rs` (one companion at a time, clean exits, pause, two clients),
+  `watcher.rs` + `tray.rs` (`start`: wakes it with WoW, the tray icon),
+  `crash.rs` (crash.log, a panicked request ends failed), `logfile.rs`
+  (companion.log), `undelivered.rs` (a line that could not go out waits for the
+  next session). What the OS gives (locks, processes, autostart) is behind
+  `crates/settings/src/platform.rs`, Windows only for now.
 - `addon/WowCompanion/`: the in-game half, one job per file, in .toc order
   (split 2026-11-10 so conversations stop editing the same file; a change goes in
   the file that owns it):
@@ -108,6 +114,12 @@ Tests: `cargo test --workspace`.
   fresh. Home is free. Only the main conversation can `look`.
   starts the companion. It runs from a copy in `%LOCALAPPDATA%\wow-companion\bin`,
   so `cargo build` works while it runs.
+- **For players: `wow-companion start`** (the setup window's Start with Windows):
+  a watcher with a tray icon starts `run` hidden when Wow.exe appears; the
+  companion exits cleanly when the game closes (only when the watcher started
+  it), and a crash is restarted at most 3 times in 10 minutes. `stop` ends
+  companion and watcher cleanly. A second `run` refuses (a lock). Logs:
+  `%LOCALAPPDATA%\wow-companion\companion.log`, `crash.log`.
 - **Never kill it.** `wow-companion restart` asks it to move onto the newest build:
   it waits for no request in flight and no button held, starts the new copy, which
   opens its mic and loads, and only then closes its own mic and exits. Killing it
