@@ -222,7 +222,7 @@ stowWatch:SetScript("OnEvent", function(_, event)
 	if shownInCombat and frame and frame:IsShown() and UIPanelWindows and UIPanelWindows["WowCompanionLog"] then
 		-- a plain Show never joined the focus cycle; join it now, in one frame
 		frame:Hide()
-		ShowUIPanel(frame)
+		ShowUIPanel(frame) -- rules: ok runs on PLAYER_REGEN_ENABLED, the fight is over
 	end
 	shownInCombat = false
 end)
@@ -557,8 +557,9 @@ local function buildActionButton()
 
 		-- make the cursor able to land on it, and tell SmartNavigation this frame is
 		-- where the window's focusable button lives
+		-- rules: ok buildActionButton's only caller, showOffer, returns in combat first
 		if SmartNavigation_MarkFrameFocusable then
-			pcall(SmartNavigation_MarkFrameFocusable, actionButton)
+			pcall(SmartNavigation_MarkFrameFocusable, actionButton) -- rules: ok as above
 		end
 		if SmartNavigation_SetButtonFrame then
 			pcall(SmartNavigation_SetButtonFrame, actionButton)
