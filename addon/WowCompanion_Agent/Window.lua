@@ -302,9 +302,10 @@ local function buildTabs(frame, messages)
 	local WELL = 130
 	local made, well = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not made or not well then well = CreateFrame("Frame", nil, frame) end
-	-- no box around the window: the wells are its edges
-	well:SetPoint("TOPRIGHT", 0, -40)
-	well:SetPoint("BOTTOMRIGHT", 0, 36)
+	-- inside the panel where its own inset would be (ButtonFrameTemplate's
+	-- Inset: 4, -60 to -6, 26), the tabs standing on top
+	well:SetPoint("TOPRIGHT", -6, -60)
+	well:SetPoint("BOTTOMRIGHT", -6, 26)
 	well:SetWidth(WELL)
 	local back = well:CreateTexture(nil, "BACKGROUND", nil, 1)
 	back:SetAtlas("auctionhouse-background-categories")
@@ -317,8 +318,8 @@ local function buildTabs(frame, messages)
 	-- keeps only the waiting line.
 	local madeChat, chatWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not madeChat or not chatWell then chatWell = CreateFrame("Frame", nil, frame) end
-	chatWell:SetPoint("TOPLEFT", 0, -40)
-	chatWell:SetPoint("BOTTOMRIGHT", -(WELL + 6), 36)
+	chatWell:SetPoint("TOPLEFT", 4, -60)
+	chatWell:SetPoint("BOTTOMRIGHT", -(6 + WELL + 2), 26)
 	table.insert(frame.chatParts, chatWell)
 	messages.scroll:ClearAllPoints()
 	-- edge to edge inside the inset, so the turns' backings reach it; the
@@ -401,15 +402,15 @@ local function buildTabs(frame, messages)
 		p:SetPoint("BOTTOMRIGHT", -12, 10)
 	end
 
-	-- the tabs, standing on the chat well's top edge (the page well's on the
-	-- other tabs, at the same place, so nothing moves when switching)
+	-- the tabs, standing on the wells' top edge inside the panel, as the macro
+	-- frame's (Blizzard_MacroUI.xml:183)
 	for i, name in ipairs(TAB_NAMES) do
 		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTopTabButtonTemplate")
 		if not made or not tab then return end
 		tab:SetID(i)
 		tab:SetText(name)
 		if i == 1 then
-			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 8, -2)
+			tab:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -28)
 		else
 			tab:SetPoint("LEFT", frame.Tabs[i - 1], "RIGHT", 0, 0)
 		end
@@ -445,11 +446,14 @@ end
 -- Deliberately not registered in UISpecialFrames: Escape handling is where the
 -- gamepad taint lives, and this frame has a close button instead.
 local function buildLog()
-	-- No box of its own: the wells are its edges, Blizzard's dialog header its
-	-- title, the tabs stand on top (docs/proposals/companion-window-frame.md).
+	-- One panel, Blizzard's own: ButtonFrameTemplate, as the macro frame is
+	-- built (its border, background, title bar and close button), with the
+	-- tabs standing on the wells inside it (the player, 2026-11-11: "one panel
+	-- that you filled with stuff"; docs/proposals/companion-window-frame.md).
 	-- CreateFrame throws on a template this build lacks, and an ugly window
 	-- beats an addon that fails to load.
-	local frame = CreateFrame("Frame", "WowCompanionLog", UIParent)
+	local made, frame = pcall(CreateFrame, "Frame", "WowCompanionLog", UIParent, "ButtonFrameTemplate")
+	if not made or not frame then frame = CreateFrame("Frame", "WowCompanionLog", UIParent) end
 	frame:SetSize(560, 340)
 	-- top left, where Blizzard docks its own left panels (the character sheet,
 	-- the spellbook); the panel manager places it there on every open
@@ -457,33 +461,25 @@ local function buildLog()
 	frame:SetFrameStrata("DIALOG")
 	frame:SetClampedToScreen(true)
 	frame:Hide()
-	local closed, close = pcall(CreateFrame, "Button", nil, frame, "UIPanelCloseButton")
-	if closed and close then
-		close:SetPoint("TOPRIGHT", 0, -6)
-		close:SetScript("OnClick", function() if WowCompanion_HideWindow then WowCompanion_HideWindow() else frame:Hide() end end)
-		-- the controller's back button (circle) closes a focused window by clicking
-		-- its frame.CloseButton (SmartNavigation:AttemptClose), so name it that
-		frame.CloseButton = close
+	if ButtonFrameTemplate_HidePortrait and frame.PortraitContainer then ButtonFrameTemplate_HidePortrait(frame) end
+	-- our wells take the template's inset's place
+	if frame.Inset then frame.Inset:Hide() end
+	if frame.SetTitle then frame:SetTitle("Companion") end
+	-- the controller's back button (circle) closes a focused window by
+	-- clicking its frame.CloseButton (SmartNavigation:AttemptClose)
+	if frame.CloseButton then
+		frame.CloseButton:SetScript("OnClick", function()
+			if WowCompanion_HideWindow then WowCompanion_HideWindow() else frame:Hide() end
+		end)
 	end
-
-	-- the title: Blizzard's dialog header, standing on the conversation well
-	-- beside the close button; it is the drag handle, so a drag inside the
-	-- transcript stays free
+	-- the title bar is the drag handle, so a drag inside the transcript stays free
 	frame:SetMovable(true)
-	local madeHeader, header = pcall(CreateFrame, "Frame", nil, frame, "DialogHeaderTemplate")
-	if madeHeader and header then
-		header:Setup("Companion")
-		header:SetHeaderFont(GameFontNormalLarge)
-		header:ClearAllPoints()
-		if closed and close then
-			header:SetPoint("BOTTOMRIGHT", close, "BOTTOMLEFT", -2, -4)
-		else
-			header:SetPoint("TOPRIGHT", 0, 0)
-		end
-		header:EnableMouse(true)
-		header:RegisterForDrag("LeftButton")
-		header:SetScript("OnDragStart", function() frame:StartMoving() end)
-		header:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+	local bar = frame.TitleContainer
+	if bar then
+		bar:EnableMouse(true)
+		bar:RegisterForDrag("LeftButton")
+		bar:SetScript("OnDragStart", function() frame:StartMoving() end)
+		bar:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
 	end
 
 	local messages = newTranscript(frame)
@@ -677,7 +673,7 @@ local function buildLog()
 	end
 	local grip = CreateFrame("Button", nil, frame)
 	grip:SetSize(16, 16)
-	grip:SetPoint("BOTTOMRIGHT", 0, 4)
+	grip:SetPoint("BOTTOMRIGHT", -4, 4)
 	grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
 	grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
 	-- A mouse drags it; the controller can only click it, so a

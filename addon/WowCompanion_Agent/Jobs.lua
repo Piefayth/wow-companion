@@ -533,19 +533,13 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	-- the legend: what square and triangle do right now, shown only while
 	-- they work (the player, 2026-11-10: "no input legend")
 	if window then
-		-- one line with the game's own button glyphs inline, on a small plate of
-		-- its own hanging from the chat well's lower right corner (Blizzard's
-		-- TooltipBackdropTemplate, as under the macro icons;
-		-- docs/proposals/companion-window-frame.md), shown only with prompts
+		-- one line with the game's own button glyphs inline, in the panel's
+		-- bottom strip under the chat well, shown only with prompts
 		if not window.jobsLegend then
-			local made, plate = pcall(CreateFrame, "Frame", nil, window, "TooltipBackdropTemplate")
-			if not made or not plate then plate = CreateFrame("Frame", nil, window) end
-			plate:SetPoint("TOPRIGHT", window.chatWell or window, "BOTTOMRIGHT", 0, -4)
-			plate:SetHeight(28)
-			local fs = plate:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-			fs:SetPoint("RIGHT", -12, 0)
+			local fs = window:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+			fs:SetPoint("BOTTOMRIGHT", window.chatWell or window, "BOTTOMRIGHT", -4, -20)
 			fs:SetJustifyH("RIGHT")
-			window.jobsLegend, window.jobsLegendPlate = fs, plate
+			window.jobsLegend = fs
 		end
 		local function glyph(key) return WowCompanion_Glyph(key) end
 		local parts = {}
@@ -553,8 +547,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		if focused and sendable() then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
 		if focused and offerShown() then parts[#parts + 1] = glyph("PADLSTICK") .. " " .. (_G.WowCompanionDo:GetText() or "Press") end
 		window.jobsLegend:SetText(table.concat(parts, "     "))
-		window.jobsLegendPlate:SetWidth(window.jobsLegend:GetStringWidth() + 24)
-		window.jobsLegendPlate:SetShown(#parts > 0)
+		window.jobsLegend:SetShown(#parts > 0)
 		if window.jobsCancelPrompt then window.jobsCancelPrompt:Hide() window.jobsNowPrompt:Hide() end
 	end
 	-- what is bound follows what the legend shows; rebound only on a change
