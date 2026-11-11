@@ -80,7 +80,8 @@ yes; don't reinvent what Claude Code has.
   - `WowCompanion` (Core, needs nothing of the PC): `Engine.lua` (`WC`: modules,
     bus, settings, `WC.AfterCombat`, the focus helpers, capabilities, `WC.Saved`),
     `Conversations.lua` (the conversations as the PC names them, their labels;
-    `WC.Conversations`), `Style.lua` (Blizzard look, glyphs, destroy dialog), `Board.lua` (the toast
+    `WC.Conversations`), `Style.lua` (Blizzard look, glyphs, destroy dialog),
+    `Slider.lua` (a slider as one controller stop, `WC.SliderStop`), `Board.lua` (the toast
     and board; `WC.Board.Post`), `Providers/` (price, nav, gear, itemSource,
     guide, Polestar's pins). Saved: `WowCompanionDB` (module settings).
   - `WowCompanion_Link` (needs Core): the PC bridge. `Link.lua` the channel

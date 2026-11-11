@@ -33,9 +33,8 @@ local function buildTabs(frame, messages)
 	-- Tools: settings are
 	-- labelled rows with the control their data calls for, a dropdown for a
 	-- choice, a slider for a range; actions stay buttons, under their own
-	-- heading. The slider is Blizzard's MinimalSliderWithSteppers, whose
-	-- steppers the controller's focus cycle reaches; the dropdown is our own
-	-- (below).
+	-- heading. The slider is Blizzard's MinimalSliderWithSteppers, one stop
+	-- for the controller (WC.SliderStop); the dropdown is our own (below).
 	local tools = pages[2]
 	local y = 0
 	local LABEL_W, CONTROL_W = 110, 190
@@ -158,9 +157,7 @@ local function buildTabs(frame, messages)
 		s:Init(get(), min, max, steps, formatters)
 		s:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, value) set(value) end, s)
 		note(s.RightText or s, text)
-		focusable(s.Back)
-		focusable(s.Slider)
-		focusable(s.Forward)
+		WC.SliderStop(s)
 		return s
 	end
 	local function button(label, text, onClick)

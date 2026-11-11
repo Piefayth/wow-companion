@@ -9,6 +9,7 @@
 Engine.lua
 Conversations.lua
 Style.lua
+Slider.lua
 Board.lua
 Providers\Price.lua
 Providers\Nav.lua
