@@ -162,7 +162,9 @@ local function cancel(job)
 	if job.state == "hearing" and not job.id then
 		command("hear", job.slot)
 		if core.setTranscribing then core.setTranscribing(job.slot, false) end
-		local asked = GetTime()
+		-- when, by the clock job ids are made from (unix ms): only a clip let go
+		-- before the press can be the one meant, never the next one
+		local asked = time() * 1000 + 999
 		hearingAsked[job.slot] = asked
 		C_Timer.After(RETRY_EVERY * TRIES, function()
 			if hearingAsked[job.slot] == asked then
@@ -221,7 +223,7 @@ function WC.Jobs.Apply(inbox)
 		-- cancellation" and lag through cancelling): the line arrives already
 		-- cancelled. The cancel goes for this job too; its real end still decides
 		local slotKey = job and job.slot
-		if job and inbox.who == "you" and hearingAsked[slotKey] and not job.cancel and RANK[job.state] < 3 then
+		if job and inbox.who == "you" and hearingAsked[slotKey] and job.id <= hearingAsked[slotKey] and not job.cancel and RANK[job.state] < 3 then
 			hearingAsked[slotKey] = nil
 			job.queueId = job.queueId or inbox.queueId
 			if not job.row then
@@ -285,6 +287,24 @@ end
 local function sendNow(job)
 	if not job then return end
 	command("now", job.slot, job.id)
+	-- like a cancel, an intent until the job moves: drawn again while it is
+	-- still queued (the strip can be missed), then the play buttons come back
+	local tries = 1
+	local function again()
+		local live = jobs[job.id]
+		if not (live and live.state == "queued" and live.sending) then return end
+		if tries < TRIES then
+			tries = tries + 1
+			command("now", live.slot, live.id)
+			C_Timer.After(RETRY_EVERY, again)
+		else
+			for _, other in pairs(jobs) do
+				if other.slot == live.slot and other.state == "queued" then other.sending = nil end
+			end
+			refresh()
+		end
+	end
+	C_Timer.After(RETRY_EVERY, again)
 	-- every queued message goes in the same request, so one press sends them
 	-- all: the other play buttons go too
 	for _, other in pairs(jobs) do
