@@ -353,9 +353,13 @@ function WC.Jobs.Released(slot)
 	slot = slot or ""
 	local list = placeholders[slot] or {}
 	placeholders[slot] = list
+	-- joins the clip before only when let go within JOIN of it, as on the PC
+	-- (src/jobs.rs hear): a slow transcription must not swallow the next message
 	local last = list[#list]
-	if not (last and not last.cancelled) then
-		list[#list + 1] = { since = GetTime(), releaseMs = nowMs() }
+	if last and not last.cancelled and GetTime() - (last.lastAt or last.since) <= 1.5 then
+		last.lastAt = GetTime()
+	else
+		list[#list + 1] = { since = GetTime(), lastAt = GetTime(), releaseMs = nowMs() }
 	end
 	refresh()
 end

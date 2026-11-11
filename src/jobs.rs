@@ -71,6 +71,8 @@ pub(crate) struct Job {
     released: u128,
     /// Clips released into it whose words have not come back yet.
     clips: u32,
+    /// When its newest clip was let go: only a clip let go soon after joins.
+    last_release: Instant,
     /// When words last arrived (gathering waits for a quiet moment).
     last_words: Instant,
     /// What the agent is doing, for the board.
@@ -123,6 +125,7 @@ fn insert(jobs: &mut BTreeMap<u64, Job>, slot: &str, state: State, text: &str, r
             group: id,
             released,
             clips: 0,
+            last_release: now,
             last_words: now,
             doing: String::new(),
             since: now,
@@ -138,16 +141,24 @@ pub(crate) fn create(slot: &str, text: &str, state: State) -> u64 {
     with(|jobs| insert(jobs, slot, state, text, now_ms()))
 }
 
-/// A clip was let go in this conversation. Clips let go while one is still
-/// being heard join it (the gather window); otherwise a new job starts.
+/// A clip was let go in this conversation. A clip let go within JOIN of the
+/// one before, still being heard, joins it (you let go too early and went on);
+/// otherwise a new job starts. Joining every clip while one was still heard
+/// merged separate messages whenever Whisper was slow (the player, 2026-11-10:
+/// an 11 s transcription swallowed the two messages after it).
+pub(crate) const JOIN: Duration = Duration::from_millis(1500);
 pub(crate) fn hear(slot: &str) -> u64 {
     with(|jobs| {
-        let id = match jobs.values().find(|job| job.slot == slot && job.state == State::Hearing) {
+        let joinable = jobs
+            .values()
+            .find(|job| job.slot == slot && job.state == State::Hearing && job.last_release.elapsed() <= JOIN);
+        let id = match joinable {
             Some(job) => job.id,
             None => insert(jobs, slot, State::Hearing, "", now_ms()),
         };
         let job = jobs.get_mut(&id).unwrap();
         job.clips += 1;
+        job.last_release = Instant::now();
         job.last_words = Instant::now();
         id
     })
