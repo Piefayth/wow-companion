@@ -9,20 +9,26 @@ local function newTranscript(...) return WC.Transcript.newTranscript(...) end
 -- conversation list is already a column of choices on the right, and side
 -- tabs beside it read as tabs on tabs. Picked with
 -- the controller cursor. No shoulder buttons: L1 and R1 are talk-button slots.
-local TAB_NAMES = { "Chat", "Tools", "Status", "Errands" }
+-- The tabs: the Agent's own three, then one per loaded addon that adds its
+-- page (WC.Companion.AddTab), so a disabled addon has no tab.
+local TAB_NAMES = { "Chat", "Tools", "Status" }
+local added = {} -- { name, fill } from other addons, in the order they came
+local addTab -- set once the window is built
+-- name: the tab's label; fill(page): called once with the page's frame
+function WC.Companion.AddTab(name, fill)
+	if addTab then return addTab(name, fill) end
+	added[#added + 1] = { name = name, fill = fill }
+end
 local function buildTabs(frame, messages)
 	local pages = {}
-	-- Tools, Status and Errands stand in a page well of their own, an inset
-	-- over both wells' area (anchored below, once the wells exist)
+	-- every page but Chat stands in a page well of its own, an inset over
+	-- both wells' area (anchored below, once the wells exist)
 	local function page()
 		local p = CreateFrame("Frame", nil, frame)
 		p:Hide()
 		return p
 	end
-	pages[2], pages[3], pages[4] = page(), page(), page()
-	-- Errands (Errands.lua fills it; display only)
-	WC.ErrandsPage = pages[4]
-	if WC.Errands and WC.Errands.Page then WC.Errands.Page(pages[4]) end
+	pages[2], pages[3] = page(), page()
 
 	-- Tools: settings are
 	-- labelled rows with the control their data calls for, a dropdown for a
@@ -482,18 +488,22 @@ local function buildTabs(frame, messages)
 	pageWell:SetPoint("TOPLEFT", chatWell, "TOPLEFT")
 	pageWell:SetPoint("BOTTOMRIGHT", well, "BOTTOMRIGHT")
 	pageWell:Hide()
-	for _, p in pairs(pages) do
+	local function place(p)
 		p:SetParent(pageWell)
 		p:SetPoint("TOPLEFT", 12, -10)
 		p:SetPoint("BOTTOMRIGHT", -12, 10)
 	end
+	for _, p in pairs(pages) do place(p) end
 
 	-- the tabs, their foot resting on the chat well's top border (one pixel
 	-- in, no more: deeper, they covered the top line of text), drawn under
 	-- the well's top shadow so it falls across their foot as across the text
-	for i, name in ipairs(TAB_NAMES) do
+	local names = {}
+	local function makeTab(name)
+		local i = #names + 1
 		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTopTabButtonTemplate")
 		if not made or not tab then return end
+		names[i] = name
 		tab:SetID(i)
 		tab:SetText(name)
 		if i == 1 then
@@ -504,16 +514,30 @@ local function buildTabs(frame, messages)
 		tab:SetScript("OnClick", function(self) frame.SelectTab(self:GetID()) end)
 		tab:SetFrameLevel(chatWell:GetFrameLevel() + 2)
 		WC.MarkFocusable(tab)
+		PanelTemplates_SetNumTabs(frame, i)
+		return i
 	end
-	PanelTemplates_SetNumTabs(frame, #TAB_NAMES)
+	for _, name in ipairs(TAB_NAMES) do makeTab(name) end
+	addTab = function(name, fill)
+		local i = makeTab(name)
+		if not i then return end
+		pages[i] = page()
+		place(pages[i])
+		local ok, err = pcall(fill, pages[i])
+		if not ok then pages[i].failed = tostring(err) end
+		-- tabs are laid out again for the new width
+		if frame.currentTab then PanelTemplates_SetTab(frame, frame.currentTab) end
+	end
+	for _, t in ipairs(added) do addTab(t.name, t.fill) end
+	added = {}
 
 	function frame.SelectTab(id)
-		id = ((id - 1) % #TAB_NAMES) + 1
+		id = ((id - 1) % #names) + 1
 		frame.currentTab = id
 		PanelTemplates_SetTab(frame, id)
 		local chat = id == 1
 		-- the page's name in the title, as Collections does
-		if frame.SetTitle then frame:SetTitle(chat and "Companion" or TAB_NAMES[id]) end
+		if frame.SetTitle then frame:SetTitle(chat and "Companion" or names[id]) end
 		messages.scroll:SetShown(chat)
 		for _, part in ipairs(frame.chatParts or {}) do part:SetShown(chat) end
 		pageWell:SetShown(not chat)

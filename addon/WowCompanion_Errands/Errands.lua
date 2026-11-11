@@ -872,12 +872,11 @@ drawPage = function()
 	end
 	if detail.remove and detail.confirm ~= e.id then detail.remove:SetText("Remove") end
 end
-function E.Page(p)
+-- its tab in the Companion window, added at load: no Errands, no tab
+WC.Companion.AddTab("Errands", function(p)
 	page = p
 	p:HookScript("OnShow", drawPage)
-end
--- the window may have been built before this file loaded
-if WC.ErrandsPage and not page then E.Page(WC.ErrandsPage) end
+end)
 
 function E.Show()
 	pcall(drawTracker)
