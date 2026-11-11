@@ -3,7 +3,7 @@
 
 # Blizzard UI source for this exact client, cloned for the agent to grep (not ours to commit)
 docs/wow-ui-source/
-tools/__pycache__/
+__pycache__/
 addon/WowCompanion_Agent/Modules.lua
 addon/WowCompanion_Mailbox/Mail.lua
 crates/setup/target/
