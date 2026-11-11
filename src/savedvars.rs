@@ -1,11 +1,29 @@
 //! The game's SavedVariables, read as values: the one reader of the save file
-//! (the ledger's confirmations, the bridge probe's report).
+//! (the session, the ledger's confirmations, the agent's export, the backups).
 
-/// The table assigned to `global` in a save file's text (`WowCompanionDB = {...}`).
+/// Every `Name = value` of a save file, in order; an error when any part does
+/// not parse (a save the game is still writing, or a broken one).
+pub(crate) fn globals(text: &str) -> Result<Vec<(String, Lua)>, String> {
+    let mut found = Vec::new();
+    let mut rest = skip(text);
+    while !rest.is_empty() {
+        let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(rest.len());
+        if end == 0 {
+            return Err(format!("not an assignment at {:?}", rest.chars().take(20).collect::<String>()));
+        }
+        let name = rest[..end].to_string();
+        let after = skip(&rest[end..]).strip_prefix('=').ok_or_else(|| format!("{name} has no `=`"))?;
+        let (value, after) = Lua::parse(after).map_err(|err| format!("{name}: {err}"))?;
+        found.push((name, value));
+        rest = skip(after);
+    }
+    Ok(found)
+}
+
+/// The value assigned to `global` in a save file's text (`WowCompanionDB = {...}`);
+/// None when it is not there or the file does not parse.
 pub(crate) fn global(text: &str, global: &str) -> Option<Lua> {
-    let opener = format!("{global} = ");
-    let at = text.find(&opener)? + opener.len();
-    Lua::parse(&text[at..]).ok().map(|(value, _)| value)
+    globals(text).ok()?.into_iter().find(|(name, _)| name == global).map(|(_, value)| value)
 }
 
 /// A value as the game writes SavedVariables: strings, numbers, booleans, nil,
@@ -51,20 +69,43 @@ impl Lua {
                 Ok((Lua::Table(entries), &rest[1..]))
             }
             Some('"') => {
-                let mut out = String::new();
-                let mut iter = text[1..].char_indices();
-                while let Some((at, c)) = iter.next() {
-                    match c {
-                        '"' => return Ok((Lua::Text(out), &text[1 + at + 1..])),
-                        '\\' => match iter.next().map(|(_, c)| c) {
-                            Some('n') => out.push('\n'),
-                            Some('r') => out.push('\r'),
-                            Some('t') => out.push('\t'),
-                            Some(other) => out.push(other),
-                            None => break,
-                        },
+                // Lua 5.1's escapes: the letters, a backslash before a newline,
+                // and \ddd, a byte in decimal (the game writes control bytes so)
+                let mut out: Vec<u8> = Vec::new();
+                let bytes = text.as_bytes();
+                let mut at = 1;
+                while at < bytes.len() {
+                    match bytes[at] {
+                        b'"' => {
+                            let text_out = String::from_utf8_lossy(&out).into_owned();
+                            return Ok((Lua::Text(text_out), &text[at + 1..]));
+                        }
+                        // Lua refuses a raw line break in a quoted string, so the
+                        // game cannot load a save that has one
+                        b'\n' | b'\r' => break,
+                        b'\\' => {
+                            at += 1;
+                            let Some(&escaped) = bytes.get(at) else { break };
+                            match escaped {
+                                b'n' | b'\n' => out.push(b'\n'),
+                                b'r' => out.push(b'\r'),
+                                b't' => out.push(b'\t'),
+                                b'a' => out.push(7),
+                                b'b' => out.push(8),
+                                b'f' => out.push(12),
+                                b'v' => out.push(11),
+                                b'0'..=b'9' => {
+                                    let digits = bytes[at..].iter().take(3).take_while(|b| b.is_ascii_digit()).count();
+                                    let value: u32 = text[at..at + digits].parse().map_err(|_| "a bad \\ddd escape")?;
+                                    out.push(u8::try_from(value).map_err(|_| "a \\ddd escape over 255")?);
+                                    at += digits - 1;
+                                }
+                                other => out.push(other),
+                            }
+                        }
                         other => out.push(other),
                     }
+                    at += 1;
                 }
                 Err("a string is not closed".into())
             }
@@ -156,5 +197,25 @@ mod tests {
         assert_eq!(lines.get("").and_then(Lua::number), Some(4.0));
         assert_eq!(lines.get("l1").and_then(Lua::number), Some(2.0));
         assert!(global(save, "Missing").is_none());
+        assert_eq!(global(save, "OtherDB"), Some(Lua::Nil));
+    }
+
+    #[test]
+    fn every_escape_the_game_writes_is_undone() {
+        let save = "DB = {\n[\"s\"] = \"a\\\"b\\\\c\\nd\\124e\\0f\\\ng\",\n}\n";
+        assert_eq!(global(save, "DB").unwrap().text_of("s"), "a\"b\\c\nd|e\0f\ng");
+    }
+
+    #[test]
+    fn a_save_cut_off_mid_write_does_not_parse() {
+        let whole = "DB = {\n[\"loads\"] = 12,\n[\"x\"] = \"y\",\n}\nOther = 1\n";
+        assert!(globals(whole).is_ok());
+        for cut in 1..whole.len() - 1 {
+            // every cut that ends inside the first table fails; a cut between
+            // the two globals parses as just the first
+            if cut < whole.find("}\n").unwrap() + 1 {
+                assert!(globals(&whole[..cut]).is_err(), "cut at {cut}: {:?}", &whole[..cut]);
+            }
+        }
     }
 }

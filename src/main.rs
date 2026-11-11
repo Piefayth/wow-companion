@@ -17,6 +17,7 @@ mod jobs;
 mod ledger;
 mod message;
 mod savedvars;
+mod session;
 mod audit;
 mod strip;
 #[cfg(windows)]

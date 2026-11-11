@@ -15,12 +15,8 @@ pub(crate) fn saved_variables_text(addons: &Path, addon: &str) -> Option<String>
     fs::read_to_string(saved_variables(addons, addon)?).ok()
 }
 
-/// Lift the API dump out of SavedVariables into a plain text file.
-///
-/// This build ships no API documentation tables, so there are no signatures to be
-/// had locally — but the names are exact for 1.60.1, which is the half the agent
-/// cannot get from training data. Knowing a function exists *here* is the question
-/// it otherwise answers from retail and gets wrong.
+/// `context <AddOns> <out>`: one string of the Agent addon's save (the export,
+/// `context`) into a plain text file.
 pub(crate) fn pull(addons: &Path, key: &str, out: &Path) -> io::Result<()> {
     let body = saved_string(addons, key)?;
     let kept = body.lines().filter(|line| !line.starts_with("--")).count();
@@ -32,32 +28,12 @@ pub(crate) fn pull(addons: &Path, key: &str, out: &Path) -> io::Result<()> {
 pub(crate) fn saved_string(addons: &Path, key: &str) -> io::Result<String> {
     let saved = saved_variables(addons, AGENT)
         .ok_or_else(|| io::Error::other("no SavedVariables yet: /reload in game first"))?;
-    let text = fs::read_to_string(&saved)?;
-    // the dump is one long Lua string, so find its opening quote and read to the
-    // first unescaped closing one rather than trying to parse Lua
-    let marker = format!("[\"{key}\"] = \"");
-    let start = text
-        .find(&marker)
-        .map(|at| at + marker.len())
-        .ok_or_else(|| io::Error::other(format!("no {key} in SavedVariables: dump it, then /reload")))?;
-    let mut body = String::new();
-    let mut escaped = false;
-    for character in text[start..].chars() {
-        match (escaped, character) {
-            (true, 'n') => {
-                body.push('\n');
-                escaped = false;
-            }
-            (true, other) => {
-                body.push(other);
-                escaped = false;
-            }
-            (false, '\\') => escaped = true,
-            (false, '"') => break,
-            (false, other) => body.push(other),
-        }
+    let db = crate::savedvars::global(&fs::read_to_string(&saved)?, "WowCompanionAgentDB")
+        .ok_or_else(|| io::Error::other(format!("{} does not parse (the game may be writing it)", saved.display())))?;
+    match db.get(key) {
+        Some(crate::savedvars::Lua::Text(text)) => Ok(text.clone()),
+        _ => Err(io::Error::other(format!("no {key} in SavedVariables: /reload in game first"))),
     }
-    Ok(body)
 }
 
 pub(crate) fn sections<'a>(context: &'a str, wanted: &[&str]) -> Vec<(&'a str, Vec<&'a str>)> {

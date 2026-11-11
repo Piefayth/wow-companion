@@ -30,7 +30,7 @@ pub(crate) const STATE: &str = "helper-state.txt";
 static GAME: Mutex<Option<Process>> = Mutex::new(None);
 
 /// When the running game started, or None when it does not run.
-fn game() -> Option<u64> {
+pub(crate) fn game() -> Option<u64> {
     let mut held = GAME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if !held.as_ref().is_some_and(Process::running) {
         *held = Process::find("Wow.exe");
@@ -229,8 +229,8 @@ fn deliver_batch(addons: &Path, batch: Vec<Pending>) {
     }
     let list = slot_message(&batch);
     if let Err(err) = ring(addons, &list) {
-        if err.to_string().contains("slots are spent") {
-            // nothing can reach the game to say so; the pad can
+        if slots_used(addons) >= known_slots(addons) {
+            // every slot spent: nothing can reach the game to say so; the pad can
             voice::ALERT.store(true, Ordering::SeqCst);
         }
         set_aside(addons, batch, &err.to_string());
@@ -251,6 +251,8 @@ fn slot_message(batch: &[Pending]) -> Msg {
 fn ring(addons: &Path, msg: &Msg) -> io::Result<()> {
     voice::mark("send has the channel");
     let slot = next_slot(addons)?;
+    // the session read once, on trial beside the keys used here (src/session.rs)
+    crate::session::shadow(addons, &saved_variables_stamp(addons).unwrap_or_default(), current_set(addons), known_slots(addons));
     deliver(addons, slot, msg)?;
     println!("sent in slot {slot}: {}", msg.lua());
     voice::mark(&format!("bell rung, slot {slot}"));

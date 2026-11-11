@@ -193,110 +193,6 @@ pub(crate) fn reset_suspected(before: &str, now: &str) -> Option<String> {
     }
 }
 
-/// Whether `text` is sound enough for the game to load: every string, comment
-/// and long bracket closed, braces and parentheses balanced, blocks
-/// (function/if/do/repeat against end/until) balanced. Not a parser; it
-/// catches what a broken write does (the 2026-11-11 one left a string open).
-pub(crate) fn lua_sound(text: &str) -> Result<(), String> {
-    let bytes = text.as_bytes();
-    let (mut at, mut line) = (0usize, 1usize);
-    let (mut braces, mut parens, mut blocks) = (0i64, 0i64, 0i64);
-    let long_open = |at: usize| -> Option<(usize, usize)> {
-        // [[ or [=*[ : returns (level, length of the opener)
-        if bytes.get(at) != Some(&b'[') {
-            return None;
-        }
-        let mut level = 0;
-        while bytes.get(at + 1 + level) == Some(&b'=') {
-            level += 1;
-        }
-        (bytes.get(at + 1 + level) == Some(&b'[')).then_some((level, level + 2))
-    };
-    let long_close = |from: usize, level: usize| -> Option<usize> {
-        let close = format!("]{}]", "=".repeat(level));
-        text[from..].find(&close).map(|found| from + found + close.len())
-    };
-    while at < bytes.len() {
-        let c = bytes[at];
-        match c {
-            b'\n' => {
-                line += 1;
-                at += 1;
-            }
-            b'-' if bytes.get(at + 1) == Some(&b'-') => {
-                if let Some((level, opener)) = long_open(at + 2) {
-                    let end = long_close(at + 2 + opener, level).ok_or(format!("line {line}: a long comment is not closed"))?;
-                    line += text[at..end].matches('\n').count();
-                    at = end;
-                } else {
-                    at = text[at..].find('\n').map_or(bytes.len(), |found| at + found);
-                }
-            }
-            b'[' if long_open(at).is_some() => {
-                let (level, opener) = long_open(at).unwrap_or_default();
-                let end = long_close(at + opener, level).ok_or(format!("line {line}: a long string is not closed"))?;
-                line += text[at..end].matches('\n').count();
-                at = end;
-            }
-            b'"' | b'\'' => {
-                at += 1;
-                loop {
-                    match bytes.get(at) {
-                        None | Some(b'\n') => return Err(format!("line {line}: a string is not closed")),
-                        Some(b'\\') => at += 2,
-                        Some(quote) if *quote == c => {
-                            at += 1;
-                            break;
-                        }
-                        Some(_) => at += 1,
-                    }
-                }
-            }
-            b'{' => {
-                braces += 1;
-                at += 1;
-            }
-            b'}' => {
-                braces -= 1;
-                if braces < 0 {
-                    return Err(format!("line {line}: a closing brace with none open"));
-                }
-                at += 1;
-            }
-            b'(' => {
-                parens += 1;
-                at += 1;
-            }
-            b')' => {
-                parens -= 1;
-                at += 1;
-            }
-            c if c.is_ascii_alphabetic() || c == b'_' => {
-                let start = at;
-                while at < bytes.len() && (bytes[at].is_ascii_alphanumeric() || bytes[at] == b'_') {
-                    at += 1;
-                }
-                match &text[start..at] {
-                    "function" | "if" | "do" | "repeat" => blocks += 1,
-                    "end" | "until" => blocks -= 1,
-                    _ => {}
-                }
-            }
-            _ => at += 1,
-        }
-    }
-    if braces != 0 {
-        return Err(format!("{braces} brace(s) left open"));
-    }
-    if parens != 0 {
-        return Err(format!("parentheses unbalanced by {parens}"));
-    }
-    if blocks != 0 {
-        return Err(format!("blocks unbalanced by {blocks} (function/if/do/repeat against end/until)"));
-    }
-    Ok(())
-}
-
 /// Put the newest good copy of the main save back (`wow-companion restore-save
 /// [copy]`), with the game closed. Without a named copy: the sound copy with
 /// the highest load count, the last save before the count went down (newest
@@ -316,7 +212,7 @@ pub(crate) fn restore(addons: &Path, chosen: Option<&Path>) -> io::Result<()> {
             // oldest first, so max_by_key keeps the newest of equal counts
             texts
                 .iter()
-                .filter(|(_, text)| lua_sound(text).is_ok())
+                .filter(|(_, text)| crate::savedvars::globals(text).is_ok())
                 .filter_map(|(path, text)| loads(text).map(|count| (count, path)))
                 .max_by_key(|(count, _)| *count)
                 .map(|(_, path)| path.clone())
@@ -329,7 +225,7 @@ pub(crate) fn restore(addons: &Path, chosen: Option<&Path>) -> io::Result<()> {
         }
     };
     let text = fs::read_to_string(&pick)?;
-    lua_sound(&text).map_err(|why| io::Error::other(format!("{} is not sound Lua: {why}", pick.display())))?;
+    crate::savedvars::globals(&text).map_err(|why| io::Error::other(format!("{} does not parse as a save: {why}", pick.display())))?;
     let undo = before_edit(&save)?;
     let temporary = save.with_extension("lua.companion");
     fs::write(&temporary, &text)?;
@@ -344,14 +240,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sound_lua_passes_and_each_kind_of_break_is_caught() {
-        let good = "WowCompanionDB = {\n[\"log\"] = {\n{ [\"who\"] = \"claude\", [\"text\"] = \"a \\\"quoted\\\" (line) }\", },\n},\n}\n-- a comment with { and \"\n--[[ long\ncomment ]]\nlocal s = [==[ long ] string ]==]\nif type(WowCompanionDB) == \"table\" then\n  WowCompanionDB.x = { 1, 2 }\nend\n";
-        assert_eq!(lua_sound(good), Ok(()));
+    fn a_save_parses_and_each_kind_of_break_is_caught() {
+        let good = "\nWowCompanionDB = {\n[\"log\"] = {\n{\n[\"who\"] = \"claude\",\n[\"text\"] = \"a \\\"quoted\\\" (line) }\\n\",\n}, -- [1]\n},\n}\nOtherDB = nil\n";
+        assert!(crate::savedvars::globals(good).is_ok());
         // the 2026-11-11 break: a raw newline inside a string
-        assert!(lua_sound("x = { text = \"one\ntwo\" }\n").unwrap_err().contains("string is not closed"));
-        assert!(lua_sound("x = { 1, 2\n").unwrap_err().contains("brace"));
-        assert!(lua_sound("if x then\n y = 1\n").unwrap_err().contains("blocks"));
-        assert!(lua_sound("--[[ never closed\n").unwrap_err().contains("long comment"));
+        assert!(crate::savedvars::globals("x = {\n[\"text\"] = \"one\ntwo\",\n}\n").unwrap_err().contains("string is not closed"));
+        assert!(crate::savedvars::globals("x = {\n1, 2\n").unwrap_err().contains("table is not closed"));
+        // a save holds assignments only
+        assert!(crate::savedvars::globals("if x then\n y = 1\nend\n").is_err());
     }
 
     #[test]
@@ -381,7 +277,7 @@ mod tests {
         assert!(!found.is_empty());
         for save in found {
             let text = fs::read_to_string(&save).unwrap();
-            assert_eq!(lua_sound(&text), Ok(()), "{}", save.display());
+            assert!(crate::savedvars::globals(&text).is_ok(), "{}", save.display());
             println!("sound: {} ({} bytes, loads {:?})", save.display(), text.len(), loads(&text));
         }
     }
