@@ -43,6 +43,11 @@ on one file is how replies got lost.
 
 ## Later
 
+- **Paged wheels** (the player, 2026-11-11, designed, not built): 8 slots a page,
+  any number of pages; L1/R1 flip while the wheel is open and wrap around; page
+  dots and a page name; it reopens on the last page used; positions never move
+  (muscle memory). Combat-safe: every page's secure buttons are made ahead and
+  flipping shows another set. Wheels stay the player's own: none ships.
 - **The agent's permission level optional, and its permission requests shown
   to the player** (the player, 2026-11-11: long term, not now).
 - Reviews recur (docs/review.md); the first one's fixes are all in
