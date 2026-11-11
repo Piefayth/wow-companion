@@ -237,7 +237,10 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     // every line until the game has saved it, and every job's state, on disk
     // and in the mailbox the game reads at load (src/ledger.rs); jobs the last
     // companion left running end now, each with a line
-    let recovered = ledger::open(addons);
+    // dictation only (the setup window's agent "off"): no agent, so no conversation
+    // and no ledger; what would be a line in one is said as a notice (channel::post)
+    let agents = !options.iter().any(|option| option.strip_prefix("agent=") == Some(wow_companion_settings::AGENT_OFF));
+    let recovered = if agents { ledger::open(addons) } else { Vec::new() };
     {
         let addons = addons.to_path_buf();
         thread::spawn(move || {
@@ -261,10 +264,11 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     if let Some(chosen) = options.iter().find_map(|option| option.strip_prefix("agent=")) {
         session.model = chosen.to_string();
     }
-    println!(
-        "agent: claude -p --model {}",
-        if session.model.is_empty() { agent::DEFAULT_MODEL } else { &session.model }
-    );
+    if agents {
+        println!("agent: claude -p --model {}", if session.model.is_empty() { agent::DEFAULT_MODEL } else { &session.model });
+    } else {
+        println!("agents off: dictation only, everything said goes to the chat box");
+    }
     let game = addons.parent().and_then(Path::parent).unwrap_or(addons);
     session.setup = format!(
         "game: {}\nAddOns: {}\nthis project: {}\nhelper: {}",
@@ -410,7 +414,17 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         model,
         options,
         || vocabulary(addons),
-        |role, text| match role {
+        |role, text| {
+        // dictation only: every talk button is L1+R1's dictation (its words to the
+        // chat box, its tap and its notices as dictation's)
+        let as_dictation;
+        let role = if agents || !role.starts_with("ask") {
+            role
+        } else {
+            as_dictation = format!("ask@say{}", role.find(' ').map_or("", |at| &role[at..]));
+            as_dictation.as_str()
+        };
+        match role {
             // a tap of the ask button, too short to be speech: show the window
             // a tap opens the window: one slot, of 512. A bell of its own (no slot)
             // was tried and failed: the game holds a constantly polled bell open,
@@ -617,7 +631,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 }
                 deliver(Out::Now(dictation_inbox(text, &routed)))
             }
-        },
+        }},
     )?;
     // a restart closed the voice loop; the restart thread starts the next copy and
     // exits this process, so do not let main return and end it first

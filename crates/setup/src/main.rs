@@ -23,7 +23,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui::{self, RichText};
 use look::Status;
 use wow_companion_pad as pad;
-use wow_companion_settings::{Settings, changes::Changes, platform};
+use wow_companion_settings::{AGENT_OFF, Settings, changes::Changes, platform};
 
 /// Child processes (claude, the companion, tasklist) open no console window.
 const NO_WINDOW: u32 = 0x0800_0000;
@@ -307,7 +307,7 @@ impl Setup {
                     if ui.button("Install the addon into the game").clicked() {
                         self.install();
                     }
-                    ui.label(RichText::new("Then fully restart the game: a reload does not see new addons.").color(look::MUTED));
+                    ui.label(RichText::new("Then reload in game; it says when new folders need a full restart.").color(look::MUTED));
                 });
             }
         });
@@ -606,10 +606,13 @@ impl Setup {
 
     fn agent(&mut self, ui: &mut egui::Ui) {
         let agents = self.agents.lock().unwrap().clone();
+        let off = self.agent == AGENT_OFF;
         let chosen = if self.agent.is_empty() { "opus".to_string() } else { self.agent.clone() };
         let chosen = chosen.as_str();
         let chosen_state = agents.iter().find(|(alias, _)| *alias == chosen).and_then(|(_, state)| state.clone());
-        let status = if self.claude.is_empty() {
+        let status = if off {
+            Status::Ready("off: dictation only")
+        } else if self.claude.is_empty() {
             Status::Problem("Claude Code missing")
         } else {
             match &chosen_state {
@@ -620,12 +623,19 @@ impl Setup {
         };
         look::card(ui, 5, "Agent", status, |ui| {
             if self.claude.is_empty() {
-                ui.colored_label(look::BAD, "Claude Code was not found. Install it and sign in: claude.com/claude-code");
-                return;
+                ui.colored_label(
+                    look::BAD,
+                    "Claude Code was not found. Install it and sign in (claude.com/claude-code), or turn the agent off for dictation only.",
+                );
+            } else {
+                ui.label(RichText::new(format!("Claude Code {}, on your own subscription.", self.claude)).color(look::MUTED));
             }
-            ui.label(RichText::new(format!("Claude Code {}, on your own subscription.", self.claude)).color(look::MUTED));
             ui.add_space(4.0);
-            let selected = AGENT_MODELS.iter().find(|(alias, ..)| *alias == chosen).map(|(_, name, _)| *name).unwrap_or(chosen);
+            let selected = if off {
+                "Off"
+            } else {
+                AGENT_MODELS.iter().find(|(alias, ..)| *alias == chosen).map(|(_, name, _)| *name).unwrap_or(chosen)
+            };
             egui::ComboBox::from_id_salt("agent")
                 .width(ui.available_width())
                 .selected_text(selected)
@@ -637,21 +647,27 @@ impl Setup {
                             Some(Ok(())) => "",
                             Some(Err(_)) => "  (not on this account)",
                         };
-                        let usable = !matches!(state, Some(Err(_)));
+                        let usable = !self.claude.is_empty() && !matches!(state, Some(Err(_)));
                         let value = if *alias == "opus" { String::new() } else { alias.to_string() };
                         ui.add_enabled_ui(usable, |ui| {
                             ui.selectable_value(&mut self.agent, value, format!("{name}: {about}{suffix}"));
                         });
                     }
+                    ui.selectable_value(
+                        &mut self.agent,
+                        AGENT_OFF.to_string(),
+                        "Off: dictation only, everything you say goes to the chat box",
+                    );
                 });
-            if let Some(Err(why)) = &chosen_state {
+            if let (false, Some(Err(why))) = (off, &chosen_state) {
                 ui.colored_label(look::BAD, why);
             }
-            ui.label(
-                RichText::new("The agent runs on your PC with full permissions, so it can write and install addons (it always asks first).")
-                    .small()
-                    .color(look::MUTED),
-            );
+            let note = if off {
+                "No agent and no Claude Code: Install leaves the agent's addons out of the game."
+            } else {
+                "The agent runs on your PC with full permissions, so it can write and install addons (it always asks first)."
+            };
+            ui.label(RichText::new(note).small().color(look::MUTED));
         });
     }
 
@@ -739,6 +755,8 @@ impl Setup {
 // installing, and what it changed (crates/settings/src/changes.rs)
 impl Setup {
     fn install(&mut self) {
+        // what the window shows, the agent choice among it, is what gets installed
+        self.save();
         let addons = self.addons.clone();
         let report = Arc::clone(&self.report);
         *report.lock().unwrap() = "Installing...".into();

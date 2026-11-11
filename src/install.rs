@@ -20,12 +20,22 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     remove_stale(&source, &addon, generated(ADDON))?;
     // the ledger the setup window's uninstall works from
     let mut written = vec![addon.clone()];
+    // dictation only (the setup window's agent "off"): the addons that need the
+    // agent are left out, and an earlier install's taken out
+    let agents = wow_companion_settings::Settings::load().get("agent") != Some(wow_companion_settings::AGENT_OFF);
     // the suite's other addons (Link, Agent, the extras), placed as they are
     for entry in fs::read_dir(source.parent().unwrap())? {
         let entry = entry?;
         let name = entry.file_name();
         if entry.file_type()?.is_dir() && name != ADDON {
             let installed = addons.join(&name);
+            if !agents && needs_agent(source.parent().unwrap(), &name.to_string_lossy()) {
+                if installed.exists() {
+                    fs::remove_dir_all(&installed)?;
+                    println!("removed {} (the agents are off)", name.to_string_lossy());
+                }
+                continue;
+            }
             note_fresh(&installed);
             copy_dir(&entry.path(), &installed)?;
             remove_stale(&entry.path(), &installed, generated(&name.to_string_lossy()))?;
@@ -89,6 +99,19 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
 
 /// What the PC writes into an installed addon folder, which the repo's copy
 /// never has: kept when the folder is brought in line with the repo.
+/// Whether the addon `name` (a folder in `suite`, the repo's addon folder) is
+/// the agent's or needs it, by the `## Dependencies:` of the .toc files.
+fn needs_agent(suite: &Path, name: &str) -> bool {
+    let toc = fs::read_to_string(suite.join(name).join(format!("{name}.toc"))).unwrap_or_default();
+    name == AGENT
+        || toc
+            .lines()
+            .filter_map(|line| line.strip_prefix("## Dependencies:"))
+            .flat_map(|deps| deps.split(','))
+            .map(str::trim)
+            .any(|dep| !dep.is_empty() && dep != name && needs_agent(suite, dep))
+}
+
 fn generated(addon: &str) -> &'static [&'static str] {
     match addon {
         LINK => &["Signals", "helper-state.txt"],
@@ -166,6 +189,19 @@ pub(crate) fn send_command(addons: &Path, args: &[String]) -> io::Result<()> {
 mod tests {
     use super::*;
     use wow_companion_settings::changes::Changes;
+
+    #[test]
+    fn dictation_only_leaves_out_the_agent_and_what_needs_it() {
+        let suite = Path::new(env!("CARGO_MANIFEST_DIR")).join("addon");
+        let mut needing: Vec<String> = fs::read_dir(&suite)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| needs_agent(&suite, name))
+            .collect();
+        needing.sort();
+        assert_eq!(needing, ["WowCompanion_Agent", "WowCompanion_Errands"]);
+    }
 
     /// Every file under `dir`, relative to it, sorted.
     fn files(dir: &Path) -> Vec<String> {

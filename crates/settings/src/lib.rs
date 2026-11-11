@@ -18,6 +18,10 @@ pub mod stream_model;
 
 use std::{fs, io, path::PathBuf};
 
+/// `agent = "off"`: dictation only. No agent addons in the game, no agent on the
+/// PC; everything said goes to the chat box.
+pub const AGENT_OFF: &str = "off";
+
 /// Which build this is: the release's tag (the release workflow sets
 /// `WOW_COMPANION_VERSION` from it), or a build from the source.
 pub const VERSION: &str = match option_env!("WOW_COMPANION_VERSION") {

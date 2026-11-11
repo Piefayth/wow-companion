@@ -106,10 +106,14 @@ fn enqueue(addons: &Path, item: Pending) {
 
 /// A conversation line: numbered and kept by the ledger (src/ledger.rs), then
 /// queued. A line that cannot go out live (the game closed, the slots spent)
-/// is in the mailbox, which the game takes at its next load.
+/// is in the mailbox, which the game takes at its next load. With no ledger
+/// there is no conversation (the agents are off): the line is a notice, which
+/// the Link addon shows on its own.
 pub(crate) fn post(addons: &Path, line: Line) -> io::Result<()> {
-    let line = crate::ledger::number(addons, line);
-    enqueue(addons, Pending::Line(line));
+    match crate::ledger::number(addons, line) {
+        Ok(line) => enqueue(addons, Pending::Line(line)),
+        Err(line) => enqueue(addons, Pending::Now(Msg::new("notice").text("text", &line.text))),
+    }
     Ok(())
 }
 

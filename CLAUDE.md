@@ -93,7 +93,10 @@ yes; don't reinvent what Claude Code has.
     `send` kinds. `ChatWheel.lua` dictation without the agent (L1+R1).
     `Strip.lua`, `Status.lua` (minimap status). `Signals/`
     the bells. Saved: `WowCompanionLinkDB`. Core and Link with the agents off is
-    the dictation product.
+    the dictation product: the setup window's agent "Off" (`agent = "off"`), where
+    install leaves out every addon that needs the Agent (by the .tocs) and the
+    companion sends everything said to the chat box, with no conversation and no
+    ledger: what would be a line is a `notice` message, which Link shows.
   - `WowCompanion_Agent` (needs Link): `Agent.lua` the Companion window's
     conversations, the waiting lines and board rows, the offered button, the
     agents' kinds, `/wc`'s agent commands (`WC.Companion` for the files beside

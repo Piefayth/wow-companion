@@ -351,14 +351,17 @@ pub(crate) fn open(addons: &Path) -> Vec<Line> {
 
 /// Number `line` and keep it (and write both files). Outside `run` (tests,
 /// other commands) nothing is kept and the line goes out unnumbered.
-pub(crate) fn number(addons: &Path, line: Line) -> Line {
+/// Number `line` in its conversation and keep it; handed back unnumbered when
+/// there is no ledger (the agents are off, so there is no conversation, or this
+/// is not the running companion).
+pub(crate) fn number(addons: &Path, line: Line) -> Result<Line, Line> {
     let mut guard = LEDGER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(store) = guard.as_mut() else { return line };
+    let Some(store) = guard.as_mut() else { return Err(line) };
     let line = store.book.number(line);
     let news = save(store);
     drop(guard);
     say(addons, news);
-    line
+    Ok(line)
 }
 
 /// The jobs table changed (src/jobs.rs): mirror it and write both files.
@@ -373,6 +376,9 @@ pub(crate) fn mirror(jobs: Vec<(u64, String, State)>) {
 /// game holds, report what it should hold and does not, forget the requests
 /// whose end it saved.
 pub(crate) fn confirm(addons: &Path) {
+    if LEDGER.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).is_none() {
+        return;
+    }
     let held = match saved_variables_text(addons, AGENT).ok_or_else(|| "no save file found".to_string()).and_then(|save| held_in(&save)) {
         Ok(held) => held,
         Err(err) => {
