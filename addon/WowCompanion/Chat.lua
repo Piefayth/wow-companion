@@ -281,6 +281,27 @@ local function sendParsed(out)
 	return true
 end
 local preview
+local function focusTrace(what)
+	pcall(function()
+		local m = GamepadMode and GamepadMode.FrameControlsManager
+		local d = WowCompanionDB
+		d.previewFocus = d.previewFocus or {}
+		local listed = false
+		for _, f in ipairs(m and m.shownFrames or {}) do if f == preview then listed = true end end
+		d.previewFocus[#d.previewFocus + 1] = ("%s %s | combat=%s shown=%s listed=%s focused=%s uiFocused=%s"):format(
+			date("%H:%M:%S"), what, tostring(InCombatLockdown()), tostring(preview and preview:IsShown()),
+			tostring(listed), tostring(m and m.focusedFrame == preview), tostring(m and m.isUIFocused))
+		while #d.previewFocus > 30 do table.remove(d.previewFocus, 1) end
+	end)
+end
+local function park(frame)
+	frame:ClearAllPoints()
+	frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -16, 260)
+end
+local function home(frame)
+	frame:ClearAllPoints()
+	frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 16, 260)
+end
 local function buildPreview()
 	local made, frame = pcall(CreateFrame, "Frame", "WowCompanionPreview", UIParent, "BackdropTemplate")
 	if not made or not frame then return nil end
@@ -367,6 +388,24 @@ local function buildPreview()
 	frame:SetScript("OnHide", function(self)
 		if not InCombatLockdown() then ClearOverrideBindings(self) end
 		WC.FrameHidden(self)
+		if InCombatLockdown() then
+			park(self)
+			focusTrace("hidden in combat")
+			-- still holding focus while hidden would leave the bars dead: show it
+			-- again, empty, so the controller's own close or focus switch ends it
+			local m = GamepadMode and GamepadMode.FrameControlsManager
+			if m and m.focusedFrame == self and m.isUIFocused then
+				C_Timer.After(0, function()
+					if self:IsShown() then return end
+					self.out = nil
+					self.title:SetText("Sent")
+					self.body:SetText("Press circle to go back to the game.")
+					home(self)
+					self:Show()
+					focusTrace("re-shown: focus was left on it")
+				end)
+			end
+		end
 	end)
 	return frame
 end
@@ -391,15 +430,25 @@ function WowCompanion_PreviewTap()
 	preview.send:Click()
 	return true
 end
+-- In combat the controller's own focus cycle (the triggers) must reach the
+-- preview (the player, 2026-11-10: one focus, the game's, in combat too). The
+-- frame manager refuses to add a window in a fight, but keeps any it already
+-- has, and its FocusFrame skips one that is hidden. So as a fight starts
+-- (PLAYER_REGEN_DISABLED runs before the lockdown) the hidden preview is put
+-- on its list, without focus, parked at the right edge so it sorts last and
+-- never sits between two windows; WC.FrameHidden takes it off after the fight.
+-- A trace of each step: WowCompanionDB.previewFocus (30 lines).
 do
 	local w = CreateFrame("Frame")
 	w:RegisterEvent("PLAYER_REGEN_DISABLED")
-	w:RegisterEvent("PLAYER_REGEN_ENABLED")
-	w:SetScript("OnEvent", function(_, event)
-		if not preview then return end
-		if event == "PLAYER_REGEN_DISABLED" then bindPreview(preview)
-		elseif preview:IsShown() then bindPreview(preview)
-		else ClearOverrideBindings(preview) end
+	w:SetScript("OnEvent", function()
+		local m = GamepadMode and GamepadMode.FrameControlsManager
+		if not (m and m.FrameShown and InputUtil and InputUtil.IsGamepadUIEnabled()) then return end
+		preview = preview or buildPreview()
+		if not preview or preview:IsShown() then return end
+		park(preview)
+		pcall(m.FrameShown, m, preview, false, false)
+		focusTrace("listed at fight start")
 	end)
 end
 
@@ -434,7 +483,11 @@ function showPreview(line, heading, shown, dictated)
 	if not InCombatLockdown() and UIPanelWindows and UIPanelWindows["WowCompanionPreview"] then
 		ShowUIPanel(preview)
 	end
-	if not preview:IsShown() then preview:Show() end
+	if not preview:IsShown() then
+		home(preview)
+		preview:Show()
+	end
+	if InCombatLockdown() then focusTrace("shown in combat") end
 	local glyph = WowCompanion_Glyph or function(k) return k end
 	if bindPreview(preview) then
 		preview.hint:SetText("")
