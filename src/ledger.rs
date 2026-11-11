@@ -2,7 +2,7 @@
 //! request's state, on disk (docs/proposals/ledger.md).
 //!
 //! - A line is numbered in its conversation here (1, 2, 3..., no gaps) and kept
-//!   until a save shows the game holds it (`WowCompanionDB.lines[conversation]`,
+//!   until a save shows the game holds it (`WowCompanionAgentDB.lines[conversation]`,
 //!   the highest number it holds with none missing below).
 //! - The jobs (src/jobs.rs) are mirrored here at every change, so their states
 //!   survive the companion; a job not ended when the companion starts ended with
@@ -217,7 +217,7 @@ fn line_from_json(value: &Value) -> Result<Line, String> {
 
 /// What a save holds, read from its text.
 pub(crate) fn held_in(save: &str) -> Result<Held, String> {
-    let db = savedvars::global(save, "WowCompanionDB").ok_or("no WowCompanionDB in the save")?;
+    let db = savedvars::global(save, "WowCompanionAgentDB").ok_or("no WowCompanionAgentDB in the save")?;
     let lines = db.get("lines").map(|lines| {
         lines
             .entries()
@@ -362,7 +362,7 @@ pub(crate) fn open(addons: &Path) -> Vec<Line> {
         },
         Err(_) => Book::default(),
     };
-    if let Some(Ok(held)) = saved_variables_text(addons).map(|save| held_in(&save)) {
+    if let Some(Ok(held)) = saved_variables_text(addons, AGENT).map(|save| held_in(&save)) {
         if let Some(lines) = &held.lines {
             book.continue_above(lines);
         }
@@ -400,7 +400,7 @@ pub(crate) fn mirror(jobs: Vec<(u64, String, State)>) {
 /// game holds, report what it should hold and does not, forget the requests
 /// whose end it saved.
 pub(crate) fn confirm(addons: &Path) {
-    let held = match saved_variables_text(addons).ok_or_else(|| "no save file found".to_string()).and_then(|save| held_in(&save)) {
+    let held = match saved_variables_text(addons, AGENT).ok_or_else(|| "no save file found".to_string()).and_then(|save| held_in(&save)) {
         Ok(held) => held,
         Err(err) => {
             let news = problem("save", Some(format!("the save could not be read at a confirmation ({err}): nothing was dropped; the mailbox keeps every line.")));
@@ -559,11 +559,11 @@ mod tests {
 
     #[test]
     fn the_save_says_what_it_holds() {
-        let save = "WowCompanionDB = {\n[\"lines\"] = {\n[\"\"] = 12,\n[\"l1\"] = 3,\n},\n[\"jobModel\"] = {\n[\"jobs\"] = {\n[1794357313662] = {\n[\"state\"] = \"answered\",\n[\"slot\"] = \"r1\",\n},\n[1794357203688] = {\n[\"state\"] = \"running\",\n},\n},\n},\n}\n";
+        let save = "WowCompanionAgentDB = {\n[\"lines\"] = {\n[\"\"] = 12,\n[\"l1\"] = 3,\n},\n[\"jobModel\"] = {\n[\"jobs\"] = {\n[1794357313662] = {\n[\"state\"] = \"answered\",\n[\"slot\"] = \"r1\",\n},\n[1794357203688] = {\n[\"state\"] = \"running\",\n},\n},\n},\n}\n";
         let held = held_in(save).unwrap();
         assert_eq!(held.lines.unwrap(), [("".to_string(), 12), ("l1".to_string(), 3)].into_iter().collect());
         assert_eq!(held.ended, vec![1794357313662]);
-        assert!(held_in("WowCompanionDB = {\n}\n").unwrap().lines.is_none());
+        assert!(held_in("WowCompanionAgentDB = {\n}\n").unwrap().lines.is_none());
     }
 
     #[test]

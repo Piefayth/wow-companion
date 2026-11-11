@@ -24,7 +24,7 @@ const EVERY: Duration = Duration::from_secs(4);
 pub static BEATING: AtomicBool = AtomicBool::new(true);
 
 fn bells(addons: &Path) -> [PathBuf; 2] {
-    let signals = addons.join(crate::ADDON).join("Signals");
+    let signals = addons.join(crate::LINK).join("Signals");
     [signals.join("pulse-a.wav"), signals.join("pulse-b.wav")]
 }
 
@@ -44,7 +44,7 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
                 // the game now holds and checks it took its mailbox
                 crate::ledger::confirm(&addons);
                 session = began;
-                if let Err(err) = crate::clear_catch_up(&addons.join(crate::ADDON).join("Signals")) {
+                if let Err(err) = crate::clear_catch_up(&addons.join(crate::LINK).join("Signals")) {
                     eprintln!("heartbeat: {err}");
                 }
                 // a save just landed (or the companion started): copy it, and say

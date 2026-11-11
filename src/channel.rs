@@ -39,7 +39,7 @@ pub(crate) fn game_running() -> io::Result<bool> {
 /// full restart, and a message sent to one would be lost. The addon records the
 /// count it sees in SavedVariables; until it has, assume the old 64.
 pub(crate) fn known_slots(addons: &Path) -> u32 {
-    let counted = saved_variables(addons)
+    let counted = saved_variables(addons, LINK)
         .and_then(|saved| fs::read_to_string(saved).ok())
         .and_then(|text| {
             let at = text.find("[\"slotCount\"] = ")? + "[\"slotCount\"] = ".len();
@@ -244,7 +244,7 @@ fn ring(addons: &Path, msg: &Msg) -> io::Result<()> {
     // A bell left ringing is a command that fires again on every /reload: the addon's
     // cursor goes back to slot 1, hears the old bell, and redelivers. So ring it only
     // long enough to be heard, then silence it. The addon polls every 0.5 s.
-    let signals = addons.join(ADDON).join("Signals");
+    let signals = addons.join(LINK).join("Signals");
     for bell in 1..=BELLS {
         bells::empty_message(&signals.join(bell_name(bell)))?;
     }
@@ -263,7 +263,7 @@ pub(crate) fn game_clients() -> usize {
 }
 
 pub(crate) fn deliver(addons: &Path, slot: u32, msg: &Msg) -> io::Result<()> {
-    let signals = addons.join(ADDON).join("Signals");
+    let signals = addons.join(LINK).join("Signals");
     // when it was written, so a catch-up load can tell this session's message from
     // one left in the slot by an earlier session
     let sent = SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_secs()).unwrap_or_default();
@@ -284,7 +284,7 @@ pub(crate) fn deliver(addons: &Path, slot: u32, msg: &Msg) -> io::Result<()> {
 // exactly that moment, so that file's timestamp is the reset signal. No game → PC
 // channel needed.
 pub(crate) fn next_slot(addons: &Path) -> io::Result<u32> {
-    let state = addons.join(ADDON).join(STATE);
+    let state = addons.join(LINK).join(STATE);
     let stamp = saved_variables_stamp(addons).unwrap_or_default();
     let (mut cursor, seen) = fs::read_to_string(&state)
         .ok()
@@ -308,7 +308,7 @@ pub(crate) fn next_slot(addons: &Path) -> io::Result<u32> {
 
 /// Slots spent in the running UI session (0 after a reload), without spending one.
 pub(crate) fn slots_used(addons: &Path) -> u32 {
-    let state = addons.join(ADDON).join(STATE);
+    let state = addons.join(LINK).join(STATE);
     let stamp = saved_variables_stamp(addons).unwrap_or_default();
     let Ok(text) = fs::read_to_string(&state) else { return 0 };
     let mut lines = text.lines();
@@ -367,7 +367,7 @@ pub(crate) fn session_began(addons: &Path) -> Option<u128> {
 /// Worth the check: twice this cost us a stuck chat box and a half-dead controller,
 /// because a retired handler was still live and still opening the chat box.
 pub(crate) fn addon_is_stale(addons: &Path) -> io::Result<bool> {
-    let addon = modified_millis(&addons.join(ADDON).join("Companion.lua"));
+    let addon = modified_millis(&addons.join(LINK).join("Link.lua"));
     Ok(match (addon, session_began(addons)) {
         (Some(addon), Some(began)) => addon > began,
         // never saved, or no addon: nothing to compare, so do not block

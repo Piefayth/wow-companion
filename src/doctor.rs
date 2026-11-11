@@ -23,7 +23,7 @@ fn line(ok: bool, what: &str, detail: &str) {
 }
 
 pub fn run(addons: &Path) -> std::io::Result<()> {
-    let signals = addons.join(crate::ADDON).join("Signals");
+    let signals = addons.join(crate::LINK).join("Signals");
 
     let clients = crate::game_clients();
     line(clients > 0, "game", if clients > 0 { "running" } else { "not running" });

@@ -12,7 +12,7 @@
 //! 3. `strip::capture` times itself into `capture.tsv`.
 //!
 //! `wow-companion bridge-probe report` reads it all back with the game's
-//! `WowCompanionDB.bridgeProbe`; `clean` deletes the probe's files.
+//! `WowCompanionLinkDB.bridgeProbe`; `clean` deletes the probe's files.
 
 use super::*;
 use crate::savedvars::Lua;
@@ -314,7 +314,7 @@ pub(crate) fn pattern(n: u32, index: usize) -> u16 {
 /// load" whether or not C_Log reaches the file); f2 on, every FONT_EVERY from
 /// the session's first WCPROBE line, the exact sign the addon is polling.
 fn write_fonts(addons: &Path, session: &str, stop: &AtomicBool, in_world: &AtomicBool) {
-    let source = addons.join(ADDON).join("Fonts").join(FONT_SOURCE);
+    let source = addons.join("WowCompanion_Fonts").join("Fonts").join(FONT_SOURCE);
     let font = match fs::read(&source) {
         Ok(font) => font,
         Err(err) => return println!("bridge probe: cannot read {}: {err}", source.display()),
@@ -565,7 +565,7 @@ fn report(addons: &Path) -> io::Result<()> {
     };
     let (session, started) = (latest[0].clone(), latest.get(1).and_then(|v| v.parse::<u128>().ok()).unwrap_or(0));
     println!("Bridge probe, game session {session} ({} sessions recorded)\n", sessions.len());
-    let saved = saved_variables_text(addons).unwrap_or_default();
+    let saved = saved_variables_text(addons, LINK).unwrap_or_default();
     let game = saved
         .find("[\"bridgeProbe\"] = ")
         .map(|at| &saved[at + "[\"bridgeProbe\"] = ".len()..])
@@ -607,7 +607,7 @@ fn report(addons: &Path) -> io::Result<()> {
                 println!("     seq {seq} via {via}: call ok {ok}, returned {result}; {}", if arrived { "reached the file" } else { "NOT in the file" });
             }
         }
-        None => println!("   The save holds no WowCompanionDB.bridgeProbe.log yet (the game writes it at a reload or logout)."),
+        None => println!("   The save holds no WowCompanionLinkDB.bridgeProbe.log yet (the game writes it at a reload or logout)."),
     }
 
     // 2. fonts
@@ -720,7 +720,7 @@ mod tests {
     use super::*;
 
     fn roboto() -> Vec<u8> {
-        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("addon").join(ADDON).join("Fonts").join(FONT_SOURCE)).unwrap()
+        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("addon").join("WowCompanion_Fonts").join("Fonts").join(FONT_SOURCE)).unwrap()
     }
 
     #[test]

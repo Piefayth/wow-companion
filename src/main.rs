@@ -669,8 +669,14 @@ mod tests {
         fs::create_dir_all(addons.join(ADDON)).unwrap();
         let saved_dir = root.join("WTF").join("Account").join("A").join("SavedVariables");
         fs::create_dir_all(&saved_dir).unwrap();
+        // Core's save marks the session; Link's holds the slot count it can see
         let saved = saved_dir.join(format!("{ADDON}.lua"));
-        fs::write(&saved, format!("WowCompanionDB = {{ [\"slotCount\"] = {slot_count}, }}")).unwrap();
+        fs::write(&saved, "WowCompanionDB = { }").unwrap();
+        fs::write(
+            saved_dir.join(format!("{LINK}.lua")),
+            format!("WowCompanionLinkDB = {{ [\"slotCount\"] = {slot_count}, }}"),
+        )
+        .unwrap();
         (addons, saved)
     }
 

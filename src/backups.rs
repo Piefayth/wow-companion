@@ -90,7 +90,7 @@ pub(crate) fn snapshot(addons: &Path) -> Vec<String> {
         }
         prune(&folder, |name| !name.contains("-before-edit"));
         // the main save only: a reset there costs the player their history
-        if save.file_name().is_some_and(|name| name == "WowCompanion.lua") {
+        if save.file_name().is_some_and(|name| name == "WowCompanion_Link.lua") {
             if let (Some(previous), Ok(now)) = (previous, fs::read_to_string(&save)) {
                 if let Ok(before) = fs::read_to_string(&previous) {
                     if let Some(why) = reset_suspected(&before, &now) {
@@ -150,12 +150,12 @@ fn prune(folder: &Path, kind: impl Fn(&str) -> bool) {
     }
 }
 
-/// `WowCompanionDB.loads`: the addon adds one each time it loads its saved
+/// `WowCompanionLinkDB.loads`: the addon adds one each time it loads its saved
 /// table, and nothing else writes it, so it only ever grows unless the addon
 /// loaded empty. Read at the table's top level only (the game writes nested
 /// tables without indentation, so depth is counted, strings skipped).
 pub(crate) fn loads(save: &str) -> Option<u64> {
-    let start = save.find("WowCompanionDB = {")? + "WowCompanionDB = {".len();
+    let start = save.find("WowCompanionLinkDB = {")? + "WowCompanionLinkDB = {".len();
     let bytes = save.as_bytes();
     let (mut at, mut depth) = (start, 1usize);
     while at < bytes.len() && depth > 0 {
@@ -183,7 +183,7 @@ pub(crate) fn loads(save: &str) -> Option<u64> {
 /// down (it restarts at 1 when the addon loaded empty), or the table is gone.
 /// Nothing is said for a save from before the counter existed.
 pub(crate) fn reset_suspected(before: &str, now: &str) -> Option<String> {
-    if before.contains("WowCompanionDB = {") && !now.contains("WowCompanionDB = {") {
+    if before.contains("WowCompanionLinkDB = {") && !now.contains("WowCompanionLinkDB = {") {
         return Some("the addon's table is missing".into());
     }
     match (loads(before), loads(now)) {
@@ -305,7 +305,7 @@ pub(crate) fn restore(addons: &Path, chosen: Option<&Path>) -> io::Result<()> {
     if crate::game_running()? {
         return Err(io::Error::other("close the game first: it would overwrite the restored file at logout"));
     }
-    let save = crate::saved_variables(addons).ok_or_else(|| io::Error::other("no WowCompanion.lua save file found"))?;
+    let save = crate::saved_variables(addons, crate::LINK).ok_or_else(|| io::Error::other("no WowCompanion_Link.lua save file found"))?;
     let folder = folder_for(&save);
     let pick = match chosen {
         Some(path) => path.to_path_buf(),
@@ -360,7 +360,7 @@ mod tests {
         // one inside a string must not be read as the addon's
         let save = |count: u64| {
             format!(
-                "WowCompanionDB = {{\n[\"log\"] = {{\n{{\n[\"text\"] = \"[\\\"loads\\\"] = 999\",\n[\"loads\"] = 7,\n}},\n}},\n[\"loads\"] = {count},\n}}\n"
+                "WowCompanionLinkDB = {{\n[\"log\"] = {{\n{{\n[\"text\"] = \"[\\\"loads\\\"] = 999\",\n[\"loads\"] = 7,\n}},\n}},\n[\"loads\"] = {count},\n}}\n"
             )
         };
         assert_eq!(loads(&save(41)), Some(41));
@@ -368,7 +368,7 @@ mod tests {
         assert!(reset_suspected(&save(41), &save(1)).unwrap().contains("41"));
         assert!(reset_suspected(&save(41), "").unwrap().contains("missing"));
         // a save from before the counter existed says nothing
-        assert_eq!(reset_suspected("WowCompanionDB = {\n}\n", &save(1)), None);
+        assert_eq!(reset_suspected("WowCompanionLinkDB = {\n}\n", &save(1)), None);
     }
 
     /// The check must pass what the game itself writes, or every closed-game

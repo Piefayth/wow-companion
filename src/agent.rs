@@ -39,7 +39,7 @@ const QUICK_MODEL: &str = "sonnet";
 const QUICK_TURNS: &str = "12";
 const QUICK_RULES: &str = "QUICK MODE. This is the quick conversation: the player wants speed above all.
 Answer in one or two short sentences. Do the obvious thing with the helpers you
-already know (WowCompanion_Preview, WowCompanion_ResolveWhisper, bag links,
+already know (WowCompanion_ChatLine, WowCompanion_ResolveWhisper, bag links,
 WCOpenTradeLink, WCShowLink) without reading files first; read code only when a
 step cannot be written without it. No research, no builds, no module edits, no
 installs: if the request needs real work, say in one line to ask it on another
@@ -105,24 +105,25 @@ can be offered, and put it last. Each step has a `kind`:
   box). It does nothing when no box is open, so it is not how to send a message.
   To send a message for them, use a `send` step: `text` is the full slash line
   (/g, /p, /raid, /i, /s, /y, /e, /1, /2, /w Name message, or an emote such as
-  /wave or /bow Name), `label` an optional heading. It opens the send preview, a
-  window whose Send button the player presses, and it works in combat (a `lua`
+  /wave or /bow Name), `label` an optional heading. The line goes into Blizzard's
+  chat box when the player has it open, or waits until they open it (the board
+  says so); their cross sends it, circle clears it. It works in combat (a `lua`
   step does not). For a whisper the addon resolves the spoken name itself
   (friends, Battle.net friends' characters, guild, group) and, when it cannot,
   says why in the window. In Forever every character has a first and last name
   ('Cecil Sorrowheart'): always pass both. Any other slash command (/roll, /cast)
-  is not chat: offer it as a `press`. From agent Lua the same window is
-  `WowCompanion_Preview(line, heading, shownText)`; resolve a whisper first with
+  is not chat: offer it as a `press`. From agent Lua the same is
+  `WowCompanion_ChatLine(line)`; resolve a whisper first with
   `WowCompanion_ResolveWhisper('Name message')` (target, message, label, or nil
   and why; print the why with `WowCompanion_Recent(slot, why)`)
   so the player sees it, never a silent print. Use the channel they name ('say' is /s).
   A Battle.net whisper cannot be sent from a macro: whisper the character the friend
   is playing (the resolver does this), and a friend not in WoW cannot be whispered.
 
-Other things of ours agent code can call (all globals, all in WowCompanion):
+Other things of ours agent code can call (all globals):
 - `WCShowLink(n)`: the item viewer, the nth item linked in chat (1 = newest).
-- Profession links ([Tailoring], [Enchanting]) from other players: the LinkCatcher
-  module keeps the last 10 in `WowCompanionDB.tradeLinks` (newest first: label, from,
+- Profession links ([Tailoring], [Enchanting]) from other players: LinkCatcher
+  (in WowCompanion_Agent) keeps the last 10 in `WowCompanionAgentDB.tradeLinks` (newest first: label, from,
   where), through reloads. To open one, offer a `press` step with macro
   `/run WCOpenTradeLink()` (newest), `WCOpenTradeLink(n)`, or a name:
   `/run WCOpenTradeLink(\"Orihime\")` matches who linked it or the profession
@@ -199,7 +200,7 @@ not now: read what the player is doing in it live, through its API and the strip
 Before any advice about the character, gather the facts it rests on;
 a wrong claim that they lack something is worse than asking.
 Other game facts already worked out:
-- Items linked in chat are kept in `WowCompanionDB.links` (newest first: link,
+- Items linked in chat are kept in `WowCompanionAgentDB.links` (newest first: link,
   from, where); `WowCompanion_ShowItem(n or link)` opens the item viewer.
 - Friends: `BNGetNumFriends()` with `C_BattleNet.GetFriendAccountInfo(i)` (online,
   offline, lastOnlineTime, the game and character); `C_FriendList` for character
@@ -210,20 +211,20 @@ Other game facts already worked out:
   watches no buffs. Build them on request from what that character knows.
   Missing-buff reminders: `WowCompanion_WatchBuffs({'Spell', ...})` in a `lua`
   step sets the character's list (`{}` clears it); the export shows it as
-  `buffs watched`, and the BuffGlow module lights the bar button that casts one,
+  `buffs watched`, and BuffGlow (WowCompanion_Buffs) lights the bar button that casts one,
   or opens a wheel holding one. Never add a proc or passive.
 - Sorting bags when the player asks: a `lua` step calling `C_Container.SortBags()`
   (not protected; out of combat). Only on their word, never on your own.
-- Our bag window: `WCBags` (addon/WowCompanion/Bags*.lua), opened by the `Bags`
+- Our bag window: `WCBags` (addon/WowCompanion_Bags/), opened by the `Bags`
   macro (`/click WCBagsToggle`) and the keyboard bag keys, in combat too. The pad's
   own bag opener (Blizzard's radial) opens Blizzard's bags, which ours stands in for.
   Buttons follow Blizzard's controller bags: square use, cross pick up and put down,
   triangle more (out of combat: bar, split, equip a spare bag, destroy, sort),
   circle back or close.
   Linking an item: `C_Container.GetContainerItemLink(bag, slot)` (find it by name in
-  the bags), then `WowCompanion_Preview` with the slash line; for a whisper resolve
+  the bags), then a `send` step with the slash line; for a whisper resolve
   the name first.
-  Swapping in a bigger bag: `WCSwapBag(what, into, dry)` (modules/BagSwap.lua)
+  Swapping in a bigger bag: `WCSwapBag(what, into, dry)` (addon/WowCompanion_Bags/BagSwap.lua)
   empties the bag it replaces into the other bags, equips the new one, and puts the
   old one where it was; it says when there is not room. `what` a name or item ID
   (nil: the biggest spare), `into` bag slot 1-4 (nil: an empty slot, else the
@@ -301,7 +302,7 @@ empty: say so and ask them to shift into that form once.
   `M:Event('GAME_EVENT', fn)` and `M:On('MESSAGE', fn)`, both dropped on replace;
   announce with `WC.Send('MESSAGE', ...)`; keep settings in `WC.Settings('Name',
   defaults)`; defer protected work with `WC.AfterCombat(fn)`. Call our helpers
-  through `WC.Board.Post`, `WC.Chat.Preview`, `WC.Pins`, `WC.Strip`, `WC.Style`.
+  through `WC.Board.Post`, `WC.Chat.Line`, `WC.Pins`, `WC.Strip`, `WC.Style`.
   Messages sent today: LINK_CAUGHT, TRADE_LINK_CAUGHT, BAGS_FULL. Reuse frames by
   global name in Enable (frames cannot be destroyed). `WC.List()` lists modules.
 

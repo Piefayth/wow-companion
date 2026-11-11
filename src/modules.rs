@@ -4,7 +4,7 @@
 //! the addon's SavedVariables, which the game writes at a reload or logout: no
 //! history, lost in a crash, and invisible to the agents until the next export.
 //! Now each one is `modules/<Name>.lua` in this repository, the source of truth.
-//! Every change regenerates `addon/WowCompanion/Modules.lua` (listed in the .toc,
+//! Every change regenerates `addon/WowCompanion_Agent/Modules.lua` (listed in the .toc,
 //! so a /reload rereads it; only a *new* file in a .toc needs a game restart) and
 //! copies it into the installed addon. The `module` step is still sent too, so a
 //! change runs at once without waiting for a reload.
@@ -21,7 +21,7 @@ pub fn dir() -> PathBuf {
 
 /// The generated file in the repository's copy of the addon.
 fn generated_in_repo() -> PathBuf {
-    crate::home().join("addon").join(crate::ADDON).join("Modules.lua")
+    crate::home().join("addon").join(crate::AGENT).join("Modules.lua")
 }
 
 /// A module name the addon accepts: letters, digits and underscores.
@@ -53,7 +53,7 @@ pub fn regenerate(addons: Option<&Path>) -> io::Result<()> {
     let lua = render(&read_all(&dir())?);
     fs::write(generated_in_repo(), &lua)?;
     if let Some(addons) = addons {
-        let installed = addons.join(crate::ADDON);
+        let installed = addons.join(crate::AGENT);
         if installed.is_dir() {
             fs::write(installed.join("Modules.lua"), &lua)?;
         }

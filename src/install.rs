@@ -16,19 +16,22 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     modules::regenerate(None)?;
     let addon = addons.join(ADDON);
     copy_dir(&source, &addon)?;
+    remove_stale(&source, &addon, generated(ADDON))?;
     // the ledger the setup window's uninstall works from
     let mut written = vec![addon.clone()];
-    // the suite's other addons (WowCompanion_Wheel...), placed as they are
+    // the suite's other addons (Link, Agent, the extras), placed as they are
     for entry in fs::read_dir(source.parent().unwrap())? {
         let entry = entry?;
         let name = entry.file_name();
         if entry.file_type()?.is_dir() && name != ADDON {
-            copy_dir(&entry.path(), &addons.join(&name))?;
-            written.push(addons.join(&name));
+            let installed = addons.join(&name);
+            copy_dir(&entry.path(), &installed)?;
+            remove_stale(&entry.path(), &installed, generated(&name.to_string_lossy()))?;
+            written.push(installed);
             println!("installed {}", name.to_string_lossy());
         }
     }
-    let signals = addon.join("Signals");
+    let signals = addons.join(LINK).join("Signals");
     fs::create_dir_all(&signals)?;
     // Install runs while the game plays (the agent installs its own changes), so it
     // only creates what is missing. Emptying every inbox and bell here wiped
@@ -72,8 +75,51 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// What the PC writes into an installed addon folder, which the repo's copy
+/// never has: kept when the folder is brought in line with the repo.
+fn generated(addon: &str) -> &'static [&'static str] {
+    match addon {
+        LINK => &["Signals", "helper-state.txt"],
+        ADDON => &["Probe"],
+        "WowCompanion_Mailbox" => &["Mail.lua"],
+        _ => &[],
+    }
+}
+
+/// Delete what an installed addon folder holds that its repo folder does not
+/// (a file moved to another addon, or deleted), except the PC's generated
+/// files. A file the game holds open is reported, not hidden.
+fn remove_stale(source: &Path, installed: &Path, keep: &[&str]) -> io::Result<()> {
+    fn walk(source: &Path, installed: &Path, top: bool, keep: &[&str]) -> io::Result<()> {
+        for entry in fs::read_dir(installed)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            if top && keep.iter().any(|kept| name == *kept) {
+                continue;
+            }
+            let (from, at) = (source.join(&name), entry.path());
+            if entry.file_type()?.is_dir() {
+                if from.is_dir() {
+                    walk(&from, &at, false, keep)?;
+                } else if let Err(err) = fs::remove_dir_all(&at) {
+                    println!("could not remove {} (the game may hold it): {err}", at.display());
+                } else {
+                    println!("removed {}", at.display());
+                }
+            } else if !from.exists() {
+                match fs::remove_file(&at) {
+                    Ok(()) => println!("removed {}", at.display()),
+                    Err(err) => println!("could not remove {} (the game may hold it): {err}", at.display()),
+                }
+            }
+        }
+        Ok(())
+    }
+    walk(source, installed, true, keep)
+}
+
 pub(crate) fn probe(addons: &Path) -> io::Result<()> {
-    let signals = addons.join(ADDON).join("Signals");
+    let signals = addons.join(LINK).join("Signals");
     // a closed client swallows a whole run in silence, which looks identical to a broken channel
     if !game_running()? {
         return Err(io::Error::other(

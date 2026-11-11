@@ -3,19 +3,16 @@
 
 use super::*;
 
-/// The addon's save file, as text.
-pub(crate) fn saved_variables_text(addons: &Path) -> Option<String> {
-    let accounts = addons.parent()?.parent()?.join("WTF").join("Account");
-    let mut newest: Option<(u128, PathBuf)> = None;
-    for account in fs::read_dir(accounts).ok()?.flatten() {
-        let saved = account.path().join("SavedVariables").join(format!("{ADDON}.lua"));
-        if let Some(millis) = modified_millis(&saved) {
-            if newest.as_ref().is_none_or(|(best, _)| millis > *best) {
-                newest = Some((millis, saved));
-            }
-        }
-    }
-    fs::read_to_string(newest?.1).ok()
+/// The PC bridge's addon: its Signals (bells), the slot cursor, and its saved
+/// table (`WowCompanionLinkDB`: slotCount, channel, loads, bridgeProbe).
+pub(crate) const LINK: &str = "WowCompanion_Link";
+/// The agent's addon: its saved table (`WowCompanionAgentDB`: the export,
+/// lines, jobModel, links) and the generated Modules.lua.
+pub(crate) const AGENT: &str = "WowCompanion_Agent";
+
+/// An addon's save file, as text.
+pub(crate) fn saved_variables_text(addons: &Path, addon: &str) -> Option<String> {
+    fs::read_to_string(saved_variables(addons, addon)?).ok()
 }
 
 /// Lift the API dump out of SavedVariables into a plain text file.
@@ -33,7 +30,7 @@ pub(crate) fn pull(addons: &Path, key: &str, out: &Path) -> io::Result<()> {
 }
 
 pub(crate) fn saved_string(addons: &Path, key: &str) -> io::Result<String> {
-    let saved = saved_variables(addons)
+    let saved = saved_variables(addons, AGENT)
         .ok_or_else(|| io::Error::other("no SavedVariables yet: /reload in game first"))?;
     let text = fs::read_to_string(&saved)?;
     // the dump is one long Lua string, so find its opening quote and read to the
@@ -174,11 +171,12 @@ pub(crate) fn vocabulary(addons: &Path) -> Vec<String> {
     words
 }
 
-pub(crate) fn saved_variables(addons: &Path) -> Option<PathBuf> {
+/// An addon's account-wide save file (`<addon>.lua`), the newest across accounts.
+pub(crate) fn saved_variables(addons: &Path, addon: &str) -> Option<PathBuf> {
     let accounts = addons.parent()?.parent()?.join("WTF").join("Account");
     let mut newest: Option<(u128, PathBuf)> = None;
     for account in fs::read_dir(accounts).ok()?.flatten() {
-        let saved = account.path().join("SavedVariables").join(format!("{ADDON}.lua"));
+        let saved = account.path().join("SavedVariables").join(format!("{addon}.lua"));
         if let Some(at) = modified_millis(&saved) {
             if newest.as_ref().is_none_or(|(best, _)| at > *best) {
                 newest = Some((at, saved));
