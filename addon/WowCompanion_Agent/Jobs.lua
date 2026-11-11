@@ -493,6 +493,12 @@ local function newest(state)
 		end
 	end
 end
+-- what Send now would send: the newest queued message of the view, only while
+-- something there runs (nothing to interrupt otherwise) and no press is pending
+local function sendable()
+	local job = newest("queued")
+	if job and not job.sending and model:Running(job.slot) then return job end
+end
 -- the offered button (Agent.lua): shown in the window, with a press waiting
 local function offerShown()
 	local b = _G.WowCompanionDo
@@ -502,7 +508,7 @@ local cancelKey = CreateFrame("Button", "WCJobsCancelKey", UIParent)
 cancelKey:SetScript("OnClick", function() cancel(newest()) end)
 local nowKey = CreateFrame("Button", "WCJobsNowKey", UIParent)
 nowKey:SetScript("OnClick", function()
-	local job = newest("queued")
+	local job = sendable()
 	if job then sendNow(job) end
 end)
 local keyOwner = CreateFrame("Frame", "WCJobsKeys", UIParent)
@@ -538,7 +544,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		local function glyph(key) return WowCompanion_Glyph(key) end
 		local parts = {}
 		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " Cancel newest" end
-		if focused and newest("queued") then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
+		if focused and sendable() then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
 		if focused and offerShown() then parts[#parts + 1] = glyph("PADLSTICK") .. " " .. (_G.WowCompanionDo:GetText() or "Press") end
 		window.jobsLegend:SetText(table.concat(parts, "     "))
 		window.jobsLegend:SetShown(#parts > 0)
