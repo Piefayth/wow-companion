@@ -27,6 +27,16 @@ local function openWindow()
 	end
 end
 
+local SLOT_NAMES = { [""] = "Main", l1 = "L1", l2 = "L2", r1 = "R1", r2 = "R2", quick = "Quick" }
+local function unreadNames()
+	local names = {}
+	for slot, on in pairs(WowCompanion_Unread and WowCompanion_Unread() or {}) do
+		if on then names[#names + 1] = SLOT_NAMES[slot] or slot end
+	end
+	table.sort(names)
+	return names
+end
+
 local function describe(tooltip)
 	tooltip:AddLine("WoW Companion")
 	if up then
@@ -34,6 +44,10 @@ local function describe(tooltip)
 		tooltip:AddLine(("Listening: hold %s to talk."):format(talk), 0.4, 0.9, 0.4)
 	else
 		tooltip:AddLine("Off: the companion on your PC is not running, or is restarting.", 1, 0.4, 0.4)
+	end
+	local news = unreadNames()
+	if #news > 0 then
+		tooltip:AddLine("New replies: " .. table.concat(news, ", "), 0.25, 1, 0.25)
 	end
 	tooltip:AddLine("Click to open the companion window.", 0.8, 0.8, 0.8)
 end
@@ -76,6 +90,15 @@ local border = button:CreateTexture(nil, "OVERLAY")
 border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 border:SetSize(53, 53)
 border:SetPoint("TOPLEFT")
+
+-- news waiting (the player, 2026-11-10: a reply sat unseen unless they opened
+-- the window): Blizzard's own notification dot, as on the Communities button
+local badge = button:CreateTexture(nil, "OVERLAY", nil, 7)
+badge:SetAtlas("communities-icon-notification")
+badge:SetSize(14, 14)
+badge:SetPoint("TOPRIGHT", -2, -2)
+badge:Hide()
+
 
 local function place()
 	-- bottom-right by default: 200 degrees sat exactly under GearQuest's button
@@ -169,6 +192,7 @@ watcher:SetScript("OnUpdate", function(_, elapsed)
 	pcall(check, 1)
 	pcall(check, 2)
 	pcall(decide)
+	badge:SetShown(#unreadNames() > 0)
 end)
 
 -- the saved angle is only known once SavedVariables load

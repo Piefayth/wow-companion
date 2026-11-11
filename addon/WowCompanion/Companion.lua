@@ -108,6 +108,11 @@ local function logFrame()
 	if not logWindow then
 		logWindow = buildLog()
 		-- who closed it, when it vanishes on its own (the player, 2026-11-10)
+		-- opening the window shows the conversation in view: its news is seen
+		logWindow:HookScript("OnShow", function()
+			local unread = WowCompanion_Unread and WowCompanion_Unread()
+			if unread and WowCompanion_ViewSlot then unread[WowCompanion_ViewSlot()] = nil end
+		end)
 		logWindow:HookScript("OnHide", function()
 			WowCompanionDB.windowCombat = WowCompanionDB.windowCombat or {}
 			WowCompanionDB.windowCombat.lastOnHide = ("%s combat=%s by %s"):format(date("%H:%M:%S"),
@@ -375,6 +380,8 @@ local function unreadSet()
 	WowCompanionDB.unread = WowCompanionDB.unread or {}
 	return WowCompanionDB.unread
 end
+-- for the minimap button: the conversations with news not yet looked at
+function WowCompanion_Unread() return unreadSet() end
 local function paintConversations()
 	local frame = logWindow
 	if not (frame and frame.convButtons) then return end
@@ -462,7 +469,12 @@ local function remember(who, text, continued, slot, queued)
 	end
 	if slot == viewSlot then
 		showLine(who, text, continued, entries[#entries].at, queued)
-	elseif not continued and who ~= "you" then
+	end
+	-- news nobody has seen yet: a reply in another conversation, or in this one
+	-- while the window is closed (the player, 2026-11-10: replies waited unseen
+	-- unless they checked); the minimap button shows it (Status.lua)
+	if not continued and (who == "claude" or who == "error")
+		and (slot ~= viewSlot or not (logWindow and logWindow:IsShown())) then
 		unreadSet()[slot] = true
 		paintConversations()
 	end
