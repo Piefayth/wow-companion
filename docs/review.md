@@ -33,6 +33,13 @@ them.
    pure model or test (`JobsModel.lua` and `tools/test_jobs.py` show how).
 7. **Product versus player**: anything shipped that is this player's (their
    class, wheels, bars, paths) and belongs in their profile or saved data.
+8. **Heuristics**: thresholds, time windows, "close enough" matching, guessing
+   from text shape (the player's standing rule: a heuristic needs their
+   explicit permission). Name each and the exact signal that would replace it.
+9. **Bug classes**: for the fixes since the last review, what in the structure
+   permitted each bug, and whether that structure is still producing them
+   (strings built by surgery and parsed by prefix, state kept twice, rules only
+   a reader can enforce). Prefer the fix that removes the structure.
 
 ## Numbers to record each time (so the trend shows)
 
