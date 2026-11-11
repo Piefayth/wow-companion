@@ -38,10 +38,13 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     // messages the addon had not read yet: "Inbox.lua is empty", "slot 4 failed:
     // nil" (2026-11-10). Bells and inboxes belong to the sender alone.
     let missing = |path: &Path| !path.exists();
-    for bell in (1..=BELLS).flat_map(|bell| [bell_name(bell), catch_up_name(bell), frame_bell_name(bell)]) {
+    // every bell exists before the game can ask for it: one it asked for while
+    // missing is never heard (bells.rs, rule 3)
+    let slot_bells = (0..SETS).flat_map(|set| (1..=SLOTS).map(move |slot| slot_bell_name(set, slot)));
+    for bell in (1..=BELLS).flat_map(|bell| [bell_name(bell), catch_up_name(bell)]).chain(slot_bells) {
         let path = signals.join(bell);
         if missing(&path) {
-            bells::empty_message(&path)?;
+            bells::empty(&path)?;
         }
     }
     // the sound probe's controls: one that must play, one that must not
@@ -49,7 +52,7 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
         bells::ring_message(&signals.join("always.wav"))?;
     }
     if missing(&signals.join("never.wav")) {
-        bells::empty_message(&signals.join("never.wav"))?;
+        bells::empty(&signals.join("never.wav"))?;
     }
     for slot in 1..=SLOTS {
         let dir = addons.join(slot_name(slot));
@@ -145,7 +148,7 @@ pub(crate) fn probe(addons: &Path) -> io::Result<()> {
     }
     // the bells still ringing are the last few; earlier ones were silenced as we went
     for slot in used.iter().rev().take(BELL_LINGER as usize) {
-        bells::empty_message(&signals.join(bell_name(*slot)))?;
+        bells::empty(&signals.join(bell_name(*slot)))?;
     }
     if !game_running() {
         println!("warning: the game closed partway through, so the run is incomplete");

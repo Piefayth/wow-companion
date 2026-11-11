@@ -250,15 +250,14 @@ fn ring(addons: &Path, msg: &Msg) -> io::Result<()> {
     // long enough to be heard, then silence it. The addon polls every 0.5 s.
     let signals = addons.join(LINK).join("Signals");
     for bell in 1..=BELLS {
-        bells::empty_message(&signals.join(bell_name(bell)))?;
+        bells::empty(&signals.join(bell_name(bell)))?;
     }
     deliver(addons, slot, msg)?;
     println!("sent in slot {slot}: {}", msg.lua());
     ring_catch_up(&signals, slot);
-    ring_frame_bell(&signals, slot);
     voice::mark(&format!("bell rung, slot {slot}"));
     thread::sleep(BELL_HEARD);
-    bells::empty_message(&signals.join(bell_name(slot)))?;
+    bells::empty(&signals.join(bell_name(slot)))?;
     Ok(())
 }
 
@@ -275,11 +274,15 @@ pub(crate) fn deliver(addons: &Path, slot: u32, msg: &Msg) -> io::Result<()> {
     let lua = format!("WowCompanion_Inbox = {}\nWowCompanion_Sent = {sent}\n", msg.lua());
     // the inbox lands first: the bell is what tells the addon to go read it
     write_reporting(&addons.join(slot_name(slot)).join("Inbox.lua"), lua.as_bytes())?;
+    // the slot bell, on trial: reported, never a failed send
+    if let Err(err) = bells::ring(&signals.join(slot_bell_name(current_set(addons), slot))) {
+        println!("slot bell for slot {slot}: {err}");
+    }
     bells::ring_message(&signals.join(bell_name(slot)))?;
     // a bell is reused every BELLS sends, so silence it well before then or the
     // addon hears a stale ring and reads a slot we haven't written yet
     if slot > BELL_LINGER {
-        bells::empty_message(&signals.join(bell_name(slot - BELL_LINGER)))?;
+        bells::empty(&signals.join(bell_name(slot - BELL_LINGER)))?;
     }
     Ok(())
 }
@@ -453,55 +456,74 @@ pub(crate) fn catch_up_name(n: u32) -> String {
     format!("c{}.wav", (n - 1) % BELLS + 1)
 }
 
-// The frame bells, beside the message bells (CLAUDE.md, "Changing the channel"),
-// on trial from 2026-11-11: the addon checks one every frame and reads the answer
-// the next (the game says a ringing bell plays within 2 ms, measured), where the
-// message bell's poll waits up to 0.5 s and then 0.15 s. The same files as the
-// message bells (10 s of silence ringing, empty idle) under their own names,
-// rung for every slot on a thread of their own: a frame bell the game holds must
-// never hold up the message channel.
-pub(crate) fn frame_bell_name(n: u32) -> String {
-    format!("f{}.wav", (n - 1) % BELLS + 1)
-}
-
-/// One frame bell thread at a time, so two sends never ring two frame bells.
-static FRAME_BELLS: Mutex<()> = Mutex::new(());
-
-/// Ring `slot`'s frame bell as `ring` rings its message bell: every other one
-/// emptied first, its own emptied after `BELL_HEARD`.
-pub(crate) fn ring_frame_bell(signals: &Path, slot: u32) {
-    let signals = signals.to_path_buf();
-    thread::spawn(move || {
-        let _turn = FRAME_BELLS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let rung = (|| {
-            for bell in (1..=BELLS).filter(|bell| *bell != (slot - 1) % BELLS + 1) {
-                bells::empty_message(&signals.join(frame_bell_name(bell)))?;
-            }
-            bells::ring_message(&signals.join(frame_bell_name(slot)))?;
-            thread::sleep(BELL_HEARD);
-            bells::empty_message(&signals.join(frame_bell_name(slot)))
-        })();
-        if let Err(err) = rung {
-            println!("frame bell for slot {slot}: {err}");
-        }
-    });
-}
-
-/// Silence every catch-up and frame bell (a new UI session starts its cursor at
-/// 1, and a bell left from the old one would point it at stale slots).
-pub(crate) fn clear_session_bells(signals: &Path) -> io::Result<()> {
+/// Silence every catch-up bell (a new UI session starts its cursor at 1, and a
+/// catch-up bell left from the old one would point it at stale slots).
+pub(crate) fn clear_catch_up(signals: &Path) -> io::Result<()> {
     for bell in 1..=BELLS {
-        bells::empty_message(&signals.join(catch_up_name(bell)))?;
-        bells::empty_message(&signals.join(frame_bell_name(bell)))?;
+        bells::empty(&signals.join(catch_up_name(bell)))?;
     }
     Ok(())
+}
+
+// The slot bells (docs/proposals/slot-bells.md), on trial beside the message
+// bells since 2026-11-11, the game only watching them: a bell per slot, never
+// emptied while its session runs, so a ring means that slot and nothing has to
+// change while the game holds it; a set per session, so a ring never outlives
+// its session. The game asks the next slot's every frame.
+pub(crate) const SETS: u64 = 3;
+
+pub(crate) fn slot_bell_name(set: u64, slot: u32) -> String {
+    format!("g{set}-{slot:03}.wav")
+}
+
+/// This session's set: the Link addon's count of its loads, which the save holds
+/// for the session before, plus one (the game adds its one at load), modulo SETS.
+/// The next session's while the game is closed: it loads the same save.
+pub(crate) fn current_set(addons: &Path) -> u64 {
+    let loads = saved_variables(addons, LINK)
+        .and_then(|save| fs::read_to_string(save).ok())
+        .and_then(|save| crate::backups::loads(&save))
+        .unwrap_or(0);
+    (loads + 1) % SETS
+}
+
+/// Empty the rung bells of every set but `keep` (none while the game is closed):
+/// nothing polls those, so nothing holds them.
+fn empty_idle_sets(signals: &Path, keep: Option<u64>) -> io::Result<()> {
+    for set in (0..SETS).filter(|set| Some(*set) != keep) {
+        for slot in 1..=SLOTS {
+            let path = signals.join(slot_bell_name(set, slot));
+            if fs::metadata(&path).is_ok_and(|meta| meta.len() > 0) {
+                bells::empty(&path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// For the running companion: four times a second, which set the game uses; at
+/// every change (a reload, the game closing or starting, the companion
+/// starting) the others are emptied, until that has worked.
+pub(crate) fn tend_slot_bells(addons: &Path) {
+    let signals = addons.join(LINK).join("Signals");
+    let mut tended: Option<Option<u64>> = None;
+    loop {
+        let set = game_running().then(|| current_set(addons));
+        if tended != Some(set) {
+            match empty_idle_sets(&signals, set) {
+                Ok(()) => tended = Some(set),
+                Err(err) => println!("slot bells: {err}"),
+            }
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
 }
 
 /// Ring `slot`'s catch-up bell, only once every other one is silent: two ringing
 /// would point the addon at two different places.
 pub(crate) fn ring_catch_up(signals: &Path, slot: u32) {
     for bell in (1..=BELLS).filter(|bell| *bell != (slot - 1) % BELLS + 1) {
-        if let Err(err) = bells::empty_message(&signals.join(catch_up_name(bell))) {
+        if let Err(err) = bells::empty(&signals.join(catch_up_name(bell))) {
             println!("catch-up bell not rung for slot {slot}: {err}");
             return;
         }
@@ -515,6 +537,24 @@ pub(crate) fn ring_catch_up(signals: &Path, slot: u32) {
 mod tests {
     use super::*;
     use crate::jobs::State;
+
+    #[test]
+    fn only_the_idle_sets_slot_bells_are_emptied() {
+        let signals = std::env::temp_dir().join(format!("wc-slot-bells-{}", std::process::id()));
+        fs::create_dir_all(&signals).unwrap();
+        let rung = |set, slot| signals.join(slot_bell_name(set, slot));
+        for set in 0..SETS {
+            fs::write(rung(set, 7), bells::bell()).unwrap();
+        }
+        empty_idle_sets(&signals, Some(1)).unwrap();
+        let size = |set| fs::metadata(rung(set, 7)).unwrap().len();
+        assert_eq!((size(0), size(2)), (0, 0));
+        assert!(size(1) > 0, "the running session's ring stays");
+        // the game closed: every set
+        empty_idle_sets(&signals, None).unwrap();
+        assert_eq!(size(1), 0);
+        fs::remove_dir_all(&signals).unwrap();
+    }
 
     fn progress(job: u64, text: &str) -> Pending {
         Pending::Now(Msg::new("progress").text("text", text).int("job", job))

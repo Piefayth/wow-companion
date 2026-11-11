@@ -191,9 +191,16 @@ fn rings(path: &std::path::Path) -> bool {
 /// else in Signals was left by an earlier design.
 fn current_bell(name: &str) -> bool {
     let stem = name.trim_end_matches(".wav");
-    matches!(stem, "always" | "never" | "doctor" | "pulse-a" | "pulse-b")
+    let slot_bell = stem.strip_prefix('g').and_then(|rest| rest.split_once('-')).is_some_and(|(set, slot)| {
+        match (set.parse::<u64>(), slot.parse::<u32>()) {
+            (Ok(set), Ok(slot)) => set < crate::SETS && (1..=crate::SLOTS).contains(&slot) && crate::slot_bell_name(set, slot) == name,
+            _ => false,
+        }
+    });
+    slot_bell
+        || matches!(stem, "always" | "never" | "doctor" | "pulse-a" | "pulse-b")
         || (stem.len() == 2
-            && (stem.starts_with('m') || stem.starts_with('c') || stem.starts_with('f'))
+            && (stem.starts_with('m') || stem.starts_with('c'))
             && stem[1..].parse::<u32>().is_ok_and(|n| (1..=8).contains(&n)))
 }
 
@@ -221,10 +228,10 @@ mod tests {
 
     #[test]
     fn only_todays_bell_names_are_current() {
-        for name in ["m1.wav", "m8.wav", "c3.wav", "f5.wav", "pulse-a.wav", "always.wav", "never.wav", "doctor.wav"] {
+        for name in ["m1.wav", "m8.wav", "c3.wav", "g0-001.wav", "g2-512.wav", "pulse-a.wav", "always.wav", "never.wav", "doctor.wav"] {
             assert!(current_bell(name), "{name}");
         }
-        for name in ["1.wav", "m9.wav", "alive-a.wav", "show.wav", "m10.wav"] {
+        for name in ["1.wav", "m9.wav", "f5.wav", "g3-001.wav", "g0-513.wav", "g0-1.wav", "alive-a.wav", "show.wav", "m10.wav"] {
             assert!(!current_bell(name), "{name}");
         }
     }

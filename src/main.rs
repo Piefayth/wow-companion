@@ -293,6 +293,11 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         let addons = addons.to_path_buf();
         thread::spawn(move || watch_commands(&addons));
     }
+    // the slot bells of the sets no session uses, emptied (docs/proposals/slot-bells.md)
+    {
+        let addons = addons.to_path_buf();
+        thread::spawn(move || tend_slot_bells(&addons));
+    }
     // other processes' asks to read the game (an agent's `strip --chat`)
     strip::serve_asks(addons);
     // The voice loop never sends anything itself. A send waits for any other send

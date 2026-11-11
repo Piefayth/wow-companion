@@ -205,15 +205,18 @@ because the game held them open. The message channel is the 2026-11-09 protocol
 (`bells::message_bell`, one bell polled at a time, emptied to silence, files
 `m1`..`m8`) until a replacement is proven. A replacement runs **beside** it, on
 its own files, and switches over only after the addon's channel counts show it
-delivering for a whole session. The **catch-up bells** (`c1`..`c8`, `ring_catch_up`
-in channel.rs) are such a replacement, beside it since 2026-11-10: the newest slot's
-rings until the next send, so a missed message bell is taken late instead of
-stalling the rest; their count is `channel.caughtUp`. The **frame bells** (`f1`..`f8`,
-`ring_frame_bell`) are on trial beside it since 2026-11-11: the same files as the
-message bells, checked every frame and answered the next (the game says a ringing
-bell plays within 2 ms; a check costs about a microsecond), against the message
-poll's 0.5 s + 0.15 s. Renaming files to escape a wedged one is a sign
-the change should not have shipped, not a fix.
+delivering for a whole session. **Beside is not isolation**: a trial shares the
+game's sound system, and one that takes slots shares the message channel's
+cursor, so a trial watches and counts and never takes a slot (the frame bells
+broke delivery for an evening by taking them, 2026-11-11, docs/history.md). The
+**catch-up bells** (`c1`..`c8`, `ring_catch_up` in channel.rs) are such a
+replacement, beside it since 2026-11-10: the newest slot's rings until the next
+send, so a missed message bell is taken late instead of stalling the rest; their
+count is `channel.caughtUp`. The **slot bells** (docs/proposals/slot-bells.md,
+`g<set>-<slot>.wav`) are on trial beside it since 2026-11-11, the game only
+watching: a bell per slot, never emptied while its session runs, a set per
+session (`loads % 3`), asked every frame. Renaming files to escape a wedged one
+is a sign the change should not have shipped, not a fix.
 
 ## The agent
 

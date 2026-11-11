@@ -501,3 +501,25 @@ History that sat in the addon's comments; the comments now say only what is true
 
 ### JobsModel.lua
 - The game's and the PC's clocks were measured 2.3 s apart (2026-11-10).
+
+## The frame bell trial (2026-11-11)
+
+The player asked for the game to check for messages every frame instead of every
+half second ("if it's cheap i'd do it every frame"). Measured first, in game at
+120 fps: a check of a missing file cost about a microsecond and moved no frame
+time, and the half-second pulse bell played 2 ms after it started. The trial
+(PC 850e3ca, game 3a25fb2) rang eight frame bells `f1`..`f8` beside the message
+bells, with the message bell's ten-second file, emptied 2 s after each ring.
+
+It broke delivery for the evening. The ten-second bell is streamed and was not
+playing a frame after it started, so the game restarted it every frame and never
+heard it; a file being played is held, so the PC could not empty it. Left
+ringing, `f3` rang again for slot 11, 19...: the game took those slots (an
+earlier session's message, skipped), and ran ahead of the PC to slot 26 while the
+PC wrote slot 9, so everything after went into slots the game had passed. The
+constant restarting also held the heartbeat's pulse bells (the minimap button
+went grey). "Beside" was not isolation: the trial shared the game's sound system
+and, by taking slots, the message channel's cursor. `/wc frames off` and a
+reload restored it. The one real message the frame bell caught arrived in 8 ms.
+What came of it: docs/proposals/slot-bells.md (a bell per slot, a set per
+session, watched before it takes anything).
