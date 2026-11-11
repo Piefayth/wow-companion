@@ -1397,6 +1397,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
 	end
 	if event == "ADDON_LOADED" and ... == ADDON then
 		WowCompanionDB = WowCompanionDB or {}
+		-- loads of this save, counted here only: 1 after a higher count means the
+		-- save was lost and the addon loaded empty (read by src/backups.rs)
+		WowCompanionDB.loads = (WowCompanionDB.loads or 0) + 1
 		-- the game saves before it reloads, so hold on to the session we just read
 		-- from disk or a second /reload discards the run we were trying to measure
 		WowCompanionDB.previous = WowCompanionDB.probe
