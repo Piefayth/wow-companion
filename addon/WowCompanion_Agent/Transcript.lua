@@ -14,21 +14,24 @@ local TURN_GAP, PARA_GAP, LINE_SPACING = 14, 7, 2
 local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 local NOTE_FONT = "GameFontHighlightSmall"
 
--- Each turn sits on its own backing, two tones by whose it is (the player,
--- 2026-11-11: still dark, textured like the rest): your messages on Blizzard's
--- rock, the replies on its marble, both tiled and dimmed far down.
-local TONES = {
-	you = { [[Interface\FrameGeneral\UI-Background-Rock]], 0.62 },
-	claude = { [[Interface\FrameGeneral\UI-Background-Marble]], 0.2 },
-}
+-- Each turn sits on Blizzard's marble at full strength, as Guild News does;
+-- the player's turns tinted warm (the achievement window's move on its rock),
+-- replies plain. A dimmed texture reads as a flat box (the first try,
+-- 2026-11-11), so nothing is dimmed. Turns are parted by the quest log's
+-- divider. docs/proposals/companion-chat-look.md, option A.
+local MARBLE = [[Interface\FrameGeneral\UI-Background-Marble]]
+local WARM = { 1, 0.86, 0.66 }
 local function turnBand(content, owner)
-	local tone = TONES[owner] or TONES.claude
 	local band = content:CreateTexture(nil, "BACKGROUND", nil, -1)
-	band:SetTexture(tone[1], "REPEAT", "REPEAT")
+	band:SetTexture(MARBLE, "REPEAT", "REPEAT")
 	band:SetHorizTile(true)
 	band:SetVertTile(true)
-	band:SetVertexColor(tone[2], tone[2], tone[2])
-	return band
+	if owner == "you" then band:SetVertexColor(WARM[1], WARM[2], WARM[3]) end
+	local divider = content:CreateTexture(nil, "ARTWORK")
+	divider:SetAtlas("QuestLog-frame-devider")
+	divider:SetAlpha(0.8)
+	divider:SetHeight(15)
+	return band, divider
 end
 
 local function inline(text)
@@ -93,6 +96,11 @@ function Transcript:Place(row, y, width)
 		row.turn:SetPoint("TOPLEFT", self.content, "TOPLEFT", -6, -top)
 		row.turn:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", 0, -top)
 		row.turn:SetHeight(1)
+		-- centred on the boundary with the turn above; none above the first
+		row.divider:ClearAllPoints()
+		row.divider:SetPoint("LEFT", row.turn, "TOPLEFT", 0, 0)
+		row.divider:SetPoint("RIGHT", row.turn, "TOPRIGHT", 0, 0)
+		row.divider:SetShown(self.turnBand ~= nil)
 		self.turnBand, self.turnTop = row.turn, top
 	end
 	local fs = row.fs
@@ -170,7 +178,8 @@ function Transcript:Row(font, text, indent, gap, r, g, b, owner)
 	if r then fs:SetTextColor(r, g, b) end
 	fs:SetText(text)
 	local row = { fs = fs, indent = indent or 0, gap = self.gap or gap or 0,
-		header = owner and true or nil, turn = owner and turnBand(self.content, owner) or nil }
+		header = owner and true or nil }
+	if owner then row.turn, row.divider = turnBand(self.content, owner) end
 	self.gap = nil
 	-- Confirmed lines are only ever appended (the player, 2026-11-10: the
 	-- view must be "predictable and non-disruptive"): a line placed among ones
@@ -202,8 +211,12 @@ function Transcript:Markdown(line, r, g, b)
 	end
 	if self.code then
 		local row = self:Row(BODY_FONT, (line:gsub("|", "||")), 14, 0, 0.74, 0.86, 0.74)
+		-- the ready check's backing, tiled
 		row.band = self.content:CreateTexture(nil, "BACKGROUND")
-		row.band:SetColorTexture(1, 1, 1, 0.06)
+		row.band:SetTexture([[Interface\DialogFrame\UI-DialogBox-Background-Dark]], "REPEAT", "REPEAT")
+		row.band:SetHorizTile(true)
+		row.band:SetVertTile(true)
+		row.band:SetAlpha(0.75)
 		return
 	end
 	if line:match("^%s*$") then
@@ -255,7 +268,7 @@ function Transcript:Add(who, text, continued, at, job)
 	else
 		-- what a step did, a probe found, or an error: small notes under the reply
 		local row = self:Row(NOTE_FONT, inline(text), 14, continued and 1 or 5,
-			who == "error" and 1 or 0.62, who == "error" and 0.47 or 0.65, who == "error" and 0.47 or 0.70)
+			who == "error" and 1 or 0.72, who == "error" and 0.47 or 0.74, who == "error" and 0.47 or 0.78)
 		row.marker = self.content:CreateFontString(nil, "OVERLAY", NOTE_FONT)
 		row.marker:SetText(who == "error" and "|cffff7777!|r" or "|cff5c6370›|r")
 	end
@@ -267,6 +280,7 @@ function Transcript:Add(who, text, continued, at, job)
 			if row.marker then row.marker:Hide() end
 			if row.band then row.band:Hide() end
 			if row.turn then row.turn:Hide() end
+			if row.divider then row.divider:Hide() end
 		end
 		self:Layout()
 	end
@@ -291,6 +305,7 @@ function Transcript:EndLive(live, text, answered)
 	if answered and self.rows[n] == live.line and self.rows[n - 1] == live.head then
 		live.head.fs:Hide()
 		live.head.turn:Hide()
+		live.head.divider:Hide()
 		live.line.fs:Hide()
 		self.rows[n] = nil
 		self.rows[n - 1] = nil
@@ -315,6 +330,7 @@ function Transcript:Clear()
 		if row.marker then row.marker:Hide() end
 		if row.band then row.band:Hide() end
 		if row.turn then row.turn:Hide() end
+		if row.divider then row.divider:Hide() end
 	end
 	self.turnBand = nil
 	self.rows, self.height, self.code, self.gap = {}, 0, false, nil
