@@ -178,7 +178,7 @@ do
 	-- From letting go of minus until the line is in the send preview: the tag
 	-- says it is on its way (the player, 2026-11-10: a slow line popped up
 	-- after they had given up and spoken another). Shown out of turn of the
-	-- Say-only rule; gone when the preview opens, or with a word after 30 s.
+	-- Say-only rule; gone when the preview opens, a clip is dropped, or after 6 s.
 	local waiting = _G["WCChatWaiting"] or CreateFrame("Frame", "WCChatWaiting")
 	waiting:Hide()
 	waiting:SetScript("OnUpdate", function(self, elapsed)
@@ -190,14 +190,23 @@ do
 			return
 		end
 		local dots = ("."):rep(math.floor(self.t * 2) % 4)
-		if self.t > 30 then
-			tag.text:SetText("Chat: |cffff7777nothing arrived|r (the line was lost or not heard)")
-			if self.t > 36 then self:Hide() showTag() end
-		else
-			tag.text:SetText(("Chat: |cffffffff%s|r  transcribing%s"):format(NAMES[current()], dots))
+		-- transcription takes about a second; past 6 s nothing is coming (the
+		-- player, 2026-11-10: a 30 s wait looked stuck)
+		if self.t > 6 then
+			self:Hide()
+			showTag()
+			return
 		end
+		tag.text:SetText(("Chat: |cffffffff%s|r  transcribing%s"):format(NAMES[current()], dots))
 		tag:Show()
 	end)
+	-- a dropped clip (too short, nothing heard) ends the wait at once, with why
+	WC.ChatChannel.Dropped = function(why)
+		if not waiting:IsShown() then return end
+		waiting:Hide()
+		showTag()
+		print("|cffffd100Chat:|r " .. tostring(why))
+	end
 	WC.ChatChannel.Waiting = function()
 		local preview = _G["WowCompanionPreview"]
 		if preview and preview:IsShown() then preview:Hide() end

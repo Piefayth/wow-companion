@@ -748,6 +748,8 @@ end
 function handlers.log(inbox)
 	local text = inbox.text or ""
 	local who = inbox.who or "claude"
+	-- the voice loop's notices (a dropped clip) end a dictation's wait
+	if who == "error" and WC.ChatChannel and WC.ChatChannel.Dropped then WC.ChatChannel.Dropped(text) end
 	local lines = 0
 	-- `pending` starts the waiting line; any message without it clears it, so the
 	-- reply arriving is what stops the spinner
