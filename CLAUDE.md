@@ -74,9 +74,7 @@ yes; don't reinvent what Claude Code has.
   all under one collapsible entry in the AddOns list (`## Group: WowCompanion`,
   the 512 slots too). One file per job inside each; files share nothing local
   and talk through globals (`WC`, `WowCompanion_*`) and the bus (`WC.Send`, `M:On`).
-  Each addon owns its saved table, made by `WC.Saved` at its load; settings from
-  before the split move in once (`WC.MoveSaved`, to remove once every
-  character has loaded). **Nothing class- or player-specific ships** (no default
+  Each addon owns its saved table, made by `WC.Saved` at its load. **Nothing class- or player-specific ships** (no default
   wheels, buffs or layouts): it is made per character on request or read from
   the game.
   - `WowCompanion` (Core, needs nothing of the PC): `Engine.lua` (`WC`: modules,

@@ -8,7 +8,7 @@
 -- Drawn only while the player stands on the pin's map, in the open world.
 WCPins = WCPins or {}
 WC.Pins = WCPins
-WC.Saved("WowCompanion_Pins", "WowCompanionPinsDB", function(db) WC.MoveSaved(db, { "pins" }) end)
+WC.Saved("WowCompanion_Pins", "WowCompanionPinsDB")
 do
 	-- Agent pins: dots and areas on the minimap at coordinates from the
 	-- conversation. How it works and what went wrong: docs/api-useful.md, "Minimap pins".

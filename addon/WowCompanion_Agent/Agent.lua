@@ -4,12 +4,7 @@
 -- commands, and what the other files of this addon ask of it (WC.Companion).
 -- The channel itself is WowCompanion_Link's.
 
-WC.Saved("WowCompanion_Agent", "WowCompanionAgentDB", function(db)
-	WC.MoveSaved(db, { "log", "unread", "board", "blocked", "blockedNotices", "blockedStacks",
-		"windowCombat", "modules", "runs", "taint", "context", "spellForms", "chords",
-		"chordStats", "chordMisses", "chordsFixed", "focusLog", "jobs", "jobModel", "lines", "audit",
-		"windowSize", "placeTests", "links", "tradeLinks", "api", "apidocs", "alive" })
-end)
+WC.Saved("WowCompanion_Agent", "WowCompanionAgentDB")
 
 -- how much conversation to keep; it rides in SavedVariables, so not unbounded
 local LOG_KEEP = 300

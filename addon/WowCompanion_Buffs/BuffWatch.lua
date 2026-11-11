@@ -10,11 +10,7 @@
 --                            opens a wheel (WCWheel) holding one; nil if none
 
 WC.BuffWatch = WC.BuffWatch or {}
-WC.Saved("WowCompanion_Buffs", "WowCompanionBuffsDB", function(db)
-	local old = WowCompanionCharDB and WowCompanionCharDB.buffWatch
-	if type(old) == "table" and db.spells == nil then db.spells = old.spells end
-	if WowCompanionCharDB then WowCompanionCharDB.buffWatch = nil end
-end)
+WC.Saved("WowCompanion_Buffs", "WowCompanionBuffsDB")
 local B = WC.BuffWatch
 
 local function db()

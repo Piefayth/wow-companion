@@ -28,14 +28,6 @@ on its command line means one is). Two writers on one file is how replies got lo
 1. **Speech: both engines stay** (the player, 2026-11-11: Whisper is "much higher
    quality", streaming's speed "way too good to give up"; on streaming for now).
    Nothing is deleted; the setup window's Engine choice is the switch.
-2. **Remove the settings moves.** `WC.MoveSaved`, every `WC.Saved` move function
-   and `WowCompanionCharDB` (Engine.lua, Agent, Link, Fonts, Pins, BuffWatch, Core's
-   .toc): docs/proposals/addon-split.md says "once the player has logged in on
-   every character". This account has one character, Pietra Fayth, saved since
-   the split (its `WowCompanionCharDB` is empty), so it can go now.
-3. **Remove Link.lua's one-session clean-up** (`db.frameBells, db.slotBells,
-   db.slotBellWatch, db.bridgeProbe, db.leftAt = nil`, "remove next session"): a
-   session has saved since and none of those keys are left.
 4. **The addon split's PC side, the rest** (docs/proposals/addon-split.md, items
    5-6): install and uninstall per addon (`install <AddOns> [names]`), the setup
    window offering each extra and showing its options only when installed, and the

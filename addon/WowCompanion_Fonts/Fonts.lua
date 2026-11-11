@@ -8,7 +8,7 @@
 -- arrived after the game started may not load until a full restart: SetFont
 -- says so by returning false, and the window says it.
 
-WC.Saved("WowCompanion_Fonts", "WowCompanionFontsDB", function(db) WC.MoveSaved(db, { "font", "fontScale", "fontError" }) end)
+WC.Saved("WowCompanion_Fonts", "WowCompanionFontsDB")
 local DIR = [[Interface\AddOns\WowCompanion\Fonts\]]
 local FONTS = {
 	{ name = "Default" },

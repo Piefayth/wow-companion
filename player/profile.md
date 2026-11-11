@@ -25,7 +25,8 @@ none of this. When the player states a new preference or changes one, write it h
 - **API first; screenshots only to read our own displays** (2026-11-10): reading
   anything else on their screen needs their explicit ask; never input to the game
   window.
-- Clean-up (removing old files, pruning) only when they say so.
+- **Clean up freely** (2026-11-11: "I love cleaning up"): remove what is dead,
+  done or replaced without asking first.
 - **Combat bars are for combat** (2026-11-10): no agent puts a non-combat entry
   (a chat, menu or utility macro, a wheel opener) on the action bars without
   their explicit permission, at minimum anything on the first page (the gamepad

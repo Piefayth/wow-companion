@@ -40,11 +40,9 @@ bags' `standInBags` switch, `/wc key` (unused), `tools/split_addon.py` and
 `tools/addon_locals.py` (Companion.lua is gone), modules BagSwap, MakeRoom,
 BuffGlow, LinkCatcher (now addon files).
 
-**Settings move once**: `WC.Saved(addon, table, move)` makes each table at that
-addon's load and runs `move`, which takes its keys out of `WowCompanionDB` (or
-`WowCompanionCharDB.buffWatch`, `WowCompanionDB.mods.Bags`). Remove the moves,
-`WC.MoveSaved` and `WowCompanionCharDB` once the player has logged in on every
-character.
+**Settings moved once** (done; the moves, `WC.MoveSaved` and `WowCompanionCharDB`
+were removed 2026-11-11, after every character had loaded): `WC.Saved(addon,
+table)` makes each table at that addon's load.
 
 **What is running**: Core writes `WowCompanionDB.addons` (the WowCompanion*
 addons that loaded, slots left out) at every save. The PC reads it; live through

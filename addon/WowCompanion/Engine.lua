@@ -391,25 +391,9 @@ do
 		return out
 	end
 
-	-- Settings moving to an addon's own saved table (the player, 2026-11-11):
-	-- keys still in WowCompanionDB (the save before the split) move into the
-	-- addon's table once, at its first load, and leave WowCompanionDB (used by
-	-- WC.Saved's move functions; remove once every character has loaded).
-	function WC.MoveSaved(into, keys, from)
-		from = from or WowCompanionDB
-		if type(from) ~= "table" then return into end
-		for _, k in ipairs(keys) do
-			if from[k] ~= nil then
-				if into[k] == nil then into[k] = from[k] end
-				from[k] = nil
-			end
-		end
-		return into
-	end
-	-- An addon's own saved table: WC.Saved("WowCompanion_Pins", "WowCompanionPinsDB",
-	-- move) makes _G.WowCompanionPinsDB at that addon's ADDON_LOADED (its saved
-	-- variables are read just before), before the addon's own handlers run, then
-	-- calls move(db) to take what the save before the split kept elsewhere.
+	-- An addon's own saved table: WC.Saved("WowCompanion_Pins", "WowCompanionPinsDB")
+	-- makes _G.WowCompanionPinsDB at that addon's ADDON_LOADED (its saved
+	-- variables are read just before), before the addon's own handlers run.
 	local saved = {}
 	local loader = CreateFrame("Frame")
 	loader:RegisterEvent("ADDON_LOADED")
@@ -430,10 +414,9 @@ do
 		local s = saved[name]
 		if not s then return end
 		saved[name] = nil
-		_G[s.global] = _G[s.global] or {}
-		if s.move then pcall(s.move, _G[s.global]) end
+		_G[s] = _G[s] or {}
 	end)
-	function WC.Saved(addon, global, move)
-		saved[addon] = { global = global, move = move }
+	function WC.Saved(addon, global)
+		saved[addon] = global
 	end
 end

@@ -2,7 +2,6 @@
 ## Title: WoW Companion
 ## Notes: The shared engine of the WoW Companion addons: modules, settings, the Blizzard look, the controller's focus helpers, capabilities, the board.
 ## SavedVariables: WowCompanionDB
-## SavedVariablesPerCharacter: WowCompanionCharDB
 ## IconTexture: Interface\Icons\UI_Chat
 ## Group: WowCompanion
 

@@ -25,12 +25,7 @@ local COLS, SIZE, GAP = 8, 37, 5
 local MAXBAG = 4
 local EDGE, TITLE_H, LEGEND_H, GAP_V = 18, 20, 24, 8
 
-WC.Saved("WowCompanion_Bags", "WowCompanionBagsDB", function(db)
-	local old = WowCompanionDB and WowCompanionDB.mods and WowCompanionDB.mods.Bags
-	if type(old) == "table" and db.view == nil then db.view = old.view end
-	if WowCompanionDB and WowCompanionDB.mods then WowCompanionDB.mods.Bags = nil end
-	if WowCompanionDB then WowCompanionDB.standInBags = nil end
-end)
+WC.Saved("WowCompanion_Bags", "WowCompanionBagsDB")
 
 local function build()
 	if WCBags and WCBags.ready then return end

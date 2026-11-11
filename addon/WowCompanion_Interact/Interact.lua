@@ -25,12 +25,7 @@
 -- /wci trace on|off         record targets, soft interact and loot events to
 --                           WowCompanionInteractDB.trace (60 lines), for debugging
 -- /wci status
-WC.Saved("WowCompanion_Interact", "WowCompanionInteractDB", function(db)
-	local old = WowCompanionDB and WowCompanionDB.interact
-	if type(old) ~= "table" then return end
-	for k, v in pairs(old) do if db[k] == nil then db[k] = v end end
-	WowCompanionDB.interact = nil
-end)
+WC.Saved("WowCompanion_Interact", "WowCompanionInteractDB")
 do
 	local function db()
 		WowCompanionInteractDB = WowCompanionInteractDB or {}

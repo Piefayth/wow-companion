@@ -23,12 +23,7 @@
 WC.Errands = WC.Errands or {}
 local E = WC.Errands
 local GOLD = { 1, 0.82, 0 }
-WC.Saved("WowCompanion_Errands", "WowCompanionErrandsDB", function(db)
-	local old = WowCompanionDB and WowCompanionDB.errands
-	if type(old) ~= "table" then return end
-	for k, v in pairs(old) do if db[k] == nil then db[k] = v end end
-	WowCompanionDB.errands = nil
-end)
+WC.Saved("WowCompanion_Errands", "WowCompanionErrandsDB")
 
 local function charKey()
 	local name, realm = UnitFullName("player")
