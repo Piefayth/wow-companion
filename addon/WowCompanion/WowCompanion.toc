@@ -13,6 +13,7 @@ Providers\Nav.lua
 Providers\Gear.lua
 Providers\ItemSource.lua
 Providers\Guide.lua
+Providers\Pins.lua
 Style.lua
 Companion.lua
 Sandbox.lua
@@ -20,6 +21,7 @@ Tests.lua
 Window.lua
 Transcript.lua
 Board.lua
+JobsModel.lua
 Jobs.lua
 Chat.lua
 ChatWheel.lua
@@ -27,6 +29,7 @@ Chords.lua
 Probes.lua
 Export.lua
 Pins.lua
+Errands.lua
 Strip.lua
 BagsEvaluate.lua
 BagsInput.lua

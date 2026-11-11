@@ -342,7 +342,7 @@ fn failed(addons: &Path, slot: &str, group: u64, err: io::Error) -> io::Result<b
     }
     eprintln!("  not delivered: {err}");
     let line = log_inbox_in(Some(slot), "error", &format!("That request failed: {err}"), None, None)
-        .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{}", jobs::fields(group, jobs::State::Failed)), 1);
+        .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{}{}", jobs::fields(group, jobs::State::Failed), jobs::members_field(group)), 1);
     send_inbox(addons, &line)?;
     Ok(false)
 }
@@ -506,7 +506,7 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         return Ok(false);
     }
     let reply = log_inbox_in(Some(&session.slot), "claude", &say, None, answer.inbox.as_deref())
-        .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{}", jobs::fields(group, jobs::State::Answered)), 1);
+        .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{}{}", jobs::fields(group, jobs::State::Answered), jobs::members_field(group)), 1);
     {
         let first = say.lines().find(|line| !line.trim().is_empty()).unwrap_or_default().to_string();
         let mut replies = REPLIES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());

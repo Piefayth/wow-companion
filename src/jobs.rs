@@ -383,7 +383,9 @@ pub(crate) fn pressed_for(slot: &str, press: u128) -> Option<u64> {
 /// Clips let go closer together than JOIN are one job, so the match is never
 /// ambiguous, unlike a press time, which named the newest clip and cancelled
 /// the message after the one meant (the player, 2026-11-10).
-pub(crate) const RELEASE_MATCH: u128 = 1200;
+// the game corrects its clock by the offset it learned, and sends nothing
+// until it knows it; nearest within this, as tools/test_jobs.py simulates
+pub(crate) const RELEASE_MATCH: u128 = 5000;
 pub(crate) fn heard_at(slot: &str, release: u128) -> Option<u64> {
     with(|jobs| {
         jobs.values()
@@ -423,6 +425,18 @@ pub(crate) fn recent() -> Vec<Job> {
 }
 
 /// `{ job = 1, slot = "l1", state = "cancelled" }`, the entries of a `list`.
+/// Every request answered together with `group` (its members, the lead too).
+pub(crate) fn members(group: u64) -> Vec<Job> {
+    with(|jobs| jobs.values().filter(|job| job.group == group).cloned().collect())
+}
+
+/// `, list = { ... }` naming each member and its state: a reply or a failure
+/// says exactly which messages it ended, so the game infers nothing (one
+/// cancelled during the run stays cancelled; tools/test_jobs.py, invariant 1).
+pub(crate) fn members_field(group: u64) -> String {
+    format!(", list = {{ {} }}", entries(&members(group)))
+}
+
 pub(crate) fn entries(jobs: &[Job]) -> String {
     jobs.iter()
         .map(|job| format!("{{ job = {}, slot = {}, state = \"{}\" }}", job.id, lua_string(&job.slot), job.state.name()))
@@ -454,7 +468,7 @@ mod tests {
         // the game names a clip by its release, the PC matches the nearest
         assert_eq!(heard_at("t-two", first as u128 + 40), Some(first));
         assert_eq!(heard_at("t-two", second as u128 - 40), Some(second));
-        assert_eq!(heard_at("t-two", second as u128 + 5000), None);
+        assert_eq!(heard_at("t-two", second as u128 + 8000), None);
         // words come back in order: the first clip's (two clips) then the second's
         assert_eq!(words("t-two", "one"), Some((first, true)));
         assert_eq!(words("t-two", "more"), Some((first, false)));

@@ -71,14 +71,34 @@ end
 WC.Jobs = WC.Jobs or {}
 WC.Jobs.NowMs = nowMs
 
--- A clip being heard has no job id on this side yet (the PC makes one when
--- you let go, and its words arrive later with it). It is a placeholder of its
--- own, per conversation, with the time you let go: the words' line (whose job
--- id is that same moment) resolves it, and a Cancel pressed on it binds to it,
--- not to whatever comes next. As on the PC, clips let go while one is still
--- being heard join it.
-local placeholders = {} -- slot -> { { since, releaseMs, cancelled, pressAt }, ... } oldest first
-local MATCH_MS, HEAR_FOR = 1200, 15 -- as the PC's RELEASE_MATCH (src/jobs.rs)
+-- The model (JobsModel.lua) holds every job, every clip being heard, and every
+-- decision about them; it is tested on its own (tools/test_jobs.py). This file
+-- draws it. It is made once the save file is loaded (its ledger is kept there).
+local model
+local placeholders = {}
+local function getModel()
+	if model then return model end
+	if type(WowCompanionDB) ~= "table" or not WC.JobsModel then return nil end
+	WowCompanionDB.jobModel = WowCompanionDB.jobModel or { jobs = WowCompanionDB.jobs }
+	WowCompanionDB.jobs = nil
+	model = WC.JobsModel.new({
+		now = nowMs,
+		command = function(verb, slot, id) command(verb, slot, id) end,
+		remember = function(text, slot, job, who)
+			if not core.remember then return end
+			if job then
+				core.remember("you", "|cff9d9d9d" .. text .. "|r", nil, slot, nil, job)
+			else
+				core.remember(who or "note", text, nil, slot)
+			end
+		end,
+		audit = audit,
+		store = WowCompanionDB.jobModel,
+		changed = function() if WC.Jobs.Refresh then WC.Jobs.Refresh() end end,
+	})
+	jobs, placeholders = model.jobs, model.clips
+	return model
+end
 
 -- the jobs in order (ids are clock-based, so oldest first)
 local function ordered()
@@ -170,22 +190,16 @@ end
 
 -- What a message's header says, derived from its job alone (the player,
 -- 2026-11-10: one source of truth, and a cancel must survive a reload)
+local WORDS = {
+	["cancelled"] = GOOD .. "cancelled|r", ["too late"] = BAD .. "too late: already answered|r",
+	["failed"] = BAD .. "failed|r", ["cancelling"] = GREY .. "cancelling...|r",
+	["not confirmed"] = BAD .. "cancel not confirmed|r", ["queued"] = GREY .. "queued|r",
+}
 local function statusOf(job, row)
-	local s = job.state
-	if s == "cancelled" or (job.heardCancel and s ~= "answered" and s ~= "failed") then
-		return "  " .. GOOD .. "cancelled|r", true
-	elseif s == "answered" and job.asked then
-		return "  " .. BAD .. "too late: already answered|r"
-	elseif s == "failed" then
-		return "  " .. BAD .. "failed|r"
-	elseif job.cancel then
-		return "  " .. GREY .. "cancelling...|r"
-	elseif job.unconfirmed and RANK[s] < 3 then
-		return "  " .. BAD .. "cancel not confirmed|r"
-	elseif s == "queued" and row and not row.queued then
-		-- the live "queued..." mark is gone after a reload: the ledger says it
-		return "  " .. GREY .. "queued|r"
-	end
+	local word, grey = model:StatusOf(job)
+	-- a line still spinning its own "queued..." mark needs no second one
+	if word == "queued" and row and row.queued then return nil end
+	return word and ("  " .. WORDS[word]) or nil, grey
 end
 local function paint(job)
 	local transcript = transcriptNow()
@@ -199,302 +213,35 @@ local function paint(job)
 end
 local function mark(job) paint(job) end
 
--- The ledger is saved (WowCompanionDB.jobs): each job's state and whether you
--- asked to cancel it, so tombstones and queued marks come back after a reload.
--- A day of jobs is kept.
-local function saved()
-	if type(WowCompanionDB) ~= "table" then return nil end
-	WowCompanionDB.jobs = WowCompanionDB.jobs or {}
-	return WowCompanionDB.jobs
-end
-local function save(job)
-	local db = saved()
-	if db then db[job.id] = { slot = job.slot, state = job.state, asked = job.asked or nil } end
-end
-local function restore()
-	local db = saved()
-	if not db then return end
-	local cutoff = (time() - 86400) * 1000
-	for id, e in pairs(db) do
-		if type(id) ~= "number" or id < cutoff or type(e) ~= "table" or not RANK[e.state] then
-			db[id] = nil
-		elseif not jobs[id] then
-			jobs[id] = { id = id, slot = e.slot or "", state = e.state, asked = e.asked, at = GetTime() }
-		end
-	end
-end
-local function note(slot, text)
-	if core.remember then core.remember("note", text, nil, slot) end
-end
-
--- the one way a job's state changes; true when it did
-local function apply(id, slot, state, text)
-	if not id or not RANK[state] then return false end
-	local job = jobs[id]
-	if job and RANK[job.state] >= RANK[state] then return false end
-	if not job then
-		job = { id = id, slot = slot or "", at = GetTime() }
-		jobs[id] = job
-	end
-	if text then job.text = text end
-	job.state = state
-	if state ~= "queued" and job.queueId and WC.Transcript.unqueueId then
-		WC.Transcript.unqueueId(job.slot, job.queueId)
-	end
-	if state == "running" then
-		job.at, job.sending = GetTime(), nil
-		if not job.row then job.row = rowOf(job) end
-	end
-	if RANK[state] == 3 then
-		job.endedAt = GetTime()
-		job.cancel = nil
-	end
-	save(job)
-	paint(job)
-	return true
-end
-
 local function cancel(job)
-	if not job then return end
+	if not job or not getModel() then return end
 	if job.placeholder then
-		local p = job.placeholder
-		if p.cancelled then return end
-		p.cancelled, p.pressAt = true, time()
-		audit("predict", job.slot, ("hearing %.0f cancelled"):format(p.releaseMs))
-		-- the clip is named by when you let go; the PC matches that, not a guess
-		command("hear", job.slot, p.releaseMs)
-		if core.setTranscribing then core.setTranscribing(job.slot, false) end
-		-- drawn again until the clip is resolved (the strip can be missed); the
-		-- PC takes the same press as one
-		local tries = 1
-		local function again()
-			local list = placeholders[job.slot] or {}
-			local alive = false
-			for _, q in ipairs(list) do if q == p then alive = true end end
-			if not alive then return end
-			if tries < TRIES then
-				tries = tries + 1
-				command("hear", job.slot, p.releaseMs)
-				C_Timer.After(RETRY_EVERY, again)
-			else
-				for i, q in ipairs(list) do if q == p then table.remove(list, i) break end end
-				note(job.slot, BAD .. "Cancel not confirmed: the companion never answered. Your words may still be sent.|r")
-				refresh()
-			end
-		end
-		C_Timer.After(RETRY_EVERY, again)
-		refresh()
-		return
-	end
-	local live = find(job.id)
-	if not live or live.cancel or RANK[live.state] == 3 then return end
-	if not live.row then live.row = rowOf(live) end
-	local intent = { tries = 1 }
-	live.cancel, live.asked, live.unconfirmed = intent, true, nil
-	save(live)
-	command("cancel", live.slot, live.id)
-	paint(live)
-	local function again()
-		if live.cancel ~= intent then return end -- resolved by the job's end
-		if intent.tries < TRIES then
-			intent.tries = intent.tries + 1
-			command("cancel", live.slot, live.id)
-			C_Timer.After(RETRY_EVERY, again)
-		else
-			live.cancel, live.unconfirmed = nil, true
-			paint(live)
-			refresh()
-		end
-	end
-	C_Timer.After(RETRY_EVERY, again)
-	refresh()
-end
-
--- whether a conversation has a job running (the board and the waiting line)
-function WC.Jobs.Running(slot)
-	for _, job in pairs(jobs) do
-		if job.slot == (slot or "") and job.state == "running" then return true end
-	end
-	return false
-end
-
-function WC.Jobs.Ended(id)
-	local job = jobs[id]
-	return job and RANK[job.state] == 3 or false
-end
-
--- A message from the PC about jobs: its own `job` and `state`, and any `list`
--- of { job, slot, state } (stopped, the board's resync), merged by one rule.
-function WC.Jobs.Apply(inbox)
-	local slot = inbox.slot
-	if inbox.job and inbox.state then
-		apply(inbox.job, slot, inbox.state, inbox.who == "you" and inbox.text or nil)
-		local job = jobs[inbox.job]
-		if job and inbox.queueId and not job.queueId then
-			job.queueId = inbox.queueId
-			-- the line came after its job moved on: no queued mark to keep
-			if job.state ~= "queued" and WC.Transcript.unqueueId then WC.Transcript.unqueueId(job.slot, job.queueId) end
-		end
-		-- one run per conversation: a reply or a failure ends every job of it
-		-- still running (messages said together run as one)
-		if job and RANK[inbox.state] == 3 and inbox.who ~= "you" then
-			for _, other in pairs(jobs) do
-				if other ~= job and other.slot == job.slot and other.state == "running" then
-					apply(other.id, other.slot, inbox.state)
-				end
-			end
-		end
-	end
-	for _, e in ipairs(type(inbox.list) == "table" and inbox.list or {}) do
-		if type(e) == "table" and e.job then apply(e.job, e.slot or slot, e.state) end
-	end
-	-- ends older than a quarter hour have nothing left to show
-	local now = GetTime()
-	for id, job in pairs(jobs) do
-		if job.endedAt and now - job.endedAt > 86400 then jobs[id] = nil end
-	end
-	WC.Jobs.Refresh()
-end
-
--- the oldest placeholder of a conversation that a job let go at `id` can be
-local function takePlaceholder(slot, id, cancelledOnly)
-	local list = placeholders[slot or ""]
-	if not list then return end
-	for i, p in ipairs(list) do
-		if (not cancelledOnly or p.cancelled) and (not id or math.abs(id - p.releaseMs) <= MATCH_MS) then
-			return table.remove(list, i)
-		end
-	end
-end
-
--- a clip let go (Companion.lua, the tap button)
-function WC.Jobs.Released(slot)
-	slot = slot or ""
-	local list = placeholders[slot] or {}
-	placeholders[slot] = list
-	-- joins the clip before only when let go within JOIN of it, as on the PC
-	-- (src/jobs.rs hear): a slow transcription must not swallow the next message
-	local last = list[#list]
-	if last and not last.cancelled and GetTime() - (last.lastAt or last.since) <= 1.5 then
-		last.lastAt = GetTime()
-		audit("predict", slot, ("hearing joins %.0f"):format(last.releaseMs))
+		model:CancelClip(job.slot)
 	else
-		list[#list + 1] = { since = GetTime(), lastAt = GetTime(), releaseMs = nowMs() }
-		audit("predict", slot, ("hearing %.0f"):format(list[#list].releaseMs))
-	end
-	refresh()
-end
-
--- a notice that names no conversation ended whatever was being heard
-function WC.Jobs.DropHearing()
-	for _, list in pairs(placeholders) do
-		for i = #list, 1, -1 do
-			if not list[i].cancelled then table.remove(list, i) end
-		end
-	end
-	refresh()
-end
-
--- Your line arrives (Companion.lua, before it is shown). Its job resolves the
--- placeholder it was heard as; if you cancelled that clip, the cancel is now
--- this job's and the words stay hidden ("hidden"). A job already shown, as a
--- tombstone, is not shown again ("dup"). A reply sets where it and its notes
--- stand: after the run it answers.
-function WC.Jobs.Claim(inbox, slot)
-	local id = tonumber(inbox.job)
-	if not id then return end
-	slot = slot or inbox.slot or ""
-	if inbox.who ~= "you" then
-		if inbox.who == "claude" or inbox.who == "error" then
-			local top = id
-			for _, job in pairs(jobs) do
-				if job.slot == slot and job.state == "running" and math.abs(job.id - id) < 1800000 and job.id > top then
-					top = job.id
-				end
-			end
-			if WowCompanion_AnchorReply then WowCompanion_AnchorReply(slot, top + 0.5) end
-		end
-		return
-	end
-	local job = jobs[id]
-	if job and job.logged then return "dup" end
-	local p = takePlaceholder(slot, id)
-	audit("claim", slot, ("%.0f placeholder=%s%s"):format(id, p and ("%.0f"):format(p.releaseMs) or "none", p and p.cancelled and " (cancelled: hidden)" or ""))
-	if not job then
-		job = { id = id, slot = slot, state = inbox.state or "queued", at = GetTime() }
-		jobs[id] = job
-	end
-	job.logged = true
-	save(job)
-	refresh()
-	if p and p.cancelled then
-		job.heardCancel, job.asked = true, true
-		save(job)
-		if RANK[job.state] < 3 then command("cancel", slot, id) end
-		return "hidden"
+		model:CancelJob(job.id)
 	end
 end
-
--- The PC's answer to a cancel or a stop (Companion.lua handlers.stopped).
--- For a hearing cancel, the job it hit resolves the cancelled placeholder; if
--- the words were dropped there is no line to come, so the tombstone is logged
--- here, where the clip was.
-function WC.Jobs.Stopped(inbox)
-	local slot = inbox.slot or ""
-	WC.Jobs.Apply(inbox)
-	if not inbox.hearing then return end
-	local list = type(inbox.list) == "table" and inbox.list or {}
-	local hit = false
-	for _, e in ipairs(list) do
-		local id = type(e) == "table" and tonumber(e.job)
-		if id then
-			hit = true
-			local p = takePlaceholder(slot, id, true) or takePlaceholder(slot, nil, true)
-			local job = jobs[id]
-			if job and not job.logged and (p or job.state == "cancelled") then
-				job.logged, job.heardCancel, job.asked = true, true, true
-				save(job)
-				if core.remember then
-					core.remember("you", GREY .. "(cancelled while it was still being heard)|r", nil, slot, nil, id)
-				end
-			end
-		end
-	end
-	if not hit then
-		takePlaceholder(slot, nil, true)
-		if inbox.nothing then note(slot, GREY .. "Nothing left to cancel: that message was already answered.|r") end
-	end
-	refresh()
-end
-
 local function sendNow(job)
-	if not job then return end
-	command("now", job.slot, job.id)
-	-- like a cancel, an intent until the job moves: drawn again while it is
-	-- still queued (the strip can be missed), then the play buttons come back
-	local tries = 1
-	local function again()
-		local live = jobs[job.id]
-		if not (live and live.state == "queued" and live.sending) then return end
-		if tries < TRIES then
-			tries = tries + 1
-			command("now", live.slot, live.id)
-			C_Timer.After(RETRY_EVERY, again)
-		else
-			for _, other in pairs(jobs) do
-				if other.slot == live.slot and other.state == "queued" then other.sending = nil end
-			end
-			refresh()
-		end
-	end
-	C_Timer.After(RETRY_EVERY, again)
-	-- every queued message goes in the same request, so one press sends them
-	-- all: the other play buttons go too
-	for _, other in pairs(jobs) do
-		if other.slot == job.slot and other.state == "queued" then other.sending = true end
-	end
-	refresh()
+	if job and getModel() then model:SendNow(job.id) end
 end
+
+function WC.Jobs.Running(slot) return getModel() and model:Running(slot) or false end
+function WC.Jobs.Ended(id) return getModel() and model:Ended(id) or false end
+function WC.Jobs.Apply(inbox) if getModel() then model:Apply(inbox) end end
+function WC.Jobs.Claim(inbox, slot) if getModel() then return model:Claim(inbox, slot) end end
+function WC.Jobs.Stopped(inbox) if getModel() then model:Stopped(inbox) end end
+function WC.Jobs.Released(slot) if getModel() then model:Released(slot) end end
+function WC.Jobs.DropHearing() if getModel() then model:DropHearing() end end
+
+-- time passing: the model's retries and settling, in combat too
+local ticker = CreateFrame("Frame")
+local tickAt = 0
+ticker:SetScript("OnUpdate", function(_, dt)
+	tickAt = tickAt + dt
+	if tickAt < 0.2 then return end
+	tickAt = 0
+	if getModel() then pcall(model.Tick, model) end
+end)
 
 -- the waiting line (hearing you / working) gets an X at its end; each queued
 -- message's own header line in the transcript gets a play and an X
@@ -513,7 +260,7 @@ refresh = function()
 	local now = GetTime()
 	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
 	local working = core.working or {}
-	if not restored then restored = true restore() end
+	if not getModel() then return end
 	-- every message line's status comes from its job
 	for _, row in ipairs(frame.messages.rows or {}) do
 		local job = row.job and jobs[row.job]
@@ -528,11 +275,7 @@ refresh = function()
 	-- on the waiting line; a request being worked on has it on its own line
 	-- the clips being heard in view, oldest first; drop ones whose words never
 	-- came (the PC drops a clip that held nothing, without a word)
-	local heard = placeholders[view] or {}
-	for i = #heard, 1, -1 do
-		local p = heard[i]
-		if not p.cancelled and now - p.since > HEAR_FOR then table.remove(heard, i) end
-	end
+	local heard = model:Clips(view)
 	local target
 	-- In the chat itself (the player, 2026-11-10): the states the footer line
 	-- used to carry are lines at the end of the conversation, where the reply
@@ -580,7 +323,7 @@ refresh = function()
 		if p.cancelled then
 			items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp .. "  " .. GOOD .. "cancelled|r", GREY .. "(cancelled while it was still being heard)|r" }
 		else
-			items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp, ("hearing you%s  %ds"):format(dots, now - p.since), hearing = true }
+			items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp, ("hearing you%s  %ds"):format(dots, (nowMs() - p.release) / 1000), hearing = true }
 			target = { placeholder = p, slot = view }
 		end
 	end
@@ -671,7 +414,7 @@ refresh = function()
 	local transcript = frame.messages
 	local used = 0
 	local runningThere = WC.Jobs.Running(view)
-	local list = ordered()
+	local list = model:Ordered()
 	for _, job in ipairs(list) do
 		local row = job.slot == view and job.state == "queued" and not job.cancel and not job.heardCancel and job.queueId
 			and queuedRow(transcript, job.queueId)
@@ -769,6 +512,7 @@ WC.Jobs.Refresh = function() pcall(refresh) if WC.Jobs.Chain then pcall(WC.Jobs.
 -- the old entry points, kept so callers cost nothing: each message's `job`
 -- and `state` carry everything
 function WC.Jobs.Note(inbox) WC.Jobs.Apply(inbox) end
+WC.Jobs.Model = getModel
 function WC.Jobs.Started() WC.Jobs.Refresh() end
 function WC.Jobs.Gone() WC.Jobs.Refresh() end
 
@@ -793,13 +537,14 @@ end)
 -- combat only; the window cannot hold focus in a fight.
 local function newest(state)
 	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
+	if not getModel() then return end
 	if not state then
-		local list = placeholders[view] or {}
+		local list = model:Clips(view)
 		for i = #list, 1, -1 do
 			if not list[i].cancelled then return { placeholder = list[i], slot = view } end
 		end
 	end
-	local list = ordered()
+	local list = model:Ordered()
 	for i = #list, 1, -1 do
 		local job = list[i]
 		if job.slot == view and not job.cancel and not job.heardCancel
