@@ -199,9 +199,19 @@ function Transcript:Row(font, text, indent, gap, r, g, b)
 	fs:SetSpacing(LINE_SPACING)
 	if r then fs:SetTextColor(r, g, b) end
 	fs:SetText(text)
-	local row = { fs = fs, indent = indent or 0, gap = self.gap or gap or 0 }
+	local row = { fs = fs, indent = indent or 0, gap = self.gap or gap or 0, key = self.curKey or 0 }
 	self.gap = nil
-	self.rows[#self.rows + 1] = row
+	-- Rows stand in key order (the player, 2026-11-10: one chronology, shown
+	-- one way): your message by its job id, a reply right after the messages it
+	-- answers, anything else at the end. Equal keys keep their arrival order.
+	local at = #self.rows + 1
+	while at > 1 and (self.rows[at - 1].key or 0) > row.key do at = at - 1 end
+	table.insert(self.rows, at, row)
+	if at <= #self.rows - 1 then
+		-- placed among earlier rows: everything below moves
+		self.moved = true
+		return row
+	end
 	-- appended rows are placed alone; only a resize walks them all
 	local width = not self.holding and self:Width()
 	if width then
@@ -261,7 +271,9 @@ local WHO = {
 	claude = { "Claude", "|cffffd100", 0.93, 0.93, 0.93 },
 }
 
-function Transcript:Add(who, text, continued, at, queued, job)
+function Transcript:Add(who, text, continued, at, queued, job, key)
+	self.curKey = key or 0
+	self.moved = nil
 	local voice = WHO[who]
 	if not continued then
 		self.code = false
@@ -288,6 +300,12 @@ function Transcript:Add(who, text, continued, at, queued, job)
 			who == "error" and 1 or 0.62, who == "error" and 0.47 or 0.65, who == "error" and 0.47 or 0.70)
 		row.marker = self.content:CreateFontString(nil, "OVERLAY", NOTE_FONT)
 		row.marker:SetText(who == "error" and "|cffff7777!|r" or "|cff5c6370›|r")
+	end
+	self.curKey = nil
+	if self.moved then
+		self.moved = nil
+		self:Layout()
+		if self.jobsGhosts and WC.Jobs and WC.Jobs.Refresh then WC.Jobs.Refresh() end
 	end
 	-- a long session would grow without end; keep the newest rows
 	if #self.rows > LOG_KEEP * 3 then

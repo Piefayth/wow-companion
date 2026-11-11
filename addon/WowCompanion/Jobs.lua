@@ -28,11 +28,40 @@ local function find(id)
 	return id and jobs[id]
 end
 
-local function command(verb, slot, id)
+-- `at`: the press, in seconds (the nonce opens with it; a hearing cancel is
+-- matched to its clip by it, so a retry must carry the first press's time)
+local function command(verb, slot, id, at)
 	if not (WowCompanion_Strip and WowCompanion_Strip.Send) then return end
-	WowCompanion_Strip.Send(("WCCMD %d%04d %s %s%s"):format(time(), math.random(0, 9999), verb,
+	WowCompanion_Strip.Send(("WCCMD %d%04d %s %s%s"):format(at or time(), math.random(0, 9999), verb,
 		slot ~= "" and slot or "main", id and (" " .. ("%.0f"):format(id)) or ""), 2.5)
 end
+
+-- The wall clock in ms, the clock job ids are made of: time() gives seconds,
+-- so its tick is caught once to line GetTime() up with it
+local wallOffset
+do
+	local seen = time()
+	local f = CreateFrame("Frame")
+	f:SetScript("OnUpdate", function(self)
+		if time() ~= seen then
+			wallOffset = time() - GetTime()
+			self:SetScript("OnUpdate", nil)
+		end
+	end)
+end
+local function nowMs()
+	if wallOffset then return math.floor((GetTime() + wallOffset) * 1000) end
+	return time() * 1000 + 500
+end
+
+-- A clip being heard has no job id on this side yet (the PC makes one when
+-- you let go, and its words arrive later with it). It is a placeholder of its
+-- own, per conversation, with the time you let go: the words' line (whose job
+-- id is that same moment) resolves it, and a Cancel pressed on it binds to it,
+-- not to whatever comes next. As on the PC, clips let go while one is still
+-- being heard join it.
+local placeholders = {} -- slot -> { { since, releaseMs, cancelled, pressAt }, ... } oldest first
+local MATCH_MS, HEAR_FOR = 4000, 15
 
 -- the jobs in order (ids are clock-based, so oldest first)
 local function ordered()
@@ -126,7 +155,7 @@ end
 -- 2026-11-10: one source of truth, and a cancel must survive a reload)
 local function statusOf(job, row)
 	local s = job.state
-	if s == "cancelled" or (job.cancel and job.cancel.hearing and s ~= "answered" and s ~= "failed") then
+	if s == "cancelled" or (job.heardCancel and s ~= "answered" and s ~= "failed") then
 		return "  " .. GOOD .. "cancelled|r", true
 	elseif s == "answered" and job.asked then
 		return "  " .. BAD .. "too late: already answered|r"
@@ -177,7 +206,6 @@ local function restore()
 		end
 	end
 end
-local hearingAsked = {} -- slot -> GetTime() of a hearing cancel not yet answered
 local function note(slot, text)
 	if core.remember then core.remember("note", text, nil, slot) end
 end
@@ -211,19 +239,31 @@ end
 
 local function cancel(job)
 	if not job then return end
-	if job.state == "hearing" and not job.id then
-		command("hear", job.slot)
+	if job.placeholder then
+		local p = job.placeholder
+		if p.cancelled then return end
+		p.cancelled, p.pressAt = true, time()
+		command("hear", job.slot, nil, p.pressAt)
 		if core.setTranscribing then core.setTranscribing(job.slot, false) end
-		-- when, by the clock job ids are made from (unix ms): only a clip let go
-		-- before the press can be the one meant, never the next one
-		local asked = time() * 1000 + 999
-		hearingAsked[job.slot] = asked
-		C_Timer.After(RETRY_EVERY * TRIES, function()
-			if hearingAsked[job.slot] == asked then
-				hearingAsked[job.slot] = nil
+		-- drawn again until the clip is resolved (the strip can be missed); the
+		-- PC takes the same press as one
+		local tries = 1
+		local function again()
+			local list = placeholders[job.slot] or {}
+			local alive = false
+			for _, q in ipairs(list) do if q == p then alive = true end end
+			if not alive then return end
+			if tries < TRIES then
+				tries = tries + 1
+				command("hear", job.slot, nil, p.pressAt)
+				C_Timer.After(RETRY_EVERY, again)
+			else
+				for i, q in ipairs(list) do if q == p then table.remove(list, i) break end end
 				note(job.slot, BAD .. "Cancel not confirmed: the companion never answered. Your words may still be sent.|r")
+				refresh()
 			end
-		end)
+		end
+		C_Timer.After(RETRY_EVERY, again)
 		refresh()
 		return
 	end
@@ -271,30 +311,6 @@ function WC.Jobs.Apply(inbox)
 	if inbox.job and inbox.state then
 		apply(inbox.job, slot, inbox.state, inbox.who == "you" and inbox.text or nil)
 		local job = jobs[inbox.job]
-		-- Cancel was pressed while this was still being heard, and the words won
-		-- the race (the player, 2026-11-10: they "pop in on top of my
-		-- cancellation" and lag through cancelling): the line arrives already
-		-- cancelled. The cancel goes for this job too; its real end still decides
-		local slotKey = job and job.slot
-		if job and inbox.who == "you" and hearingAsked[slotKey] and job.id <= hearingAsked[slotKey] and not job.cancel and RANK[job.state] < 3 then
-			hearingAsked[slotKey] = nil
-			job.queueId = job.queueId or inbox.queueId
-			if not job.row then
-				job.row = rowOf(job)
-				local transcript = transcriptNow()
-				local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
-				if not job.row and transcript and slotKey == view then
-					for i = #(transcript.rows or {}), 1, -1 do
-						local row = transcript.rows[i]
-						if row.you and row.fs:IsShown() then job.row = row break end
-					end
-				end
-			end
-			job.cancel, job.asked = { tries = TRIES, hearing = true }, true
-			save(job)
-			command("cancel", slotKey, job.id)
-			paint(job)
-		end
 		if job and inbox.queueId and not job.queueId then
 			job.queueId = inbox.queueId
 			-- the line came after its job moved on: no queued mark to keep
@@ -321,21 +337,108 @@ function WC.Jobs.Apply(inbox)
 	WC.Jobs.Refresh()
 end
 
--- the PC's answer to a cancel or a stop (Companion.lua handlers.stopped)
+-- the oldest placeholder of a conversation that a job let go at `id` can be
+local function takePlaceholder(slot, id, cancelledOnly)
+	local list = placeholders[slot or ""]
+	if not list then return end
+	for i, p in ipairs(list) do
+		if (not cancelledOnly or p.cancelled) and (not id or math.abs(id - p.releaseMs) <= MATCH_MS) then
+			return table.remove(list, i)
+		end
+	end
+end
+
+-- a clip let go (Companion.lua, the tap button)
+function WC.Jobs.Released(slot)
+	slot = slot or ""
+	local list = placeholders[slot] or {}
+	placeholders[slot] = list
+	local last = list[#list]
+	if not (last and not last.cancelled) then
+		list[#list + 1] = { since = GetTime(), releaseMs = nowMs() }
+	end
+	refresh()
+end
+
+-- a notice that names no conversation ended whatever was being heard
+function WC.Jobs.DropHearing()
+	for _, list in pairs(placeholders) do
+		for i = #list, 1, -1 do
+			if not list[i].cancelled then table.remove(list, i) end
+		end
+	end
+	refresh()
+end
+
+-- Your line arrives (Companion.lua, before it is shown). Its job resolves the
+-- placeholder it was heard as; if you cancelled that clip, the cancel is now
+-- this job's and the words stay hidden ("hidden"). A job already shown, as a
+-- tombstone, is not shown again ("dup"). A reply sets where it and its notes
+-- stand: after the run it answers.
+function WC.Jobs.Claim(inbox, slot)
+	local id = tonumber(inbox.job)
+	if not id then return end
+	slot = slot or inbox.slot or ""
+	if inbox.who ~= "you" then
+		if inbox.who == "claude" or inbox.who == "error" then
+			local top = id
+			for _, job in pairs(jobs) do
+				if job.slot == slot and job.state == "running" and math.abs(job.id - id) < 1800000 and job.id > top then
+					top = job.id
+				end
+			end
+			if WowCompanion_AnchorReply then WowCompanion_AnchorReply(slot, top + 0.5) end
+		end
+		return
+	end
+	local job = jobs[id]
+	if job and job.logged then return "dup" end
+	local p = takePlaceholder(slot, id)
+	if not job then
+		job = { id = id, slot = slot, state = inbox.state or "queued", at = GetTime() }
+		jobs[id] = job
+	end
+	job.logged = true
+	save(job)
+	refresh()
+	if p and p.cancelled then
+		job.heardCancel, job.asked = true, true
+		save(job)
+		if RANK[job.state] < 3 then command("cancel", slot, id) end
+		return "hidden"
+	end
+end
+
+-- The PC's answer to a cancel or a stop (Companion.lua handlers.stopped).
+-- For a hearing cancel, the job it hit resolves the cancelled placeholder; if
+-- the words were dropped there is no line to come, so the tombstone is logged
+-- here, where the clip was.
 function WC.Jobs.Stopped(inbox)
 	local slot = inbox.slot or ""
-	local asked = hearingAsked[slot]
-	hearingAsked[slot] = nil
-	local shown = false
-	for _, e in ipairs(type(inbox.list) == "table" and inbox.list or {}) do
-		if type(e) == "table" and jobs[e.job] and rowOf(jobs[e.job]) then shown = true end
-	end
 	WC.Jobs.Apply(inbox)
-	-- a hearing cancel whose job had no line of its own yet: say what happened
-	if inbox.hearing and (asked or inbox.nothing) and not shown then
-		note(slot, inbox.nothing and (GREY .. "Nothing left to cancel: that message was already answered.|r")
-			or (GOOD .. "Cancelled|r " .. GREY .. "before it was sent.|r"))
+	if not inbox.hearing then return end
+	local list = type(inbox.list) == "table" and inbox.list or {}
+	local hit = false
+	for _, e in ipairs(list) do
+		local id = type(e) == "table" and tonumber(e.job)
+		if id then
+			hit = true
+			local p = takePlaceholder(slot, id, true) or takePlaceholder(slot, nil, true)
+			local job = jobs[id]
+			if job and not job.logged and (p or job.state == "cancelled") then
+				job.logged, job.heardCancel, job.asked = true, true, true
+				save(job)
+				if core.remember then
+					core.remember("you", GREY .. "(cancelled while it was still being heard)|r", nil, slot, nil, id)
+				end
+			end
+		end
 	end
+	if not hit then
+		takePlaceholder(slot, nil, true)
+		if inbox.nothing then note(slot, GREY .. "Nothing left to cancel: that message was already answered.|r") end
+	end
+	refresh()
 end
 
 local function sendNow(job)
@@ -397,9 +500,14 @@ refresh = function()
 	statusX = statusX or icon(frame, "cancel", CANCEL or "Cancel", cancel)
 	-- only a clip still being heard has no line of its own yet: its X sits
 	-- on the waiting line; a request being worked on has it on its own line
+	-- the clips being heard in view, oldest first; drop ones whose words never
+	-- came (the PC drops a clip that held nothing, without a word)
+	local heard = placeholders[view] or {}
+	for i = #heard, 1, -1 do
+		local p = heard[i]
+		if not p.cancelled and now - p.since > HEAR_FOR then table.remove(heard, i) end
+	end
 	local target
-	local since = (core.transcribing or {})[view]
-	if since then target = { state = "hearing", slot = view } end
 	-- In the chat itself (the player, 2026-11-10): the states the footer line
 	-- used to carry are lines at the end of the conversation, where the reply
 	-- will appear: the agent working, then your next clip being heard.
@@ -410,7 +518,7 @@ refresh = function()
 	if not ghosts then
 		ghosts = {}
 		local body = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
-		for i = 1, 2 do
+		for i = 1, 4 do
 			local head = transcript0.content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 			head:SetJustifyH("LEFT")
 			local line = transcript0.content:CreateFontString(nil, "OVERLAY", body)
@@ -432,7 +540,7 @@ refresh = function()
 		local live, cancelling = false, false
 		for _, job in pairs(jobs) do
 			if job.slot == view and job.state == "running" then
-				if job.cancel then cancelling = true else live = true end
+				if job.cancel or job.heardCancel then cancelling = true else live = true end
 			end
 		end
 		if cancelling and not live then entry = nil end
@@ -441,22 +549,32 @@ refresh = function()
 		local doing = tostring(entry.text or "thinking"):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
 		items[#items + 1] = { "|cffffd100Claude|r" .. stamp, ("%s%s  %ds"):format(doing, dots, now - (entry.since or now)) }
 	end
-	if since then
-		items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp, ("hearing you%s  %ds"):format(dots, now - since), hearing = true }
+	for _, p in ipairs(heard) do
+		if #items >= #ghosts then break end
+		if p.cancelled then
+			items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp .. "  " .. GOOD .. "cancelled|r", GREY .. "(cancelled while it was still being heard)|r" }
+		else
+			items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp, ("hearing you%s  %ds"):format(dots, now - p.since), hearing = true }
+			target = { placeholder = p, slot = view }
+		end
 	end
 	local base = transcript0.height or 0
 	local width = transcript0.Width and transcript0:Width() or 300
-	-- The working line belongs right after the message being worked on, not
-	-- after the queued ones (the player, 2026-11-10: "your thinking got
-	-- pushed"): room is kept open above the first of your messages after it.
+	-- The working line stands exactly where its reply will: after the run's
+	-- newest message and what was already said for it (key run + 0.5, the
+	-- reply's anchor in Companion.lua), before anything later. Room is kept
+	-- open above the first row past that point.
 	local rows = transcript0.rows or {}
-	local runIndex, afterIndex
-	for i = #rows, 1, -1 do
-		if rows[i].you and not rows[i].queued then runIndex = i break end
-	end
-	if entry and runIndex then
-		for i = runIndex + 1, #rows do
-			if rows[i].you then afterIndex = i break end
+	local afterIndex
+	if entry then
+		local top
+		for _, job in pairs(jobs) do
+			if job.slot == view and job.state == "running" and (not top or job.id > top) then top = job.id end
+		end
+		if top then
+			for i, row in ipairs(rows) do
+				if (row.key or 0) > top + 0.5 then afterIndex = i break end
+			end
 		end
 	end
 	local GHOST_H = 46
@@ -543,7 +661,7 @@ refresh = function()
 	local runningThere = WC.Jobs.Running(view)
 	local list = ordered()
 	for _, job in ipairs(list) do
-		local row = job.slot == view and job.state == "queued" and not job.cancel and job.queueId
+		local row = job.slot == view and job.state == "queued" and not job.cancel and not job.heardCancel and job.queueId
 			and queuedRow(transcript, job.queueId)
 		if row then
 			used = used + 1
@@ -567,7 +685,7 @@ refresh = function()
 	-- is for everything else")
 	local running
 	for _, job in ipairs(list) do
-		if job.slot == view and job.state == "running" and not job.cancel then running = job end
+		if job.slot == view and job.state == "running" and not job.cancel and not job.heardCancel then running = job end
 	end
 	-- bound once to the message it belongs to (its queued line, or your newest
 	-- line not bound to another job), so it can never wander onto an older one
@@ -663,11 +781,16 @@ end)
 -- combat only; the window cannot hold focus in a fight.
 local function newest(state)
 	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
-	if not state and (core.transcribing or {})[view] then return { state = "hearing", slot = view } end
+	if not state then
+		local list = placeholders[view] or {}
+		for i = #list, 1, -1 do
+			if not list[i].cancelled then return { placeholder = list[i], slot = view } end
+		end
+	end
 	local list = ordered()
 	for i = #list, 1, -1 do
 		local job = list[i]
-		if job.slot == view and not job.cancel
+		if job.slot == view and not job.cancel and not job.heardCancel
 			and (state and job.state == state or (not state and (job.state == "queued" or job.state == "running"))) then
 			return job
 		end

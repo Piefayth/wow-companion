@@ -248,8 +248,8 @@ local function colouredFor(who)
 	return "|cffffe08a"
 end
 
-local function showLine(who, text, continued, at, queued, job)
-	logFrame().messages:Add(who, text, continued, at, queued, job)
+local function showLine(who, text, continued, at, queued, job, key)
+	logFrame().messages:Add(who, text, continued, at, queued, job, key)
 end
 
 -- Spinning while the agent thinks. Several seconds of silence after you speak is
@@ -421,12 +421,49 @@ function WowCompanion_Stop(slot, sendNow)
 	setPending("stopping", slot)
 end
 
+-- Where an entry stands in its conversation (Transcript.lua orders rows by
+-- it): your message at its job id (the moment you let go), a reply and the
+-- notes of its steps right after the messages it answers (the anchor, set by
+-- the reply), anything else after everything so far. One rule, so a line is
+-- shown where it belongs whenever it arrives, and replays the same way.
+local anchorKey, lastKey, maxKey = {}, {}, {}
+local function topKey(slot)
+	if not maxKey[slot] then
+		local top, s = 0, slot ~= "" and slot or nil
+		for _, e in ipairs(WowCompanionDB.log or {}) do
+			if e.slot == s and tonumber(e.key) and e.key > top then top = e.key end
+		end
+		maxKey[slot] = top
+	end
+	return maxKey[slot]
+end
+local function keyFor(who, slot, job, continued)
+	if continued and lastKey[slot] then return lastKey[slot] end
+	local key
+	if who == "you" and tonumber(job) then
+		key = job
+	elseif who ~= "you" and anchorKey[slot] then
+		key = anchorKey[slot]
+	else
+		key = topKey(slot) + 0.001
+	end
+	lastKey[slot] = key
+	if key > topKey(slot) then maxKey[slot] = key end
+	return key
+end
+-- a reply for a job: it and what its steps print stand after that run's messages
+function WowCompanion_AnchorReply(slot, key)
+	anchorKey[slot] = key
+	C_Timer.After(1, function() if anchorKey[slot] == key then anchorKey[slot] = nil end end)
+end
+
 local function remember(who, text, continued, slot, queued, job)
 	slot = slot or replySlot or viewSlot
 	WowCompanionDB.log = WowCompanionDB.log or {}
 	local entries = WowCompanionDB.log
+	local key = keyFor(who, slot, job, continued)
 	entries[#entries + 1] = { at = time(), who = who, text = text, continued = continued or nil,
-		slot = slot ~= "" and slot or nil, queued = queued, job = job }
+		slot = slot ~= "" and slot or nil, queued = queued, job = job, key = key }
 	-- Each conversation keeps its own LOG_KEEP lines, so a busy one never pushes
 	-- out a quiet one; when one fills, its oldest third is compacted into one
 	-- line that keeps what was asked, not dropped (the player, 2026-11-10).
@@ -468,7 +505,7 @@ local function remember(who, text, continued, slot, queued, job)
 		table.remove(entries, 1)
 	end
 	if slot == viewSlot then
-		showLine(who, text, continued, entries[#entries].at, queued, job)
+		showLine(who, text, continued, entries[#entries].at, queued, job, key)
 	end
 	-- news nobody has seen yet: a reply in another conversation, or in this one
 	-- while the window is closed (the player, 2026-11-10: replies waited unseen
@@ -485,7 +522,7 @@ local function replayLog()
 	messages:Hold(true)
 	for _, entry in ipairs(WowCompanionDB.log or {}) do
 		if (entry.slot or "") == viewSlot then
-			showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at, entry.queued, entry.job)
+			showLine(entry.who or "claude", entry.text or "", entry.continued, entry.at, entry.queued, entry.job, entry.key)
 		end
 	end
 	messages:Hold(false)
@@ -781,6 +818,7 @@ function handlers.log(inbox)
 		if who == "you" then setTranscribing(inbox.slot, false) end
 	elseif who == "you" or who == "error" then
 		setTranscribing(nil)
+		if WC.Jobs and WC.Jobs.DropHearing then pcall(WC.Jobs.DropHearing) end
 	end
 	-- "got it, transcribing" from an older helper has no conversation yet:
 	-- whatever line comes next (the request in its slot, a chat line, a
@@ -790,6 +828,16 @@ function handlers.log(inbox)
 		if early and early.text == "got it, transcribing" and not (inbox.slot == "" and inbox.pending) then
 			setPending(nil, "")
 		end
+	end
+	-- your words for a clip you cancelled while it was heard stay hidden; a
+	-- message already shown (as that clip's tombstone) is not shown twice; a
+	-- reply is placed after the run it answers (Jobs.lua, Claim)
+	local verdict = WC.Jobs and WC.Jobs.Claim and WC.Jobs.Claim(inbox, islot)
+	if verdict == "dup" then
+		if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
+		return "already shown"
+	elseif verdict == "hidden" then
+		text = "|cff9d9d9d(cancelled while it was still being heard)|r"
 	end
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
@@ -913,6 +961,7 @@ tapButton:SetScript("OnClick", function(self, _, down)
 		-- dictation (L1+R1) is no conversation's: its line arrives on its own
 		if slot == "say" then return end
 		if setTranscribing then setTranscribing(slot, true) end
+		if WC.Jobs and WC.Jobs.Released then pcall(WC.Jobs.Released, slot) end
 		if renderPending then renderPending() end
 	elseif self.downAt and GetTime() - self.downAt <= TAP_MAX then
 		self.downAt = nil
