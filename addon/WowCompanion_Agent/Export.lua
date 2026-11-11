@@ -533,72 +533,6 @@ local function exportContext()
 
 	end)
 
-	section("action buttons on screen", function()
-		line("-- every frame bound to an action slot: which of the 120 the UI draws, and where")
-		if EnumerateFrames then
-			local seen, walked = {}, 0
-			local frame = EnumerateFrames()
-			while frame and walked < 50000 do
-				walked = walked + 1
-				local slot
-				if type(frame.action) == "number" then
-					slot = frame.action
-				elseif frame.GetAttribute then
-					local ok, value = pcall(frame.GetAttribute, frame, "action")
-					if ok and type(value) == "number" then
-						slot = value
-					end
-				end
-				if slot then
-					local name = frame.GetName and frame:GetName() or nil
-					local shown = frame.IsVisible and frame:IsVisible()
-					seen[#seen + 1] = ("%3d: %s%s"):format(slot,
-						tostring(name or "(anonymous)"), shown and "" or " (hidden)")
-				end
-				frame = EnumerateFrames(frame)
-			end
-			table.sort(seen)
-			for _, entry in ipairs(seen) do
-				line(entry)
-			end
-			line(("-- %d action-bound frames out of %d walked"):format(#seen, walked))
-		else
-			line("-- EnumerateFrames unavailable")
-		end
-
-	end)
-
-	section("bindings", function()
-		line("-- what is already taken. PAD* are the controller's; those are the scarce ones")
-		if GetNumBindings and GetBinding then
-			local total = GetNumBindings()
-			local bound = 0
-			for index = 1, total do
-				-- GetBinding's return shape differs between builds (some insert a
-				-- category before the keys), so take everything after the command and
-				-- report it rather than indexing positions we have not verified
-				local bits = { GetBinding(index) }
-				if index == 1 then
-					line(("-- GetBinding returns %d values per binding"):format(#bits))
-				end
-				local keys = {}
-				for at = 2, #bits do
-					if type(bits[at]) == "string" and bits[at] ~= "" then
-						keys[#keys + 1] = bits[at]
-					end
-				end
-				if #keys > 0 then
-					bound = bound + 1
-					line(("%s = %s"):format(tostring(bits[1]), table.concat(keys, ", ")))
-				end
-			end
-			line(("-- %d bound of %d bindings"):format(bound, total))
-		else
-			line("-- GetNumBindings/GetBinding unavailable")
-		end
-
-	end)
-
 	section("macros", function()
 		if GetNumMacros and GetMacroInfo then
 			local global, perChar = GetNumMacros()
@@ -699,16 +633,6 @@ local function exportContext()
 			line(("%d: %s%s  [done: %s]"):format(e.id, e.text, e.place and (" @%d %.1f,%.1f"):format(e.place.map, e.place.x, e.place.y) or "",
 				table.concat(kinds, ", ")))
 		end
-
-	end)
-
-	section("focus log", function()
-		line("-- the controller's window focus, step by step (FocusLog.lua), oldest first:")
-		line("-- time, C in combat, method, frame | focused frame, ui focused, bars caught | list")
-		line("-- \"!!\" marks an impossible state, with why at the end")
-		local flog = WowCompanionAgentDB.focusLog or {}
-		for _, l in ipairs(flog) do line(l) end
-		if #flog == 0 then line("none") end
 
 	end)
 
