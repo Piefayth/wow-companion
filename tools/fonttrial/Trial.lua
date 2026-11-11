@@ -8,11 +8,13 @@ local DIR = "Interface\\AddOns\\WowCompanion_FontTrial\\"
 local RESET = "Fonts\\FRIZQT__.TTF"
 local BYTES, PER_FRAME = 512, 64
 
+-- the game loads a font only for text it lays out: on screen, invisible. Off
+-- screen it never loaded (the first trial, 2026-11-11)
 local frame = CreateFrame("Frame", nil, UIParent)
-frame:SetSize(1, 1)
-frame:SetPoint("BOTTOMLEFT", UIParent, "TOPRIGHT", 100, 100)
-frame:SetAlpha(0)
-local meter = frame:CreateFontString(nil, "OVERLAY")
+local meter = UIParent:CreateFontString(nil, "OVERLAY")
+meter:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+meter:SetAlpha(0)
+meter:SetWordWrap(false)
 meter:SetFont(RESET, 64, "")
 
 local db, reading
@@ -40,8 +42,8 @@ local function finish(outcome, errors)
     meter:SetFont(RESET, 64, "")
     db.counts[outcome] = (db.counts[outcome] or 0) + 1
     misses = (outcome == "ok" or outcome == "errors") and 0 or misses + 1
-    local entry = string.format("%s %d %s load %.0fms read %.1fms frames %d errors %d maxdev %.3f",
-        date("%H:%M:%S"), r.second, outcome, r.loadMs or -1, r.readMs or -1, r.frames, errors or 0, r.maxDev)
+    local entry = string.format("%s %d %s load %.0fms tries %d read %.1fms frames %d errors %d maxdev %.3f",
+        date("%H:%M:%S"), r.second, outcome, r.loadMs or -1, r.tries or 0, r.readMs or -1, r.frames, errors or 0, r.maxDev)
     table.insert(db.recent, 1, entry)
     db.recent[31] = nil
     if r.readMs then
@@ -61,19 +63,22 @@ local function step()
         nextRead = now + 1
         reading = { second = now, start = debugprofilestop(), frames = 0, index = 0, errors = 0, maxDev = 0 }
         reading.path = DIR .. string.format("f%05d.ttf", now % BANK)
-        reading.set = meter:SetFont(reading.path, 64, "")
         db.first = db.first or now
         return
     end
     local r = reading
     r.frames = r.frames + 1
     if not r.range then
-        local low, high = width("!"), width('"')
-        if high - low < 100 then
-            -- not loaded yet: the reset font's '!' and '"' differ by a few pixels
-            if debugprofilestop() - r.start > 3000 then finish(r.set and "noload" or "refused") end
+        -- SetFont answers false while the file loads, and true once it has
+        -- (measured: the second call, a frame or more later)
+        r.tries = (r.tries or 0) + 1
+        if not meter:SetFont(r.path, 64, "") then
+            width("!")
+            if debugprofilestop() - r.start > 8000 then finish("noload") end
             return
         end
+        local low, high = width("!"), width('"')
+        if high - low < 100 then finish("refused") return end
         r.low, r.range = low, high - low
         r.loadMs = debugprofilestop() - r.start
         r.readStart = debugprofilestop()

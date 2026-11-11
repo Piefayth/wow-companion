@@ -48,10 +48,10 @@ def template():
     from fontTools.fontBuilder import FontBuilder
     from fontTools.pens.ttGlyphPen import TTGlyphPen
 
-    order = [".notdef", "zero", "full", "tilde"] + ["d%03d" % i for i in range(BYTES)]
+    order = [".notdef", "zero", "full", "tilde"] + ["d%03d" % i for i in range(BYTES)] + ["space"]
     fb = FontBuilder(1024, isTTF=True)
     fb.setupGlyphOrder(order)
-    cmap = {0x21: "zero", 0x22: "full", 0x7E: "tilde"}
+    cmap = {0x20: "space", 0x21: "zero", 0x22: "full", 0x7E: "tilde"}
     cmap.update({0xE000 + i: "d%03d" % i for i in range(BYTES)})
     fb.setupCharacterMap(cmap)
     glyphs = {}
@@ -60,16 +60,20 @@ def template():
         pen.moveTo((10, 0)); pen.lineTo((10, 100)); pen.lineTo((60, 100)); pen.lineTo((60, 0)); pen.closePath()
         glyphs[g] = pen.glyph()
     fb.setupGlyf(glyphs)
-    widths = {".notdef": 512, "zero": 16 * 16, "full": (16 + 255) * 16, "tilde": 512}
+    widths = {".notdef": 512, "zero": 16 * 16, "full": (16 + 255) * 16, "tilde": 512, "space": 256}
     widths.update({"d%03d" % i: 16 * 16 for i in range(BYTES)})
     # a run of equal widths at the end is stored without advances (hhea's
     # numberOfHMetrics), and font_for writes every advance in place
     widths["d%03d" % (BYTES - 1)] = 17 * 16
     fb.setupHorizontalMetrics({g: (widths[g], 10) for g in order})
-    fb.setupHorizontalHeader(ascent=800, descent=-200)
-    fb.setupNameTable({"familyName": "WCFontTrial", "styleName": "Regular"})
-    fb.setupOS2()
+    # the game refuses a font without these (wow-forever-codex's, which loads):
+    # the vertical metrics in OS/2 above all, a space, a full name table
+    fb.setupHorizontalHeader(ascent=800, descent=-224)
+    fb.setupNameTable({"familyName": "WCFontTrial", "styleName": "Regular", "uniqueFontIdentifier": "WCFontTrial",
+                       "fullName": "WCFontTrial", "psName": "WCFontTrial", "version": "Version 1.0"})
+    fb.setupOS2(sTypoAscender=800, sTypoDescender=-224, usWinAscent=800, usWinDescent=224)
     fb.setupPost()
+    fb.setupMaxp()
     path = os.path.join(STATE, "template.ttf")
     fb.save(path)
     from fontTools.ttLib import TTFont

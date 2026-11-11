@@ -4,12 +4,15 @@
 -- SetFont, keeping each object's size and outline, so no restart and no
 -- reload. Only the text fonts change (Friz Quadrata, Arial Narrow): quest
 -- titles (Morpheus) and damage numbers (Skurri) keep their look.
--- The files are in Fonts/ (SIL OFL, see Fonts/README.md). A font file that
--- arrived after the game started may not load until a full restart: SetFont
--- says so by returning false, and the window says it.
+-- The files are in Fonts/ (SIL OFL, see Fonts/README.md). SetFont answers
+-- false while a file loads, the first time it is asked for in the process,
+-- and true once it has (measured 2026-11-11): so a switch is retried until
+-- every style took. A file the game cannot find raises instead (one that
+-- arrived after the game started: a full restart finds it).
 
 WC.Saved("WowCompanion_Fonts", "WowCompanionFontsDB")
-local DIR = [[Interface\AddOns\WowCompanion\Fonts\]]
+local DIR = [[Interface\AddOns\WowCompanion_Fonts\Fonts\]]
+local LOADING_LIMIT = 8
 local FONTS = {
 	{ name = "Default" },
 	{ name = "Roboto Condensed", file = "RobotoCondensed.ttf" },
@@ -60,22 +63,25 @@ local function scale()
 	return (WowCompanionFontsDB and WowCompanionFontsDB.fontScale) or 1
 end
 
+-- Returns how many styles took, how many wait for the file to load, and how
+-- many the game refused (Fonts.lastError says why).
 local function apply(entry)
-	local changed, refused = 0, 0
+	local changed, loading, refused = 0, 0, 0
 	local k = scale()
 	eachTextFont(function(object, from, base, flags)
 		local size = math.floor(base * k + 0.5)
 		local path = entry.file and (DIR .. entry.file) or from
 		local ok, took = pcall(object.SetFont, object, path, size, flags or "")
-		if not ok or took == false then
+		if not ok then
 			refused = refused + 1
-			if not ok then Fonts.lastError = tostring(took) end
-			pcall(object.SetFont, object, from, base, flags or "")
+			Fonts.lastError = tostring(took)
+		elseif took == false then
+			loading = loading + 1
 		else
 			changed = changed + 1
 		end
 	end)
-	return changed, refused
+	return changed, loading, refused
 end
 
 local function find(name)
@@ -100,18 +106,40 @@ function Fonts.Set(name)
 	WowCompanionFontsDB.fontError = tostring(said)
 	return "Font switch failed: " .. tostring(said)
 end
+
+local function refuse(entry)
+	apply(FONTS[1])
+	WowCompanionFontsDB.font = "Default"
+	WowCompanionFontsDB.fontError = Fonts.lastError or "it never finished loading"
+	return ("%s was refused by the game (%s). Pick another font."):format(entry.name, WowCompanionFontsDB.fontError)
+end
+
+-- the switch in progress: a newer one ends an older one's retries
+local switching = 0
 set = function(name)
 	local _, entry = find(name)
-	local changed, refused = apply(entry)
-	if entry.file and refused > 0 and changed == 0 then
-		apply(FONTS[1])
-		WowCompanionFontsDB.font = "Default"
-		WowCompanionFontsDB.fontError = Fonts.lastError or "SetFont returned false"
-		return ("%s was refused by the game (%s). Pick another font."):format(entry.name, WowCompanionFontsDB.fontError)
-	end
+	switching = switching + 1
+	local this, started = switching, GetTime()
+	local changed, loading, refused = apply(entry)
+	if refused > 0 and changed == 0 and loading == 0 then return refuse(entry) end
 	WowCompanionFontsDB.font = entry.name
-	WC.Send("FONT_CHANGED")
-	return ("Font: %s (%d text styles)"):format(entry.name, changed)
+	if loading == 0 then
+		WC.Send("FONT_CHANGED")
+		return ("Font: %s (%d text styles)"):format(entry.name, changed)
+	end
+	local function retry()
+		if this ~= switching then return end
+		local _, still = apply(entry)
+		if still == 0 then
+			WC.Send("FONT_CHANGED")
+		elseif GetTime() - started > LOADING_LIMIT then
+			print(refuse(entry))
+		else
+			C_Timer.After(0.25, retry)
+		end
+	end
+	C_Timer.After(0.25, retry)
+	return ("Font: %s (loading)"):format(entry.name)
 end
 
 
