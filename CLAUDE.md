@@ -71,8 +71,8 @@ yes; don't reinvent what Claude Code has.
   (companion.log). What the OS gives (locks, processes, autostart) is behind
   `crates/settings/src/platform.rs`, Windows only for now.
 - `addon/`: the in-game half, **one addon per job** (docs/proposals/addon-split.md),
-  all under one collapsible entry in the AddOns list (`## Group: WowCompanion`,
-  the 512 slots too). One file per job inside each; files share nothing local
+  all under one collapsible entry in the AddOns list (`## Group: WowCompanion`;
+  the 512 slots fold under a category of their own). One file per job inside each; files share nothing local
   and talk through globals (`WC`, `WowCompanion_*`) and the bus (`WC.Send`, `M:On`).
   Each addon owns its saved table, made by `WC.Saved` at its load. **Nothing class- or player-specific ships** (no default
   wheels, buffs or layouts): it is made per character on request or read from
@@ -221,8 +221,8 @@ is a sign the change should not have shipped, not a fix.
 tool, repo root as working directory), **Opus**, by the player's choice. The prompt
 goes on stdin (the export overflows a Windows command line). Its answer is `say`
 plus `steps`, the shapes the addon dispatches (chat, macro, press, reload, bar,
-lua, module, show…), sent as one batch; at most one button per answer. Output is
-streamed and shown as a progress line, at most two per request. Requests run off
+lua, module…), sent as one batch; at most one button per answer. Output is
+streamed and shown as a progress line, one every 15 s at most (16 a request). Requests run off
 the voice loop; one made while another runs shows as waiting. **The voice loop
 must never wait on anything a request can hold** (a session's lock, a send): it is
 what reads the pad, so a wait there is a dead controller and no rumble for as long
@@ -321,6 +321,6 @@ goes to a detached process.
   addon resolves a spoken name for whispers.
 - **Other addons are integrations, optional**: `integrations/<AddOn folder>.md`
   holds what we know of each (API, terms); the agent is given only those whose
-  folder is installed (`integrations` in main.rs). Our code guards every call
+  folder is installed (`integrations` in context.rs). Our code guards every call
   (`if Polestar then`, pcall) and works without them. Another player has others.
 - One client per install: two running at once both consume slots and bells.

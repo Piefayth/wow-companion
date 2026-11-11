@@ -104,7 +104,7 @@ pub(crate) fn lua_errors(addons: &Path) -> String {
 }
 
 /// The error handler's lines of a General.log (`[E][Lua] Lua Error: `; other
-/// `C_Log` lines share the tag, the bridge probe's among them), each message once
+/// `C_Log` lines share the tag), each message once
 /// with its count and its last time, the newest ten.
 fn errors_in(log: &str) -> String {
     let mut seen: Vec<(String, String, usize)> = Vec::new();

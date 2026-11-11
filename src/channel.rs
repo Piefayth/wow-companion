@@ -42,7 +42,6 @@ pub(crate) fn game_running() -> bool {
     game().is_some()
 }
 
-/// One string-valued key out of SavedVariables, unescaped.
 /// How many slots the running game knows. The game only sees addon folders that
 /// existed when it launched, so slots installed since are invisible to it until a
 /// full restart, and a message sent to one would be lost. The addon records the

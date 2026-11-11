@@ -364,8 +364,6 @@ pub(crate) fn open(addons: &Path, agents: bool) -> Vec<Line> {
     recovered
 }
 
-/// Number `line` and keep it (and write both files). Outside `run` (tests,
-/// other commands) nothing is kept and the line goes out unnumbered.
 /// Number `line` in its conversation and keep it; handed back unnumbered when
 /// there is no ledger (the agents are off, so there is no conversation, or this
 /// is not the running companion).
