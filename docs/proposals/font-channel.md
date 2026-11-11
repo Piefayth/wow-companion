@@ -44,6 +44,5 @@ Also seen once (12:48): the running client loaded a new addon folder at a
 /reload, where CLAUDE.md says a new folder needs a restart. Worth repeating when
 an install next adds a folder; it would change install's "fully restart" message.
 
-The game folder still holds `WowCompanion_FontTrial` (16,384 font names and the
-blanks) until the next reload has unloaded its reader (its code is already
-deleted), and `WowCompanion_FontTrial.lua` in SavedVariables: both go then.
+The trial's files left the game folder at the first reload after it ended (15:01): the
+addon, its 16,384 font names and its save.
