@@ -63,8 +63,8 @@ yes; don't reinvent what Claude Code has.
   `jobs.rs` (each request's one state, forward only; cancels and replies race
   there; a clip's job is named to the game by `heard` when it is let go),
   `context.rs` (the export, profile and integrations the agent gets), `chat.rs`
-  (spoken chat lines), `restart.rs`, `install.rs`, `agent.rs` (the agent and its
-  rules), `bells.rs`, `heartbeat.rs`, `doctor.rs`, `modules.rs`; its life:
+  (spoken chat lines), `restart.rs`, `install.rs`, `agent.rs` (the agent; its
+  rules are `agent/rules.md`), `bells.rs`, `heartbeat.rs`, `doctor.rs`, `modules.rs`; its life:
   `lifecycle.rs` (one companion at a time, clean exits, pause, two clients),
   `watcher.rs` + `tray.rs` (`start`: wakes it with WoW, the tray icon),
   `crash.rs` (crash.log, a panicked request ends failed), `logfile.rs`
@@ -162,8 +162,10 @@ Tests: `cargo test --workspace`.
   `miccheck <mic>`, `reconnect`, `buzz`, `transcribe-stream <model folder> <clip.wav>`
   (the streaming engine on a clip at the pace of speech, with its time to final text).
 - The conversation survives restarts (`%LOCALAPPDATA%\wow-companion\thread.txt`;
-  delete it to start fresh). The agent's rules are sent on every request
-  (`--system-prompt-snapshot off`), so an update applies at once.
+  delete it to start fresh). The agent's rules are `agent/rules.md` (and
+  `agent/quick.md` for Quick), read by the CLI at every request
+  (`--system-prompt-file`, `--system-prompt-snapshot off`): an edit applies at the
+  next request, with no build.
 
 ## The channel
 

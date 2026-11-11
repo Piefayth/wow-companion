@@ -24,7 +24,7 @@ them.
 3. **Old paths beside new ones** (CLAUDE.md: a replacement removes what it
    replaces): modes, settings, fallbacks, traces and rules for designs that were
    replaced.
-4. **Rules versus code**: a CLAUDE.md or `src/agent.rs` rule the code breaks, a
+4. **Rules versus code**: a CLAUDE.md or `agent/rules.md` rule the code breaks, a
    rule describing code that no longer exists, and a rule worth a check in
    `tools/luarules.py`.
 5. **Size and shape**: files that grew past one job, functions too long to hold

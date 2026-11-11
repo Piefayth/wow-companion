@@ -60,14 +60,6 @@ pub(crate) fn saved_string(addons: &Path, key: &str) -> io::Result<String> {
     Ok(body)
 }
 
-/// The sections of the exported context the agent reasons with.
-///
-/// The export also carries every action-bound frame and every key binding, which is
-/// 500 lines answering questions we asked while mapping the UI, not ones the agent
-/// asks. Those stay in the file for us and out of the prompt.
-pub(crate) const AGENT_SECTIONS: &[&str] =
-    &["character", "equipped", "bags", "bag contents", "skills", "quest log", "action slots", "empty slots on screen", "controller", "macros", "spellbook", "reach", "modules", "capabilities", "code runs", "blocked"];
-
 pub(crate) fn sections<'a>(context: &'a str, wanted: &[&str]) -> Vec<(&'a str, Vec<&'a str>)> {
     let mut kept: Vec<(&str, Vec<&str>)> = Vec::new();
     let mut current: Option<&str> = None;
@@ -98,10 +90,15 @@ pub(crate) fn agent_context_for(addons: &Path, slot: &str) -> Option<String> {
     let context = saved_string(addons, "context").ok()?;
     let stamp = context.lines().next().unwrap_or_default();
     let mut out = vec![stamp.to_string()];
-    let wanted = if slot == agent::QUICK_SLOT { QUICK_SECTIONS } else { AGENT_SECTIONS };
-    for (name, lines) in sections(&context, wanted) {
-        out.push(format!("== {name} =="));
-        out.extend(lines.iter().map(|line| line.to_string()));
+    // every section the export writes is the agent's (Export.lua decides); the
+    // quick conversation takes its few
+    if slot == agent::QUICK_SLOT {
+        for (name, lines) in sections(&context, QUICK_SECTIONS) {
+            out.push(format!("== {name} =="));
+            out.extend(lines.iter().map(|line| line.to_string()));
+        }
+    } else {
+        out.extend(context.lines().skip(1).filter(|line| !line.trim().is_empty()).map(str::to_string));
     }
     out.push("== lua errors ==".to_string());
     out.push(lua_errors(addons));
