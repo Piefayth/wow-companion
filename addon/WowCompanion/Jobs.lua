@@ -216,6 +216,29 @@ function WC.Jobs.Apply(inbox)
 	if inbox.job and inbox.state then
 		apply(inbox.job, slot, inbox.state, inbox.who == "you" and inbox.text or nil)
 		local job = jobs[inbox.job]
+		-- Cancel was pressed while this was still being heard, and the words won
+		-- the race (the player, 2026-11-10: they "pop in on top of my
+		-- cancellation" and lag through cancelling): the line arrives already
+		-- cancelled. The cancel goes for this job too; its real end still decides
+		local slotKey = job and job.slot
+		if job and inbox.who == "you" and hearingAsked[slotKey] and not job.cancel and RANK[job.state] < 3 then
+			hearingAsked[slotKey] = nil
+			job.queueId = job.queueId or inbox.queueId
+			if not job.row then
+				job.row = rowOf(job)
+				local transcript = transcriptNow()
+				local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
+				if not job.row and transcript and slotKey == view then
+					for i = #(transcript.rows or {}), 1, -1 do
+						local row = transcript.rows[i]
+						if row.you and row.fs:IsShown() then job.row = row break end
+					end
+				end
+			end
+			job.cancel = { tries = TRIES, hearing = true }
+			command("cancel", slotKey, job.id)
+			mark(job, "  " .. GOOD .. "cancelled|r", true)
+		end
 		if job and inbox.queueId and not job.queueId then
 			job.queueId = inbox.queueId
 			-- the line came after its job moved on: no queued mark to keep
@@ -320,6 +343,17 @@ refresh = function()
 	local dots = ("."):rep(math.floor(now * 2) % 4)
 	local stamp = "  |cff5c6370" .. date("%H:%M") .. "|r"
 	local entry = working[view]
+	-- a run whose every message is being cancelled shows no working line: the
+	-- cancel is already the answer (the player, 2026-11-10)
+	if entry then
+		local live, cancelling = false, false
+		for _, job in pairs(jobs) do
+			if job.slot == view and job.state == "running" then
+				if job.cancel then cancelling = true else live = true end
+			end
+		end
+		if cancelling and not live then entry = nil end
+	end
 	if entry then
 		local doing = tostring(entry.text or "thinking"):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
 		items[#items + 1] = { "|cffffd100Claude|r" .. stamp, ("%s%s  %ds"):format(doing, dots, now - (entry.since or now)) }
