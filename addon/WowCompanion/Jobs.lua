@@ -514,6 +514,9 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	local mgr = GamepadMode and GamepadMode.FrameControlsManager
 	local window = core.logFrame and core.logFrame()
 	local focused = mgr and mgr.isUIFocused and window and mgr.focusedFrame == window and window:IsShown() or false
+	-- only on the Chat tab, where the messages they act on are (the player,
+	-- 2026-11-10: on Errands, "square to cancel, cancel what?")
+	if window and (window.currentTab or 1) ~= 1 then focused = false end
 	-- the legend: what square and triangle do right now, shown only while
 	-- they work (the player, 2026-11-10: "no input legend")
 	if window then
@@ -527,8 +530,8 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		end
 		local function glyph(key) return WowCompanion_Glyph(key) end
 		local parts = {}
-		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " " .. (CANCEL or "Cancel") end
-		if focused and newest("queued") then parts[#parts + 1] = glyph("PAD4") .. " Send now" end
+		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " Cancel newest" end
+		if focused and newest("queued") then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
 		window.jobsLegend:SetText(table.concat(parts, "     "))
 		window.jobsLegend:SetShown(#parts > 0)
 		if window.jobsCancelPrompt then window.jobsCancelPrompt:Hide() window.jobsNowPrompt:Hide() end
