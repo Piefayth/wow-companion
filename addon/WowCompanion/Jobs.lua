@@ -7,24 +7,39 @@
 --   queued:  Send now (ends the running request so this one starts), Cancel
 --   working: Cancel (ends the agent)
 -- The game cannot write to the PC while it runs, so a button draws a command on
--- the data strip ("WCCMD <nonce> <verb> <slot> [req]"), which the companion
+-- the data strip ("WCCMD <nonce> <verb> <slot> [job]"), which the companion
 -- watches (tools/strip.py --serve, src/requests.rs watch_commands).
--- Fed by Companion.lua: WC.Jobs.Note(inbox) for each log line, Started, Gone.
+--
+-- The PC's ledger (src/jobs.rs) is the truth: every request is a job whose id
+-- never repeats, moving one way, hearing -> queued -> running -> answered |
+-- cancelled | failed, and every message about one carries `job` and `state`.
+-- Here the whole rule is: keep each job's state, and take a message's state
+-- only when it ranks above what is held, never once an end is held. A late,
+-- repeated or reordered message then changes nothing; none can undo another.
+-- Everything shown (queued marks, the running X, tombstones) derives from it.
+-- A cancel is a pending intent on top, resolved by whatever end the job reaches.
 
 local core = WC.Core
-local jobs = {} -- { req, slot, text, state = "queued" | "working" | "cancelling", at, queueId }
+local jobs = {} -- id -> { id, slot, state, text, queueId, row, at, cancel, sending, endedAt }
 local made = {} -- every icon button, for marking after a fight
+local RANK = { hearing = 0, queued = 1, running = 2, answered = 3, cancelled = 3, failed = 3 }
 
-local function find(req)
-	for i, job in ipairs(jobs) do
-		if job.req == req then return job, i end
-	end
+local function find(id)
+	return id and jobs[id]
 end
 
-local function command(verb, slot, req)
+local function command(verb, slot, id)
 	if not (WowCompanion_Strip and WowCompanion_Strip.Send) then return end
 	WowCompanion_Strip.Send(("WCCMD %d%04d %s %s%s"):format(time(), math.random(0, 9999), verb,
-		slot ~= "" and slot or "main", req and (" " .. req) or ""), 2.5)
+		slot ~= "" and slot or "main", id and (" " .. ("%.0f"):format(id)) or ""), 2.5)
+end
+
+-- the jobs in order (ids are clock-based, so oldest first)
+local function ordered()
+	local list = {}
+	for _, job in pairs(jobs) do list[#list + 1] = job end
+	table.sort(list, function(a, b) return a.id < b.id end)
+	return list
 end
 
 local refresh
@@ -82,13 +97,25 @@ local function icon(parent, kind, tip, onClick)
 	return b
 end
 
--- A cancel is only a request until the companion answers (the player,
--- 2026-11-10: "I'd like to truly know that it actually got cancelled"): the
--- message's header says "cancelling" at once, then what the PC answered, or
--- that it never did. The message stays as a tombstone, greyed
-local CONFIRM_WITHIN = 12
+-- A cancel is a pending intent (the player, 2026-11-10: "I'd like to truly
+-- know that it actually got cancelled"): the header says "cancelling" at once,
+-- the command is drawn again every few seconds while the job has not ended
+-- (the strip can be missed; the PC takes repeats as one), and the job's end
+-- resolves it: cancelled, too late (answered), or failed. The message stays
+-- as a tombstone
+local RETRY_EVERY, TRIES = 4, 3
 local GREY, GOOD, BAD = "|cff9d9d9d", "|cff7fd27f", "|cffff7777"
-local function mark(transcript, row, status, grey)
+local function transcriptNow()
+	local frame = core.logFrame and core.logFrame()
+	return frame and frame.messages
+end
+local function rowOf(job)
+	if job.row and job.row.fs:IsShown() then return job.row end
+	local transcript = transcriptNow()
+	if job.queueId and transcript and queuedRow then return queuedRow(transcript, job.queueId) end
+end
+local function mark(job, status, grey)
+	local row, transcript = rowOf(job), transcriptNow()
 	if transcript and row and WC.Transcript.markRow then
 		pcall(WC.Transcript.markRow, transcript, row, status, grey)
 	end
@@ -97,74 +124,147 @@ local hearingAsked = {} -- slot -> GetTime() of a hearing cancel not yet answere
 local function note(slot, text)
 	if core.remember then core.remember("note", text, nil, slot) end
 end
+
+-- the one way a job's state changes; true when it did
+local function apply(id, slot, state, text)
+	if not id or not RANK[state] then return false end
+	local job = jobs[id]
+	if job and RANK[job.state] >= RANK[state] then return false end
+	if not job then
+		job = { id = id, slot = slot or "", at = GetTime() }
+		jobs[id] = job
+	end
+	if text then job.text = text end
+	job.state = state
+	if state ~= "queued" and job.queueId and WC.Transcript.unqueueId then
+		WC.Transcript.unqueueId(job.slot, job.queueId)
+	end
+	if state == "running" then
+		job.at, job.sending = GetTime(), nil
+		if not job.row then job.row = rowOf(job) end
+	end
+	if RANK[state] == 3 then
+		job.endedAt = GetTime()
+		if state == "cancelled" then
+			mark(job, "  " .. GOOD .. "cancelled|r", true)
+		elseif job.cancel and state == "answered" then
+			mark(job, "  " .. BAD .. "too late: already answered|r")
+		elseif state == "failed" then
+			mark(job, "  " .. BAD .. "failed|r")
+		end
+		job.cancel = nil
+	end
+	return true
+end
+
 local function cancel(job)
 	if not job then return end
-	if job.state == "hearing" then
+	if job.state == "hearing" and not job.id then
 		command("hear", job.slot)
 		if core.setTranscribing then core.setTranscribing(job.slot, false) end
 		local asked = GetTime()
 		hearingAsked[job.slot] = asked
-		C_Timer.After(CONFIRM_WITHIN, function()
+		C_Timer.After(RETRY_EVERY * TRIES, function()
 			if hearingAsked[job.slot] == asked then
 				hearingAsked[job.slot] = nil
 				note(job.slot, BAD .. "Cancel not confirmed: the companion never answered. Your words may still be sent.|r")
 			end
 		end)
-	else
-		local live = find(job.req)
-		if not live or live.state == "cancelling" then return end
-		local frame = core.logFrame and core.logFrame()
-		local transcript = frame and frame.messages
-		live.cancelRow = live.state == "queued" and live.queueId and transcript and queuedRow(transcript, live.queueId) or live.row
-		live.cancelIn = transcript
-		live.state = "cancelling"
-		command("cancel", job.slot, job.req)
-		mark(transcript, live.cancelRow, "  " .. GREY .. "cancelling...|r")
-		C_Timer.After(CONFIRM_WITHIN, function()
-			if live.state == "cancelling" and find(live.req) then
-				mark(live.cancelIn, live.cancelRow, "  " .. BAD .. "cancel not confirmed|r")
-				live.state = live.queueId and "queued" or "working"
-				refresh()
-			end
-		end)
+		refresh()
+		return
 	end
+	local live = find(job.id)
+	if not live or live.cancel or RANK[live.state] == 3 then return end
+	if not live.row then live.row = rowOf(live) end
+	local intent = { tries = 1 }
+	live.cancel = intent
+	command("cancel", live.slot, live.id)
+	mark(live, "  " .. GREY .. "cancelling...|r")
+	local function again()
+		if live.cancel ~= intent then return end -- resolved by the job's end
+		if intent.tries < TRIES then
+			intent.tries = intent.tries + 1
+			command("cancel", live.slot, live.id)
+			C_Timer.After(RETRY_EVERY, again)
+		else
+			live.cancel = nil
+			mark(live, "  " .. BAD .. "cancel not confirmed|r")
+			refresh()
+		end
+	end
+	C_Timer.After(RETRY_EVERY, again)
 	refresh()
 end
 
--- the companion's answer to a cancel (Companion.lua handlers.stopped)
+-- whether a conversation has a job running (the board and the waiting line)
+function WC.Jobs.Running(slot)
+	for _, job in pairs(jobs) do
+		if job.slot == (slot or "") and job.state == "running" then return true end
+	end
+	return false
+end
+
+function WC.Jobs.Ended(id)
+	local job = jobs[id]
+	return job and RANK[job.state] == 3 or false
+end
+
+-- A message from the PC about jobs: its own `job` and `state`, and any `list`
+-- of { job, slot, state } (stopped, the board's resync), merged by one rule.
+function WC.Jobs.Apply(inbox)
+	local slot = inbox.slot
+	if inbox.job and inbox.state then
+		apply(inbox.job, slot, inbox.state, inbox.who == "you" and inbox.text or nil)
+		local job = jobs[inbox.job]
+		if job and inbox.queueId and not job.queueId then
+			job.queueId = inbox.queueId
+			-- the line came after its job moved on: no queued mark to keep
+			if job.state ~= "queued" and WC.Transcript.unqueueId then WC.Transcript.unqueueId(job.slot, job.queueId) end
+		end
+		-- one run per conversation: a reply or a failure ends every job of it
+		-- still running (messages said together run as one)
+		if job and RANK[inbox.state] == 3 and inbox.who ~= "you" then
+			for _, other in pairs(jobs) do
+				if other ~= job and other.slot == job.slot and other.state == "running" then
+					apply(other.id, other.slot, inbox.state)
+				end
+			end
+		end
+	end
+	for _, e in ipairs(type(inbox.list) == "table" and inbox.list or {}) do
+		if type(e) == "table" and e.job then apply(e.job, e.slot or slot, e.state) end
+	end
+	-- ends older than a quarter hour have nothing left to show
+	local now = GetTime()
+	for id, job in pairs(jobs) do
+		if job.endedAt and now - job.endedAt > 900 then jobs[id] = nil end
+	end
+	WC.Jobs.Refresh()
+end
+
+-- the PC's answer to a cancel or a stop (Companion.lua handlers.stopped)
 function WC.Jobs.Stopped(inbox)
 	local slot = inbox.slot or ""
-	if inbox.hearing then
-		local asked = hearingAsked[slot]
-		hearingAsked[slot] = nil
-		if asked or inbox.nothing then
-			note(slot, inbox.nothing and (GREY .. "Nothing left to cancel: that message was already answered.|r")
-				or (GOOD .. "Cancelled|r " .. GREY .. "before it was sent.|r"))
-		end
-		return
+	local asked = hearingAsked[slot]
+	hearingAsked[slot] = nil
+	local shown = false
+	for _, e in ipairs(type(inbox.list) == "table" and inbox.list or {}) do
+		if type(e) == "table" and jobs[e.job] and rowOf(jobs[e.job]) then shown = true end
 	end
-	local job = inbox.req and find(inbox.req)
-	if not job then return end
-	local frame = core.logFrame and core.logFrame()
-	local transcript = job.cancelIn or (frame and frame.messages)
-	local row = job.cancelRow or job.row
-	if not row and job.queueId and transcript then row = queuedRow(transcript, job.queueId) end
-	if inbox.tooLate then
-		mark(transcript, row, "  " .. BAD .. "too late: already answered|r")
-	elseif inbox.sendNow then
-		-- not a cancel of this message: it was interrupted for the next one
-		mark(transcript, row, "  " .. GREY .. "interrupted|r")
-	else
-		mark(transcript, row, "  " .. GOOD .. "cancelled|r", true)
+	WC.Jobs.Apply(inbox)
+	-- a hearing cancel whose job had no line of its own yet: say what happened
+	if inbox.hearing and (asked or inbox.nothing) and not shown then
+		note(slot, inbox.nothing and (GREY .. "Nothing left to cancel: that message was already answered.|r")
+			or (GOOD .. "Cancelled|r " .. GREY .. "before it was sent.|r"))
 	end
-	if job.queueId and WC.Transcript.unqueueId then WC.Transcript.unqueueId(slot, job.queueId) end
 end
+
 local function sendNow(job)
 	if not job then return end
-	command("now", job.slot, job.req)
+	command("now", job.slot, job.id)
 	-- every queued message goes in the same request, so one press sends them
 	-- all: the other play buttons go too
-	for _, other in ipairs(jobs) do
+	for _, other in pairs(jobs) do
 		if other.slot == job.slot and other.state == "queued" then other.sending = true end
 	end
 	refresh()
@@ -187,17 +287,6 @@ refresh = function()
 	local now = GetTime()
 	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
 	local working = core.working or {}
-	-- a running job whose conversation stopped working (a reply or a failure
-	-- that named no conversation) has nothing left to do
-	for i = #jobs, 1, -1 do
-		local job = jobs[i]
-		-- a reply (or anything that ended the conversation's work) leaves
-		-- nothing to cancel: gone within a second (the player, 2026-11-10: a
-		-- Cancel stayed on an answered message)
-		if job.state == "working" and not working[job.slot] and now - (job.at or now) > 1 then
-			table.remove(jobs, i)
-		end
-	end
 	-- the waiting line: hearing first (the newest thing), else the running request
 	statusX = statusX or icon(frame, "cancel", CANCEL or "Cancel", cancel)
 	-- only a clip still being heard has no line of its own yet: its X sits
@@ -334,12 +423,11 @@ refresh = function()
 	-- queued messages, on their own lines
 	local transcript = frame.messages
 	local used = 0
-	local runningThere = false
-	for _, job in ipairs(jobs) do
-		if job.slot == view and job.state == "working" then runningThere = true end
-	end
-	for _, job in ipairs(jobs) do
-		local row = job.slot == view and job.state == "queued" and job.queueId and queuedRow(transcript, job.queueId)
+	local runningThere = WC.Jobs.Running(view)
+	local list = ordered()
+	for _, job in ipairs(list) do
+		local row = job.slot == view and job.state == "queued" and not job.cancel and job.queueId
+			and queuedRow(transcript, job.queueId)
 		if row then
 			used = used + 1
 			local pair = pairsPool[used]
@@ -361,18 +449,20 @@ refresh = function()
 	-- that is not queued (the player, 2026-11-10: "on the chat message like it
 	-- is for everything else")
 	local running
-	for _, job in ipairs(jobs) do
-		if job.slot == view and job.state == "working" then running = job end
+	for _, job in ipairs(list) do
+		if job.slot == view and job.state == "running" and not job.cancel then running = job end
 	end
-	-- bound once to the message it belongs to (your newest line when the work
-	-- began), so it can never wander onto an older one
+	-- bound once to the message it belongs to (its queued line, or your newest
+	-- line not bound to another job), so it can never wander onto an older one
 	local runRow
-	if running and working[view] then
-		if not (running.row and running.row.fs:IsShown()) then
-			running.row = nil
+	if running then
+		running.row = rowOf(running)
+		if not running.row then
+			local taken = {}
+			for _, job in pairs(jobs) do if job.row then taken[job.row] = true end end
 			for i = #(transcript.rows or {}), 1, -1 do
 				local row = transcript.rows[i]
-				if row.you and not row.queued and row.fs:IsShown() then running.row = row break end
+				if row.you and not row.queued and row.fs:IsShown() and not taken[row] then running.row = row break end
 			end
 		end
 		runRow = running.row
@@ -421,51 +511,11 @@ end
 
 WC.Jobs.Refresh = function() pcall(refresh) if WC.Jobs.Chain then pcall(WC.Jobs.Chain) end end
 
--- a log line from the companion: a request's own line carries `req`
-function WC.Jobs.Note(inbox)
-	local slot = inbox.slot or ""
-	if inbox.who == "you" and inbox.req then
-		local job = find(inbox.req)
-		if not job then
-			job = { req = inbox.req, slot = slot, text = inbox.text, at = GetTime() }
-			jobs[#jobs + 1] = job
-		end
-		job.text = inbox.text or job.text
-		job.queueId = inbox.queueId or job.queueId
-		job.state = inbox.queued and "queued" or "working"
-		if job.state == "working" then job.at = GetTime() end
-	elseif inbox.slot and not inbox.pending and inbox.who ~= "you" and not inbox.queued then
-		-- the reply (or the error) ends the conversation's running request
-		for i = #jobs, 1, -1 do
-			if jobs[i].slot == slot and jobs[i].state ~= "queued" then table.remove(jobs, i) end
-		end
-	end
-	WC.Jobs.Refresh()
-end
-
--- a queued request began
-function WC.Jobs.Started(req, slot)
-	local job = req and find(req)
-	if not job then
-		for _, j in ipairs(jobs) do
-			if j.slot == (slot or "") and j.state == "queued" then job = j break end
-		end
-	end
-	if job then job.state = "working" job.at = GetTime() job.sending = nil end
-	WC.Jobs.Refresh()
-end
-
--- cancelled, interrupted or stopped: req, or every job of the slot
-function WC.Jobs.Gone(req, slot, all)
-	for i = #jobs, 1, -1 do
-		local j = jobs[i]
-		if (req and j.req == req) or (not req and all and j.slot == (slot or ""))
-			or (not req and not all and j.slot == (slot or "") and j.state ~= "queued") then
-			table.remove(jobs, i)
-		end
-	end
-	WC.Jobs.Refresh()
-end
+-- the old entry points, kept so callers cost nothing: each message's `job`
+-- and `state` carry everything
+function WC.Jobs.Note(inbox) WC.Jobs.Apply(inbox) end
+function WC.Jobs.Started() WC.Jobs.Refresh() end
+function WC.Jobs.Gone() WC.Jobs.Refresh() end
 
 -- buttons made in a fight could not be marked for the cursor: mark them now
 local marker = CreateFrame("Frame")
@@ -489,9 +539,11 @@ end)
 local function newest(state)
 	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
 	if not state and (core.transcribing or {})[view] then return { state = "hearing", slot = view } end
-	for i = #jobs, 1, -1 do
-		local job = jobs[i]
-		if job.slot == view and (state and job.state == state or (not state and job.state ~= "cancelling")) then
+	local list = ordered()
+	for i = #list, 1, -1 do
+		local job = list[i]
+		if job.slot == view and not job.cancel
+			and (state and job.state == state or (not state and (job.state == "queued" or job.state == "running"))) then
 			return job
 		end
 	end

@@ -761,7 +761,6 @@ function handlers.log(inbox)
 	local queued = inbox.queued and queueRequest(islot) or nil
 	-- the message's Cancel / Send now (Jobs.lua) sit on its queued line
 	inbox.queueId = queued
-	if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
 	if (inbox.slot or inbox.pending) and not queued then setPending(inbox.pending, islot) end
 	-- what a clip became ends its "transcribing": the request's own line in its
 	-- conversation, or a line that names none (a chat line, a dropped-clip
@@ -789,6 +788,8 @@ function handlers.log(inbox)
 	if lines == 0 then
 		remember(who, text, nil, islot, queued)
 	end
+	-- the job's state, once its line is in the transcript to carry its controls
+	if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
 	-- reveal, not Show: ShowUIPanel returns at once for a frame already shown, so a
 	-- window opened by a plain Show never becomes a panel and the controller's
 	-- window toggle cannot reach it until it is closed and opened again
@@ -935,10 +936,15 @@ end
 -- What the agent is doing right now, on the waiting line: "reading StanceBar.lua".
 -- Not logged; the reply is what stays.
 function handlers.progress(inbox)
+	-- a late progress line of a job that has ended must not bring its working
+	-- line back
+	if inbox.job and WC.Jobs and WC.Jobs.Ended and WC.Jobs.Ended(inbox.job) then return "progress: ended" end
 	-- the agent took the oldest queued request of this conversation
-	if inbox.started then
+	-- its job's state (Jobs.lua takes the queued mark off the right message)
+	if inbox.job and WC.Jobs and WC.Jobs.Apply then
+		pcall(WC.Jobs.Apply, inbox)
+	elseif inbox.started then
 		unqueue(inbox.slot)
-		if WC.Jobs then WC.Jobs.Started(inbox.req, inbox.slot) end
 	end
 	setPending(inbox.text or "thinking", inbox.slot, inbox.since)
 	return "progress"
@@ -958,10 +964,8 @@ function handlers.board(inbox)
 	for slot in pairs(working) do
 		if not listed[slot] then working[slot] = nil end
 	end
-	-- nothing running in a conversation: nothing in it is still queued
-	for slot in pairs(queuedSlots()) do
-		if not listed[slot] then unqueue(slot, true) end
-	end
+	-- every recent job's state, merged forward only like any other message
+	if WC.Jobs and WC.Jobs.Apply then pcall(WC.Jobs.Apply, inbox) end
 	renderPending()
 	return "board"
 end
@@ -974,27 +978,14 @@ function handlers.stopped(inbox)
 	setTranscribing(slot, false)
 	-- the cancelled message keeps its line, marked with what the PC answered
 	if WC.Jobs and WC.Jobs.Stopped then pcall(WC.Jobs.Stopped, inbox) end
-	if inbox.hearing then
-		return "stopped"
-	end
-	if inbox.req and inbox.wasQueued then
-		-- one queued message dropped (Jobs.Stopped took its queued mark off);
-		-- the running one carries on
-		if WC.Jobs then WC.Jobs.Gone(inbox.req, slot) end
-		return "stopped"
-	end
-	setPending(nil, slot)
-	if WC.Jobs then WC.Jobs.Gone(inbox.req, slot, inbox.dropped ~= false and not inbox.req) end
-	if inbox.req then
-		-- a cancel shows on the message itself; only an interrupt says more
-		if inbox.dropped == false and inbox.sendNow then
-			remember("claude", "Interrupted. Sending your next message now.", nil, slot)
-		end
-	elseif inbox.dropped == false then
+	-- the conversation works while a job of it runs (the ledger says)
+	if WC.Jobs and WC.Jobs.Running and not WC.Jobs.Running(slot) then setPending(nil, slot) end
+	-- a cancel shows on the message itself; only an interrupt or a stop says more
+	if inbox.sendNow then
 		remember("claude", "Interrupted. Sending your next message now.", nil, slot)
-	else
-		unqueue(slot, true)
-		remember("claude", "Stopped. Anything queued behind it was dropped.", nil, slot)
+	elseif not inbox.req and not inbox.hearing and inbox.dropped ~= nil then
+		remember("claude", inbox.dropped and "Stopped. Anything queued behind it was dropped."
+			or "Interrupted. Sending your next message now.", nil, slot)
 	end
 	return "stopped"
 end
