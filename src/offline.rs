@@ -27,8 +27,15 @@ pub(crate) fn keep(addons: &Path, inbox: &str) -> io::Result<bool> {
     if !text.ends_with('\n') {
         text.push('\n');
     }
+    // never make a broken file worse, and never break a sound one: the game would
+    // load the addon empty and write that over the player's history at logout
+    crate::backups::lua_sound(&text)
+        .map_err(|why| io::Error::other(format!("the save file is already unsound ({why}); not touching it")))?;
     let at = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default();
     text.push_str(&line.statement(at));
+    crate::backups::lua_sound(&text)
+        .map_err(|why| io::Error::other(format!("keeping this line would break the save file ({why}); not kept")))?;
+    crate::backups::before_edit(&saved)?;
     // whole or not at all: a half-written save would cost the player every setting
     let temporary = saved.with_extension("lua.companion");
     fs::write(&temporary, text)?;

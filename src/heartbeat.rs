@@ -48,6 +48,14 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
                 if let Err(err) = crate::clear_catch_up(&addons.join(crate::ADDON).join("Signals")) {
                     eprintln!("heartbeat: {err}");
                 }
+                // a save just landed (or the companion started): copy it, and say
+                // so in game if it looks like the addon's data was reset
+                for note in crate::backups::snapshot(&addons) {
+                    println!("  {note}");
+                    if note.starts_with("Your companion") {
+                        let _ = crate::send_inbox(&addons, &crate::log_inbox("error", &note, None, None));
+                    }
+                }
             }
             if ready() {
                 let (show, hide) = if on_a { (&a, &b) } else { (&b, &a) };

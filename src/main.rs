@@ -17,6 +17,7 @@ mod offline;
 mod jobs;
 mod audit;
 mod strip;
+mod backups;
 use channel::*;
 use requests::*;
 use context::*;
@@ -141,6 +142,11 @@ fn main() {
         [command] if command == "doctor" => match Settings::load().get("addons") {
             Some(addons) => doctor::run(Path::new(addons)),
             None => Err(io::Error::other("no AddOns folder set: run wow-companion-setup, or give `doctor <AddOns>`")),
+        },
+        // the newest good copy of the save file back, game closed (src/backups.rs)
+        [command, rest @ ..] if command == "restore-save" && rest.len() <= 1 => match Settings::load().get("addons") {
+            Some(addons) => backups::restore(Path::new(addons), rest.first().map(Path::new)),
+            None => Err(io::Error::other("no AddOns folder set: run wow-companion-setup first")),
         },
         [command, id] if command == "pads" => pad::watch(id),
         [command] if command == "mics" => voice::microphones(),
