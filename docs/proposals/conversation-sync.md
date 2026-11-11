@@ -40,6 +40,32 @@ fix added another guess.
    mark on their entry; the snapshot that follows decides. Repeats are
    harmless (the PC takes them as one).
 
+## What the research says, and where we stand (later the same evening)
+
+This is two solved problems put together:
+
+- **Replicated state over an unreliable, reordering channel**: a state-based
+  CRDT (Shapiro et al., "Conflict-free Replicated Data Types", 2011). Each
+  job's state is a join-semilattice (hearing < queued < running < one end;
+  the first end wins) and merging is "take the higher". The PC's ledger
+  (src/jobs.rs) already is exactly this, and every message carries the job's
+  state, so any order of delivery converges. Snapshots were not needed.
+- **Hiding latency**: client-side prediction with server reconciliation
+  (Gambetta, "Fast-Paced Multiplayer"; Valve's networking model). The client
+  shows its own inputs at once and drops each one when the authoritative
+  state acknowledges *that input by its identity*.
+
+The bugs were all in identity and placement, not in the ledger:
+
+1. A hearing cancel was named by a press time to the second, and the PC took
+   the newest clip let go before it: with two clips in flight it cancelled the
+   wrong one. Now the clip is named by its release (both sides see it, to the
+   ms), matched nearest within 1.2 s (`jobs::heard_at`, tested).
+2. Clips joined any clip still being transcribed, so a slow Whisper merged
+   separate messages. Now only a clip let go within 1.5 s joins (tested).
+3. The window inserted replies above lines already read. Confirmed lines now
+   only append; whatever is still to come waits at the end.
+
 ## Phases
 
 1. Audit trail (done 2026-11-10): `src/audit.rs`, the game's
