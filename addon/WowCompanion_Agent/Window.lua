@@ -247,49 +247,91 @@ local function buildTabs(frame, messages)
 		frame.SelectTab(1)
 	end)
 
-	-- Status: what is running, read fresh while the tab is looked at
-	local status = pages[3]:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	status:SetPoint("TOPLEFT")
-	status:SetPoint("TOPRIGHT")
-	status:SetJustifyH("LEFT")
-	status:SetJustifyV("TOP")
-	status:SetSpacing(5)
+	-- Status: what is running, read fresh while the tab is looked at. In the
+	-- chat's look: one row per fact on the replies' stone, the label in gold,
+	-- the value beside it, a quest log divider between rows, a light, colour-
+	-- blind-safe word for good or bad (green ok, red problem) and grey detail.
+	local ROW = 30
+	local rows = {}
+	local function row(i)
+		local r = rows[i]
+		if r then return r end
+		r = CreateFrame("Frame", nil, pages[3])
+		r:SetPoint("TOPLEFT", 0, -(i - 1) * ROW)
+		r:SetPoint("TOPRIGHT", 0, -(i - 1) * ROW)
+		r:SetHeight(ROW)
+		local stone = r:CreateTexture(nil, "BACKGROUND")
+		stone:SetTexture(WC.Transcript.STONE.claude, "REPEAT", "REPEAT")
+		stone:SetHorizTile(true)
+		stone:SetVertTile(true)
+		stone:SetAllPoints()
+		if i > 1 then
+			local divider = r:CreateTexture(nil, "ARTWORK")
+			divider:SetAtlas("QuestLog-frame-devider")
+			divider:SetAlpha(0.8)
+			divider:SetHeight(15)
+			divider:SetPoint("LEFT", r, "TOPLEFT")
+			divider:SetPoint("RIGHT", r, "TOPRIGHT")
+		end
+		r.label = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		r.label:SetPoint("LEFT", 12, 0)
+		r.label:SetWidth(170)
+		r.label:SetJustifyH("LEFT")
+		r.value = r:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		r.value:SetPoint("LEFT", r.label, "RIGHT", 8, 0)
+		r.value:SetPoint("RIGHT", -12, 0)
+		r.value:SetJustifyH("LEFT")
+		r.value:SetWordWrap(false)
+		rows[i] = r
+		return r
+	end
 	local function refreshStatus()
-		local gold, grey = "|cffffd100", "|cff9d9d9d"
-		local lines = {}
-		local function add(label, value) lines[#lines + 1] = gold .. label .. "|r   " .. value end
+		local grey, good, bad = "|cff9d9d9d", "|cff40ff40", "|cffff6060"
+		local n = 0
+		local function add(label, value)
+			n = n + 1
+			local r = row(n)
+			r.label:SetText(label)
+			r.value:SetText(value)
+			r:Show()
+		end
 		local up = WowCompanion_IsUp and WowCompanion_IsUp()
-		add("Companion app", up and "|cff40ff40connected|r"
-			or "|cffff6060not heard from|r " .. grey .. "(is it running on the PC?)|r")
-		add("Messages this session", ("%d of 64 %s(a reload resets it)|r"):format(WC.Companion.messagesSent(), grey))
+		add("Companion app", up and good .. "connected|r"
+			or bad .. "not heard from|r " .. grey .. "(is it running on the PC?)|r")
+		local sent = WC.Link and WC.Link.MessagesSent and WC.Link.MessagesSent() or 0
+		local slots = WowCompanionLinkDB and WowCompanionLinkDB.slotCount or 0
+		add("Messages", ("%d of %d %s(a reload resets it)|r"):format(sent, slots, grey))
 		local pins = WCPins and #WCPins.List() or 0
-		add("Map pins", pins == 0 and "none" or tostring(pins))
+		add("Map pins", pins == 0 and grey .. "none|r" or tostring(pins))
 		local wheels = {}
 		for key, wheel in pairs(WowCompanionWheelDB and WowCompanionWheelDB.wheels or {}) do
 			wheels[#wheels + 1] = (wheel.label or key) .. " " .. grey .. "(" .. #(wheel.slots or {}) .. ")|r"
 		end
 		table.sort(wheels)
-		add("Wheels", #wheels > 0 and table.concat(wheels, ", ") or "none")
+		add("Wheels", #wheels > 0 and table.concat(wheels, ", ") or grey .. "none|r")
 		local modules = {}
 		for name in pairs(effectiveModules()) do modules[#modules + 1] = name end
 		table.sort(modules)
-		add("My modules", #modules > 0 and table.concat(modules, ", ") or "none")
+		add("My modules", #modules > 0 and table.concat(modules, ", ") or grey .. "none|r")
 		local blocked = WowCompanionAgentDB.blocked or {}
 		local b = blocked[#blocked]
-		add("Blocked actions", b and ("%d kinds, last %s: %s x%d"):format(#blocked, date("%H:%M", b.at or 0), b.what, b.count or 1) or "none")
-		local probs = WC.ProviderProblems and WC.ProviderProblems() or {}
+		add("Blocked actions", b and bad .. ("%d kinds|r %slast %s: %s x%d|r"):format(#blocked, grey,
+			date("%H:%M", b.at or 0), b.what, b.count or 1) or good .. "none|r")
 		local plist = {}
-		for _, p in ipairs(probs) do plist[#plist + 1] = ("%s/%s: %s"):format(p.cap, p.provider, p.why) end
-		add("Addon links", #plist == 0 and "all working" or ("|cffff6060" .. table.concat(plist, "; ") .. "|r"))
+		for _, p in ipairs(WC.ProviderProblems and WC.ProviderProblems() or {}) do
+			plist[#plist + 1] = ("%s/%s: %s"):format(p.cap, p.provider, p.why)
+		end
+		add("Addon links", #plist == 0 and good .. "all working|r" or bad .. table.concat(plist, "; ") .. "|r")
 		local fp, flast = 0, nil
 		if WC.FocusLog then fp, flast = WC.FocusLog.Problems() end
-		add("Focus", fp == 0 and "ok" or ("|cffff6060%d problem%s|r, last %s"):format(fp, fp == 1 and "" or "s", tostring(flast)))
+		add("Focus", fp == 0 and good .. "ok|r" or bad .. ("%d problem%s|r %slast %s|r"):format(fp,
+			fp == 1 and "" or "s", grey, tostring(flast)))
 		-- the export's sections that failed when it was last written (Export.lua)
 		local failed = WowCompanionAgentDB.exportFailures
-		add("Export", failed and ("|cffff6060%d part%s failed|r, first: %s"):format(#failed,
-			#failed == 1 and "" or "s", failed[1]) or "whole")
-		add("Combat", InCombatLockdown() and "|cffff6060yes|r " .. grey .. "(changes wait until it ends)|r" or "no")
-		status:SetText(table.concat(lines, "\n"))
+		add("Export", failed and bad .. ("%d part%s failed|r %s%s|r"):format(#failed,
+			#failed == 1 and "" or "s", grey, failed[1]) or good .. "whole|r")
+		add("Combat", InCombatLockdown() and bad .. "yes|r " .. grey .. "(changes wait until it ends)|r" or "no")
+		for i = n + 1, #rows do rows[i]:Hide() end
 	end
 	local since = 0
 	pages[3]:SetScript("OnShow", function() since = 0 refreshStatus() end)
