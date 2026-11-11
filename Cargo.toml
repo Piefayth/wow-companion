@@ -21,6 +21,11 @@ wow-companion-voice = { path = "crates/voice", default-features = false }
 # the claude CLI's --output-format json envelope; not worth hand-parsing
 serde_json = "1"
 
+# the data strip is read with DXGI Desktop Duplication (src/strip.rs), the same
+# crate version as crates/voice uses
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Graphics_Direct3D", "Win32_Graphics_Direct3D11", "Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Gdi"] }
+
 # Whisper's backend (crates/voice/Cargo.toml): `cargo build` is CUDA;
 # `--no-default-features --features vulkan` for other GPUs; `--no-default-features`
 # for CPU only.

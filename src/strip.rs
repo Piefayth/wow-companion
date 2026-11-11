@@ -98,91 +98,195 @@ pub(crate) fn capture(height: usize) -> io::Result<Shot> {
     shot
 }
 
+/// The capture, through DXGI Desktop Duplication: the compositor hands over the
+/// frame it already composed, so reading it never makes the game wait (GDI's
+/// BitBlt of the desktop did: 8 ms a look, up to 287 ms, and the player felt a
+/// stutter at every data read, 2026-11-11).
+///
+/// One session stays open. Each new desktop frame, only the corner the strip
+/// can use (1024 x FULL_HEIGHT) is copied off the GPU and kept; a look while
+/// nothing changed reads that copy, which is exactly the screen (Duplication
+/// hands a frame only when the desktop changed). The screen is the primary
+/// one (the output whose desktop origin is 0,0), as the GDI capture's was;
+/// its texture is in real pixels whatever the display scaling.
+#[cfg(windows)]
+mod duplication {
+    use super::{CELL, COLS, FULL_HEIGHT, Shot};
+    use std::{io, sync::Mutex};
+    use windows::{
+        Win32::Foundation::HMODULE,
+        Win32::Graphics::{
+            Direct3D::D3D_DRIVER_TYPE_UNKNOWN,
+            Direct3D11::{
+                D3D11_BOX, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_MAP_READ,
+                D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
+                D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
+            },
+            Dxgi::{
+                Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_MODE_ROTATION_IDENTITY, DXGI_MODE_ROTATION_UNSPECIFIED, DXGI_SAMPLE_DESC},
+                CreateDXGIFactory1, DXGI_ERROR_ACCESS_LOST, DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_FRAME_INFO, IDXGIAdapter,
+                IDXGIFactory1, IDXGIOutput1, IDXGIOutputDuplication, IDXGIResource,
+            },
+        },
+        core::Interface,
+    };
+
+    const WIDTH: usize = CELL * COLS;
+
+    struct Session {
+        context: ID3D11DeviceContext,
+        duplication: IDXGIOutputDuplication,
+        /// a CPU-readable texture the size of the corner
+        staging: ID3D11Texture2D,
+        /// the corner as of the last desktop frame (BGRA, rows top-down)
+        corner: Option<Vec<u8>>,
+    }
+
+    // SAFETY: the D3D11 device and DXGI objects are free-threaded; the one
+    // immediate context is only used under SESSION's lock.
+    unsafe impl Send for Session {}
+
+    static SESSION: Mutex<Option<Session>> = Mutex::new(None);
+
+    fn err(what: &str, error: windows::core::Error) -> io::Error {
+        io::Error::other(format!("{what}: {error}"))
+    }
+
+    /// The primary output (desktop origin 0,0), its adapter's device, and a
+    /// duplication of it.
+    unsafe fn open() -> io::Result<Session> {
+        unsafe {
+            let factory: IDXGIFactory1 = CreateDXGIFactory1().map_err(|e| err("no DXGI factory", e))?;
+            let mut adapter_index = 0;
+            loop {
+                let adapter = factory
+                    .EnumAdapters1(adapter_index)
+                    .map_err(|e| err("no graphics adapter shows the primary screen", e))?;
+                let mut output_index = 0;
+                while let Ok(output) = adapter.EnumOutputs(output_index) {
+                    output_index += 1;
+                    let desc = output.GetDesc().map_err(|e| err("an output could not describe itself", e))?;
+                    if (desc.DesktopCoordinates.left, desc.DesktopCoordinates.top) != (0, 0) {
+                        continue;
+                    }
+                    let mut device: Option<ID3D11Device> = None;
+                    let mut context: Option<ID3D11DeviceContext> = None;
+                    let base: IDXGIAdapter = adapter.cast().map_err(|e| err("the adapter", e))?;
+                    D3D11CreateDevice(
+                        &base,
+                        D3D_DRIVER_TYPE_UNKNOWN,
+                        HMODULE::default(),
+                        D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                        None,
+                        D3D11_SDK_VERSION,
+                        Some(&mut device),
+                        None,
+                        Some(&mut context),
+                    )
+                    .map_err(|e| err("no Direct3D device on the primary screen's adapter", e))?;
+                    let (device, context) = (device.ok_or_else(|| io::Error::other("no device"))?, context.ok_or_else(|| io::Error::other("no device context"))?);
+                    let output1: IDXGIOutput1 = output.cast().map_err(|e| err("the output has no duplication (IDXGIOutput1)", e))?;
+                    let duplication = output1.DuplicateOutput(&device).map_err(|e| err("the screen cannot be duplicated", e))?;
+                    let rotation = duplication.GetDesc().Rotation;
+                    if rotation != DXGI_MODE_ROTATION_IDENTITY && rotation != DXGI_MODE_ROTATION_UNSPECIFIED {
+                        return Err(io::Error::other("the primary screen is rotated; the strip reader expects it upright"));
+                    }
+                    let desc = D3D11_TEXTURE2D_DESC {
+                        Width: WIDTH as u32,
+                        Height: FULL_HEIGHT as u32,
+                        MipLevels: 1,
+                        ArraySize: 1,
+                        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                        Usage: D3D11_USAGE_STAGING,
+                        BindFlags: 0,
+                        CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+                        MiscFlags: 0,
+                    };
+                    let mut staging: Option<ID3D11Texture2D> = None;
+                    device.CreateTexture2D(&desc, None, Some(&mut staging)).map_err(|e| err("no staging texture", e))?;
+                    let staging = staging.ok_or_else(|| io::Error::other("no staging texture"))?;
+                    return Ok(Session { context, duplication, staging, corner: None });
+                }
+                adapter_index += 1;
+            }
+        }
+    }
+
+    /// Take the newest desktop frame, if there is one, into `corner`. Ok(false):
+    /// nothing changed since the last frame (the kept corner is current).
+    unsafe fn refresh(session: &mut Session, wait_ms: u32) -> windows::core::Result<bool> {
+        unsafe {
+            let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
+            let mut resource: Option<IDXGIResource> = None;
+            match session.duplication.AcquireNextFrame(wait_ms, &mut info, &mut resource) {
+                Ok(()) => {}
+                Err(e) if e.code() == DXGI_ERROR_WAIT_TIMEOUT => return Ok(false),
+                Err(e) => return Err(e),
+            }
+            let copied = (|| -> windows::core::Result<Vec<u8>> {
+                let frame: ID3D11Texture2D = resource.ok_or_else(windows::core::Error::empty)?.cast()?;
+                let mut desc = D3D11_TEXTURE2D_DESC::default();
+                frame.GetDesc(&mut desc);
+                let (w, h) = (desc.Width as usize, desc.Height as usize);
+                if w < WIDTH || h < FULL_HEIGHT {
+                    return Err(windows::core::Error::new(windows::core::HRESULT(-1), "the screen is smaller than the strip"));
+                }
+                let corner = D3D11_BOX {
+                    left: (w - WIDTH) as u32,
+                    top: (h - FULL_HEIGHT) as u32,
+                    front: 0,
+                    right: w as u32,
+                    bottom: h as u32,
+                    back: 1,
+                };
+                session.context.CopySubresourceRegion(&session.staging, 0, 0, 0, 0, &frame, 0, Some(&corner));
+                let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+                session.context.Map(&session.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+                let mut pixels = vec![0u8; WIDTH * FULL_HEIGHT * 4];
+                for row in 0..FULL_HEIGHT {
+                    let from = (mapped.pData as *const u8).add(row * mapped.RowPitch as usize);
+                    std::ptr::copy_nonoverlapping(from, pixels.as_mut_ptr().add(row * WIDTH * 4), WIDTH * 4);
+                }
+                session.context.Unmap(&session.staging, 0);
+                Ok(pixels)
+            })();
+            let released = session.duplication.ReleaseFrame();
+            session.corner = Some(copied?);
+            released?;
+            Ok(true)
+        }
+    }
+
+    pub(super) fn grab(height: usize) -> io::Result<Shot> {
+        let height = height.min(FULL_HEIGHT);
+        let mut held = SESSION.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if held.is_none() {
+            *held = Some(unsafe { open()? });
+        }
+        let session = held.as_mut().expect("opened above");
+        // the first look waits for the session's first frame; later ones take a
+        // new frame if the desktop changed, else the kept corner is current
+        let wait_ms = if session.corner.is_none() { 500 } else { 0 };
+        match unsafe { refresh(session, wait_ms) } {
+            Ok(_) => {}
+            Err(e) if e.code() == DXGI_ERROR_ACCESS_LOST => {
+                // a mode change, a fullscreen switch, the lock screen: this
+                // session is over; the next look opens a new one
+                *held = None;
+                return Err(io::Error::other("the screen's duplication was lost (a mode change, fullscreen switch or lock screen); reopening at the next look"));
+            }
+            Err(e) => return Err(err("the screen could not be read", e)),
+        }
+        let corner = session.corner.as_ref().ok_or_else(|| io::Error::other("no desktop frame arrived within 500 ms"))?;
+        let skip = (FULL_HEIGHT - height) * WIDTH * 4;
+        Ok(Shot { width: WIDTH, height, pixels: corner[skip..].to_vec() })
+    }
+}
+
 #[cfg(windows)]
 fn grab(height: usize) -> io::Result<Shot> {
-    use std::ffi::c_void;
-    type Handle = *mut c_void;
-    #[repr(C)]
-    struct BitmapInfo {
-        size: u32,
-        width: i32,
-        height: i32,
-        planes: u16,
-        bit_count: u16,
-        compression: u32,
-        size_image: u32,
-        x_pels: i32,
-        y_pels: i32,
-        clr_used: u32,
-        clr_important: u32,
-        colors: [u32; 4],
-    }
-    #[link(name = "user32")]
-    unsafe extern "system" {
-        fn GetDC(window: Handle) -> Handle;
-        fn ReleaseDC(window: Handle, dc: Handle) -> i32;
-        fn GetSystemMetrics(index: i32) -> i32;
-        fn SetProcessDPIAware() -> i32;
-    }
-    #[link(name = "gdi32")]
-    unsafe extern "system" {
-        fn CreateCompatibleDC(dc: Handle) -> Handle;
-        fn CreateCompatibleBitmap(dc: Handle, width: i32, height: i32) -> Handle;
-        fn SelectObject(dc: Handle, object: Handle) -> Handle;
-        fn BitBlt(dst: Handle, x: i32, y: i32, w: i32, h: i32, src: Handle, sx: i32, sy: i32, rop: u32) -> i32;
-        fn GetDIBits(dc: Handle, bitmap: Handle, start: u32, lines: u32, bits: *mut c_void, info: *mut BitmapInfo, usage: u32) -> i32;
-        fn DeleteObject(object: Handle) -> i32;
-        fn DeleteDC(dc: Handle) -> i32;
-    }
-    const SRCCOPY: u32 = 0x00CC_0020;
-    static DPI_AWARE: std::sync::Once = std::sync::Once::new();
-    let width = CELL * COLS;
-    // SAFETY: plain GDI calls on handles made here and released before returning;
-    // the buffer is width * height * 4 bytes, what a 32-bit top-down DIB of that
-    // size needs.
-    unsafe {
-        // real pixels, not ones scaled by the display setting (150% here)
-        DPI_AWARE.call_once(|| {
-            SetProcessDPIAware();
-        });
-        let (screen_w, screen_h) = (GetSystemMetrics(0), GetSystemMetrics(1));
-        let screen = GetDC(std::ptr::null_mut());
-        if screen.is_null() {
-            return Err(io::Error::other("no screen to read"));
-        }
-        let memory = CreateCompatibleDC(screen);
-        let bitmap = CreateCompatibleBitmap(screen, width as i32, height as i32);
-        let old = SelectObject(memory, bitmap);
-        let mut pixels = vec![0u8; width * height * 4];
-        let copied = BitBlt(memory, 0, 0, width as i32, height as i32, screen, screen_w - width as i32, screen_h - height as i32, SRCCOPY);
-        let mut info = BitmapInfo {
-            size: 40,
-            width: width as i32,
-            height: -(height as i32),
-            planes: 1,
-            bit_count: 32,
-            compression: 0,
-            size_image: 0,
-            x_pels: 0,
-            y_pels: 0,
-            clr_used: 0,
-            clr_important: 0,
-            colors: [0; 4],
-        };
-        let read = if copied != 0 {
-            GetDIBits(memory, bitmap, 0, height as u32, pixels.as_mut_ptr().cast(), &mut info, 0)
-        } else {
-            0
-        };
-        SelectObject(memory, old);
-        DeleteObject(bitmap);
-        DeleteDC(memory);
-        ReleaseDC(std::ptr::null_mut(), screen);
-        if read == 0 {
-            return Err(io::Error::other("the screen could not be read"));
-        }
-        Ok(Shot { width, height, pixels })
-    }
+    duplication::grab(height)
 }
 
 #[cfg(not(windows))]
@@ -434,6 +538,30 @@ pub(crate) fn command(args: &[String]) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The capture on this PC's real screen (`--ignored --nocapture`): its size,
+    /// and what each look and each full grab costs.
+    #[test]
+    #[ignore]
+    fn capture_on_this_screen() {
+        let stats = |height: usize, n: usize| {
+            let mut took: Vec<u128> = (0..n)
+                .map(|_| {
+                    let began = Instant::now();
+                    let shot = grab(height).expect("capture");
+                    assert_eq!((shot.width, shot.height, shot.pixels.len()), (CELL * COLS, height, CELL * COLS * height * 4));
+                    let us = began.elapsed().as_micros();
+                    thread::sleep(Duration::from_millis(20));
+                    us
+                })
+                .collect();
+            took.sort();
+            println!("height {height}: n {n}, us min {} median {} p95 {} max {}", took[0], took[n / 2], took[n * 95 / 100], took[n - 1]);
+        };
+        grab(CELL).expect("the first look opens the session");
+        stats(CELL, 200);
+        stats(FULL_HEIGHT, 50);
+    }
 
     /// A capture holding what Strip.lua draws for `text`: its cells as 4x4
     /// blocks from the bottom-left of a 1024-wide shot, unused cells of the last
