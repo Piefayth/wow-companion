@@ -683,9 +683,15 @@ end)
 local keyOwner = CreateFrame("Frame", "WCJobsKeys", UIParent)
 local bound = false
 local elapsed = 0
+local lastTab
 keyOwner:SetScript("OnUpdate", function(_, dt)
 	elapsed = elapsed + dt
-	if elapsed < 0.2 then return end
+	-- a tab change redraws at once, in step with the tab (the player,
+	-- 2026-11-10: the legend lagged a beat behind); otherwise five times a second
+	local frame = core.logFrame and core.logFrame()
+	local tab = frame and frame:IsShown() and frame.currentTab or 0
+	if elapsed < 0.2 and tab == lastTab then return end
+	lastTab = tab
 	elapsed = 0
 	if InCombatLockdown() then return end
 	local mgr = GamepadMode and GamepadMode.FrameControlsManager
