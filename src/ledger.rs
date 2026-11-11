@@ -315,8 +315,18 @@ fn say(addons: &Path, news: Vec<String>) {
 /// At `run`'s start, before any request: load the ledger, number above what
 /// the game holds, end the jobs the last companion left running, and put
 /// every job back in the jobs table. Returns the lines that say which ended,
-/// to send (they are in the mailbox already).
-pub(crate) fn open(addons: &Path) -> Vec<Line> {
+/// to send (they are in the mailbox already). With the agents off there is no
+/// conversation, so no ledger: nothing is loaded.
+pub(crate) fn open(addons: &Path, agents: bool) -> Vec<Line> {
+    // what is wrong now is this companion's to say: only a change rewrites the
+    // file, so one left by an earlier companion, or by a check since removed,
+    // would stand for good
+    if let Some(path) = problems_path() {
+        let _ = fs::remove_file(path);
+    }
+    if !agents {
+        return Vec::new();
+    }
     let dir = companion_dir().unwrap_or_else(|_| env::temp_dir());
     let ledger_path = dir.join("ledger.json");
     let mut news = Vec::new();

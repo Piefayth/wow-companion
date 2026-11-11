@@ -157,7 +157,7 @@ fn watch(choices: mpsc::Receiver<Choice>) {
             was_running = true;
             launched = None;
             let paused = lifecycle::pause_file().map(|path| path.exists()).unwrap_or(false);
-            // what the ledger reports (src/ledger.rs: the mailbox not taken, a
+            // what the ledger reports (src/ledger.rs: a save it could not read, a
             // file it could not write) is said on the icon too
             let ledger = crate::ledger::problems();
             let also = ledger.first().map(|problem| format!("; {problem}")).unwrap_or_default();

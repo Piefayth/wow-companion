@@ -240,7 +240,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     // dictation only (the setup window's agent "off"): no agent, so no conversation
     // and no ledger; what would be a line in one is said as a notice (channel::post)
     let agents = !options.iter().any(|option| option.strip_prefix("agent=") == Some(wow_companion_settings::AGENT_OFF));
-    let recovered = if agents { ledger::open(addons) } else { Vec::new() };
+    let recovered = ledger::open(addons, agents);
     {
         let addons = addons.to_path_buf();
         thread::spawn(move || {

@@ -50,23 +50,29 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
             .unwrap_or_default();
         line(true, "crashes", &format!("last: {last} ({})", crashes.display()));
     }
-    // every conversation line until the game has saved it (src/ledger.rs)
-    let problems = crate::ledger::problems();
-    let waiting = crate::companion_dir()
-        .ok()
-        .and_then(|dir| fs::read(dir.join("ledger.json")).ok())
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        .and_then(|ledger| ledger["lines"].as_array().map(Vec::len));
-    let mailbox = addons.join(crate::ledger::MAILBOX).join("Mail.lua").exists();
-    line(
-        problems.is_empty() && mailbox,
-        "ledger",
-        &match (problems.is_empty(), mailbox) {
-            (true, true) => format!("{} line(s) not yet saved by the game, all in the mailbox", waiting.unwrap_or(0)),
-            (true, false) => format!("no mailbox in {}: `install`", addons.join(crate::ledger::MAILBOX).display()),
-            (false, _) => problems.join(" | "),
-        },
-    );
+    // every conversation line until the game has saved it (src/ledger.rs);
+    // dictation only has no conversation, so no ledger
+    let settings = wow_companion_settings::Settings::load();
+    if settings.get("agent") == Some(wow_companion_settings::AGENT_OFF) {
+        line(true, "ledger", "none: the agents are off");
+    } else {
+        let problems = crate::ledger::problems();
+        let waiting = crate::companion_dir()
+            .ok()
+            .and_then(|dir| fs::read(dir.join("ledger.json")).ok())
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|ledger| ledger["lines"].as_array().map(Vec::len));
+        let mailbox = addons.join(crate::ledger::MAILBOX).join("Mail.lua").exists();
+        line(
+            problems.is_empty() && mailbox,
+            "ledger",
+            &match (problems.is_empty(), mailbox) {
+                (true, true) => format!("{} line(s) not yet saved by the game, all in the mailbox", waiting.unwrap_or(0)),
+                (true, false) => format!("no mailbox in {}: `install`", addons.join(crate::ledger::MAILBOX).display()),
+                (false, _) => problems.join(" | "),
+            },
+        );
+    }
     let pending = crate::companion_dir().map(|dir| dir.join("restart.request").exists()).unwrap_or(false);
     line(!pending, "restart", if pending { "a restart is waiting for the companion to go idle" } else { "none pending" });
     line(true, "agent", if agent_busy() { "working on a request" } else { "idle" });
@@ -179,7 +185,6 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
     // the mic: is audio actually arriving?
     println!("checking the mic for 2 s (say nothing, or anything)...");
     // the mic the setup window chose (settings.toml), else the default input
-    let settings = wow_companion_settings::Settings::load();
     if let Err(err) = crate::voice::miccheck(settings.get("mic"), None) {
         line(false, "mic", &err.to_string());
     }
