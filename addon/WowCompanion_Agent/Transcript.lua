@@ -17,16 +17,17 @@ local PAD_L, PAD_R, PAD_TOP = 10, 28, 6
 local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 local NOTE_FONT = "GameFontHighlightSmall"
 
--- Every turn on the modern neutral slate, tiled as Blizzard tiles it
--- (Blizzard_ChromieTimeUI.xml:72); the player's turns one step lighter by an
--- additive copy of the same tile, never by hue (docs/proposals/
--- companion-chat-look.md, round 2, option A: brown next to grey at the same
--- darkness read as muddy). Turns parted by the quest log's divider.
-local SLATE = "UI-Frame-Neutral-BackgroundTile"
-local LIFT = { you = 0.25, claude = 0 }
-local function slate(content, sublevel)
+-- Every turn on Blizzard's marble, as Guild News uses it, lifted by an
+-- additive copy of itself so its veining reads (it is near black alone); the
+-- player's turns lifted one step further, by value, never by hue (brown next to
+-- grey read as muddy). The neutral slate tile read as wooden planks (the
+-- player, 2026-11-11: "a hundred million times worse"). Turns parted by the
+-- quest log's divider.
+local MARBLE = [[Interface\FrameGeneral\UI-Background-Marble]]
+local LIFT = { you = 0.95, claude = 0.6 }
+local function marble(content, sublevel)
 	local t = content:CreateTexture(nil, "BACKGROUND", nil, sublevel)
-	t:SetAtlas(SLATE)
+	t:SetTexture(MARBLE, "REPEAT", "REPEAT")
 	t:SetHorizTile(true)
 	t:SetVertTile(true)
 	return t
@@ -36,8 +37,8 @@ local function ownBand(band, owner)
 	band.lift:SetAlpha(LIFT[owner] or 0)
 end
 local function turnBand(content, owner)
-	local band = slate(content, -1)
-	local lift = slate(content, 0)
+	local band = marble(content, -1)
+	local lift = marble(content, 0)
 	lift:SetBlendMode("ADD")
 	lift:SetAllPoints(band)
 	band.lift = lift
