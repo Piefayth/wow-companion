@@ -44,7 +44,6 @@ do
 	end
 	-- text: the payload (any bytes); seconds: how long to stay (default 3)
 	function WowCompanion_Strip.Send(text, seconds)
-		local began = debugprofilestop()
 		text = tostring(text or "")
 		if not frame then build() end
 		place()
@@ -70,13 +69,6 @@ do
 		-- unused cells of the last row stay black, which decodes as padding
 		for i = cells, rows * COLS - 1 do cell(i, 0, 0, 0) end
 		frame:Show()
-		-- the bridge probe's timing (docs/proposals/bridge-probe.md, section 3)
-		local probe = WowCompanionLinkDB and WowCompanionLinkDB.bridgeProbe
-		if probe and probe.strip then
-			probe.strip[#probe.strip + 1] = { ms = debugprofilestop() - began, cells = rows * COLS, bytes = n,
-				at = date("%H:%M:%S") }
-			while #probe.strip > 20 do table.remove(probe.strip, 1) end
-		end
 		if hideTimer then hideTimer:Cancel() end
 		hideTimer = C_Timer.NewTimer(seconds or 3, function() frame:Hide() end)
 		return n

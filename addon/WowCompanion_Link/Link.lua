@@ -18,7 +18,7 @@ local SIGNALS = "Interface\\AddOns\\WowCompanion_Link\\Signals\\"
 
 WC.Saved("WowCompanion_Link", "WowCompanionLinkDB", function(db)
 	WC.MoveSaved(db, { "loads", "leftAt", "slotCount", "channel", "talkKey", "chatChannel",
-		"chatBoxTrace", "minimapAngle", "bridgeProbe", "keepChatDraft", "probe", "previous" })
+		"chatBoxTrace", "minimapAngle", "keepChatDraft", "probe", "previous" })
 end)
 
 local nextSlot = 1
@@ -436,8 +436,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- loads of this save, counted here only: 1 after a higher count means the
 		-- save was lost and the addon loaded empty (read by src/backups.rs)
 		db.loads = (db.loads or 0) + 1
-		-- the frame bell trial's switch and the slot bells' first, typed one; remove next session
-		db.frameBells, db.slotBells = nil, nil
+		-- the frame bell trial's switch, the slot bells' first typed one and the
+		-- bridge probe's data; remove next session
+		db.frameBells, db.slotBells, db.bridgeProbe = nil, nil, nil
 		-- the game saves before it reloads, so hold on to the session just read
 		db.previous = db.probe
 		db.probe = {}

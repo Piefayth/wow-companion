@@ -89,7 +89,7 @@ yes; don't reinvent what Claude Code has.
     `Chat.lua` whisper lookup and the chat line (a line goes into the chat box the
     player opened, or waits for the next one; nothing opens it), the `chat` and
     `send` kinds. `ChatWheel.lua` dictation without the agent (L1+R1).
-    `Strip.lua`, `BridgeProbe.lua`, `Status.lua` (minimap status). `Signals/`
+    `Strip.lua`, `Status.lua` (minimap status). `Signals/`
     the bells. Saved: `WowCompanionLinkDB`. Core and Link with the agents off is
     the dictation product.
   - `WowCompanion_Agent` (needs Link): `Agent.lua` the Companion window's

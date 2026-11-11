@@ -13,5 +13,4 @@ Link.lua
 Strip.lua
 Chat.lua
 ChatWheel.lua
-BridgeProbe.lua
 Status.lua
