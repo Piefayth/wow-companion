@@ -22,16 +22,143 @@ local function buildTabs(frame, messages, pending)
 	end
 	pages[2], pages[3] = page(), page()
 
-	-- Tools: everyday buttons, Blizzard's red panel buttons in a column, each
-	-- with a line saying what it does
+	-- Tools (the player, 2026-11-10: "data-appropriate controls"): settings are
+	-- labelled rows with the control their data calls for, a dropdown for a
+	-- choice, a slider for a range; actions stay buttons, under their own
+	-- heading. The slider is Blizzard's MinimalSliderWithSteppers, whose
+	-- steppers the controller's focus cycle reaches; the dropdown is our own
+	-- (below).
 	local tools = pages[2]
 	local y = 0
-	local function note(b, text)
+	local LABEL_W, CONTROL_W = 110, 190
+	local function focusable(f)
+		-- SecureHelper-wrapped: in a fight it fails with "Interface action failed",
+		-- so a control made in combat (a dropdown list opened mid-fight) is marked
+		-- when the fight ends
+		if f and SmartNavigation_MarkFrameFocusable then
+			WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, f) end)
+		end
+	end
+	local function heading(text)
+		local fs = tools:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+		fs:SetPoint("TOPLEFT", 0, -y)
+		fs:SetText(text)
+		y = y + 26
+	end
+	local function note(anchor, text)
 		local fs = tools:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		fs:SetPoint("LEFT", b, "RIGHT", 12, 0)
+		fs:SetPoint("LEFT", anchor, "RIGHT", 12, 0)
 		fs:SetPoint("RIGHT", tools, "RIGHT", 0, 0)
 		fs:SetJustifyH("LEFT")
 		fs:SetText(text)
+	end
+	-- one setting: its name on the left, the control beside it, a note after
+	local function row(label, height)
+		local fs = tools:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		fs:SetPoint("TOPLEFT", 0, -y - 6)
+		fs:SetWidth(LABEL_W)
+		fs:SetJustifyH("LEFT")
+		fs:SetText(label)
+		local top = y
+		y = y + (height or 34)
+		return top
+	end
+	-- A choice from a list, as a dropdown built from parts the controller
+	-- already reaches (the player, 2026-11-10: Blizzard's DropdownButton and a
+	-- cover over it both stayed out of the focus cycle). The face is a plain
+	-- Button in Blizzard's dropdown art showing the current value; pressing it
+	-- opens a list of UIPanelButtons under it, the same kind as the Actions
+	-- buttons, which focus fine. Picking one sets it and closes the list.
+	local openList
+	local function dropdown(label, text, options, get, set)
+		local top = row(label)
+		local d = CreateFrame("Button", nil, tools)
+		d:SetSize(CONTROL_W, 26)
+		d:SetPoint("TOPLEFT", LABEL_W, -top)
+		local bg = d:CreateTexture(nil, "BACKGROUND")
+		bg:SetAtlas("common-dropdown-textholder")
+		bg:SetAllPoints()
+		local arrow = d:CreateTexture(nil, "ARTWORK")
+		arrow:SetAtlas("common-dropdown-a-button", true)
+		arrow:SetPoint("RIGHT", -2, -1)
+		local hl = d:CreateTexture(nil, "HIGHLIGHT")
+		hl:SetAtlas("common-dropdown-textholder")
+		hl:SetAllPoints()
+		hl:SetBlendMode("ADD")
+		hl:SetAlpha(0.35)
+		local value = d:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		value:SetPoint("LEFT", 10, 0)
+		value:SetPoint("RIGHT", arrow, "LEFT", -4, 0)
+		value:SetJustifyH("LEFT")
+		value:SetText(get() or "")
+		local made, list = pcall(CreateFrame, "Frame", nil, tools, "InsetFrameTemplate")
+		if not made or not list then list = CreateFrame("Frame", nil, tools) end
+		list:SetPoint("TOPLEFT", d, "BOTTOMLEFT", 0, -2)
+		list:SetFrameStrata("DIALOG")
+		list:Hide()
+		local back = list:CreateTexture(nil, "BACKGROUND", nil, -1)
+		back:SetColorTexture(0, 0, 0, 0.92)
+		back:SetAllPoints()
+		local items = {}
+		local function close()
+			list:Hide()
+			if openList == list then openList = nil end
+		end
+		local function fill()
+			for _, b in ipairs(items) do b:Hide() end
+			local names = options()
+			for i, name in ipairs(names) do
+				local b = items[i]
+				if not b then
+					local ok, nb = pcall(CreateFrame, "Button", nil, list, "UIPanelButtonTemplate")
+					if not ok or not nb then return end
+					b = nb
+					b:SetSize(CONTROL_W - 12, 24)
+					b:SetPoint("TOPLEFT", 6, -6 - (i - 1) * 26)
+					focusable(b)
+					items[i] = b
+				end
+				b:SetText((name == get() and "> " or "") .. name)
+				b:SetScript("OnClick", function()
+					set(name)
+					value:SetText(get() or name)
+					close()
+				end)
+				b:Show()
+			end
+			list:SetSize(CONTROL_W, 12 + #names * 26)
+		end
+		d:SetScript("OnClick", function()
+			if list:IsShown() then return close() end
+			if openList then openList:Hide() end
+			fill()
+			list:Show()
+			openList = list
+		end)
+		d:SetScript("OnShow", function() value:SetText(get() or "") end)
+		note(d, text)
+		focusable(d)
+		tools:HookScript("OnHide", close)
+		return d
+	end
+	-- a number in a range: Blizzard's slider with steppers either side
+	local function slider(label, text, min, max, steps, get, set, format)
+		local top = row(label, 38)
+		local made, s = pcall(CreateFrame, "Frame", nil, tools, "MinimalSliderWithSteppersTemplate")
+		if not made or not s then return end
+		s:SetWidth(CONTROL_W)
+		s:SetPoint("TOPLEFT", LABEL_W, -top - 2)
+		local formatters = MinimalSliderWithSteppersMixin and {
+			[MinimalSliderWithSteppersMixin.Label.Right] = CreateMinimalSliderFormatter
+				and CreateMinimalSliderFormatter(MinimalSliderWithSteppersMixin.Label.Right, format) or format,
+		}
+		s:Init(get(), min, max, steps, formatters)
+		s:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, value) set(value) end, s)
+		note(s.RightText or s, text)
+		focusable(s.Back)
+		focusable(s.Slider)
+		focusable(s.Forward)
+		return s
 	end
 	local function button(label, text, onClick)
 		local made, b = pcall(CreateFrame, "Button", nil, tools, "UIPanelButtonTemplate")
@@ -41,10 +168,54 @@ local function buildTabs(frame, messages, pending)
 		b:SetText(label)
 		b:SetScript("OnClick", onClick)
 		note(b, text)
-		if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
+		focusable(b)
 		y = y + 34
 		return b
 	end
+
+	heading("Settings")
+	dropdown("Window size", "The size the window opens at. The corner grip changes it just for now.",
+		function() return frame.SIZE_NAMES or { "Small", "Medium", "Large" } end,
+		function() return (frame.SIZE_NAMES or {})[WowCompanionDB.windowSize or 2] end,
+		function(name)
+			for i, n in ipairs(frame.SIZE_NAMES or {}) do
+				if n == name and frame.SetDefaultSize then frame.SetDefaultSize(i) end
+			end
+		end)
+	if WC.Fonts then
+		dropdown("Font", "The interface font. Changes at once, kept across reloads.",
+			function()
+				local names = {}
+				for _, entry in ipairs(WC.Fonts.list) do names[#names + 1] = entry.name end
+				return names
+			end,
+			function() return WC.Fonts.Current() end,
+			function(name)
+				local said = WC.Fonts.Set(name)
+				if said:find("refused") or said:find("failed") then print(said) end
+			end)
+		local scales = WC.Fonts.scales
+		local lo, hi = scales[1], scales[#scales]
+		slider("Text size", "All interface text, with any font.", lo * 100, hi * 100, #scales - 1,
+			function() return math.floor(WC.Fonts.Scale() * 100 + 0.5) end,
+			function(value)
+				local k = math.floor(value + 0.5) / 100
+				if math.abs(k - WC.Fonts.Scale()) > 0.001 then WC.Fonts.SetScale(k) end
+			end,
+			function(value) return ("%d%%"):format(math.floor(value + 0.5)) end)
+	end
+	if WC.Transcript and WC.Transcript.SetScale then
+		slider("Window text", "This window's own text, on top of the size above.", 80, 200, 12,
+			function() return math.floor(WC.Transcript.Scale() * 100 + 0.5) end,
+			function(value)
+				local k = math.floor(value + 0.5) / 100
+				if math.abs(k - WC.Transcript.Scale()) > 0.001 then WC.Transcript.SetScale(k) end
+			end,
+			function(value) return ("%d%%"):format(math.floor(value + 0.5)) end)
+	end
+
+	y = y + 8
+	heading("Actions")
 	-- The reload is protected, so it is a secure button the player presses. Built
 	-- out of combat only: a secure frame's attributes cannot be set in one.
 	local reloadY = y
@@ -61,7 +232,7 @@ local function buildTabs(frame, messages, pending)
 		b:SetAttribute("macrotext", "/reload")
 		b:RegisterForClicks("AnyDown") -- see CLAUDE.md, "Register a secure button for AnyDown"
 		note(b, "Lets me see what changed, and clears any taint.")
-		if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
+		focusable(b)
 		frame.reloadButton = b
 		-- out of the window for the length of a fight, so the window stays an
 		-- ordinary frame that opens and closes in combat (Companion.lua, stow)
@@ -74,58 +245,6 @@ local function buildTabs(frame, messages, pending)
 		end
 	end
 	makeReload()
-	local sizeButton = button("Size: " .. ({ "Small", "Medium", "Large" })[WowCompanionDB.windowSize or 2],
-		"The size the window opens at. The corner grip changes it just for now.")
-	if sizeButton then
-		sizeButton:SetScript("OnClick", function(self)
-			self:SetText("Size: " .. frame.CycleDefaultSize())
-		end)
-	end
-	-- the interface font, switched live (Fonts.lua), picked from a dropdown:
-	-- the button opens a list of every font beside it, each a button the pad
-	-- can land on; choosing one applies it and closes the list (the player,
-	-- 2026-11-10)
-	local fontButton = button("Font: " .. (WC.Fonts and WC.Fonts.Current() or "Default") .. "  >",
-		"Pick the interface font. Changes at once, kept across reloads.")
-	if fontButton and WC.Fonts then
-		local made, list = pcall(CreateFrame, "Frame", nil, tools, "InsetFrameTemplate")
-		if not made or not list then list = CreateFrame("Frame", nil, tools) end
-		list:SetPoint("TOPLEFT", fontButton, "TOPRIGHT", 8, 0)
-		list:SetFrameLevel(fontButton:GetFrameLevel() + 10)
-		list:Hide()
-		local back = list:CreateTexture(nil, "BACKGROUND", nil, -1)
-		back:SetColorTexture(0, 0, 0, 0.92)
-		back:SetAllPoints()
-		local function label() return "Font: " .. WC.Fonts.Current() .. "  >" end
-		for i, entry in ipairs(WC.Fonts.list) do
-			local ok, b = pcall(CreateFrame, "Button", nil, list, "UIPanelButtonTemplate")
-			if ok and b then
-				b:SetSize(200, 24)
-				b:SetPoint("TOPLEFT", 6, -6 - (i - 1) * 26)
-				b:SetText(entry.name)
-				b:SetScript("OnClick", function()
-					local said = WC.Fonts.Set(entry.name)
-					fontButton:SetText(label())
-					list:Hide()
-					if said:find("refused") or said:find("failed") then print(said) end
-				end)
-				if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
-			end
-		end
-		list:SetSize(212, 12 + #WC.Fonts.list * 26)
-		fontButton:SetScript("OnClick", function() list:SetShown(not list:IsShown()) end)
-		tools:HookScript("OnHide", function() list:Hide() end)
-	end
-	local function scaleText()
-		return ("Text size: %d%%"):format(math.floor((WC.Fonts and WC.Fonts.Scale() or 1) * 100 + 0.5))
-	end
-	local scaleButton = button(scaleText(), "Steps the interface text 90% to 140%, with any font.")
-	if scaleButton and WC.Fonts then
-		scaleButton:SetScript("OnClick", function(self)
-			WC.Fonts.NextScale()
-			self:SetText(scaleText())
-		end)
-	end
 	button("Clear map pins", "Remove every pin I put on your minimap and world map.", function()
 		if WCPins and WCPins.Clear then WCPins.Clear() end
 		frame.SelectTab(3)
@@ -166,6 +285,10 @@ local function buildTabs(frame, messages, pending)
 		local blocked = WowCompanionDB.blocked or {}
 		local b = blocked[#blocked]
 		add("Blocked actions", b and ("%d kinds, last %s: %s x%d"):format(#blocked, date("%H:%M", b.at or 0), b.what, b.count or 1) or "none")
+		local probs = WC.ProviderProblems and WC.ProviderProblems() or {}
+		local plist = {}
+		for _, p in ipairs(probs) do plist[#plist + 1] = ("%s/%s: %s"):format(p.cap, p.provider, p.why) end
+		add("Addon links", #plist == 0 and "all working" or ("|cffff6060" .. table.concat(plist, "; ") .. "|r"))
 		add("Combat", InCombatLockdown() and "|cffff6060yes|r " .. grey .. "(changes wait until it ends)|r" or "no")
 		status:SetText(table.concat(lines, "\n"))
 	end
@@ -215,21 +338,34 @@ local function buildTabs(frame, messages, pending)
 	local LABELS = { [""] = "Main", l1 = "L1", l2 = "L2", r1 = "R1", r2 = "R2", quick = "Quick" }
 	for i, key in ipairs({ "", "l1", "l2", "r1", "r2", "quick" }) do
 		local b = CreateFrame("Button", nil, well)
-		b:SetSize(WELL - 10, 24)
-		b:SetPoint("TOP", well, "TOP", 0, -6 - (i - 1) * 26)
-		local normal = b:CreateTexture(nil, "BACKGROUND")
-		normal:SetAtlas("auctionhouse-nav-button")
-		normal:SetAllPoints()
-		local selected = b:CreateTexture(nil, "ARTWORK")
-		selected:SetAtlas("auctionhouse-nav-button-select")
+		-- Blizzard's own geometry (AuctionCategoryButtonTemplate): a 21-tall
+		-- button, its art 32 tall from the top-left (-2, 0), since the atlas has
+		-- empty space at the bottom; the select glow on the art's exact bounds.
+		-- Stretched to the button, the art sat high and the text low.
+		b:SetSize(WELL - 10, 21)
+		b:SetPoint("TOP", well, "TOP", 0, -8 - (i - 1) * 24)
+		local function art(layer, atlas)
+			local t = b:CreateTexture(nil, layer)
+			t:SetAtlas(atlas)
+			t:SetPoint("TOPLEFT", -2, 0)
+			t:SetSize(WELL - 10 + 4, 32)
+			return t
+		end
+		art("BACKGROUND", "auctionhouse-nav-button")
+		-- the glow and highlight have no empty band: they cover the art's
+		-- visible part, which is the button itself (measured from a screenshot)
+		local function glowOn(t)
+			t:ClearAllPoints()
+			t:SetPoint("TOPLEFT", -2, 0)
+			t:SetPoint("BOTTOMRIGHT", 2, 0)
+			return t
+		end
+		local selected = glowOn(art("ARTWORK", "auctionhouse-nav-button-select"))
 		selected:SetBlendMode("ADD")
-		selected:SetAllPoints()
 		selected:Hide()
 		b.selected = selected
-		local glow = b:CreateTexture(nil, "HIGHLIGHT")
-		glow:SetAtlas("auctionhouse-nav-button-highlight")
+		local glow = glowOn(art("HIGHLIGHT", "auctionhouse-nav-button-highlight"))
 		glow:SetBlendMode("ADD")
-		glow:SetAllPoints()
 		local text = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 		text:SetPoint("LEFT", 12, 0)
 		text:SetPoint("RIGHT", -8, 0)
@@ -245,7 +381,7 @@ local function buildTabs(frame, messages, pending)
 			b:SetText(LABELS[key])
 		end
 		b:SetScript("OnClick", function() WowCompanion_SetConversation(key) end)
-		if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
+		if SmartNavigation_MarkFrameFocusable then WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, b) end) end
 		frame.convButtons[key] = b
 	end
 	frame.convButtons[""].selected:Show()
@@ -265,7 +401,7 @@ local function buildTabs(frame, messages, pending)
 			tab:SetPoint("TOPLEFT", frame.Tabs[i - 1], "TOPRIGHT", 3, 0)
 		end
 		tab:SetScript("OnClick", function(self) frame.SelectTab(self:GetID()) end)
-		if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, tab) end
+		if SmartNavigation_MarkFrameFocusable then WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, tab) end) end
 	end
 	PanelTemplates_SetNumTabs(frame, #TAB_NAMES)
 
@@ -462,8 +598,10 @@ local function buildLog()
 	-- 1.60.1 added a SmartNavigation API for exactly this: an addon can mark its own
 	-- frames focusable by the gamepad cursor, so the window is reachable on a
 	-- controller instead of needing a mouse.
+	-- The window is built on first use, which can be mid-fight; marking is
+	-- SecureHelper-wrapped and fails in combat, so it waits for the fight's end.
 	if SmartNavigation_MarkFrameFocusable then
-		pcall(SmartNavigation_MarkFrameFocusable, frame)
+		WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, frame) end)
 	end
 	-- A real UI panel, so the controller's focus-cycle button reaches it like any
 	-- of the game's own windows: that cycle walks the panels FrameControlsManager
@@ -490,17 +628,22 @@ local function buildLog()
 	-- scroll frame belongs to it, as the chat frame and Blizzard's own dialogs do
 	-- (FloatingChatFrame.lua, SocialContract.lua). It is SecureHelper-wrapped for
 	-- such callers. Deferred a tick, so the panel is registered first.
-	frame:SetScript("OnShow", function(self)
-		C_Timer.After(0, function()
-			-- the transcript is text, no buttons: without this flag a right-stick
-			-- scroll went looking for a button inside it, found none, and left the
-			-- cursor drawn on the close button while nothing was selected
-			-- (UpdateScrollSelection; the flag is Blizzard's, for "message text")
-			if SmartNavigation_MarkScrollFrameMaintainPreviousButtonOnScroll and self.messages then
-				pcall(SmartNavigation_MarkScrollFrameMaintainPreviousButtonOnScroll, self.messages.scroll)
+	-- The transcript is text, no buttons: without this flag a right-stick
+	-- scroll went looking for a button inside it, found none, and left the
+	-- cursor drawn on the close button while nothing was selected
+	-- (UpdateScrollSelection; the flag is Blizzard's, for "message text").
+	-- It is a value kept on the scroll frame, so it is set once, not on every
+	-- show: set from OnShow it ran in fights, where SecureHelper refuses it
+	-- with "Interface action failed" (40 notices on 2026-11-10, Window.lua's
+	-- OnShow named as the caller). Out of combat, or when the fight ends.
+	-- (Not handed to SmartNavigation as a scroll frame: that gave it the right
+	-- stick and took the camera away while the window had focus.)
+	-- a tick later, once buildTabs below has set frame.messages
+	C_Timer.After(0, function()
+		WC.AfterCombat(function()
+			if SmartNavigation_MarkScrollFrameMaintainPreviousButtonOnScroll and frame.messages then
+				pcall(SmartNavigation_MarkScrollFrameMaintainPreviousButtonOnScroll, frame.messages.scroll)
 			end
-			-- not handed to SmartNavigation any more: that gave it the right stick
-			-- and took the camera away while the window had focus; the arrows scroll
 		end)
 	end)
 	frame:SetScript("OnHide", function(self)
@@ -562,11 +705,9 @@ local function buildLog()
 		applySize(index)
 	end
 	frame.SIZE_NAMES = { "Small", "Medium", "Large" }
-	function frame.CycleDefaultSize()
-		local index = ((WowCompanionDB.windowSize or 2) % #SIZES) + 1
+	function frame.SetDefaultSize(index)
 		WowCompanionDB.windowSize = index
 		applySize(index)
-		return frame.SIZE_NAMES[index]
 	end
 	applySize(WowCompanionDB.windowSize or 2)
 

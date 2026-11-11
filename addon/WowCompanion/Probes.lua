@@ -94,7 +94,7 @@ local function probeGamepad()
 	-- to infer it from whether the cursor happens to land.
 	local frame = logFrame()
 	if SmartNavigation_MarkFrameFocusable then
-		pcall(SmartNavigation_MarkFrameFocusable, frame)
+		WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, frame) end)
 	end
 	for _, check in ipairs({ "SmartNavigation_IsFrameFocusable", "SmartNavigation_CanFocusFrame" }) do
 		local probe = _G[check]

@@ -685,22 +685,48 @@ function handlers.chat(inbox)
 		local result = previewLine(inbox.text or "")
 		if result then return result end
 	end
-	-- L1+R1 dictation (ChatWheel.lua): no text box in use, so the line goes to
-	-- the send preview on the channel picked on the chat wheel
-	if inbox.wheel then
+	-- L1+R1 dictation (ChatWheel.lua). The words go where the focus is (the
+	-- player, 2026-11-11): into Blizzard's chat box when the player opened it
+	-- and it has focus, else into the send preview. In the box the line keeps
+	-- its slash prefix ("/p words") and Blizzard parses it on send (cross);
+	-- circle deletes it and closes the box (the focus-lost hook below). Our code
+	-- only sets the text of a box the player opened, never its chat type.
+	if inbox.wheel and WC.ChatChannel then
+		local words = (inbox.text or ""):gsub("^%s+", "")
+		local line = WC.ChatChannel.Line(words)
+		local box = activeEditBox()
+		local boxFocused = box and box.HasFocus and box:HasFocus() and box:IsVisible()
+		if boxFocused then
+			local rest = line:match("^/w%s+(.+)") or line:match("^/whisper%s+(.+)")
+			if rest then
+				local target, message = WowCompanion_ResolveWhisper(rest)
+				if not target then
+					remember("error", "Whisper not written: " .. message .. ".")
+					WC.ChatChannel.Arrived()
+					return "refused: " .. message
+				end
+				line = "/w " .. target .. " " .. message
+			end
+			-- an empty box takes the whole line; one with a draft gets the words added
+			local had = box:GetText() or ""
+			local text = had == "" and line or (had .. " " .. words)
+			WC.Sandbox.measureOnce("dictation into chat box", function() box:SetText(text) end)
+			WC.ChatChannel.Arrived()
+			if WC.ChatChannel.Trace then WC.ChatChannel.Trace("into chat box", box) end
+			return ("chat box holds %q"):format(box:GetText())
+		end
 		local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
-		if not (focused and focused.IsVisible and focused:IsVisible()) and WC.ChatChannel then
-			local words = (inbox.text or ""):gsub("^%s+", "")
-			local line = WC.ChatChannel.Line(words)
+		if not (focused and focused.IsVisible and focused:IsVisible()) then
+			local result
 			if line ~= words then
-				-- the wheel's channel: the d-pad can turn it in the preview
 				if showPreview(line, "Send to " .. WC.ChatChannel.Name(), words, words) then
-					return ("preview: %q"):format(line)
+					result = ("preview: %q"):format(line)
 				end
 			else
-				local result = previewLine(line)
-				if result then return result end
+				result = previewLine(line)
 			end
+			if WC.ChatChannel.Trace then WC.ChatChannel.Trace("into preview", box) end
+			if result then return result end
 		end
 	end
 	-- Any text box the player put the cursor in takes dictation: the auction

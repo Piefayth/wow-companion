@@ -141,10 +141,9 @@ local function icon(parent, kind, tip, onClick)
 	end
 	b.Show = function(self) self.stale = false self:SetAlpha(1) orig.Show(self) end
 	b.SetShown = function(self, on) if on then self:Show() else self:Hide() end end
-	if not InCombatLockdown() and SmartNavigation_MarkFrameFocusable then
-		pcall(SmartNavigation_MarkFrameFocusable, b)
-	else
-		b.unmarked = true
+	-- made in a fight, it is marked for the cursor when the fight ends
+	if SmartNavigation_MarkFrameFocusable then
+		WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, b) end)
 	end
 	b:Hide()
 	made[#made + 1] = b
@@ -490,17 +489,6 @@ WC.Jobs.Model = getModel
 function WC.Jobs.Started() WC.Jobs.Refresh() end
 function WC.Jobs.Gone() WC.Jobs.Refresh() end
 
--- buttons made in a fight could not be marked for the cursor: mark them now
-local marker = CreateFrame("Frame")
-marker:RegisterEvent("PLAYER_REGEN_ENABLED")
-marker:SetScript("OnEvent", function()
-	for _, b in ipairs(made) do
-		if b.unmarked and SmartNavigation_MarkFrameFocusable then
-			b.unmarked = nil
-			pcall(SmartNavigation_MarkFrameFocusable, b)
-		end
-	end
-end)
 
 -- Shortcuts while the Companion window has the controller's focus (the
 -- player, 2026-11-10): square cancels, triangle sends now, each acting on the

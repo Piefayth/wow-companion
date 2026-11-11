@@ -456,9 +456,10 @@ local function buildPreview()
 	hint:SetPoint("BOTTOMLEFT", frame.next, "BOTTOMRIGHT", 12, 2)
 	frame.hint = hint
 
+	-- built on first use, which can be mid-fight: marking waits for its end
 	if SmartNavigation_MarkFrameFocusable then
 		for _, b in ipairs({ frame, sendLast, cancelLast, sendStep, cancelStep, frame.prev, frame.next }) do
-			pcall(SmartNavigation_MarkFrameFocusable, b)
+			WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, b) end)
 		end
 	end
 	return frame
@@ -595,7 +596,7 @@ local function buildViewer()
 		local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 		b:SetSize(width, 24)
 		b:SetText(label)
-		if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, b) end
+		if SmartNavigation_MarkFrameFocusable then WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, b) end) end
 		return b
 	end
 	frame.closeButton = button("Close", 90)
@@ -608,7 +609,7 @@ local function buildViewer()
 	frame.prevButton:SetPoint("RIGHT", frame.nextButton, "LEFT", -8, 0)
 	frame.prevButton:SetScript("OnClick", function() WowCompanion_ShowItem((frame.index or 1) - 1) end)
 
-	if SmartNavigation_MarkFrameFocusable then pcall(SmartNavigation_MarkFrameFocusable, frame) end
+	if SmartNavigation_MarkFrameFocusable then WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, frame) end) end
 	if UIPanelWindows then
 		UIPanelWindows["WowCompanionItemView"] = { area = "center", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
 	end

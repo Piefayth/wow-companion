@@ -164,6 +164,8 @@ do
 			if down then
 				watch.t = 0
 				watch:Show()
+				local box = WC.ChatChannel.ActiveBox()
+				if box and box:HasFocus() then WC.ChatChannel.Trace("chord down", box) end
 			else
 				watch:Hide()
 				if ring:IsShown() then
@@ -206,6 +208,35 @@ do
 		waiting:Hide()
 		showTag()
 		print("|cffffd100Chat:|r " .. tostring(why))
+	end
+	-- A trace for the first fight with dictation into the chat box (the
+	-- player, 2026-11-11): which chat tab was selected and whether the box had
+	-- focus when the chord went down and when the line landed. L1 and R1 page
+	-- chat tabs while the box has focus (FloatingChatFrame.lua, the dock's
+	-- footer), so the chord may move the tab. WowCompanionDB.chatBoxTrace, 30 lines.
+	WC.ChatChannel.ActiveBox = function()
+		local get = ChatEdit_GetActiveWindow or (ChatFrameUtil and ChatFrameUtil.GetActiveWindow)
+		return get and get()
+	end
+	WC.ChatChannel.Trace = function(what, box)
+		pcall(function()
+			local d = WowCompanionDB
+			d.chatBoxTrace = d.chatBoxTrace or {}
+			local dock = GENERAL_CHAT_DOCK
+			local sel = dock and FCFDock_GetSelectedWindow and FCFDock_GetSelectedWindow(dock)
+			box = box or (WC.ChatChannel.ActiveBox())
+			d.chatBoxTrace[#d.chatBoxTrace + 1] = ("%s %s | combat=%s tab=%s box=%s focus=%s text=%d"):format(
+				date("%H:%M:%S"), what, tostring(InCombatLockdown()), tostring(sel and sel:GetName()),
+				tostring(box and box:GetName()), tostring(box and box:HasFocus()),
+				box and #(box:GetText() or "") or -1)
+			while #d.chatBoxTrace > 30 do table.remove(d.chatBoxTrace, 1) end
+		end)
+	end
+	-- the line landed (in the chat box, or the preview): the wait is over
+	WC.ChatChannel.Arrived = function()
+		if not waiting:IsShown() then return end
+		waiting:Hide()
+		showTag()
 	end
 	WC.ChatChannel.Waiting = function()
 		-- a waiting line is never hidden from here: new lines stack in the

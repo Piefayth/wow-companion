@@ -106,23 +106,14 @@ set = function(name)
 	if entry.file and refused > 0 and changed == 0 then
 		apply(FONTS[1])
 		WowCompanionDB.font = "Default"
-		-- remember where the cycle stood, so the next press tries the next
-		-- font instead of this one again (a refused font used to trap the
-		-- button: Default, then the same refused font, forever)
-		Fonts.tried = entry.name
 		WowCompanionDB.fontError = Fonts.lastError or "SetFont returned false"
-		return ("%s was refused by the game (%s). Press again for the next font."):format(entry.name, WowCompanionDB.fontError)
+		return ("%s was refused by the game (%s). Pick another font."):format(entry.name, WowCompanionDB.fontError)
 	end
 	WowCompanionDB.font = entry.name
+	if WC.Transcript and WC.Transcript.SetScale then pcall(WC.Transcript.SetScale) end
 	return ("Font: %s (%d text styles)"):format(entry.name, changed)
 end
 
--- The next one in the list, for a single button the pad can press.
-function Fonts.Next()
-	local i = find(Fonts.tried or Fonts.Current())
-	Fonts.tried = nil
-	return Fonts.Set(FONTS[i % #FONTS + 1].name)
-end
 
 -- The text size, a step over the original sizes (the player, 2026-11-10:
 -- readable on a TV). Applies with whichever font is chosen.
@@ -132,12 +123,8 @@ function Fonts.SetScale(k)
 	WowCompanionDB.fontScale = k
 	local _, entry = find(Fonts.Current())
 	apply(entry)
+	if WC.Transcript and WC.Transcript.SetScale then pcall(WC.Transcript.SetScale) end
 	return ("Text size: %d%%"):format(math.floor(k * 100 + 0.5))
-end
-function Fonts.NextScale()
-	local now, i = scale(), 1
-	for j, k in ipairs(SCALES) do if math.abs(k - now) < 0.01 then i = j end end
-	return Fonts.SetScale(SCALES[i % #SCALES + 1])
 end
 
 WowCompanion_SetFont = Fonts.Set
