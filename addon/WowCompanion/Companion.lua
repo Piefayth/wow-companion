@@ -98,7 +98,6 @@ local function activeEditBox()
 end
 
 -- moved to Transcript.lua
-local function newTranscript(...) return WC.Transcript.newTranscript(...) end
 -- moved to Window.lua
 local function buildLog(...) return WC.Window.buildLog(...) end
 local function logFrame()
@@ -1160,7 +1159,6 @@ local function startPolling()
 end
 
 -- moved to Probes.lua
-local function cvar(...) return WC.Probes.cvar(...) end
 local function dumpApi(...) return WC.Probes.dumpApi(...) end
 local function dumpDocs(...) return WC.Probes.dumpDocs(...) end
 local function probeApi(...) return WC.Probes.probeApi(...) end
@@ -1168,11 +1166,8 @@ local function probeGamepad(...) return WC.Probes.probeGamepad(...) end
 local function probeSound(...) return WC.Probes.probeSound(...) end
 local function surveyApi(...) return WC.Probes.surveyApi(...) end
 -- moved to Chords.lua
-local LAST_ACTION_SLOT = 1024
-local function actionFrames(...) return WC.Chords.actionFrames(...) end
 local function itemName(...) return WC.Chords.itemName(...) end
 local function learnChords(...) return WC.Chords.learnChords(...) end
-local function slotHas(...) return WC.Chords.slotHas(...) end
 local function spellName(...) return WC.Chords.spellName(...) end
 local function spoken(...) return WC.Chords.spoken(...) end
 local function noteForms() return WC.Export.NoteForms() end
@@ -1213,7 +1208,7 @@ function handlers.bar(inbox)
 		return "refused: in combat"
 	end
 	local slot = tonumber(inbox.slot)
-	if not slot or slot < 1 or slot > LAST_ACTION_SLOT or slot ~= math.floor(slot) then
+	if not slot or slot < 1 or slot > WC.Chords.LAST_ACTION_SLOT or slot ~= math.floor(slot) then
 		return "refused: no valid slot"
 	end
 	local before = describeSlot(slot)
@@ -1559,63 +1554,26 @@ SlashCmdList.WOWCOMPANION = function(command)
 end
 
 
--- for Probes.lua
-WC.Core = WC.Core or {}
-WC.Core.SIGNALS = SIGNALS
-WC.Core.listen = listen
-WC.Core.logFrame = logFrame
--- for Jobs.lua: the live tables, and Whisper's per-conversation state
-WC.Core.working = working
-WC.Core.transcribing = transcribing
-WC.Core.setTranscribing = function(...) return setTranscribing(...) end
-WC.Core.record = record
-WC.Core.results = results
-WC.Core.say = say
-WC.Core.actionButton_get = function() return actionButton end
-WC.Core.stow = stow
-WC.Core.blocked_get = function() return blocked end
-
-
--- for Chords.lua
-WC.Core = WC.Core or {}
-WC.Core.cvar = cvar
-WC.Core.effectiveModules = effectiveModules
-
-
--- for Chat.lua
-WC.Core = WC.Core or {}
-WC.Core.remember = remember
-WC.Core.spoken = spoken
-WC.Core.toast = toast
-
-
--- for Board.lua
-WC.Core = WC.Core or {}
-WC.Core.working = working
-
-
--- for Transcript.lua
-WC.Core = WC.Core or {}
-WC.Core.LOG_KEEP = LOG_KEEP
-
-
--- for Window.lua
-WC.Core = WC.Core or {}
-WC.Core.frame = frame
-WC.Core.newTranscript = newTranscript
-WC.Core.nextSlot_get = function() return nextSlot end
-
-
--- for Tests.lua
-WC.Core = WC.Core or {}
-WC.Core.LAST_ACTION_SLOT = LAST_ACTION_SLOT
-WC.Core.actionFrames = actionFrames
-WC.Core.activeEditBox = activeEditBox
-WC.Core.slotHas = slotHas
-
-
--- for Sandbox.lua
-WC.Core = WC.Core or {}
-WC.Core.handlers = handlers
-WC.Core.taintScan = taintScan
-WC.Core.replySlot_get = function() return replySlot end
+-- What the other files may ask of this one, by name. Nothing reads its
+-- locals: a file that needs something here calls one of these.
+WC.Companion = {
+	LOG_KEEP = LOG_KEEP,
+	remember = remember,            -- a line in the conversation window
+	say = say,                      -- a line in the chat frame
+	record = record,                -- a probe result, kept in the save file
+	window = logFrame,              -- the Companion window, built on first use
+	activeEditBox = activeEditBox,  -- the chat box the player has open, or nil
+	modules = effectiveModules,     -- every agent module, name -> code
+	stow = stow,                    -- a secure button out of the window for a fight
+	-- the waiting entry of a conversation ("" is Main): { text, since, ... } or nil
+	working = function(slot) return working[slot or ""] end,
+	-- listen for one of our signal sounds (Signals/<file>) playing
+	listenSignal = function(file, heard) return listen(SIGNALS .. file, heard) end,
+	offerButton = function() return actionButton end,
+	blockedCount = function() return blocked end,
+	messagesSent = function() return nextSlot - 1 end,
+	-- the conversation the message now being handled belongs to
+	replySlot = function() return replySlot end,
+	-- a message kind this file dispatches to fn(inbox)
+	addHandler = function(kind, fn) handlers[kind] = fn end,
+}
