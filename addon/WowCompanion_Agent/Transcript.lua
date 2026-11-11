@@ -265,9 +265,12 @@ function Transcript:AddLive(header, text)
 	local line = self:Row(BODY_FONT, text, 0, 2, 0.6, 0.6, 0.6)
 	return { head = head, line = line }
 end
-function Transcript:EndLive(live, text)
+-- The work entry ends with `text`. `answered`: the reply follows it, so an
+-- entry still last is taken out and the reply stands in its place; any other
+-- end (cancelled, stopped) stays, saying so.
+function Transcript:EndLive(live, text, answered)
 	local n = #self.rows
-	if self.rows[n] == live.line and self.rows[n - 1] == live.head then
+	if answered and self.rows[n] == live.line and self.rows[n - 1] == live.head then
 		live.head.fs:Hide()
 		live.line.fs:Hide()
 		self.rows[n] = nil

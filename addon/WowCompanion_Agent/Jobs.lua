@@ -259,16 +259,17 @@ refresh = function()
 	-- the work in view: an entry added when it began, changed in place
 	local live = transcript0.live
 	if live and (live.slot ~= view or not entry) then
-		local ended = GREY .. (model:Running(live.slot) and "stopped" or "answered below") .. "|r"
+		local answered = not model:Running(live.slot)
+		local ended = GREY .. (answered and "answered below" or "stopped") .. "|r"
 		for _, job in pairs(jobs) do
 			if job.slot == live.slot and (job.endedAt or 0) >= live.began and job.asked == "running" then
-				if job.state == "cancelled" then ended = WORDS["cancelled"]
+				if job.state == "cancelled" then ended, answered = WORDS["cancelled"], false
 				elseif job.state == "answered" then ended = WORDS["too late"] end
 			elseif job.slot == live.slot and job.state == "cancelled" and (job.endedAt or 0) >= live.began then
-				ended = WORDS["cancelled"]
+				ended, answered = WORDS["cancelled"], false
 			end
 		end
-		transcript0:EndLive(live, ended)
+		transcript0:EndLive(live, ended, answered)
 		transcript0.live, live = nil, nil
 	end
 	if entry then
