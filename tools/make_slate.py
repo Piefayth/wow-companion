@@ -4,12 +4,18 @@ first: marble too busy and near black, rock flat grey, the neutral tile read as
 wooden planks. Two tiles of one stone at two values, since owners differ by
 value, never by hue.
 
-    python -I tools/make_slate.py      writes addon/WowCompanion_Agent/Art/*.tga
+    python tools/make_slate.py      writes addon/WowCompanion_Agent/Art/Slate*-<v>.tga
+
+The game keeps a loaded texture for the session under its path, so each version
+gets new file names (no restart to see a change): bump STONE_VERSION in
+Transcript.lua, run this, reload. Older versions are deleted.
 
 256 x 256, 32-bit uncompressed TGA (what the game loads besides BLP), the noise
 periodic in both axes so the tile repeats without a seam.
 """
+import glob
 import os
+import re
 import struct
 import numpy as np
 
@@ -55,10 +61,14 @@ def write_tga(path, rgb):
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
+    lua = open(os.path.join(OUT, "..", "Transcript.lua"), encoding="utf-8").read()
+    v = re.search(r"local STONE_VERSION = (\d+)", lua).group(1)
+    for old in glob.glob(os.path.join(OUT, "Slate*.tga")):
+        os.remove(old)
     # Two tiles of one stone, each its own (the player, 2026-11-11: two real
     # textures, variants, not one with a lighter wash): the same recipe from
     # different seeds, so the grain differs, at two values; a cool charcoal,
     # warmth left to the gold dividers and headers
-    write_tga(os.path.join(OUT, "Slate.tga"), stone(7, (26, 27, 30)))
-    write_tga(os.path.join(OUT, "SlateLight.tga"), stone(23, (54, 55, 60)))
+    write_tga(os.path.join(OUT, "Slate-%s.tga" % v), stone(7, (26, 27, 30)))
+    write_tga(os.path.join(OUT, "SlateLight-%s.tga" % v), stone(23, (54, 55, 60)))
     print("wrote", os.path.abspath(OUT))

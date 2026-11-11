@@ -543,7 +543,7 @@ local function buildLog()
 		-- so it reads carved rather than void; above the trough's black, below
 		-- the thumb (a child of the track, so one level up).
 		local channel = track:CreateTexture(nil, "BORDER")
-		channel:SetTexture([[Interface\AddOns\WowCompanion_Agent\Art\Slate]], "REPEAT", "REPEAT")
+		channel:SetTexture(WC.Transcript.STONE.claude, "REPEAT", "REPEAT")
 		channel:SetHorizTile(true)
 		channel:SetVertTile(true)
 		channel:SetPoint("TOPLEFT", arrows[1], "TOPLEFT", 0, 0)

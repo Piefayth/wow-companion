@@ -23,9 +23,14 @@ local NOTE_FONT = "GameFontHighlightSmall"
 -- tiles were tried first, 2026-11-11: marble too busy and near black, rock
 -- flat grey, the neutral tile wooden planks. Turns parted by the quest log's
 -- divider.
+-- The game keeps a texture it has loaded for the session under its path, so
+-- a changed file needs a new name to show without a restart: each version of
+-- the stone gets its own names (tools/make_slate.py reads this number).
+local STONE_VERSION = 2
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\]]
 local STONE = {
-	you = [[Interface\AddOns\WowCompanion_Agent\Art\SlateLight]],
-	claude = [[Interface\AddOns\WowCompanion_Agent\Art\Slate]],
+	you = ART .. "SlateLight-" .. STONE_VERSION,
+	claude = ART .. "Slate-" .. STONE_VERSION,
 }
 -- owner: whose turn, which picks the stone
 local function ownBand(band, owner)
@@ -365,5 +370,6 @@ WC.Transcript.PAD_L, WC.Transcript.PAD_R = PAD_L, PAD_R
 -- the pending lines (Jobs.lua) are turns too: the same backing and divider
 WC.Transcript.turnBand = turnBand
 WC.Transcript.ownBand = ownBand
+WC.Transcript.STONE = STONE
 WC.Transcript.TURN_GAP = TURN_GAP
 WC.Transcript.markRow = markRow
