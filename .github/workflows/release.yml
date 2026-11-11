@@ -32,7 +32,7 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Vulkan SDK (build only; players need just their graphics driver)
@@ -64,13 +64,13 @@ jobs:
           -CpuExe C:/tc/release/wow-companion.exe
           -Setup C:/ts/release/wow-companion-setup.exe
           -Name wow-companion-windows
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wow-companion-windows
           path: dist/wow-companion-windows.zip
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/wow-companion-windows.zip
           # a tag with a suffix (v0.1.0-test, v0.2.0-rc1) is a pre-release
@@ -83,11 +83,11 @@ jobs:
     # found", run 42943361104), and CUDA 12.9 predates its compiler
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       # 12.9: the last CUDA that still builds for Pascal (13.0 drops it) and the
       # first line that builds for Blackwell (the RTX 50 series, 12.0)
-      - uses: Jimver/cuda-toolkit@v0.2.35
+      - uses: Jimver/cuda-toolkit@v0.2.36
         id: cuda
         with:
           cuda: "12.9.1"
@@ -120,7 +120,7 @@ jobs:
             -Setup C:/ts/release/wow-companion-setup.exe `
             -Extra (Join-Path $bin "cudart64_12.dll"), (Join-Path $bin "cublas64_12.dll"), (Join-Path $bin "cublasLt64_12.dll") `
             -Name wow-companion-windows-cuda
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wow-companion-windows-cuda
           path: dist/wow-companion-windows-cuda.zip
