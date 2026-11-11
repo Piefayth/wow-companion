@@ -199,6 +199,39 @@ mod imp {
         pids(image).len()
     }
 
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn EnumWindows(callback: extern "system" fn(isize, isize) -> i32, param: isize) -> i32;
+        fn GetWindowThreadProcessId(window: isize, pid: *mut u32) -> u32;
+        fn IsWindowVisible(window: isize) -> i32;
+        fn GetWindow(window: isize, command: u32) -> isize;
+    }
+
+    const GW_OWNER: u32 = 4;
+
+    extern "system" fn note_window(window: isize, param: isize) -> i32 {
+        // SAFETY: param is the &mut Vec<u32> windowed_count passed, alive for
+        // the EnumWindows call that calls this
+        unsafe {
+            let owners = &mut *(param as *mut Vec<u32>);
+            if IsWindowVisible(window) != 0 && GetWindow(window, GW_OWNER) == 0 {
+                let mut pid = 0;
+                GetWindowThreadProcessId(window, &mut pid);
+                owners.push(pid);
+            }
+        }
+        1
+    }
+
+    pub fn windowed_count(image: &str) -> usize {
+        let mut owners: Vec<u32> = Vec::new();
+        // SAFETY: the callback only pushes into `owners`, which outlives the call
+        unsafe {
+            EnumWindows(note_window, &mut owners as *mut Vec<u32> as isize);
+        }
+        pids(image).into_iter().filter(|pid| owners.contains(pid)).count()
+    }
+
     pub fn hide_window(command: &mut Command) -> &mut Command {
         command.creation_flags(NO_WINDOW)
     }
@@ -252,6 +285,9 @@ mod imp {
     pub fn process_count(_image: &str) -> usize {
         0
     }
+    pub fn windowed_count(_image: &str) -> usize {
+        0
+    }
     pub fn find(_image: &str) -> Option<Process> {
         None
     }
@@ -291,6 +327,13 @@ pub fn take_lock(name: &str, wait: bool) -> Option<Lock> {
 /// How many processes run the program `image` (e.g. "Wow.exe").
 pub fn process_count(image: &str) -> usize {
     imp::process_count(image)
+}
+
+/// How many processes of `image` have a window open: a game that is closing
+/// has dropped its window but still runs while it saves, and is not a client
+/// any more (counted as two beside the new one at a restart, 2026-11-11).
+pub fn windowed_count(image: &str) -> usize {
+    imp::windowed_count(image)
 }
 
 /// Start `command` with no window of its own.
@@ -358,6 +401,7 @@ mod tests {
         let image = me.file_name().unwrap().to_string_lossy().to_string();
         assert!(process_count(&image) >= 1);
         assert_eq!(process_count("surely-not-running-12345.exe"), 0);
+        assert_eq!(windowed_count(&image), 0, "a test runs with no window: running, not open");
     }
 }
 

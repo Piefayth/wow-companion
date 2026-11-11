@@ -257,9 +257,9 @@ fn ring(addons: &Path, msg: &Msg) -> io::Result<()> {
     Ok(())
 }
 
-/// How many game clients are running (multiboxing: each reads every message).
+/// How many game clients are open (multiboxing: each reads every message).
 pub(crate) fn game_clients() -> usize {
-    wow_companion_settings::platform::process_count("Wow.exe")
+    wow_companion_settings::platform::windowed_count("Wow.exe")
 }
 
 pub(crate) fn deliver(addons: &Path, slot: u32, msg: &Msg) -> io::Result<()> {
