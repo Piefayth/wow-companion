@@ -1,8 +1,7 @@
 -- Split out of Companion.lua (2026-11-10). What it needs from there comes
--- through WC.Core; what Companion.lua calls here is WC.Transcript.
+-- through its named functions (WC.Companion.<verb>); what Companion.lua calls here is WC.Transcript.
 
-local core = WC.Core
-local LOG_KEEP = core.LOG_KEEP
+local LOG_KEEP = WC.Companion.LOG_KEEP
 
 -- The transcript, laid out like a document rather than a chat log: each turn
 -- gets a small "Claude 20:45" header, and a reply is rendered from the little
