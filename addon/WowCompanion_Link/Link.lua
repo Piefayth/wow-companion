@@ -123,6 +123,15 @@ local function learnTalkKey()
 	say("press your talk button on the controller now")
 end
 
+-- With the agents off (dictation only), what would be a conversation line (a
+-- clip that sent nothing, a reconnected headset, a crash) comes as a notice,
+-- shown as Link shows its own problems. With the agents on it is never sent.
+function handlers.notice(inbox)
+	local text = tostring(inbox.text or "")
+	WC.Board.toast("|cffff7777" .. text .. "|r", 1, 0.6, 0.6, 10)
+	return "notice shown"
+end
+
 function handlers.probe(inbox)
 	WowCompanionLinkDB.probe = WowCompanionLinkDB.probe or {}
 	WowCompanionLinkDB.probe.received = (WowCompanionLinkDB.probe.received or 0) + 1
