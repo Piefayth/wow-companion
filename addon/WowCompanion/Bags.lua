@@ -360,113 +360,16 @@ local function build()
 	end
 	function f:Closed() hl:Hide() tip:Hide() end
 
-	-- Mirror mode (BagsStandIn.lua, in combat): our slots laid exactly over
-	-- Blizzard's, which hold the controller's focus and take the presses; ours
-	-- only show. Out of it, our own grid again.
-	-- In controller mode Blizzard's combined bags lay one bag button per bag (the
-	-- ones that collapse a bag, GamepadBagBar) into the same grid as the slots
-	-- (ContainerFrame.lua UpdateItemLayout). Mirrored, those cells were gaps
-	-- (the player, 2026-11-10): ours draw the bag's icon there.
-	local bagIcons = {}
-	local function bagIcon(i)
-		local t = bagIcons[i]
-		if t then return t end
-		t = CreateFrame("Frame", nil, f)
-		t:SetSize(SIZE, SIZE)
-		t.tex = t:CreateTexture(nil, "ARTWORK")
-		t.tex:SetAllPoints()
-		t.ring = t:CreateTexture(nil, "OVERLAY")
-		t.ring:SetPoint("TOPLEFT", -1, 1)
-		t.ring:SetPoint("BOTTOMRIGHT", 1, -1)
-		t.ring:SetTexture("Interface\\Buttons\\UI-Quickslot2")
-		t.ring:SetTexCoord(0.2, 0.8, 0.2, 0.8)
-		bagIcons[i] = t
-		return t
-	end
-	local function mirrorBagButtons()
-		for _, t in pairs(bagIcons) do t:Hide() end
-		if not (GamepadBagBar and GamepadBagBar.GetBagButton) then return end
-		local n = 0
-		for bag = 0, MAXBAG do
-			local ok, btn = pcall(GamepadBagBar.GetBagButton, GamepadBagBar, bag)
-			if ok and btn and btn:IsShown() then
-				n = n + 1
-				local t = bagIcon(n)
-				local tex
-				if bag == 0 then
-					tex = "Interface\\Buttons\\Button-Backpack-Up"
-				else
-					local inv = C_Container.ContainerIDToInventoryID and C_Container.ContainerIDToInventoryID(bag)
-					tex = inv and GetInventoryItemTexture("player", inv)
-				end
-				t.tex:SetTexture(tex or "Interface\\Buttons\\UI-EmptySlot-Disabled")
-				t:ClearAllPoints()
-				t:SetPoint("CENTER", btn, "CENTER")
-				t:Show()
-			end
-		end
-	end
-
+	-- In a fight (BagsStandIn.lua): Blizzard's invisible bags hold the game's
+	-- focus, and their buttons' cursor anchors sit on our slots, so ours keeps its
+	-- own layout and only draws; the mouse is theirs. (The old overlay, our slots
+	-- laid over theirs in storage order, was removed 2026-11-10: when the anchors
+	-- are not ready, Blizzard's own bags show instead.) Mirror(nil) ends it.
 	function f:Mirror(blizz)
-		-- anchored (BagsStandIn.lua): their invisible slots navigate by ours, so
-		-- ours keeps its own layout, sections and all; only the mouse is theirs
-		if blizz and self.AnchoredTo and self.AnchoredTo(blizz) then
-			self.mirror = true
-			self.anchored = true
-			for _, b in ipairs(self.order) do b:EnableMouse(false) end
-			self:Paint()
-			return
-		end
-		self.anchored = nil
 		self.mirror = blizz and true or nil
-		if blizz then mirrorBagButtons() else for _, t in pairs(bagIcons) do t:Hide() end end
-		-- The legend stays (the player, 2026-11-10: no prompts in combat looked
-		-- broken): Blizzard's controller bags use the same buttons as ours
-		-- (square use, cross move, triangle more, circle close), and their own
-		-- legend is on their invisible frame. Below their slots, not on them; the
-		-- bag-jump prompt is ours alone.
 		for i, pr in ipairs(self.prompts) do pr:SetShown(not blizz or i < 5) end
-		if not blizz then
-			self:ClearAllPoints()
-			self:SetPoint(unpack(self.home))
-			self:Layout()
-			return
-		end
-		-- our backing spans their slots only (not their header, search box or
-		-- money row), with our usual margins and the title above
-		self:ClearAllPoints()
-		local l, r, t, bm
-		if blizz.EnumerateValidItems then
-			for _, theirs in blizz:EnumerateValidItems() do
-				if theirs:IsShown() and theirs:GetLeft() then
-					l = math.min(l or 1e9, theirs:GetLeft())
-					r = math.max(r or -1e9, theirs:GetRight())
-					t = math.max(t or -1e9, theirs:GetTop())
-					bm = math.min(bm or 1e9, theirs:GetBottom())
-				end
-			end
-		end
-		if l then
-			local k = blizz:GetEffectiveScale() / self:GetEffectiveScale()
-			self:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", l * k - EDGE, t * k + EDGE + TITLE_H + GAP_V)
-			self:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMLEFT", math.max(r * k + EDGE, l * k - EDGE + EDGE * 2 + (self.legendW or 0)), bm * k - EDGE - GAP_V - LEGEND_H)
-		else
-			self:SetPoint("TOPLEFT", blizz, "TOPLEFT", -6, 6)
-			self:SetPoint("BOTTOMRIGHT", blizz, "BOTTOMRIGHT", 6, -6)
-		end
-		for _, b in pairs(buttons) do b:Hide() end
-		if blizz.EnumerateValidItems then
-			for _, theirs in blizz:EnumerateValidItems() do
-				local ok, bag = pcall(theirs.GetBagID, theirs)
-				local ours = ok and bag and buttons[bag * 100 + theirs:GetID()]
-				if ours then
-					ours:ClearAllPoints()
-					ours:SetPoint("CENTER", theirs, "CENTER")
-					ours:EnableMouse(false)
-					ours:Show()
-				end
-			end
-		end
+		for _, b in ipairs(self.order) do b:EnableMouse(not blizz) end
+		if not blizz then self:Layout() return end
 		self:Paint()
 	end
 

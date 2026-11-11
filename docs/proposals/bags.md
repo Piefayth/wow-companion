@@ -70,5 +70,8 @@ Plan: out of combat, anchor each of Blizzard's bag item buttons to our slot for 
 same bag and slot. In a fight their (invisible) frame keeps the native cursor, but
 the cursor moves over and draws on our sectioned layout, and cross and square press
 their own secure buttons: one focus, native, sorted. Their bag-bar cells are anchored
-to ours or marked ignored. Re-anchored after bag changes, out of combat only. Our
-secure pad stays for our own macro until the native path is proven.
+to ours or marked ignored. Their buttons are pooled and re-acquired on every open, so
+each is anchored once to a proxy frame of ours, moved onto the right slot at each
+open (in combat too). Every open goes through their bags (our opener clicks their
+backpack button), and circle clicks their close. Not anchored yet (their first
+open of a session in a fight): their own bags show. The old overlay is removed.

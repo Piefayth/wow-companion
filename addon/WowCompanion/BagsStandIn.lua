@@ -56,6 +56,14 @@ do
 			end
 			return
 		end
+		-- not anchored yet (their buttons are built on their first open, so the
+		-- first fight after a reload can come before it): their own bags show,
+		-- never a layout that presses something else than it shows
+		if not (WCBags.AnchoredTo and WCBags.AnchoredTo(blizz)) then
+			restore()
+			if WCBags:IsShown() then WCBags:Hide() end
+			return
+		end
 		WCBags:Mirror(blizz)
 		WCBags:Show()
 	end
