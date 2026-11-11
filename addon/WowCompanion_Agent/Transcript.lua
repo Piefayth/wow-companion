@@ -102,7 +102,8 @@ function Transcript:Place(row, y, width)
 		-- centred on the boundary with the turn above; none above the first
 		row.divider:ClearAllPoints()
 		row.divider:SetPoint("LEFT", row.turn, "TOPLEFT", 0, 0)
-		row.divider:SetPoint("RIGHT", row.turn, "TOPRIGHT", 0, 0)
+		-- stops short of the scroll bar, which sits over the backings' right edge
+		row.divider:SetPoint("RIGHT", row.turn, "TOPRIGHT", -(PAD_R - 2), 0)
 		row.divider:SetShown(self.turnBand ~= nil)
 		self.turnBand, self.turnTop = row.turn, top
 	end
