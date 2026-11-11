@@ -338,9 +338,7 @@ WC.Link.Handle("chat", function(inbox)
 	-- words added to a draft there; with no box open it waits for one
 	if inbox.wheel and WC.ChatChannel then
 		local words = (inbox.text or ""):gsub("^%s+", "")
-		local result = chatLine(WC.ChatChannel.Line(words), words)
-		WC.ChatChannel.Arrived()
-		return result
+		return chatLine(WC.ChatChannel.Line(words), words)
 	end
 	-- Any text box the player put the cursor in takes dictation: the auction
 	-- house search, a mail recipient, a search field, as said; only chat gets

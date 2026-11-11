@@ -61,7 +61,10 @@ local function getModel()
 		audit = audit,
 		store = WowCompanionAgentDB.jobModel,
 		lines = WowCompanionAgentDB.lines,
-		changed = function() if WC.Jobs.Refresh then WC.Jobs.Refresh() end end,
+		changed = function()
+			if WC.Jobs.Refresh then WC.Jobs.Refresh() end
+			if WC.Jobs.Changed then WC.Jobs.Changed() end
+		end,
 	})
 	jobs = model.jobs
 	return model
@@ -174,8 +177,10 @@ end
 
 function WC.Jobs.Running(slot) return getModel() and model:Running(slot) or false end
 function WC.Jobs.State(id) local job = getModel() and model:Job(id) return job and job.state end
-function WC.Jobs.Hearing(slot) return getModel() and #model:Hearing(slot) > 0 or false end
-function WC.Jobs.Ended(id) return getModel() and model:Ended(id) or false end
+-- the clip being heard and the run at work in a conversation (JobsModel Work)
+function WC.Jobs.Work(slot) if getModel() then return model:Work(slot) end end
+-- whole seconds since a wall-clock ms stamp (a job's `since`)
+function WC.Jobs.Age(since) return math.max(0, math.floor((wallMs() - (since or wallMs())) / 1000)) end
 function WC.Jobs.Apply(inbox) if getModel() then model:Apply(inbox) end end
 -- a numbered line: true to apply it, false when it is held already
 function WC.Jobs.Hold(slot, n) if getModel() then return model:Hold(slot, n) end return true end
@@ -246,52 +251,40 @@ refresh = function()
 	local items = {}
 	local dots = ("."):rep(math.floor(now * 2) % 4)
 	local stamp = "  |cff5c6370" .. date("%H:%M") .. "|r"
-	local entry = WC.Companion.working(view)
-	-- a message cancelled before its run began never gets a working line: the
-	-- cancel on the message is the answer. One cancelled while it ran keeps its
-	-- line, which says so (the player, 2026-11-11)
-	if entry then
-		local live, early = false, false
-		for _, job in pairs(jobs) do
-			if job.slot == view and RANK_LIVE[job.state] then
-				if not job.cancel then live = true
-				elseif job.asked ~= "running" then early = true end
-			end
-		end
-		if early and not live and not model:WorkStatus(view) then entry = nil end
-	end
-	-- the work in view: an entry added when it began, changed in place
+	-- the run at work in view (the model's Work): one entry while it runs,
+	-- changed in place, holding the ids of every job it ran
+	local _, entry = model:Work(view)
 	local live = transcript0.live
 	if live and (live.slot ~= view or not entry) then
-		local answered = not model:Running(live.slot)
-		local ended = GREY .. (answered and "answered below" or "stopped") .. "|r"
-		for _, job in pairs(jobs) do
-			if job.slot == live.slot and (job.endedAt or 0) >= live.began and job.asked == "running" then
-				if job.state == "cancelled" then ended, answered = WORDS["cancelled"], false
-				elseif job.state == "answered" then ended = WORDS["too late"] end
-			elseif job.slot == live.slot and job.state == "cancelled" and (job.endedAt or 0) >= live.began then
-				ended, answered = WORDS["cancelled"], false
-			end
+		-- its end word is its jobs' (EndOf); a reply takes the entry's place.
+		-- None when the view moved while it still runs: the transcript is redrawn
+		local word = live.slot == view and model:EndOf(live.ids)
+		if word then
+			local ended = word == "answered" and (GREY .. "answered below|r") or WORDS[word]
+			transcript0:EndLive(live, ended, word == "answered" or word == "too late")
 		end
-		transcript0:EndLive(live, ended, answered)
 		transcript0.live, live = nil, nil
 	end
 	if entry then
-		local doing = tostring(entry.text or "thinking"):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-		local text = ("%s%s  %ds"):format(doing, dots, now - (entry.since or now))
-		local work = model:WorkStatus(view)
-		if work then text = WORDS[work] end
+		local doing = tostring(entry.text):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+		local text = ("%s%s  %ds"):format(doing, dots, WC.Jobs.Age(entry.since))
+		local status = model:WorkStatus(view)
+		if status then text = WORDS[status] end
 		if not live then
 			live = transcript0:AddLive("|cffffd100Claude|r" .. stamp, text)
-			live.slot, live.began = view, nowMs()
+			live.slot, live.ids = view, {}
 			transcript0.live = live
 		else
 			live.line.fs:SetText(text)
 		end
+		live.held = live.held or {}
+		for _, id in ipairs(entry.ids) do
+			if not live.held[id] then live.held[id], live.ids[#live.ids + 1] = true, id end
+		end
 	end
 	for _, job in ipairs(heard) do
 		if #items >= #ghosts then break end
-		local word = job.cancel and (GREY .. "cancelling|r") or ("hearing you%s  %ds"):format(dots, (nowMs() - job.at) / 1000)
+		local word = job.cancel and (GREY .. "cancelling|r") or ("hearing you%s  %ds"):format(dots, WC.Jobs.Age(job.since))
 		items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp, word, hearing = not job.cancel, job = job }
 	end
 	local base = transcript0.height or 0

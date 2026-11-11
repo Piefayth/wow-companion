@@ -87,6 +87,8 @@ impl Courier {
 /// How long after the last clip a request waits for the player to add to it:
 /// long enough to slip off the button and back on, short enough not to be felt.
 const GATHER: Duration = Duration::from_millis(500);
+/// Dictation's (L1+R1) jobs: no conversation's, each clip sent as it comes back.
+const DICTATION: &str = "say";
 
 fn main() {
     // A release ships a CPU build beside the GPU one. Settings `engine = "cpu"`
@@ -409,6 +411,15 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             "notice" => deliver(Out::Line(Line::new("", "error", text))),
             // a clip's own notice ("nothing was sent") goes to the conversation it
             // was for, not whichever one the window shows ("ask@r2 notice")
+            // dictation's clip came back empty: its job ends, said as dictation's
+            // own notice (it is no conversation's), named so its wait ends
+            "ask@say notice" => {
+                let mut notice = Msg::new("notice").text("text", text);
+                if let Some(job) = jobs::empty(DICTATION) {
+                    notice = notice.int("job", job).text("slot", DICTATION).text("state", jobs::State::Failed.name());
+                }
+                deliver(Out::Now(notice))
+            }
             r if r.ends_with(" notice") || r.ends_with(" unheard") => {
                 let role = r.trim_end_matches(" notice").trim_end_matches(" unheard");
                 // the clip's own conversation; dictation's (L1+R1) is the main one
@@ -433,31 +444,38 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 // are dropped when they come back; a clip let go while one is
                 // still being gathered joins it
                 let role = r.trim_end_matches(" heard");
-                if role == "ask" || (role.starts_with("ask@") && role != "ask@say") {
+                if role == "ask" || role.starts_with("ask@") {
                     let slot = role.strip_prefix("ask@").unwrap_or("");
                     // a new clip's job is named to the game at once: its hearing
-                    // line carries the id, and a cancel names it (no clock matching)
-                    if let (id, true) = jobs::hear(slot) {
+                    // line carries the id, and a cancel names it (no clock matching).
+                    // Dictation's clips never join: each is sent as it comes back
+                    if let (id, true) = jobs::hear(slot, slot != DICTATION) {
                         let heard = Msg::new("heard").int("job", id).text("slot", slot).text("state", jobs::State::Hearing.name());
                         return deliver(Out::Now(heard));
                     }
                 }
-                // dictation's clip, or one joining a request still being gathered:
-                // nothing new to name
+                // a clip joining a request still being gathered: nothing new to name
                 Ok(())
             }
             // L1+R1: dictation, no agent. Sent at once (no gathering): the line
             // goes into the chat box (or waits for it), on the channel it opens
             // with, else on the one picked on the chat wheel (the addon adds it)
             "ask@say" => {
+                // its clip's job ends answered with the message that carries the words
+                let Some((job, _)) = jobs::words(DICTATION, text) else {
+                    println!("  dropped: dictation cancelled while being heard");
+                    return Ok(());
+                };
+                let _ = jobs::advance(job, jobs::State::Answered);
+                let ended = |msg: Msg| msg.int("job", job).text("slot", DICTATION).text("state", jobs::State::Answered.name());
                 if discards(text) {
-                    return deliver(Out::Now(Msg::new("chat").flag("clear", true)));
+                    return deliver(Out::Now(ended(Msg::new("chat").flag("clear", true))));
                 }
                 let routed = channeled(text);
                 println!("  dictated: {routed}");
                 // no line in a conversation (the player: agents need not see
                 // every dictation); the chat box itself shows it
-                deliver(Out::Now(say_inbox(text, &routed)))
+                deliver(Out::Now(ended(say_inbox(text, &routed))))
             }
             r if r == "ask" || r.starts_with("ask@") => {
                 let slot = r.strip_prefix("ask@").unwrap_or("").to_string();

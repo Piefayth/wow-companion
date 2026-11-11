@@ -193,20 +193,21 @@ pub(crate) fn create(slot: &str, text: &str, state: State) -> u64 {
     with(|jobs| insert(jobs, slot, state, text))
 }
 
-/// A clip was let go in this conversation. A clip let go within JOIN of the
-/// one before, still being heard, joins it (you let go too early and went on);
-/// otherwise a new job starts. Joining every clip while one was still heard
+/// A clip was let go in this conversation. With `join`, a clip let go within
+/// JOIN of the one before, still being heard, joins it (you let go too early and
+/// went on); otherwise, and always for dictation (sent clip by clip), a new job
+/// starts. Joining every clip while one was still heard
 /// merged separate messages whenever Whisper was slow (the player, 2026-11-10:
 /// an 11 s transcription swallowed the two messages after it).
 /// Returns the job and whether it is new: a new job's first message to the
 /// game is `heard`, which names it, so a cancel of the clip names its job (an
 /// exact identity both sides share; docs/proposals/conversation-sync.md).
 pub(crate) const JOIN: Duration = Duration::from_millis(1500);
-pub(crate) fn hear(slot: &str) -> (u64, bool) {
+pub(crate) fn hear(slot: &str, join: bool) -> (u64, bool) {
     with(|jobs| {
         let joinable = jobs
             .values()
-            .find(|job| job.slot == slot && job.state == State::Hearing && job.last_release.elapsed() <= JOIN)
+            .find(|job| join && job.slot == slot && job.state == State::Hearing && job.last_release.elapsed() <= JOIN)
             .map(|job| job.id);
         let (id, new) = match joinable {
             Some(id) => (id, false),
@@ -465,11 +466,11 @@ mod tests {
     /// message after the one meant, and a slow transcription swallowed the next).
     #[test]
     fn two_clips_in_flight_stay_two_and_a_cancel_names_its_own() {
-        let (first, new) = hear("t-two");
+        let (first, new) = hear("t-two", true);
         assert!(new);
-        assert_eq!(hear("t-two"), (first, false), "a clip let go at once joins");
+        assert_eq!(hear("t-two", true), (first, false), "a clip let go at once joins");
         std::thread::sleep(Duration::from_millis(1600));
-        let (second, new) = hear("t-two");
+        let (second, new) = hear("t-two", true);
         assert!(new && first != second, "a clip let go later is its own message");
         // words come back in order: the first clip's (two clips) then the second's
         assert_eq!(words("t-two", "one"), Some((first, true)));
@@ -512,19 +513,19 @@ mod tests {
 
     #[test]
     fn clips_gather_into_one_job_and_a_cancel_drops_late_words() {
-        let (id, _) = hear("t-hear");
-        assert_eq!(hear("t-hear"), (id, false), "a second clip joins the first");
+        let (id, _) = hear("t-hear", true);
+        assert_eq!(hear("t-hear", true), (id, false), "a second clip joins the first");
         assert_eq!(words("t-hear", "open my"), Some((id, true)));
         cancel(&[id]);
         assert_eq!(words("t-hear", "bags"), None);
         // the next clip is a new job
-        assert_ne!(hear("t-hear").0, id);
+        assert_ne!(hear("t-hear", true).0, id);
     }
 
     #[test]
     fn gathering_waits_for_every_clip_then_queues() {
-        let (id, _) = hear("t-gather");
-        hear("t-gather");
+        let (id, _) = hear("t-gather", true);
+        hear("t-gather", true);
         words("t-gather", "one");
         assert!(gathered(id, Duration::ZERO, false).is_none(), "a clip is still out");
         words("t-gather", "two");
@@ -534,7 +535,7 @@ mod tests {
 
     #[test]
     fn a_clip_with_no_words_ends_its_job() {
-        let (id, _) = hear("t-empty");
+        let (id, _) = hear("t-empty", true);
         assert_eq!(words("t-empty", "  "), None);
         assert_eq!(state(id), Some(State::Failed));
     }
@@ -593,5 +594,14 @@ mod tests {
         assert!(!interrupted(waiting));
         assert!(take_withdrawn("t-now").is_empty(), "nothing is withdrawn");
     }
+
+    #[test]
+    fn dictation_clips_never_join() {
+        let (first, _) = hear("t-dictate", false);
+        assert_eq!(words("t-dictate", "hello"), Some((first, true)));
+        let (second, new) = hear("t-dictate", false);
+        assert!(new && second != first, "each dictation clip is its own job");
+    }
 }
+
 

@@ -8,9 +8,10 @@
 --   WC.Link.Run(step)           a step through its handler: ok, outcome
 --   WC.Link.Current()           the conversation slot of the message being handled
 --   WC.Link.Slash(word, fn)     a /wc subcommand
--- Bus messages sent: TALK_TAP (a short press of the talk button), TALK_HELD(slot)
--- (a clip let go), LINK_STEP(step, ok, outcome) (a follow-up step ran),
--- LINK_FAILED(text), MAILBOX_JOBS(jobs).
+-- Bus messages sent: TALK_TAP (a short press of the talk button),
+-- JOB_MESSAGE(inbox) (a handled message that names a job or lists jobs: their
+-- states for whoever keeps them), LINK_STEP(step, ok, outcome) (a follow-up step
+-- ran), LINK_FAILED(text), MAILBOX_JOBS(jobs).
 
 local SLOTS_PREFIX = "WowCompanion"
 local SIGNALS = "Interface\\AddOns\\WowCompanion_Link\\Signals\\"
@@ -39,43 +40,21 @@ local handlers = {}
 -- ran, a button offered, a failure) lands in that conversation
 local current
 
--- A clip let go, or a short tap: the talk button as the game hears it
--- (WowCompanion_TalkKey, the DualSense Create button PADSOCIAL by default).
--- Holding it is push-to-talk on the PC; a short press is a tap (TALK_TAP, the
--- Agent opens its window). The conversation follows the PC's rule (crates/voice
--- lib.rs): a trigger pulled any time during the hold counts, and a second
--- trigger upgrades L2/R2 to Quick and L1/R1 to dictation.
+-- A short tap of the talk button (WowCompanion_TalkKey, the DualSense Create
+-- button PADSOCIAL by default): TALK_TAP, and the Agent opens its window. The
+-- game alone decides a tap; a hold is the PC's push-to-talk, and its clip is
+-- named to the game by the PC's `heard`.
 local TAP_MAX = 0.35
 local tapButton = CreateFrame("Button", "WowCompanionTap", UIParent)
 tapButton:RegisterForClicks("AnyDown", "AnyUp")
-tapButton:SetScript("OnUpdate", function(self)
-	if not self.downAt then return end
-	local now = WowCompanion_PadSlot()
-	local slot = self.slot or ""
-	if slot == "" and now ~= "" then
-		self.slot = now
-	elseif now == "quick" and (slot == "l2" or slot == "r2") then
-		self.slot = now
-	elseif now == "say" and (slot == "l1" or slot == "r1") then
-		self.slot = now
-	end
-end)
 tapButton:SetScript("OnClick", function(self, _, down)
 	if down then
 		self.downAt = GetTime()
-		self.slot = WowCompanion_PadSlot()
 		return
 	end
 	local held = self.downAt and GetTime() - self.downAt
 	self.downAt = nil
-	if not held then return end
-	if held > TAP_MAX then
-		local slot = self.slot or WowCompanion_PadSlot()
-		-- dictation (L1+R1) is no conversation's: its line arrives on its own
-		if slot ~= "say" then WC.Send("TALK_HELD", slot) end
-	else
-		WC.Send("TALK_TAP")
-	end
+	if held and held <= TAP_MAX then WC.Send("TALK_TAP") end
 end)
 -- Override bindings are an addon's own layer and only while it is loaded, so the
 -- player's binding underneath is untouched.
@@ -103,6 +82,12 @@ local function learnTalkKey()
 	end
 	talkKeyFrame:EnableGamePadButton(true)
 	say("press your talk button on the controller now")
+end
+
+-- A clip let go, named by the job the PC made for it: its state goes out as
+-- every job's does (JOB_MESSAGE), to the window's model and dictation's wait.
+function handlers.heard()
+	return "heard"
 end
 
 -- With the agents off (dictation only), what would be a conversation line (a
@@ -141,6 +126,7 @@ local function dispatch(inbox, label)
 		current = nil
 		return
 	end
+	if inbox.job or inbox.list then WC.Send("JOB_MESSAGE", inbox) end
 	-- A reply and the action it describes are one thought, so they ride in one
 	-- message: two sends would mean two bells and two seconds of waiting between
 	-- reading the answer and being offered the button.

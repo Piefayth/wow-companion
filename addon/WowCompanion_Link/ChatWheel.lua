@@ -169,49 +169,41 @@ do
 				if ring:IsShown() then
 					ring:Hide()
 					if ring.pick and ring.pick ~= current() then WCChatChannel(ring.pick) end
-					WC.ChatChannel.Waiting()
 				end
 			end
 		end)
 	end
 
-	-- From letting go of minus until the line has arrived (in the chat box, or
-	-- waiting for it): the tag says it is on its way, so a slow line
-	-- is not given up on and spoken again. Shown out
-	-- of turn of the Say-only rule; gone when the line arrives, a clip is
-	-- dropped, or after 6 s.
+	-- While a dictation clip's job is out (named by the PC's `heard`, ended
+	-- by the chat line that carries its words or the notice that says why
+	-- none came): the tag says it is on its way, so a slow line is not given
+	-- up on and spoken again. Shown out of turn of the Say-only rule.
 	local waiting = _G["WCChatWaiting"] or CreateFrame("Frame", "WCChatWaiting")
 	waiting:Hide()
+	waiting.jobs = {}
 	waiting:SetScript("OnUpdate", function(self, elapsed)
 		self.t = self.t + elapsed
 		local dots = ("."):rep(math.floor(self.t * 2) % 4)
-		-- transcription takes about a second; past 6 s nothing is coming (a
-		-- longer wait looks stuck)
-		if self.t > 6 then
-			self:Hide()
-			showTag()
-			return
-		end
 		tag.text:SetText(("Chat: |cffffffff%s|r  transcribing%s"):format(NAMES[current()], dots))
 		tag:Show()
 	end)
-	-- a dropped clip (too short, nothing heard) ends the wait at once, with why
-	WC.ChatChannel.Dropped = function(why)
-		if not waiting:IsShown() then return end
-		waiting:Hide()
-		showTag()
-		print("|cffffd100Chat:|r " .. tostring(why))
-	end
-	-- the line landed (in the chat box, or waiting for it): the wait is over
-	WC.ChatChannel.Arrived = function()
-		if not waiting:IsShown() then return end
-		waiting:Hide()
-		showTag()
-	end
-	WC.ChatChannel.Waiting = function()
-		waiting.t = 0
-		waiting:Show()
-	end
+	local ENDED = { answered = true, cancelled = true, failed = true }
+	WC.Module("ChatDictation"):On("JOB_MESSAGE", function(inbox)
+		local id = tonumber(inbox.job)
+		if inbox.slot ~= "say" or not id then return end
+		if inbox.state == "hearing" then
+			if not waiting:IsShown() then waiting.t = 0 end
+			waiting.jobs[id] = true
+			waiting:Show()
+		elseif ENDED[inbox.state] and waiting.jobs[id] then
+			waiting.jobs[id] = nil
+			if inbox.state == "failed" then print("|cffffd100Chat:|r " .. tostring(inbox.text or "nothing was sent")) end
+			if not next(waiting.jobs) then
+				waiting:Hide()
+				showTag()
+			end
+		end
+	end)
 
 	local boot = CreateFrame("Frame")
 	boot:RegisterEvent("PLAYER_LOGIN")

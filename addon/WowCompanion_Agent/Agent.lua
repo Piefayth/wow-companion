@@ -156,16 +156,10 @@ local function showLine(who, text, continued, at, job)
 	logFrame().messages:Add(who, text, continued, at, job)
 end
 
--- Spinning while the agent thinks. Several seconds of silence after you speak is
--- indistinguishable from a broken channel, which is the whole reason this exists.
--- One waiting line per conversation (the player, 2026-11-10): several agents can
--- work at once, and one shared line muddled them. Each slot keeps its own text
--- and start time; the toast shows a labelled line for every one at work, and
--- the window's line shows the conversation in view.
-local working = {}
--- the work lines as the last reload saved them (wall-clock `began`), shown again
--- for the conversations the mailbox says still run
-local wasWorking = {}
+-- What each conversation is doing comes from the jobs (JobsModel.lua, Work):
+-- the clip being heard, the run at work and its progress. One row per
+-- conversation on the board, its seconds in the list, the work line in the
+-- window (Jobs.lua). Nothing here keeps a state of its own.
 -- "chat" is not a conversation: its row says a line is waiting for the chat box
 local SLOT_ORDER = { "", "l1", "l2", "r1", "r2", "quick", "chat" }
 local function slotLabel(slot)
@@ -182,43 +176,13 @@ function WowCompanion_Recent(slot, text, opts)
 	if renderPending then renderPending() end
 end
 local paintHook -- the conversation list's painter, set once it exists
--- A clip on its way through Whisper, per conversation (the player, 2026-11-10):
--- the list, the waiting line and the toast show it beside the agent's own
--- progress. Started by a `transcribing` message the moment the pad is released;
--- ended by what the words became (the request's own line, a chat line, a
--- dropped-clip notice), or after TRANSCRIBE_FOR in case that line never comes.
-local transcribing, TRANSCRIBE_FOR = {}, 15 -- Whisper takes 1-3 s; a dropped clip should not linger
-local function setTranscribing(slot, on)
-	if slot then
-		transcribing[slot] = on and (transcribing[slot] or GetTime()) or nil
-	else
-		wipe(transcribing)
-	end
-	if renderPending then renderPending() end
-end
--- "transcribing" lasts while a clip of the conversation is still being heard:
--- it gives way to the working line in the same message, never a gap between
--- (the player, 2026-11-11: the board flickered)
-local function settleTranscribing(slot)
-	if not (WC.Jobs and WC.Jobs.Hearing(slot)) then setTranscribing(slot, false) end
-end
--- `age`: seconds the work has already run, when the companion retells it after a
--- reload, so the board shows the real time instead of starting over at 0
-local function setPending(text, slot, age)
-	slot = slot or ""
-	if text then
-		local entry = working[slot] or { since = GetTime() - (tonumber(age) or 0) }
-		entry.text = text
-		working[slot] = entry
-	else
-		working[slot] = nil
-	end
-	renderPending()
+local function work(slot)
+	if WC.Jobs and WC.Jobs.Work then return WC.Jobs.Work(slot) end
 end
 local turn = 0
 renderPending = function()
 	local frame = logFrame()
-	local lines, view = {}, nil
+	local lines = {}
 	turn = turn + 1
 	local dots = ("."):rep(turn % 4)
 	local now = GetTime()
@@ -238,27 +202,19 @@ renderPending = function()
 		return { slotLabel(slot), state, clip(detail, 90), r, g, b }
 	end
 	for _, slot in ipairs(SLOT_ORDER) do
-		local entry = working[slot]
+		local heard, running = work(slot)
 		local done = recent[slot]
 		if done and not done.keep and now - done.at > RECENT_FOR then recent[slot] = nil done = nil end
-		local heard = transcribing[slot]
-		if heard and now - heard > TRANSCRIBE_FOR then transcribing[slot] = nil heard = nil end
 		local line
 		if heard then
-			line = row(slot, "9ad5ff", ("hearing %ds"):format(now - heard), entry and entry.text)
-		elseif entry then
-			line = row(slot, "ffd100", ("working %ds"):format(now - entry.since), entry.text .. dots)
+			line = row(slot, "9ad5ff", ("hearing %ds"):format(WC.Jobs.Age(heard.since)), running and running.text)
+		elseif running then
+			line = row(slot, "ffd100", ("working %ds"):format(WC.Jobs.Age(running.since)), running.text .. dots)
 		elseif done then
 			line = row(slot, done.state == "problem" and "ff6060" or done.state and "ffd100" or "40ff40",
 				done.state or "replied", done.text)
 		end
-		if line then
-			lines[#lines + 1] = line
-			if (heard or entry) and slot == (WowCompanion_ViewSlot and WowCompanion_ViewSlot() or "") then
-				view = entry and ("%s%s  %ds"):format(entry.text, dots, now - entry.since)
-					or ("hearing you  %ds"):format(now - heard)
-			end
-		end
+		if line then lines[#lines + 1] = line end
 	end
 	if paintHook then paintHook() end
 	if #lines > 0 then
@@ -271,6 +227,8 @@ renderPending = function()
 		if toastIdleShown() then toast(nil) end
 	end
 end
+-- the model changed: the board and list follow at once
+if WC.Jobs then WC.Jobs.Changed = function() renderPending() end end
 
 -- Kept in SavedVariables, so it is written on /reload or logout like everything else.
 -- Conversations (the player, 2026-11-10): the talk button alone is the main one
@@ -296,13 +254,12 @@ local function paintConversations()
 		local label = slotLabel(key)
 		-- each conversation shows its own progress in the list (the player,
 		-- 2026-11-10): the seconds while its agent works, "new" once it answered
-		local entry = working[key]
-		local heard = transcribing[key]
+		local heard, running = work(key)
 		if heard then
 			-- Whisper still has this conversation's clip (the player, 2026-11-10)
-			label = label .. "  |cff9ad5ff" .. math.floor(GetTime() - heard) .. "s|r"
-		elseif entry then
-			label = label .. "  |cffb0b0b0" .. math.floor(GetTime() - entry.since) .. "s|r"
+			label = label .. "  |cff9ad5ff" .. WC.Jobs.Age(heard.since) .. "s|r"
+		elseif running then
+			label = label .. "  |cffb0b0b0" .. WC.Jobs.Age(running.since) .. "s|r"
 		elseif unreadSet()[key] then
 			label = "|cff40ff40" .. label .. "  new|r"
 		end
@@ -519,26 +476,16 @@ local handlers = {}
 function handlers.log(inbox)
 	local text = inbox.text or ""
 	local who = inbox.who or "claude"
-	-- the voice loop's notices (a dropped clip) end a dictation's wait
-	if who == "error" and WC.ChatChannel and WC.ChatChannel.Dropped then WC.ChatChannel.Dropped(text) end
 	local lines = 0
 	-- every line names its conversation and its number (src/ledger.rs): one
 	-- already held, from a slot or the mailbox, is not applied again
 	local islot = inbox.slot or ""
 	if WC.Jobs and not WC.Jobs.Hold(islot, inbox.n) then return WC.Link.HELD end
 	-- An error about a clip that never ran (nothing heard, noise) is the
-	-- player's own news, not a reply: it lights no tab and leaves the work alone.
-	-- Read before its job's end is applied below.
+	-- player's own news, not a reply: it lights no tab. Read before its job's
+	-- end is applied (after this handler, JOB_MESSAGE).
 	local was = WC.Jobs and inbox.job and WC.Jobs.State(inbox.job)
 	local quiet = who == "error" and was ~= "running"
-	-- The waiting line follows the jobs (the ledger's truth): once this line's
-	-- job ends are applied, it ends when nothing of the conversation runs, before
-	-- the words go in, so a reply takes the work entry's place instead of
-	-- landing under it.
-	if inbox.slot and not inbox.pending and inbox.state ~= "queued" then
-		if WC.Jobs then pcall(WC.Jobs.Apply, inbox) end
-		if not (WC.Jobs and WC.Jobs.Running(islot)) then setPending(nil, islot) end
-	end
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
 	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
@@ -548,12 +495,6 @@ function handlers.log(inbox)
 	if lines == 0 then
 		remember(who, text, nil, islot, who == "you" and inbox.job or nil, quiet)
 	end
-	-- the job's state, once its line is in the transcript to carry its controls
-	if WC.Jobs then pcall(WC.Jobs.Apply, inbox) end
-	-- a line with `pending` starts the waiting line after its words, so the work
-	-- entry comes below what it answers (2026-11-11)
-	if inbox.pending and inbox.state ~= "queued" then setPending(inbox.pending, islot) end
-	settleTranscribing(islot)
 	-- reveal, not Show: ShowUIPanel returns at once for a frame already shown, so a
 	-- window opened by a plain Show never becomes a panel and the controller's
 	-- window toggle cannot reach it until it is closed and opened again
@@ -592,24 +533,9 @@ local function toggleWindow()
 	end
 end
 
--- A clip let go, named by the job the PC made for it (src/jobs.rs): the
--- hearing line is drawn from it and its X cancels that job.
-function handlers.heard(inbox)
-	if WC.Jobs then WC.Jobs.Apply(inbox) end
-	setTranscribing(inbox.slot or "", true)
-	return "heard"
-end
-
--- What the agent is doing right now, on the waiting line: "reading StanceBar.lua".
--- Not logged; the reply is what stays.
-function handlers.progress(inbox)
-	-- a late progress line of a job that has ended must not bring its working
-	-- line back
-	if inbox.job and WC.Jobs and WC.Jobs.Ended and WC.Jobs.Ended(inbox.job) then return "progress: ended" end
-	-- the agent took the oldest queued request of this conversation
-	-- its job's state (Jobs.lua takes the queued mark off the right message)
-	if inbox.job and WC.Jobs and WC.Jobs.Apply then pcall(WC.Jobs.Apply, inbox) end
-	setPending(inbox.text or "thinking", inbox.slot, inbox.since)
+-- What the agent is doing right now, on the work line: "reading StanceBar.lua".
+-- Not logged; the reply is what stays. Its job keeps it (JOB_MESSAGE).
+function handlers.progress()
 	return "progress"
 end
 
@@ -619,13 +545,8 @@ function handlers.ack(inbox)
 	return "ack"
 end
 
--- The PC's answer to a cancel: the states of the jobs it touched.
-function handlers.stopped(inbox)
-	local slot = inbox.slot or ""
-	if WC.Jobs then WC.Jobs.Apply(inbox) end
-	settleTranscribing(slot)
-	-- the conversation works while a job of it runs (the ledger says)
-	if WC.Jobs and WC.Jobs.Running and not WC.Jobs.Running(slot) then setPending(nil, slot) end
+-- The PC's answer to a cancel: the states of the jobs it touched (JOB_MESSAGE).
+function handlers.stopped()
 	return "stopped"
 end
 
@@ -804,11 +725,6 @@ frame:SetScript("OnEvent", function(_, event, ...)
 					recent[slot] = { text = e.text, at = GetTime() - age, state = e.state }
 				end
 			end
-			-- what each conversation was doing and since when; shown again only for
-			-- the ones the mailbox says still run (MAILBOX_JOBS)
-			for slot, e in pairs(board.working or {}) do
-				if type(e) == "table" and tonumber(e.began) then wasWorking[slot] = e end
-			end
 			renderPending()
 		end)
 		-- after login settles: modules may build frames on top of Blizzard's
@@ -821,13 +737,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- the board lives in memory only; keep it for the next session to show
 		pcall(function()
 			local clock = GetTime()
-			local board = { at = time(), recent = {}, working = {} }
+			local board = { at = time(), recent = {} }
 			for slot, done in pairs(recent) do
 				board.recent[slot] = { text = done.text, age = clock - done.at, state = done.state }
-			end
-			-- when the work began, in wall time, so its count goes on after the reload
-			for slot, entry in pairs(working) do
-				board.working[slot] = { text = entry.text, began = time() - (clock - entry.since) }
 			end
 			WowCompanionAgentDB.board = board
 		end)
@@ -855,26 +767,13 @@ local bus = WC.Module("Agent")
 -- a short tap of the talk button opens or closes the window (the game alone
 -- decides a tap: the PC sends nothing for one)
 bus:On("TALK_TAP", function() toggleWindow() end)
--- a hold let go: a clip on its way to Whisper shows as hearing at once
-bus:On("TALK_HELD", function(slot)
-	setTranscribing(slot, true)
-	renderPending()
-end)
 bus:On("TOGGLE_WINDOW", function() toggleWindow() end)
 bus:On("LINK_STEP", function(step, ok, outcome) report(step, ok, outcome) end)
 bus:On("LINK_FAILED", function(text) remember("error", text) end)
--- the mailbox's jobs: the conversations at work are the ones with a job running
-bus:On("MAILBOX_JOBS", function(jobs)
-	if not WC.Jobs then return end
-	pcall(WC.Jobs.Mail, jobs)
-	for _, slot in ipairs(SLOT_ORDER) do
-		local running = WC.Jobs.Running(slot)
-		local was = wasWorking[slot]
-		if running and not working[slot] then
-			setPending(was and was.text or "thinking", slot, was and math.max(0, time() - was.began) or nil)
-		elseif not running and working[slot] then setPending(nil, slot) end
-	end
-end)
+-- every job's state, as each message that names one is handled, and the
+-- mailbox's at load: the model is the window's one truth of what runs
+bus:On("JOB_MESSAGE", function(inbox) if WC.Jobs then pcall(WC.Jobs.Apply, inbox) end end)
+bus:On("MAILBOX_JOBS", function(jobs) if WC.Jobs then pcall(WC.Jobs.Mail, jobs) end end)
 WC.Board.poster = function(slot, text, opts) return WowCompanion_Recent(slot, text, opts) end
 for kind, fn in pairs(handlers) do WC.Link.Handle(kind, fn) end
 
@@ -898,8 +797,6 @@ WC.Companion = {
 	window = logFrame,              -- the Companion window, built on first use
 	modules = effectiveModules,     -- every agent module, name -> code
 	stow = stow,                    -- a secure button out of the window for a fight
-	-- the waiting entry of a conversation ("" is Main): { text, since, ... } or nil
-	working = function(slot) return working[slot or ""] end,
 	-- the conversation the message now being handled belongs to
 	replySlot = replySlot,
 }

@@ -84,7 +84,7 @@ yes; don't reinvent what Claude Code has.
     guide, Polestar's pins). Saved: `WowCompanionDB` (module settings).
   - `WowCompanion_Link` (needs Core): the PC bridge. `Link.lua` the channel
     (slots, bells, polling, the mailbox, dispatch to handlers registered with
-    `WC.Link.Handle`), the talk button (TALK_TAP, TALK_HELD on the bus), `/wc`
+    `WC.Link.Handle`), the talk button's tap (TALK_TAP on the bus; a hold is the PC's, named by its `heard`), `/wc`
     (`WC.Link.Slash`). `Pad.lua` the pad's state and `WowCompanion_PadSlot`.
     `Chat.lua` whisper lookup and the chat line (a line goes into the chat box the
     player opened, or waits for the next one; nothing opens it), the `chat` and
