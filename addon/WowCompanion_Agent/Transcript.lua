@@ -31,6 +31,18 @@ local function turnBand(content, owner)
 	band:SetTexture(BACKING[owner] or BACKING.claude, "REPEAT", "REPEAT")
 	band:SetHorizTile(true)
 	band:SetVertTile(true)
+	-- the marble is near black at full strength: the same texture added over
+	-- itself lifts its veining without flattening it (Blizzard's own art only)
+	if owner ~= "you" then
+		local lift = content:CreateTexture(nil, "BACKGROUND", nil, 0)
+		lift:SetTexture(BACKING.claude, "REPEAT", "REPEAT")
+		lift:SetHorizTile(true)
+		lift:SetVertTile(true)
+		lift:SetBlendMode("ADD")
+		lift:SetAlpha(0.6)
+		lift:SetAllPoints(band)
+		band.lift = lift
+	end
 	local divider = content:CreateTexture(nil, "ARTWORK")
 	divider:SetAtlas("QuestLog-frame-devider")
 	divider:SetAlpha(0.8)
@@ -89,6 +101,16 @@ function Transcript:Width()
 	return width and width > 60 and width or nil
 end
 
+-- How far the backings stop short of the content's right edge: up to the
+-- scroll bar's left side (Window.lua sets gutterFrame to its up arrow), so
+-- the gutter is the bar's own width.
+function Transcript:Gutter()
+	local bar, right = self.gutterFrame, self.content:GetRight()
+	local left = bar and bar:GetLeft()
+	if left and right and right > left then return math.floor(right - left + 1) end
+	return PAD_R - 2
+end
+
 -- place one row below the last; returns the new bottom
 function Transcript:Place(row, y, width)
 	local turnTop = y
@@ -99,7 +121,7 @@ function Transcript:Place(row, y, width)
 		row.turn:ClearAllPoints()
 		row.turn:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -top)
 		-- the backings and dividers stop where the scroll bar's gutter begins
-		row.turn:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", -(PAD_R - 2), -top)
+		row.turn:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", -self:Gutter(), -top)
 		row.turn:SetHeight(1)
 		-- centred on the boundary with the turn above; none above the first
 		row.divider:ClearAllPoints()
@@ -284,7 +306,7 @@ function Transcript:Add(who, text, continued, at, job)
 			row.fs:Hide()
 			if row.marker then row.marker:Hide() end
 			if row.band then row.band:Hide() end
-			if row.turn then row.turn:Hide() end
+			if row.turn then row.turn:Hide() if row.turn.lift then row.turn.lift:Hide() end end
 			if row.divider then row.divider:Hide() end
 		end
 		self:Layout()
@@ -310,6 +332,7 @@ function Transcript:EndLive(live, text, answered)
 	if answered and self.rows[n] == live.line and self.rows[n - 1] == live.head then
 		live.head.fs:Hide()
 		live.head.turn:Hide()
+		if live.head.turn.lift then live.head.turn.lift:Hide() end
 		live.head.divider:Hide()
 		live.line.fs:Hide()
 		self.rows[n] = nil
@@ -334,7 +357,7 @@ function Transcript:Clear()
 		row.fs:Hide()
 		if row.marker then row.marker:Hide() end
 		if row.band then row.band:Hide() end
-		if row.turn then row.turn:Hide() end
+		if row.turn then row.turn:Hide() if row.turn.lift then row.turn.lift:Hide() end end
 		if row.divider then row.divider:Hide() end
 	end
 	self.turnBand = nil

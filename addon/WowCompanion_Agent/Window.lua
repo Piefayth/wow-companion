@@ -522,6 +522,8 @@ local function buildLog()
 	-- The scroll bar between the arrows: a thumb sized to
 	-- the share of the transcript in view and placed at the scroll position, in
 	-- Blizzard's own scroll bar art. Shown only, never dragged: the arrows scroll.
+	-- the turns' backings stop at the bar's left side (Transcript:Gutter)
+	messages.gutterFrame = arrows[1]
 	if #arrows == 2 then
 		local track = CreateFrame("Frame", nil, frame)
 		track:SetPoint("TOP", arrows[1], "BOTTOM", 0, -2)
