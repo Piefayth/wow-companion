@@ -147,6 +147,10 @@ local function build()
 		plain(b)
 		local m = meta[b]
 		local info = C_Container.GetContainerItemInfo(m.bag, m.slot)
+		-- the verdict: the template's junk coin, recoloured (bags.md)
+		local coin = b.JunkIcon or _G[b:GetName() .. "JunkIcon"]
+		local c = info and WC.BagsEval and WC.BagsEval.COIN[WC.BagsEval.Of(m.bag, m.slot)]
+		if coin and c then coin:SetVertexColor(c[1], c[2], c[3]) coin:Show() end
 		local icon = region(b, "icon", "IconTexture")
 		local count = region(b, "Count", "Count")
 		local border = b.IconBorder
@@ -209,33 +213,103 @@ local function build()
 		if self.focusIndex and self.order[self.focusIndex] and tip:IsShown() then self:Focus(self.focusIndex) end
 	end
 
-	-- Which slots exist and where they sit; free at any time (nothing here is
-	-- protected). The pad's handler gets the slot names when it may (BagsInput).
+	-- Which slots exist and where they sit. The view (Sections by default, or
+	-- storage order) draws items apart from where they are stored. Out of combat
+	-- only: in a fight the order stays (the pad's grid is attributes of a
+	-- protected frame) and is owed until the fight ends.
+	f.settings = WC.Settings("Bags", { view = "sections" })
+	local headers = {}
+	local function header(n)
+		local h = headers[n]
+		if not h then
+			h = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+			h:SetJustifyH("LEFT")
+			headers[n] = h
+		end
+		return h
+	end
+	local HDR = 16
 	function f:Layout()
+		if InCombatLockdown() and #self.order > 0 then self.layoutOwed = true self:Paint() return end
+		local keep = self.order[self.focusIndex or 0]
+		keep = keep and meta[keep]
 		for _, b in pairs(buttons) do b:Hide() end
+		for _, h in pairs(headers) do h:Hide() end
 		wipe(self.order)
 		local gridW = COLS * (SIZE + GAP) - GAP
 		self.gridX = EDGE + math.floor((math.max(gridW, self.legendW or 0) - gridW) / 2)
+		local all = {}
 		for bag = 0, MAXBAG do
 			for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
-				self.order[#self.order + 1] = slotButton(bag, slot)
+				all[#all + 1] = { b = slotButton(bag, slot), bag = bag, slot = slot }
 			end
 		end
-		local n = #self.order
-		for i, b in ipairs(self.order) do
+		local sections = self.settings.view == "sections" and WC.BagsEval
+		local groups = {}
+		if sections then
+			local rank = {}
+			for k, key in ipairs(WC.BagsEval.ORDER) do rank[key] = k end
+			for _, e in ipairs(all) do
+				e.key = WC.BagsEval.Of(e.bag, e.slot)
+				e.rank = rank[e.key] or 99
+				e.id = C_Container.GetContainerItemID(e.bag, e.slot) or 0
+			end
+			table.sort(all, function(a, b)
+				if a.rank ~= b.rank then return a.rank < b.rank end
+				if a.id ~= b.id then return a.id < b.id end
+				if a.bag ~= b.bag then return a.bag < b.bag end
+				return a.slot < b.slot
+			end)
+		end
+		-- place: each section starts a row under its title
+		local y = EDGE + TITLE_H + GAP_V
+		local col, last, hn = 0, nil, 0
+		self.cells = {}
+		for i, e in ipairs(all) do
+			local b = e.b
+			if sections and e.key ~= last then
+				if col > 0 then y = y + SIZE + GAP col = 0 end
+				hn = hn + 1
+				local h = header(hn)
+				h:ClearAllPoints()
+				h:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX, -y)
+				h:SetText(WC.BagsEval.TITLE[e.key] or e.key)
+				h:Show()
+				y = y + HDR
+				last = e.key
+				groups[#groups + 1] = i
+			elseif not sections and (i == 1 or all[i - 1].bag ~= e.bag) then
+				groups[#groups + 1] = i
+			end
+			self.order[i] = b
 			meta[b].index = i
-			b:SetParent(holder(meta[b].bag))
+			meta[b].group = #groups
+			b:SetParent(holder(e.bag))
 			b:ClearAllPoints()
-			local col, row = (i - 1) % COLS, math.floor((i - 1) / COLS)
-			b:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX + col * (SIZE + GAP), -(EDGE + TITLE_H + GAP_V + row * (SIZE + GAP)))
+			b:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX + col * (SIZE + GAP), -y)
+			self.cells[i] = { col = col, row = y }
 			b:EnableMouse(true)
 			b:Show()
+			col = col + 1
+			if col == COLS and i < #all then col = 0 y = y + SIZE + GAP end
 		end
-		local rows = math.max(1, math.ceil(n / COLS))
-		self:SetSize(EDGE * 2 + math.max(gridW, self.legendW or 0),
-			EDGE * 2 + TITLE_H + GAP_V + rows * (SIZE + GAP) - GAP + GAP_V + LEGEND_H)
+		self.groups = groups
+		y = y + SIZE
+		self:SetSize(EDGE * 2 + math.max(gridW, self.legendW or 0), y + GAP_V + LEGEND_H + EDGE)
 		if WC.BagsInput and WC.BagsInput.Publish then WC.BagsInput.Publish(self) end
+		-- focus stays on the same slot wherever it moved
+		if keep then
+			local b = buttons[keep.bag * 100 + keep.slot]
+			if b and meta[b].index then
+				self.focusIndex = meta[b].index
+				if self.pad and not InCombatLockdown() then self.pad:SetAttribute("focus", self.focusIndex) end
+			end
+		end
 		self:Paint()
+	end
+	function f:SetView(view)
+		self.settings.view = view
+		self:Layout()
 	end
 
 	-- the highlight and our tooltip on slot i
@@ -391,6 +465,13 @@ local function build()
 	f.pad = pad
 	local menu = WC.BagsMenu.Build(f, holdBindings, MAXBAG)
 	f:HookScript("OnHide", function()
+		-- seen now: the New section empties, as Blizzard's bags clear it on close
+		if C_NewItems and C_NewItems.RemoveNewItem then
+			for _, b in ipairs(f.order) do
+				local m = meta[b]
+				if C_NewItems.IsNewItem(m.bag, m.slot) then C_NewItems.RemoveNewItem(m.bag, m.slot) end
+			end
+		end
 		menu:Hide()
 		if CursorHasItem() then ClearCursor() end
 		hl:Hide()
@@ -457,7 +538,8 @@ local function build()
 		if event == "BAG_UPDATE_DELAYED" or event == "PLAYER_REGEN_ENABLED" then
 			local n = 0
 			for bag = 0, MAXBAG do n = n + (C_Container.GetContainerNumSlots(bag) or 0) end
-			if not self.mirror and (n ~= #self.order or self.layoutOwed) then self:Layout() return end
+			if not self.mirror and (n ~= #self.order or self.layoutOwed
+				or (self.settings.view == "sections" and not InCombatLockdown())) then self:Layout() return end
 			if event == "PLAYER_REGEN_ENABLED" and self.layoutOwed and WC.BagsInput.Publish then WC.BagsInput.Publish(self) end
 		end
 		if event == "CURSOR_CHANGED" then holdBindings() if self:IsShown() then self:Paint() end return end

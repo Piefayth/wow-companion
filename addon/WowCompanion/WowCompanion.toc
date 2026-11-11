@@ -28,6 +28,7 @@ Probes.lua
 Export.lua
 Pins.lua
 Strip.lua
+BagsEvaluate.lua
 BagsInput.lua
 BagsMenu.lua
 Bags.lua

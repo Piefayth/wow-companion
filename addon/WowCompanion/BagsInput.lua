@@ -21,14 +21,34 @@ function WC.BagsInput.Publish(f)
 	if not pad then return end
 	if InCombatLockdown() then f.layoutOwed = true return end
 	f.layoutOwed = nil
-	for bag = 0, 4 do pad:SetAttribute("bagstart" .. bag, nil) end
-	for i, b in ipairs(f.order) do
-		local m = f.meta[b]
-		pad:SetAttribute("slot" .. i, b:GetName())
-		if not pad:GetAttribute("bagstart" .. m.bag) then pad:SetAttribute("bagstart" .. m.bag, i) end
+	local n = #f.order
+	-- each slot's neighbours from where it is drawn (sections break rows), and
+	-- the groups the shoulders jump between
+	local rows, rowOf = {}, {}
+	for i = 1, n do
+		local c = f.cells and f.cells[i] or { col = (i - 1) % 8, row = math.floor((i - 1) / 8) }
+		local r = rowOf[c.row]
+		if not r then r = { y = c.row } rows[#rows + 1] = r rowOf[c.row] = r end
+		r[#r + 1] = i
 	end
-	pad:SetAttribute("count", #f.order)
-	if (pad:GetAttribute("focus") or 1) > #f.order then pad:SetAttribute("focus", 1) end
+	table.sort(rows, function(a, b) return a.y < b.y end)
+	local where = {}
+	for ri, r in ipairs(rows) do for ci, i in ipairs(r) do where[i] = { ri, ci } end end
+	local function at(ri, ci) local r = rows[ri] return r[math.min(ci, #r)] end
+	for i = 1, n do
+		local ri, ci = where[i][1], where[i][2]
+		pad:SetAttribute("L" .. i, i > 1 and i - 1 or n)
+		pad:SetAttribute("R" .. i, i < n and i + 1 or 1)
+		pad:SetAttribute("U" .. i, at(ri > 1 and ri - 1 or #rows, ci))
+		pad:SetAttribute("D" .. i, at(ri < #rows and ri + 1 or 1, ci))
+		pad:SetAttribute("slot" .. i, f.order[i]:GetName())
+		pad:SetAttribute("group" .. i, f.meta[f.order[i]].group or 1)
+	end
+	local groups = f.groups or { 1 }
+	for g, start in ipairs(groups) do pad:SetAttribute("gstart" .. g, start) end
+	pad:SetAttribute("groups", #groups)
+	pad:SetAttribute("count", n)
+	if (pad:GetAttribute("focus") or 1) > n then pad:SetAttribute("focus", 1) end
 end
 
 function WC.BagsInput.Build(f)
@@ -46,34 +66,17 @@ function WC.BagsInput.Build(f)
 		local dx, dy, jump = ...
 		local n = self:GetAttribute("count") or 0
 		if n == 0 then return end
-		local cols = self:GetAttribute("cols")
 		local i = self:GetAttribute("focus") or 1
 		if i > n then i = 1 end
 		local j = i
 		if jump and jump ~= 0 then
-			local here = 0
-			for bag = 4, 0, -1 do
-				local s0 = self:GetAttribute("bagstart" .. bag)
-				if s0 and s0 <= i then here = bag break end
-			end
-			local bag = here
-			for _ = 1, 5 do
-				bag = bag + jump
-				if bag > 4 then bag = 0 elseif bag < 0 then bag = 4 end
-				local s0 = self:GetAttribute("bagstart" .. bag)
-				if s0 then j = s0 break end
-			end
-		elseif dx ~= 0 then
-			j = i + dx
-			if j < 1 then j = n elseif j > n then j = 1 end
-		elseif dy ~= 0 then
-			j = i + dy * cols
-			if j > n then
-				j = (i - 1) % cols + 1
-			elseif j < 1 then
-				j = i
-				while j + cols <= n do j = j + cols end
-			end
+			local g = (self:GetAttribute("group" .. i) or 1) + jump
+			local ng = self:GetAttribute("groups") or 1
+			if g > ng then g = 1 elseif g < 1 then g = ng end
+			j = self:GetAttribute("gstart" .. g) or i
+		elseif dx ~= 0 or dy ~= 0 then
+			local key = (dx < 0 and "L") or (dx > 0 and "R") or (dy < 0 and "U") or "D"
+			j = self:GetAttribute(key .. i) or i
 		end
 		self:SetAttribute("focus", j)
 		local name = self:GetAttribute("slot" .. j)

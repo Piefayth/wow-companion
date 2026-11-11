@@ -75,6 +75,20 @@ function WC.BagsMenu.Build(f, holdBindings, MAXBAG)
 				if not WowCompanion_ConfirmDestroy(m.bag, m.slot, function() closeMenu() end) then closeMenu() end
 			end }
 		end
+		-- at a vendor: sell everything the verdicts call Sell (BagsEvaluate.lua);
+		-- the player's pick, and Buyback undoes it
+		local sell = WC.BagsEval and MerchantFrame and MerchantFrame:IsShown() and WC.BagsEval.SellList()
+		if sell and #sell > 0 then
+			list[#list + 1] = { ("Sell all marked Sell (%d)"):format(#sell), function()
+				for _, e in ipairs(WC.BagsEval.SellList()) do C_Container.UseContainerItem(e[1], e[2]) end
+			end }
+		end
+		if f.SetView then
+			local sections = f.settings.view == "sections"
+			list[#list + 1] = { sections and "View: storage order" or "View: sections", function()
+				f:SetView(sections and "storage" or "sections")
+			end }
+		end
 		list[#list + 1] = { "Sort bags", function() C_Container.SortBags() end }
 		list[#list + 1] = { "Cancel", function() end }
 		return list
