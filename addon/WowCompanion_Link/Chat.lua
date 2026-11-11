@@ -221,9 +221,12 @@ local function boardRow()
 		or ("%d lines are waiting: open chat"):format(n)) or nil, { state = "waiting", keep = true })
 end
 
+local function trace(what, box)
+	if WC.ChatChannel and WC.ChatChannel.Trace then WC.ChatChannel.Trace(what, box) end
+end
 local function into(box, text)
 	measured("line into chat box", function() box:SetText(text) end)
-	if WC.ChatChannel and WC.ChatChannel.Trace then WC.ChatChannel.Trace("into chat box", box) end
+	trace("into chat box", box)
 	return ("chat box holds %q"):format(box:GetText() or "")
 end
 
@@ -250,23 +253,52 @@ local function chatLine(line, words)
 		if words and words ~= "" then return into(box, had .. " " .. words) end
 	end
 	waitingLines[#waitingLines + 1] = line
+	trace("line waiting", box)
 	boardRow()
 	return ("waiting for the chat box: %q"):format(line)
 end
 
--- The box opened: the oldest waiting line goes in, if the box is empty. A frame
--- later, so Blizzard finishes opening it first (the event fires before
--- ActivateChat, and OpenChat sets its own text, a reply's /r, after the focus).
-if EventRegistry and EventRegistry.RegisterCallback then
-	EventRegistry:RegisterCallback("ChatFrame.OnEditBoxFocusGained", function(_, box)
-		if #waitingLines == 0 or not (box and box.GetText and box.SetText) then return end
-		C_Timer.After(0, function()
-			if #waitingLines == 0 or openBox() ~= box or (box:GetText() or "") ~= "" then return end
-			into(box, table.remove(waitingLines, 1))
-			boardRow()
-		end)
-	end, waitingLines)
+-- The box opened: the oldest waiting line goes in. A post-hook on Blizzard's
+-- ActivateChat, which every way of opening chat ends in (a key, the pad's
+-- radial focusing the chat frame, a click: the edit box's OnEditFocusGained
+-- calls it), and which has shown and focused the box by the time it returns,
+-- so no timer. A line that cannot go in stays waiting and the board says why;
+-- every attempt is in the chat box trace (WC.ChatChannel.Trace).
+local function refusedBecause(box)
+	if not box:HasFocus() then return "the chat box opened without the cursor in it" end
+	local had = box:GetText() or ""
+	if had ~= "" then return ("the chat box opened holding %q: clear it with circle, then open chat again"):format(had) end
 end
+local function waitingWhy(why)
+	local n = #waitingLines
+	WC.Board.Post("chat", ("%s waiting, not placed: %s"):format(n == 1 and "a line is" or n .. " lines are", why),
+		{ state = "waiting", keep = true })
+end
+local justPlaced -- { box, line }: until OpenChat has had its say
+hooksecurefunc(ChatFrameUtil, "ActivateChat", function(box)
+	justPlaced = nil
+	if #waitingLines == 0 or not (box and box.GetText and box.SetText) then return end
+	local why = refusedBecause(box)
+	if why then
+		trace("waiting line refused: " .. why, box)
+		waitingWhy(why)
+		return
+	end
+	local line = table.remove(waitingLines, 1)
+	into(box, line)
+	justPlaced = { box = box, line = line }
+	boardRow()
+end)
+-- OpenChat(text) activates the box and then sets its own text (a reply's /r)
+-- on the box's next update, over ours: put the line back at the front, and say so.
+hooksecurefunc(ChatFrameUtil, "OpenChat", function(text)
+	local placed = justPlaced
+	justPlaced = nil
+	if not (placed and text) then return end
+	table.insert(waitingLines, 1, placed.line)
+	trace("waiting line pushed back: chat opened with its own text", placed.box)
+	waitingWhy(("chat opened with its own text (%q); send or clear that, then open chat again"):format(text))
+end)
 
 -- Blizzard's chat prints nothing when a Battle.net whisper cannot be delivered
 -- (the friend is offline, or appearing offline), so say it ourselves
