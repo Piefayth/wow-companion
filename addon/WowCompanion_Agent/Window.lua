@@ -538,12 +538,12 @@ local function buildLog()
 		local middle = trough(0, 0.484375, 0.5, 0.8)
 		middle:SetPoint("TOP", top, "BOTTOM")
 		middle:SetPoint("BOTTOM", bottom, "TOP")
-		-- The channel inside the trough: the turns' marble under Blizzard's
+		-- The channel inside the trough: the replies' stone under Blizzard's
 		-- inner shadow (ShadowOverlaySmallTemplate, UIPanelTemplates.xml:1045),
 		-- so it reads carved rather than void; above the trough's black, below
 		-- the thumb (a child of the track, so one level up).
 		local channel = track:CreateTexture(nil, "BORDER")
-		channel:SetTexture([[Interface\FrameGeneral\UI-Background-Marble]], "REPEAT", "REPEAT")
+		channel:SetTexture([[Interface\AddOns\WowCompanion_Agent\Art\Slate]], "REPEAT", "REPEAT")
 		channel:SetHorizTile(true)
 		channel:SetVertTile(true)
 		channel:SetPoint("TOPLEFT", arrows[1], "TOPLEFT", 0, 0)

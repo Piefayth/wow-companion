@@ -239,7 +239,7 @@ refresh = function()
 			head:Hide() line:Hide()
 			-- each pending line is a turn like any other: its backing and divider
 			local band, divider = WC.Transcript.turnBand(transcript0.content, "you")
-			band:Hide() band.lift:Hide() divider:Hide()
+			band:Hide() divider:Hide()
 			ghosts[i] = { head = head, line = line, band = band, divider = divider }
 		end
 		transcript0.jobsGhosts = ghosts
@@ -325,12 +325,12 @@ refresh = function()
 			g.divider:ClearAllPoints()
 			g.divider:SetPoint("LEFT", g.band, "TOPLEFT", 0, 0)
 			g.divider:SetPoint("RIGHT", g.band, "TOPRIGHT", 0, 0)
-			g.band:Show() g.band.lift:Show() g.divider:Show()
+			g.band:Show() g.divider:Show()
 			if item.hearing then hearingLines[#hearingLines + 1] = { head = g.head, job = item.job } end
 		else
 			g.head:Hide()
 			g.line:Hide()
-			g.band:Hide() g.band.lift:Hide() g.divider:Hide()
+			g.band:Hide() g.divider:Hide()
 		end
 	end
 	local scroll = transcript0.scroll

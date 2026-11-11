@@ -17,31 +17,24 @@ local PAD_L, PAD_R, PAD_TOP = 10, 28, 6
 local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 local NOTE_FONT = "GameFontHighlightSmall"
 
--- Every turn on Blizzard's marble, as Guild News uses it, lifted by an
--- additive copy of itself so its veining reads (it is near black alone); the
--- player's turns lifted one step further, by value, never by hue (brown next to
--- grey read as muddy). The neutral slate tile read as wooden planks (the
--- player, 2026-11-11: "a hundred million times worse"). Turns parted by the
--- quest log's divider.
-local MARBLE = [[Interface\FrameGeneral\UI-Background-Marble]]
-local LIFT = { you = 0.95, claude = 0.6 }
-local function marble(content, sublevel)
-	local t = content:CreateTexture(nil, "BACKGROUND", nil, sublevel)
-	t:SetTexture(MARBLE, "REPEAT", "REPEAT")
-	t:SetHorizTile(true)
-	t:SetVertTile(true)
-	return t
-end
--- owner: whose turn, which sets how far the backing is lifted
+-- Every turn on our own stone (Art/, made by tools/make_slate.py): a dark,
+-- fine-grained slate in two values, the player's turns the lighter one. Owners
+-- differ by value, never by hue (brown next to grey read as muddy). Blizzard's
+-- tiles were tried first, 2026-11-11: marble too busy and near black, rock
+-- flat grey, the neutral tile wooden planks. Turns parted by the quest log's
+-- divider.
+local STONE = {
+	you = [[Interface\AddOns\WowCompanion_Agent\Art\SlateLight]],
+	claude = [[Interface\AddOns\WowCompanion_Agent\Art\Slate]],
+}
+-- owner: whose turn, which picks the stone
 local function ownBand(band, owner)
-	band.lift:SetAlpha(LIFT[owner] or 0)
+	band:SetTexture(STONE[owner] or STONE.claude, "REPEAT", "REPEAT")
+	band:SetHorizTile(true)
+	band:SetVertTile(true)
 end
 local function turnBand(content, owner)
-	local band = marble(content, -1)
-	local lift = marble(content, 0)
-	lift:SetBlendMode("ADD")
-	lift:SetAllPoints(band)
-	band.lift = lift
+	local band = content:CreateTexture(nil, "BACKGROUND", nil, -1)
 	ownBand(band, owner)
 	local divider = content:CreateTexture(nil, "ARTWORK")
 	divider:SetAtlas("QuestLog-frame-devider")
@@ -306,7 +299,7 @@ function Transcript:Add(who, text, continued, at, job)
 			row.fs:Hide()
 			if row.marker then row.marker:Hide() end
 			if row.band then row.band:Hide() end
-			if row.turn then row.turn:Hide() row.turn.lift:Hide() end
+			if row.turn then row.turn:Hide() end
 			if row.divider then row.divider:Hide() end
 		end
 		self:Layout()
@@ -332,7 +325,6 @@ function Transcript:EndLive(live, text, answered)
 	if answered and self.rows[n] == live.line and self.rows[n - 1] == live.head then
 		live.head.fs:Hide()
 		live.head.turn:Hide()
-		live.head.turn.lift:Hide()
 		live.head.divider:Hide()
 		live.line.fs:Hide()
 		self.rows[n] = nil
@@ -357,7 +349,7 @@ function Transcript:Clear()
 		row.fs:Hide()
 		if row.marker then row.marker:Hide() end
 		if row.band then row.band:Hide() end
-		if row.turn then row.turn:Hide() row.turn.lift:Hide() end
+		if row.turn then row.turn:Hide() end
 		if row.divider then row.divider:Hide() end
 	end
 	self.turnBand = nil
