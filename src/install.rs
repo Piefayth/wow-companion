@@ -161,3 +161,59 @@ pub(crate) fn send_command(addons: &Path, args: &[String]) -> io::Result<()> {
     crate::channel::flush();
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wow_companion_settings::changes::Changes;
+
+    /// Every file under `dir`, relative to it, sorted.
+    fn files(dir: &Path) -> Vec<String> {
+        let mut found = Vec::new();
+        let mut walk = vec![dir.to_path_buf()];
+        while let Some(at) = walk.pop() {
+            for entry in fs::read_dir(&at).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk.push(path);
+                } else {
+                    found.push(path.strip_prefix(dir).unwrap().to_string_lossy().into_owned());
+                }
+            }
+        }
+        found.sort();
+        found
+    }
+
+    /// Run alone (`--ignored`: it points LOCALAPPDATA at a throwaway folder for
+    /// the whole process). A real install into a throwaway game folder, then the
+    /// setup window's uninstall: the game folder is as it was, someone else's
+    /// addon and save untouched, and the companion's data folder gone.
+    #[test]
+    #[ignore]
+    fn uninstall_takes_back_exactly_what_install_put_down() {
+        let root = std::env::temp_dir().join(format!("wc-uninstall-{}", std::process::id()));
+        let game = root.join("game");
+        let addons = game.join("Interface").join("AddOns");
+        let saved = game.join("WTF").join("Account").join("TEST").join("SavedVariables");
+        fs::create_dir_all(addons.join("SomeoneElses")).unwrap();
+        fs::write(addons.join("SomeoneElses").join("SomeoneElses.toc"), "## Title: theirs\n").unwrap();
+        fs::create_dir_all(&saved).unwrap();
+        fs::write(saved.join("SomeoneElses.lua"), "SomeoneElsesDB = {}\n").unwrap();
+        let before = files(&game);
+        // SAFETY: this test runs alone (ignored by default), so no other thread
+        // reads the environment while it changes
+        unsafe { std::env::set_var("LOCALAPPDATA", root.join("appdata")) };
+        install(&addons).unwrap();
+        // what the game writes for our addons once it has run
+        fs::write(saved.join("WowCompanion_Link.lua"), "WowCompanionLinkDB = {}\n").unwrap();
+        assert!(files(&game).len() > before.len() + 1500, "install put down the addons, slots and bells");
+        let mut changes = Changes::find(Some(&addons));
+        // the real "Start with Windows" entry is not this test's to remove
+        changes.startup = None;
+        assert_eq!(changes.remove(true), Vec::<String>::new());
+        assert_eq!(files(&game), before);
+        assert!(!root.join("appdata").join("wow-companion").exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+}
