@@ -326,7 +326,9 @@ local function buildTabs(frame, messages)
 	messages.scroll:ClearAllPoints()
 	-- edge to edge inside the inset, so the turns' backings reach it; the
 	-- margins are the transcript's own (Transcript.lua PAD_*)
-	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", 3, -3)
+	-- 6 down, not 3: the inset's top border shows in full under the tabs, as it
+	-- does on the other pages, instead of text and shadow running into it
+	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", 3, -6)
 	messages.scroll:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT", -3, 3)
 	messages.scroll:SetFrameLevel(chatWell:GetFrameLevel() + 2)
 	if frame.chatParts[1] and frame.chatParts[2] then
@@ -396,8 +398,8 @@ local function buildTabs(frame, messages)
 	-- own ShadowOverlay-Top (SharedUIPanelTemplates.xml:195), above the
 	-- scrolling text so lines slide under it.
 	local lip = CreateFrame("Frame", nil, chatWell)
-	lip:SetPoint("TOPLEFT", 3, -3)
-	lip:SetPoint("TOPRIGHT", -3, -3)
+	lip:SetPoint("TOPLEFT", 3, -6)
+	lip:SetPoint("TOPRIGHT", -3, -6)
 	lip:SetHeight(24)
 	lip:SetFrameLevel(chatWell:GetFrameLevel() + 3)
 	local shade = lip:CreateTexture(nil, "OVERLAY")
