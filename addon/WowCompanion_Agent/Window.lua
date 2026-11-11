@@ -389,6 +389,19 @@ local function buildTabs(frame, messages)
 
 	-- each message's own panel (Jobs.lua) docks at the bottom of the chat well
 	frame.chatWell = chatWell
+	-- A shadow cast down from the chat well's top edge, under the tabs, so the
+	-- well reads as sunk into the panel (the player, 2026-11-11): Blizzard's
+	-- own ShadowOverlay-Top (SharedUIPanelTemplates.xml:195), above the
+	-- scrolling text so lines slide under it.
+	local lip = CreateFrame("Frame", nil, chatWell)
+	lip:SetPoint("TOPLEFT", 3, -3)
+	lip:SetPoint("TOPRIGHT", -3, -3)
+	lip:SetHeight(24)
+	lip:SetFrameLevel(chatWell:GetFrameLevel() + 3)
+	local shade = lip:CreateTexture(nil, "OVERLAY")
+	shade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
+	shade:SetAllPoints()
+	table.insert(frame.chatParts, lip)
 
 	-- the page well, over both wells' area, for the other tabs
 	local madePage, pageWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
