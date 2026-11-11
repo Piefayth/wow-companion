@@ -4,8 +4,7 @@
 -- the player has open, or the next one they open. Cross sends.
 -- The channel is picked on the same hold: while the chord is held a small ring of
 -- channels shows, and the right stick points at one. Let go: that channel is
--- kept for next time; leave the stick alone and the last one stays. A line that
--- opens with a channel word ("trade, LF enchanter") still wins for that line.
+-- kept for next time; leave the stick alone and the last one stays.
 -- Nothing goes on the action bars.
 --
 --   WCChatChannel("/p")         pick a channel
@@ -67,9 +66,7 @@ do
 		Current = current,
 		Name = function() return NAMES[current()] end,
 		Line = function(text)
-			text = (text or ""):gsub("^%s+", "")
-			if text:sub(1, 1) == "/" then return text end
-			return current() .. " " .. text
+			return current() .. " " .. (text or ""):gsub("^%s+", "")
 		end,
 	}
 

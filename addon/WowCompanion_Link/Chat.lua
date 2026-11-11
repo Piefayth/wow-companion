@@ -215,8 +215,19 @@ local function boardRow()
 		or ("%d lines are waiting: open chat"):format(n)) or nil, { state = "waiting", keep = true })
 end
 
+-- "/g hi" placed by SetText still says Say: the box only reads its slash command
+-- when a space is typed (OnSpacePressed -> ParseText(0)) or on send. Run the same
+-- parse, so the header shows the channel before the player presses send.
+local function parsed(box)
+	local text = box:GetText() or ""
+	if text:find("^/%S+ ") and box.ParseText then
+		pcall(box.ParseText, box, 0)
+	end
+end
+
 local function into(box, text)
 	box:SetText(text)
+	parsed(box)
 	return ("chat box holds %q"):format(box:GetText() or "")
 end
 
@@ -305,71 +316,15 @@ end
 -- Not agent code, so it is not refused in combat as a lua step is.
 WC.Link.Handle("send", function(inbox) return chatLine(inbox.text or "") end)
 
--- "/g hi" placed by SetText still says Say: the box only reads its slash command
--- when a space is typed (OnSpacePressed -> ParseText(0)) or on send. Run the same
--- parse, so the header shows the channel before the player presses send.
-local function onDictated(box)
-	local text = box:GetText() or ""
-	if text:find("^/%S+ ") and box.ParseText then
-		pcall(box.ParseText, box, 0)
-	end
-end
-
--- Writes into a box the player already opened, and never opens one itself:
--- when we called ChatFrame_OpenChat, the gamepad focus restore on close came
--- back blocked and the A and B buttons died.
+-- Dictation (L1+R1, `wheel`: the words as said, on the channel picked on the
+-- chat wheel) and an agent's chat step (a whole line): into the chat box the
+-- player opened, or waiting for the next one they open (chatLine).
+-- Never opens one itself: when we called ChatFrame_OpenChat, the gamepad focus
+-- restore on close came back blocked and the A and B buttons died.
 WC.Link.Handle("chat", function(inbox)
-	-- The controller's cancel unfocuses the box but keeps its text, and dictation
-	-- appends, so a discarded line would come back glued to the next one. Clearing
-	-- only sets its text: showing or hiding Blizzard's frame is what broke A and B.
-	if inbox.clear then
-		local box = activeEditBox() or LAST_ACTIVE_CHAT_EDIT_BOX or ChatFrame1EditBox
-		if box and box.SetText then
-			box:SetText("")
-			return "chat box cleared"
-		end
-		return "refused: no chat box to clear"
-	end
-	-- a line spoken with a channel goes to the chat box, or waits for it
-	if inbox.raw and inbox.raw ~= (inbox.text or "") and (inbox.text or ""):find("^/%w+") then
-		return chatLine(inbox.text or "")
-	end
-	-- L1+R1 dictation (ChatWheel.lua): into the chat box the player opened, its
-	-- words added to a draft there; with no box open it waits for one
-	if inbox.wheel and WC.ChatChannel then
-		local words = (inbox.text or ""):gsub("^%s+", "")
-		return chatLine(WC.ChatChannel.Line(words), words)
-	end
-	-- Any text box the player put the cursor in takes dictation: the auction
-	-- house search, a mail recipient, a search field, as said; only chat gets
-	-- the words as a slash command.
-	local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
-	local chatBox = activeEditBox()
-	if focused and focused ~= chatBox and focused.SetText and focused.GetText
-		and focused.IsObjectType and focused:IsObjectType("EditBox") and focused:IsVisible() then
-		focused:SetText((focused:GetText() or "") .. (inbox.raw or inbox.text or ""))
-		return ("%s holds %q"):format(tostring(focused:GetName() or "a text box"), focused:GetText())
-	end
-	local box = chatBox
-	if not box or not box:IsVisible() then
-		problem("No text box open, so nothing was written. Open chat or click into a search box, then speak.")
-		return "refused: no text box open"
-	end
-	-- append, so speaking twice builds a line instead of replacing it
-	local text = inbox.text or ""
-	local rest = text:match("^/w%s+(.+)") or text:match("^/whisper%s+(.+)")
-	if rest then
-		local target, message, label = WowCompanion_ResolveWhisper(rest)
-		if not target then
-			problem("Whisper not written: " .. message .. ".")
-			return "refused: " .. message
-		end
-		text = "/w " .. target .. " " .. message
-		toast("|cffffd100Whisper|r to " .. label .. ": press send when it reads right", 0.9, 0.9, 0.9, 8)
-	end
-	box:SetText((box:GetText() or "") .. text)
-	onDictated(box)
-	return ("chat box holds %q"):format(box:GetText())
+	local text = (inbox.text or ""):gsub("^%s+", "")
+	if inbox.wheel then return chatLine(WC.ChatChannel.Line(text), text) end
+	return chatLine(text)
 end)
 
 -- The controller's cancel takes the box's focus away, and Blizzard closes it then
