@@ -417,20 +417,21 @@ local function buildTabs(frame, messages)
 		p:SetPoint("BOTTOMRIGHT", -12, 10)
 	end
 
-	-- the tabs, their foot on the chat well's top border, drawn above the
-	-- border and its top shadow so the picked tab opens into the well
+	-- the tabs, their foot resting on the chat well's top border (one pixel
+	-- in, no more: deeper, they covered the top line of text), drawn under
+	-- the well's top shadow so it falls across their foot as across the text
 	for i, name in ipairs(TAB_NAMES) do
 		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTopTabButtonTemplate")
 		if not made or not tab then return end
 		tab:SetID(i)
 		tab:SetText(name)
 		if i == 1 then
-			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 8, -4)
+			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 8, -1)
 		else
 			tab:SetPoint("LEFT", frame.Tabs[i - 1], "RIGHT", 0, 0)
 		end
 		tab:SetScript("OnClick", function(self) frame.SelectTab(self:GetID()) end)
-		tab:SetFrameLevel(chatWell:GetFrameLevel() + 5)
+		tab:SetFrameLevel(chatWell:GetFrameLevel() + 2)
 		WC.MarkFocusable(tab)
 	end
 	PanelTemplates_SetNumTabs(frame, #TAB_NAMES)
