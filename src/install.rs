@@ -49,8 +49,7 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     let missing = |path: &Path| !path.exists();
     // every bell exists before the game can ask for it: one it asked for while
     // missing is never heard (bells.rs, rule 3)
-    let slot_bells = (0..SETS).flat_map(|set| (1..=SLOTS).map(move |slot| slot_bell_name(set, slot)));
-    for bell in (1..=BELLS).flat_map(|bell| [bell_name(bell), catch_up_name(bell)]).chain(slot_bells) {
+    for bell in (0..SETS).flat_map(|set| (1..=SLOTS).map(move |slot| slot_bell_name(set, slot))) {
         let path = signals.join(bell);
         if missing(&path) {
             bells::empty(&path)?;
@@ -58,7 +57,7 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     }
     // the sound probe's controls: one that must play, one that must not
     if missing(&signals.join("always.wav")) {
-        bells::ring_message(&signals.join("always.wav"))?;
+        bells::ring(&signals.join("always.wav"))?;
     }
     if missing(&signals.join("never.wav")) {
         bells::empty(&signals.join("never.wav"))?;
@@ -139,7 +138,6 @@ fn remove_stale(source: &Path, installed: &Path, keep: &[&str]) -> io::Result<()
 }
 
 pub(crate) fn probe(addons: &Path) -> io::Result<()> {
-    let signals = addons.join(LINK).join("Signals");
     // a closed client swallows a whole run in silence, which looks identical to a broken channel
     if !game_running() {
         return Err(io::Error::other(
@@ -154,18 +152,12 @@ pub(crate) fn probe(addons: &Path) -> io::Result<()> {
     }
     // take slots from the shared cursor, so a second run works without a /reload
     // instead of rewriting slots the addon has already loaded and cached
-    let mut used = Vec::new();
     for n in 1..=PROBE_MESSAGES {
         let sent = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let slot = next_slot(addons)?;
         deliver(addons, slot, &Msg::new("probe").int("n", n).int("sent", sent))?;
-        used.push(slot);
         println!("sent message {n} in slot {slot}");
         thread::sleep(PROBE_SPACING);
-    }
-    // the bells still ringing are the last few; earlier ones were silenced as we went
-    for slot in used.iter().rev().take(BELL_LINGER as usize) {
-        bells::empty(&signals.join(bell_name(*slot)))?;
     }
     if !game_running() {
         println!("warning: the game closed partway through, so the run is incomplete");

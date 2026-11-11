@@ -296,9 +296,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     }
     // other processes' asks to read the game (an agent's `strip --chat`)
     strip::serve_asks(addons);
-    // The voice loop never sends anything itself. A send waits for any other send
-    // and then about two seconds for the game to hear it, and the voice loop is
-    // what reads the pad: sending from it froze the buttons and the cues whenever
+    // The voice loop never sends anything itself. A send waits for any other send,
+    // and for a bell file the game may hold, and the voice loop is what reads
+    // the pad: sending from it froze the buttons and the cues whenever
     // the agent was talking at the same time (measured: a request made while
     // another ran). One courier thread delivers in order instead.
     let courier = {
@@ -453,11 +453,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         return deliver(Out::Now(heard));
                     }
                 }
-                // Not sent any more (2026-11-10): the addon hears minus come up
-                // and shows "transcribing" itself, at once. Sending it held the
-                // channel for the bell's 2 s just as the words arrived, so the
-                // request's own line waited behind it (the player: "4 seconds
-                // for a short transcription").
+                // Not sent: the addon hears minus come up and shows
+                // "transcribing" itself, at once.
                 Ok(())
             }
             _ if role.ends_with(" heard") => {
@@ -715,11 +712,12 @@ mod tests {
     }
 
     #[test]
-    fn bells_reuse_eight_names_in_turn() {
-        assert_eq!(bell_name(1), "m1.wav");
-        assert_eq!(bell_name(8), "m8.wav");
-        assert_eq!(bell_name(9), "m1.wav");
-        assert_eq!(catch_up_name(17), "c1.wav");
+    fn every_slot_has_its_own_bell_in_each_set() {
+        assert_eq!(slot_bell_name(0, 1), "g0-001.wav");
+        assert_eq!(slot_bell_name(2, 512), "g2-512.wav");
+        let names: std::collections::HashSet<String> =
+            (0..SETS).flat_map(|set| (1..=SLOTS).map(move |slot| slot_bell_name(set, slot))).collect();
+        assert_eq!(names.len(), (SETS * SLOTS as u64) as usize);
     }
 
     #[test]

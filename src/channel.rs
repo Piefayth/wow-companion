@@ -8,11 +8,6 @@ pub(crate) const PROGRESS_STOP: u32 = 14;
 // 512, not 64: a session spent all 64 (progress lines were nearly half) and every
 // later reply was lost. New folders need one full game restart to be seen.
 pub(crate) const SLOTS: u32 = 512;
-pub(crate) const BELLS: u32 = 8;
-// the addon only checks the next bell, so a rung bell stays rung for this many sends
-pub(crate) const BELL_LINGER: u32 = 4;
-// long enough for the addon's 0.5 s poll to catch a bell several times over
-pub(crate) const BELL_HEARD: Duration = Duration::from_secs(2);
 // every slot is identical; Slot.xml pulls in Inbox.lua so addon managers see one fixed fingerprint
 pub(crate) const SLOT_TOC: &str = "## Interface: 16001\n## Title: WoW Companion slot\n## LoadOnDemand: 1\n## Group: WowCompanion\n\nSlot.xml\n";
 pub(crate) const SLOT_XML: &str = "<Ui xmlns=\"http://www.blizzard.com/wow/ui/\">\n\t<Script file=\"Inbox.lua\"></Script>\n</Ui>\n";
@@ -240,24 +235,13 @@ fn slot_message(batch: &[Pending]) -> Msg {
     Msg::new("list").list("messages", messages)
 }
 
-/// One slot and one bell: the 2026-11-09 protocol (CLAUDE.md, "Changing the
-/// channel"), unchanged.
+/// The next slot, and its bell.
 fn ring(addons: &Path, msg: &Msg) -> io::Result<()> {
     voice::mark("send has the channel");
     let slot = next_slot(addons)?;
-    // A bell left ringing is a command that fires again on every /reload: the addon's
-    // cursor goes back to slot 1, hears the old bell, and redelivers. So ring it only
-    // long enough to be heard, then silence it. The addon polls every 0.5 s.
-    let signals = addons.join(LINK).join("Signals");
-    for bell in 1..=BELLS {
-        bells::empty(&signals.join(bell_name(bell)))?;
-    }
     deliver(addons, slot, msg)?;
     println!("sent in slot {slot}: {}", msg.lua());
-    ring_catch_up(&signals, slot);
     voice::mark(&format!("bell rung, slot {slot}"));
-    thread::sleep(BELL_HEARD);
-    bells::empty(&signals.join(bell_name(slot)))?;
     Ok(())
 }
 
@@ -267,24 +251,9 @@ pub(crate) fn game_clients() -> usize {
 }
 
 pub(crate) fn deliver(addons: &Path, slot: u32, msg: &Msg) -> io::Result<()> {
-    let signals = addons.join(LINK).join("Signals");
-    // when it was written, so a catch-up load can tell this session's message from
-    // one left in the slot by an earlier session
-    let sent = SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_secs()).unwrap_or_default();
-    let lua = format!("WowCompanion_Inbox = {}\nWowCompanion_Sent = {sent}\n", msg.lua());
     // the inbox lands first: the bell is what tells the addon to go read it
-    write_reporting(&addons.join(slot_name(slot)).join("Inbox.lua"), lua.as_bytes())?;
-    // the slot bell, on trial: reported, never a failed send
-    if let Err(err) = bells::ring(&signals.join(slot_bell_name(current_set(addons), slot))) {
-        println!("slot bell for slot {slot}: {err}");
-    }
-    bells::ring_message(&signals.join(bell_name(slot)))?;
-    // a bell is reused every BELLS sends, so silence it well before then or the
-    // addon hears a stale ring and reads a slot we haven't written yet
-    if slot > BELL_LINGER {
-        bells::empty(&signals.join(bell_name(slot - BELL_LINGER)))?;
-    }
-    Ok(())
+    write_reporting(&addons.join(slot_name(slot)).join("Inbox.lua"), format!("WowCompanion_Inbox = {}\n", msg.lua()).as_bytes())?;
+    bells::ring(&addons.join(LINK).join("Signals").join(slot_bell_name(current_set(addons), slot)))
 }
 
 // Slots load once per UI session, so the helper has to know where the addon's cursor
@@ -436,40 +405,11 @@ pub(crate) fn slot_name(slot: u32) -> String {
     format!("{ADDON}_S{slot:03}")
 }
 
-// "m" names since 2026-11-10: the plain 1.wav to 8.wav were left as valid
-// sounds by a failed experiment, which the polling game then held open for good;
-// fresh names the game has never opened start the channel clean
-pub(crate) fn bell_name(n: u32) -> String {
-    format!("m{}.wav", (n - 1) % BELLS + 1)
-}
-
-// The catch-up bells, beside the message bells (CLAUDE.md, "Changing the channel").
-// A message bell rings for 2 s; a loading screen or a hitch longer than that and
-// the addon never hears it, and since it waits on that slot, every later message
-// was lost until a /reload. So the newest slot also rings its catch-up bell
-// `c<n>.wav` until the next send. The addon, once it has heard one message this
-// session, checks one catch-up bell per poll, in turn over the next 7 slots: one
-// ringing means the companion has written up to there, and it takes the slots in
-// order. The idle state is an empty file, as for the message bells. Failures here
-// are reported and never stop a send: the message bell is still the channel.
-pub(crate) fn catch_up_name(n: u32) -> String {
-    format!("c{}.wav", (n - 1) % BELLS + 1)
-}
-
-/// Silence every catch-up bell (a new UI session starts its cursor at 1, and a
-/// catch-up bell left from the old one would point it at stale slots).
-pub(crate) fn clear_catch_up(signals: &Path) -> io::Result<()> {
-    for bell in 1..=BELLS {
-        bells::empty(&signals.join(catch_up_name(bell)))?;
-    }
-    Ok(())
-}
-
-// The slot bells (docs/proposals/slot-bells.md), on trial beside the message
-// bells since 2026-11-11, the game only watching them: a bell per slot, never
-// emptied while its session runs, so a ring means that slot and nothing has to
-// change while the game holds it; a set per session, so a ring never outlives
-// its session. The game asks the next slot's every frame.
+// The slot bells (docs/proposals/slot-bells.md), the channel's bells since
+// 2026-11-11: a bell per slot, never emptied while its session runs, so a ring
+// means that slot and nothing has to change while the game holds it; a set per
+// session, so a ring never outlives its session. The game asks the next slot's
+// every 0.1 s.
 pub(crate) const SETS: u64 = 3;
 
 pub(crate) fn slot_bell_name(set: u64, slot: u32) -> String {
@@ -516,20 +456,6 @@ pub(crate) fn tend_slot_bells(addons: &Path) {
             }
         }
         thread::sleep(Duration::from_millis(250));
-    }
-}
-
-/// Ring `slot`'s catch-up bell, only once every other one is silent: two ringing
-/// would point the addon at two different places.
-pub(crate) fn ring_catch_up(signals: &Path, slot: u32) {
-    for bell in (1..=BELLS).filter(|bell| *bell != (slot - 1) % BELLS + 1) {
-        if let Err(err) = bells::empty(&signals.join(catch_up_name(bell))) {
-            println!("catch-up bell not rung for slot {slot}: {err}");
-            return;
-        }
-    }
-    if let Err(err) = bells::ring(&signals.join(catch_up_name(slot))) {
-        println!("catch-up bell not rung for slot {slot}: {err}");
     }
 }
 

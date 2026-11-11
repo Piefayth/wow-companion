@@ -79,8 +79,11 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
     // bells: what each file holds, not its size. A ringing bell has its `data`
     // chunk right after the header; the heartbeat's quiet bell is the same size
     // but opens with `JUNK` (bells.rs), so size alone called it ringing.
-    let mut ringing = Vec::new();
-    let mut empty = Vec::new();
+    // The slot bells (docs/proposals/slot-bells.md): this session's set rings one
+    // bell per slot sent, none past the slots used (a ring ahead of the cursor is
+    // how the game once ran ahead of the PC); the other sets are all empty.
+    let set = crate::game_running().then(|| crate::current_set(addons));
+    let (mut small, mut ahead, mut idle_rung, mut rung) = (Vec::new(), Vec::new(), Vec::new(), 0);
     let mut leftover = Vec::new();
     if let Ok(entries) = fs::read_dir(&signals) {
         for entry in entries.flatten() {
@@ -96,28 +99,36 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
             if name == "always.wav" || name.starts_with("pulse-") {
                 continue;
             }
-            // message (m) and catch-up (c) bells and never.wav are empty when idle
-            // by design (bells.rs, the 2026-11-09 protocol)
-            let idle_empty = name != "doctor.wav";
-            let path = entry.path();
             match entry.metadata().map(|meta| meta.len()) {
-                Ok(0) if idle_empty => {}
-                Ok(len) if len < 174_763 => empty.push(name),
-                Ok(_) if rings(&path) => ringing.push(name),
+                // idle: slot bells and never.wav are empty by design (bells.rs)
+                Ok(0) => continue,
+                Ok(len) if len < 174_763 => small.push(name.clone()),
                 _ => {}
+            }
+            if !rings(&entry.path()) {
+                continue;
+            }
+            match slot_bell(&name) {
+                Some((bell_set, slot)) if Some(bell_set) == set => {
+                    rung += 1;
+                    if slot > used {
+                        ahead.push(name);
+                    }
+                }
+                Some(_) => idle_rung.push(name),
+                None => {}
             }
         }
     }
-    line(empty.is_empty(), "small bells", &if empty.is_empty() {
+    line(small.is_empty(), "small bells", &if small.is_empty() {
         "none".to_string()
     } else {
-        format!("{} (a small or empty bell gets cached and locked; reinstall, then /reload)", empty.join(", "))
+        format!("{} (a small or empty bell gets cached and locked; reinstall, then /reload)", small.join(", "))
     });
-    // one message bell and one catch-up bell may ring at once
-    line(ringing.len() <= 2, "bells ringing", &if ringing.is_empty() {
-        "none".to_string()
-    } else {
-        format!("{}{}", ringing.join(", "), if ringing.len() > 2 { " (more than two means a stuck file)" } else { "" })
+    line(ahead.is_empty() && idle_rung.is_empty(), "slot bells", &match (ahead.is_empty(), idle_rung.is_empty()) {
+        (true, true) => format!("{rung} rung this session, none past the {used} slot(s) sent, the other sets empty"),
+        (false, _) => format!("{} ring past the {used} slot(s) sent: the game would take slots the PC has not written", ahead.join(", ")),
+        (true, false) => format!("{} ring in a set no session uses (the companion empties those within a second)", idle_rung.join(", ")),
     });
     line(true, "old bell files", &if leftover.is_empty() {
         "none".to_string()
@@ -190,18 +201,14 @@ fn rings(path: &std::path::Path) -> bool {
 /// The bell names in use (bells.rs, main.rs, heartbeat.rs, Status.lua). Anything
 /// else in Signals was left by an earlier design.
 fn current_bell(name: &str) -> bool {
-    let stem = name.trim_end_matches(".wav");
-    let slot_bell = stem.strip_prefix('g').and_then(|rest| rest.split_once('-')).is_some_and(|(set, slot)| {
-        match (set.parse::<u64>(), slot.parse::<u32>()) {
-            (Ok(set), Ok(slot)) => set < crate::SETS && (1..=crate::SLOTS).contains(&slot) && crate::slot_bell_name(set, slot) == name,
-            _ => false,
-        }
-    });
-    slot_bell
-        || matches!(stem, "always" | "never" | "doctor" | "pulse-a" | "pulse-b")
-        || (stem.len() == 2
-            && (stem.starts_with('m') || stem.starts_with('c'))
-            && stem[1..].parse::<u32>().is_ok_and(|n| (1..=8).contains(&n)))
+    slot_bell(name).is_some() || matches!(name.trim_end_matches(".wav"), "always" | "never" | "doctor" | "pulse-a" | "pulse-b")
+}
+
+/// The set and slot a slot bell's name stands for.
+fn slot_bell(name: &str) -> Option<(u64, u32)> {
+    let (set, slot) = name.strip_prefix('g')?.strip_suffix(".wav")?.split_once('-')?;
+    let (set, slot) = (set.parse::<u64>().ok()?, slot.parse::<u32>().ok()?);
+    (set < crate::SETS && (1..=crate::SLOTS).contains(&slot) && crate::slot_bell_name(set, slot) == name).then_some((set, slot))
 }
 
 #[cfg(test)]
@@ -219,7 +226,6 @@ mod tests {
             path
         };
         assert!(rings(&at("bell.wav", crate::bells::bell())));
-        assert!(rings(&at("message.wav", crate::bells::message_bell())));
         // the same size as a ringing bell: size alone cannot tell them apart
         assert!(!rings(&at("quiet.wav", crate::bells::quiet())));
         assert!(!rings(&at("empty.wav", Vec::new())));
@@ -228,10 +234,10 @@ mod tests {
 
     #[test]
     fn only_todays_bell_names_are_current() {
-        for name in ["m1.wav", "m8.wav", "c3.wav", "g0-001.wav", "g2-512.wav", "pulse-a.wav", "always.wav", "never.wav", "doctor.wav"] {
+        for name in ["g0-001.wav", "g2-512.wav", "pulse-a.wav", "always.wav", "never.wav", "doctor.wav"] {
             assert!(current_bell(name), "{name}");
         }
-        for name in ["1.wav", "m9.wav", "f5.wav", "g3-001.wav", "g0-513.wav", "g0-1.wav", "alive-a.wav", "show.wav", "m10.wav"] {
+        for name in ["1.wav", "m1.wav", "c3.wav", "f5.wav", "g3-001.wav", "g0-513.wav", "g0-1.wav", "alive-a.wav", "show.wav"] {
             assert!(!current_bell(name), "{name}");
         }
     }

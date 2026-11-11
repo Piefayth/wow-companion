@@ -239,8 +239,8 @@ fn ask(lua: &str, seconds: f64) -> io::Result<Vec<u8>> {
     let part = dir.join(format!("{id}.part"));
     fs::write(&part, format!("{seconds}\n{lua}"))?;
     fs::rename(&part, dir.join(format!("{id}.ask")))?;
-    // the send waits for the channel (a bell's 2 s per message ahead of it),
-    // then the watch itself: the deadline covers both, and passing it is said
+    // the send waits for any send ahead of it, then the watch itself: the
+    // deadline covers both, and passing it is said
     let deadline = Instant::now() + Duration::from_secs_f64(seconds + 60.0);
     let (out, err) = (dir.join(format!("{id}.out")), dir.join(format!("{id}.err")));
     while Instant::now() < deadline {

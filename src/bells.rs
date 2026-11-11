@@ -16,18 +16,20 @@
 //! 3b. **A valid sound the game polls constantly is held open constantly.** The
 //!    quiet bell (10 ms of sound padded to size) could not be emptied again once
 //!    the addon polled it. An *empty* file fails to play at once and holds
-//!    nothing, which is why the message channel's idle bells are empty.
+//!    nothing, which is why idle slot bells are empty.
 //! 4. **Every write and delete is retried and checked**, and a failure names the
 //!    file. A retry that gave up quietly is how a stuck bell looked like nothing.
 //! 5. **A long sound is streamed, and not playing a frame after it starts**; the
 //!    half-second `bell` plays 2 ms after (measured 2026-11-11). Asked every
-//!    frame, the ten-second message bell was never heard, so it was never let go
-//!    and could never be emptied (the frame bell trial, docs/history.md).
+//!    frame, the old ten-second message bell was never heard, so it was never let
+//!    go and could never be emptied (the frame bell trial, docs/history.md).
+//! 6. **Asked every frame, any bell makes the game hold its sound files**, an
+//!    empty one too: the heartbeat's and the message bells were held for seconds
+//!    (2026-11-11). At 10 asks a second they were not.
 //!
-//! What this means in practice: the message channel uses `message_bell` /
-//! `empty` (the 2026-11-09 protocol, measured working); the slot bells
-//! (docs/proposals/slot-bells.md) `ring` / `empty`; the heartbeat's pulse bells
-//! `ring` / `silence`. See CLAUDE.md, "Changing the channel", before touching any.
+//! What this means in practice: the slot bells (docs/proposals/slot-bells.md)
+//! use `ring` / `empty`; the heartbeat's pulse bells `ring` / `silence`. See
+//! CLAUDE.md, "Changing the channel", before touching either.
 
 use std::{
     fs, io,
@@ -93,39 +95,8 @@ pub fn quiet() -> Vec<u8> {
     wav
 }
 
-/// The message bell, as it worked all of 2026-11-09: 10 s of 22,050 Hz mono
-/// silence (441,044 bytes), polled by the addon one slot at a time and emptied to
-/// silence it. Its file lock clears in about 200 ms of retries. Every change to
-/// it on 2026-11-10 (shorter bells, deleting, quiet bells, polling more bells at
-/// once) broke delivery, so the message channel keeps this until a redesign has
-/// been tested away from the live game. The heartbeat uses `ring`/`silence`.
-pub fn message_bell() -> Vec<u8> {
-    let rate = 22_050u32;
-    let data = 10 * rate * 2;
-    let mut wav = Vec::with_capacity(44 + data as usize);
-    wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&(36 + data).to_le_bytes());
-    wav.extend_from_slice(b"WAVEfmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes());
-    wav.extend_from_slice(&rate.to_le_bytes());
-    wav.extend_from_slice(&(rate * 2).to_le_bytes());
-    wav.extend_from_slice(&2u16.to_le_bytes());
-    wav.extend_from_slice(&16u16.to_le_bytes());
-    wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&data.to_le_bytes());
-    wav.resize(44 + data as usize, 0);
-    wav
-}
-
-/// Ring a message bell (see `message_bell`).
-pub fn ring_message(path: &Path) -> io::Result<()> {
-    patiently(path, "ring", || fs::write(path, message_bell()))
-}
-
-/// Empty a message or slot bell: their idle state (an empty file fails to play at
-/// once and holds nothing), as on 2026-11-09.
+/// Empty a slot bell: its idle state (an empty file fails to play at once and
+/// holds nothing).
 pub fn empty(path: &Path) -> io::Result<()> {
     patiently(path, "silence", || fs::write(path, []))
 }
