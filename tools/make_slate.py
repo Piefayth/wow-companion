@@ -55,8 +55,10 @@ def write_tga(path, rgb):
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
-    # one stone (the same seed, so the same grain), two values; a cool
-    # charcoal, warmth left to the gold dividers and headers
-    write_tga(os.path.join(OUT, "Slate.tga"), stone(7, (27, 28, 31)))
-    write_tga(os.path.join(OUT, "SlateLight.tga"), stone(7, (50, 51, 56)))
+    # Two tiles of one stone, each its own (the player, 2026-11-11: two real
+    # textures, variants, not one with a lighter wash): the same recipe from
+    # different seeds, so the grain differs, at two values; a cool charcoal,
+    # warmth left to the gold dividers and headers
+    write_tga(os.path.join(OUT, "Slate.tga"), stone(7, (26, 27, 30)))
+    write_tga(os.path.join(OUT, "SlateLight.tga"), stone(23, (54, 55, 60)))
     print("wrote", os.path.abspath(OUT))
