@@ -294,10 +294,6 @@ local function focusTrace(what)
 		while #d.previewFocus > 30 do table.remove(d.previewFocus, 1) end
 	end)
 end
-local function park(frame)
-	frame:ClearAllPoints()
-	frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -16, 260)
-end
 local function home(frame)
 	frame:ClearAllPoints()
 	frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 16, 260)
@@ -329,23 +325,36 @@ local function buildPreview()
 	body:SetMaxLines(4)
 	frame.body = body
 
-	-- A plain button, not a secure macro button (the player, 2026-11-10): a
-	-- secure child makes the whole window protected, so in combat it could
-	-- neither be loaded with the line nor shown. Sending chat is not protected,
-	-- only tied to a real press, so our own OnClick sends it, in combat or out.
-	-- Hotkey-driven (the player, 2026-11-10): no Send / Don't send buttons. The
-	-- panel's one focus target is the message itself, so with the controller's
-	-- own focus on the panel, confirm sends and circle closes (Blizzard's
-	-- SmartNavigation: confirm clicks the selected button, circle clicks
-	-- CloseButton). Nothing is bound; no key does anything while it is not
-	-- focused. The footer shows the two glyphs.
-	local send = CreateFrame("Button", "WowCompanionPreviewSend", frame)
-	send:SetPoint("TOPLEFT", 14, -14)
-	send:SetPoint("BOTTOMRIGHT", -14, 40)
-	send:RegisterForClicks("AnyDown")
-	send:SetScript("OnClick", function()
-		if not frame:IsShown() or not frame.out then return end
-		local ok, sent, why = pcall(sendParsed, frame.out)
+	-- Closing on Blizzard's own path (the player, 2026-11-10: in a fight confirm
+	-- or circle must close it AND give the pad back to the bars). In combat only
+	-- an untainted chain from the press may hide a focused window and hand focus
+	-- back (HideUIPanel's CheckProtectedFunctionsAllowed, the wrapped
+	-- FrameHidden). So the buttons that close are Blizzard's UIPanelCloseButton:
+	-- confirm (SmartNavigation:Click -> PerformClick) or circle
+	-- (SmartNavigation:AttemptClose finds a visible button named *CloseButton)
+	-- runs UIPanelCloseButton_OnClick -> HideUIPanel(preview): with no
+	-- UIPanelWindows entry that is Hide plus the manager's FrameHidden, and the
+	-- bars are back. Our part runs after, in a HookScript (the send itself).
+	-- Nothing of ours sits in that chain: no OnHide, no CloseButton field, no
+	-- onCloseCallback, no OnSmartNavClick, no UIPanelWindows entry.
+	-- With more than one line stacked, the buttons shown are plain ones that only
+	-- settle the line shown; the closing pair is shown for the last line.
+	local function look(b, label)
+		b:SetSize(120, 24)
+		b:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")
+		b:SetPushedTexture("Interface\\Buttons\\UI-Panel-Button-Down")
+		b:SetHighlightTexture("Interface\\Buttons\\UI-Panel-Button-Highlight", "ADD")
+		for _, tex in ipairs({ b:GetNormalTexture(), b:GetPushedTexture(), b:GetHighlightTexture() }) do
+			tex:SetTexCoord(0, 0.625, 0, 0.6875)
+		end
+		local fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		fs:SetPoint("CENTER")
+		fs:SetText(label)
+	end
+	local function sendShown()
+		local out = frame.out
+		if not out then return end
+		local ok, sent, why = pcall(sendParsed, out)
 		local err = ok and why or sent
 		if ok and sent then
 			toast("|cffffd100Pressed|r  check chat to see it went out", 0.8, 0.8, 0.8, 4)
@@ -353,88 +362,147 @@ local function buildPreview()
 			toast("|cffff7777Not sent|r: " .. tostring(err), 1, 0.6, 0.6, 8)
 			remember("error", "The send preview could not send that: " .. tostring(err))
 		end
-		frame.out = nil
-		frame:Hide()
+	end
+	-- the last line: these close the window. Names: Send must not match circle's
+	-- "CloseButton" scan, Cancel must.
+	local sendLast = CreateFrame("Button", "WowCompanionPreviewSendLast", frame, "UIPanelCloseButton")
+	local cancelLast = CreateFrame("Button", "WowCompanionPreviewCancelCloseButton", frame, "UIPanelCloseButton")
+	-- more lines waiting: these settle one and leave the window up
+	local sendStep = CreateFrame("Button", "WowCompanionPreviewSendStep", frame)
+	local cancelStep = CreateFrame("Button", "WowCompanionPreviewCancelStepCloseButton", frame)
+	sendStep:RegisterForClicks("AnyUp")
+	cancelStep:RegisterForClicks("AnyUp")
+	look(sendLast, "Send")
+	look(sendStep, "Send")
+	look(cancelLast, "Don't send")
+	look(cancelStep, "Don't send")
+	for _, b in ipairs({ sendLast, sendStep }) do
+		b:ClearAllPoints()
+		b:SetPoint("BOTTOMRIGHT", -20, 16)
+	end
+	for _, b in ipairs({ cancelLast, cancelStep }) do
+		b:ClearAllPoints()
+		b:SetPoint("RIGHT", sendLast, "LEFT", -8, 0)
+	end
+	-- after Blizzard's own OnClick has closed the window
+	sendLast:HookScript("OnClick", function()
+		sendShown()
+		frame.queue, frame.idx, frame.out = {}, 0, nil
+		focusTrace("sent by its close button")
 	end)
-	frame.send = send
+	cancelLast:HookScript("OnClick", function()
+		frame.queue, frame.idx, frame.out = {}, 0, nil
+		focusTrace("cancelled by its close button")
+	end)
+	sendStep:SetScript("OnClick", function() sendShown() frame.drop() end)
+	cancelStep:SetScript("OnClick", function() frame.drop() end)
+	frame.sendLast, frame.cancelLast, frame.sendStep, frame.cancelStep = sendLast, cancelLast, sendStep, cancelStep
 
-	local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	hint:SetPoint("BOTTOMRIGHT", -22, 20)
-	hint:SetJustifyH("RIGHT")
+	-- The stack (the player, 2026-11-10): lines spoken while one waits are kept,
+	-- never replaced, shown "2 of 3"; the arrows page through.
+	frame.queue, frame.idx = {}, 0
+	local function arrow(dir)
+		local b = CreateFrame("Button", nil, frame)
+		b:SetSize(13, 20)
+		b:SetNormalAtlas(dir < 0 and "common-icon-backarrow" or "common-icon-forwardarrow")
+		b:SetHighlightAtlas(dir < 0 and "common-icon-backarrow" or "common-icon-forwardarrow", "ADD")
+		b:RegisterForClicks("AnyDown")
+		b:SetScript("OnClick", function()
+			local n = #frame.queue
+			if n < 2 then return end
+			frame.idx = (frame.idx - 1 + dir) % n + 1
+			frame.render()
+		end)
+		return b
+	end
+	frame.prev, frame.next = arrow(-1), arrow(1)
+	frame.prev:SetPoint("BOTTOMLEFT", 18, 18)
+	frame.next:SetPoint("LEFT", frame.prev, "RIGHT", 50, 0)
+	frame.count = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	frame.count:SetPoint("LEFT", frame.prev, "RIGHT", 0, 0)
+	frame.count:SetPoint("RIGHT", frame.next, "LEFT", 0, 0)
+	function frame.render()
+		local n = #frame.queue
+		local item = frame.queue[frame.idx]
+		if not item then
+			frame.out = nil
+			return
+		end
+		frame.out = item.out
+		frame.title:SetText(item.heading or "")
+		frame.body:SetText(item.shown or "")
+		frame.title:SetTextColor(item.r, item.g, item.b)
+		frame.body:SetTextColor(item.r, item.g, item.b)
+		local many = n > 1
+		frame.prev:SetShown(many)
+		frame.next:SetShown(many)
+		frame.count:SetShown(many)
+		frame.count:SetText(("%d of %d"):format(frame.idx, n))
+		-- the closing pair only for the last line
+		frame.sendLast:SetShown(not many)
+		frame.cancelLast:SetShown(not many)
+		frame.sendStep:SetShown(many)
+		frame.cancelStep:SetShown(many)
+	end
+	-- settle the line shown while others wait (never the last: that one closes
+	-- through Blizzard's button)
+	function frame.drop()
+		table.remove(frame.queue, frame.idx)
+		frame.idx = math.max(1, math.min(frame.idx, #frame.queue))
+		frame.render()
+	end
+
+	local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	hint:SetPoint("BOTTOMLEFT", frame.next, "BOTTOMRIGHT", 12, 2)
 	frame.hint = hint
 
-	local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-	close:SetPoint("TOPRIGHT", -6, -6)
-	close:SetScript("OnClick", function() frame:Hide() end)
-	-- circle closes a focused window by clicking this (SmartNavigation:AttemptClose)
-	frame.CloseButton = close
-
 	if SmartNavigation_MarkFrameFocusable then
-		pcall(SmartNavigation_MarkFrameFocusable, frame)
-		pcall(SmartNavigation_MarkFrameFocusable, send)
-	end
-	if UIPanelWindows then
-		UIPanelWindows["WowCompanionPreview"] = { area = "center", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
-	end
-	frame:SetScript("OnHide", function(self)
-		if not InCombatLockdown() then ClearOverrideBindings(self) end
-		WC.FrameHidden(self)
-		if InCombatLockdown() then
-			park(self)
-			focusTrace("hidden in combat")
-			-- still holding focus while hidden would leave the bars dead: show it
-			-- again, empty, so the controller's own close or focus switch ends it
-			local m = GamepadMode and GamepadMode.FrameControlsManager
-			if m and m.focusedFrame == self and m.isUIFocused then
-				C_Timer.After(0, function()
-					if self:IsShown() then return end
-					self.out = nil
-					self.title:SetText("Sent")
-					self.body:SetText("Press circle to go back to the game.")
-					home(self)
-					self:Show()
-					focusTrace("re-shown: focus was left on it")
-				end)
-			end
+		for _, b in ipairs({ frame, sendLast, cancelLast, sendStep, cancelStep, frame.prev, frame.next }) do
+			pcall(SmartNavigation_MarkFrameFocusable, b)
 		end
-	end)
+	end
 	return frame
 end
 
--- The pad reaches Send without the controller's window switching (the player,
--- 2026-11-10: the preview showed but could not be switched to). Out of combat
--- cross sends and circle cancels, bound straight to the buttons while it is up,
--- as the offer button and the destroy dialog do. Bindings cannot change in
--- combat, so a fight that starts with it up keeps them (bound just before the
--- lockdown), and one opened mid-fight is sent by a tap of the talk button,
--- whose binding is already in place (Companion.lua's tap calls this).
-local function bindPreview(frame)
-	if InCombatLockdown() or not frame:IsShown() then return false end
-	ClearOverrideBindings(frame)
-	-- No pad bindings (the player, 2026-11-10): the window takes the controller's
-	-- focus, so confirm presses whichever button is selected and circle closes.
-	-- Binding cross to Send made "Don't send" send.
-	return true
-end
--- In combat the controller's own focus cycle (the triggers) must reach the
--- preview (the player, 2026-11-10: one focus, the game's, in combat too). The
--- frame manager refuses to add a window in a fight, but keeps any it already
--- has, and its FocusFrame skips one that is hidden. So as a fight starts
--- (PLAYER_REGEN_DISABLED runs before the lockdown) the hidden preview is put
--- on its list, without focus, parked at the right edge so it sorts last and
--- never sits between two windows; WC.FrameHidden takes it off after the fight.
+-- Built at login, out of combat (focus marks are refused in a fight).
+-- Listing for combat (the player, 2026-11-10: one focus, the game's own): the
+-- frame manager adds no window in a fight but keeps those it has. So at the
+-- fight's start the hidden preview is listed as a popup that skips auto focus:
+-- the UI's focus state is left as it was, and if nothing is focused it becomes
+-- the frame focused when the player next presses their focus button
+-- (FrameControlsManager:FrameShown). After the fight it is delisted unless up.
 -- A trace of each step: WowCompanionDB.previewFocus (30 lines).
 do
-	local w = CreateFrame("Frame")
-	w:RegisterEvent("PLAYER_REGEN_DISABLED")
-	w:SetScript("OnEvent", function()
+	local function manager()
 		local m = GamepadMode and GamepadMode.FrameControlsManager
-		if not (m and m.FrameShown and InputUtil and InputUtil.IsGamepadUIEnabled()) then return end
+		if m and m.FrameShown and InputUtil and InputUtil.IsGamepadUIEnabled() then return m end
+	end
+	local w = CreateFrame("Frame")
+	w:RegisterEvent("PLAYER_LOGIN")
+	w:RegisterEvent("PLAYER_REGEN_DISABLED")
+	w:RegisterEvent("PLAYER_REGEN_ENABLED")
+	w:SetScript("OnEvent", function(_, event)
 		preview = preview or buildPreview()
-		if not preview or preview:IsShown() then return end
-		park(preview)
-		pcall(m.FrameShown, m, preview, false, false)
-		focusTrace("listed at fight start")
+		local m = manager()
+		if not (preview and m) then return end
+		if event == "PLAYER_REGEN_DISABLED" and not preview:IsShown() then
+			preview.skipGamepadAutoFocus = true
+			pcall(m.FrameShown, m, preview, true)
+			focusTrace("listed at fight start")
+		elseif event == "PLAYER_REGEN_ENABLED" then
+			preview.skipGamepadAutoFocus = nil
+			if preview:IsShown() then
+				-- shown again mid-fight after one close: listed now, reachable
+				pcall(m.FrameShown, m, preview)
+			else
+				pcall(m.FrameHidden, m, preview)
+			end
+			focusTrace("fight over")
+		end
+	end)
+	-- a close by Blizzard's button, seen after its work is done
+	hooksecurefunc("HideUIPanel", function(f)
+		if f == preview then focusTrace("closed by HideUIPanel") end
 	end)
 end
 
@@ -450,10 +518,7 @@ function showPreview(line, heading, shown, dictated)
 	end
 	preview = preview or buildPreview()
 	if not preview then return false, "the preview window could not be made" end
-	preview.out = out
 	preview.dictated = dictated
-	preview.title:SetText(heading)
-	preview.body:SetText(shown)
 	-- in the channel's own chat colour, read from Blizzard's ChatTypeInfo (the
 	-- player's colour settings), so guild is guild green, raid is raid orange
 	local slash = line:match("^(/%w+)")
@@ -462,20 +527,22 @@ function showPreview(line, heading, shown, dictated)
 	local info = chatType and ChatTypeInfo and ChatTypeInfo[chatType]
 	local r, g, b = 1, 1, 1
 	if info and info.r then r, g, b = info.r, info.g, info.b end
-	preview.title:SetTextColor(r, g, b)
-	preview.body:SetTextColor(r, g, b)
-	-- the panel manager refuses in combat (CheckProtectedFunctionsAllowed); a
-	-- plain Show still works then
-	if not InCombatLockdown() and UIPanelWindows and UIPanelWindows["WowCompanionPreview"] then
-		ShowUIPanel(preview)
-	end
-	if not preview:IsShown() then
+	-- stacked, never replacing what waits; the new line is the one shown
+	table.insert(preview.queue, { out = out, heading = heading, shown = shown, r = r, g = g, b = b })
+	preview.idx = #preview.queue
+	preview.render()
+	-- out of combat the manager lists and focuses it (the wrapped call); in a
+	-- fight a plain Show: it was listed when the fight began, and the player's
+	-- focus button reaches it
+	local wasShown = preview:IsShown()
+	if not wasShown then
 		home(preview)
 		preview:Show()
 	end
+	local m = GamepadMode and GamepadMode.FrameControlsManager
+	if not InCombatLockdown() and m and m.FrameShown and not wasShown then pcall(m.FrameShown, m, preview) end
 	if InCombatLockdown() then focusTrace("shown in combat") end
 	local glyph = WowCompanion_Glyph or function(k) return k end
-	bindPreview(preview)
 	preview.hint:SetText(("%s Send     %s Don't send"):format(glyph("PAD1"), glyph("PAD2")))
 	return true
 end

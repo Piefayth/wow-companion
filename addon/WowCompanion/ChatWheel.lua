@@ -208,8 +208,8 @@ do
 		print("|cffffd100Chat:|r " .. tostring(why))
 	end
 	WC.ChatChannel.Waiting = function()
-		local preview = _G["WowCompanionPreview"]
-		if preview and preview:IsShown() then preview:Hide() end
+		-- a waiting line is never hidden from here: new lines stack in the
+		-- preview, and only its own (Blizzard) buttons close it
 		waiting.t = 0
 		waiting:Show()
 	end
