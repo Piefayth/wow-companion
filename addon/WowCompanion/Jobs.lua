@@ -673,6 +673,11 @@ local function newest(state)
 		end
 	end
 end
+-- the offered button (Companion.lua): shown in the window, with a press waiting
+local function offerShown()
+	local b = _G.WowCompanionDo
+	return b and b:IsVisible() and b.slot ~= nil or false
+end
 local cancelKey = CreateFrame("Button", "WCJobsCancelKey", UIParent)
 cancelKey:SetScript("OnClick", function() cancel(newest()) end)
 local nowKey = CreateFrame("Button", "WCJobsNowKey", UIParent)
@@ -681,7 +686,7 @@ nowKey:SetScript("OnClick", function()
 	if job then sendNow(job) end
 end)
 local keyOwner = CreateFrame("Frame", "WCJobsKeys", UIParent)
-local bound = false
+local bound = nil
 local elapsed = 0
 local lastTab
 keyOwner:SetScript("OnUpdate", function(_, dt)
@@ -715,17 +720,26 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		local parts = {}
 		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " Cancel newest" end
 		if focused and newest("queued") then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
+		if focused and offerShown() then parts[#parts + 1] = glyph("PADLSTICK") .. " " .. (_G.WowCompanionDo:GetText() or "Press") end
 		window.jobsLegend:SetText(table.concat(parts, "     "))
 		window.jobsLegend:SetShown(#parts > 0)
 		if window.jobsCancelPrompt then window.jobsCancelPrompt:Hide() window.jobsNowPrompt:Hide() end
 	end
-	if focused and not bound then
-		SetOverrideBindingClick(keyOwner, true, "PAD3", "WCJobsCancelKey")
-		SetOverrideBindingClick(keyOwner, true, "PAD4", "WCJobsNowKey")
-		bound = true
-	elseif not focused and bound then
+	-- what is bound follows what the legend shows; rebound only on a change
+	local want = focused and (offerShown() and "offer" or "jobs") or nil
+	if want ~= bound then
 		ClearOverrideBindings(keyOwner)
-		bound = false
+		if want then
+			SetOverrideBindingClick(keyOwner, true, "PAD3", "WCJobsCancelKey")
+			SetOverrideBindingClick(keyOwner, true, "PAD4", "WCJobsNowKey")
+		end
+		-- L3 presses the offered button (the player, 2026-11-10: a prompt for
+		-- it, on L3, which they never use in menus); autorun comes back when
+		-- the window lets go. The button itself is secure and the press is theirs
+		if want == "offer" then
+			SetOverrideBindingClick(keyOwner, true, "PADLSTICK", "WowCompanionDo", "LeftButton")
+		end
+		bound = want
 	end
 end)
 
