@@ -150,8 +150,11 @@ do
 		if not (SmartNavigation_SetCustomCursorAnchorPointForFrame and CreateAnchor) then return end
 		local blizz = theirs()
 		if not (blizz and blizz.EnumerateValidItems and WCBags.SlotFor) then return end
+		-- their item pool can be shorter than the bag size before they first draw
+		-- (a nil button, 2026-11-10): skip those
 		for _, b in blizz:EnumerateValidItems() do
-			local ok, bag = pcall(b.GetBagID, b)
+			local ok, bag = false, nil
+			if b then ok, bag = pcall(b.GetBagID, b) end
 			local ours = ok and bag and WCBags:SlotFor(bag, b:GetID())
 			if ours and anchored[b] ~= ours then
 				if pcall(SmartNavigation_SetCustomCursorAnchorPointForFrame, b, CreateAnchor("CENTER", ours, "CENTER")) then
@@ -173,7 +176,7 @@ do
 		if not blizz.EnumerateValidItems then return false end
 		local any = false
 		for _, b in blizz:EnumerateValidItems() do
-			if b:IsShown() then
+			if b and b:IsShown() then
 				local ok, bag = pcall(b.GetBagID, b)
 				if not (ok and bag and anchored[b] and anchored[b] == WCBags:SlotFor(bag, b:GetID())) then return false end
 				any = true
