@@ -376,10 +376,18 @@ pub fn listen(
             STOPPED.store(true, Ordering::SeqCst);
             return Ok(());
         }
-        // The stream open, the device listed, and no audio arriving: the headset's
+        // The mic gone: its stream failed, or it is silent and Windows no longer
+        // lists it (unplugged, or a headset taken by a phone). Wait for it quietly
+        // and pick it up when it is back; never reconnect it. Between presses only.
+        if !holding && microphone.as_ref().is_some_and(|mic| mic.broken() || (mic.stalled() && !mic.listed())) {
+            eprintln!("microphone gone; waiting for it to come back");
+            microphone = None;
+            retry_mic = Instant::now();
+        }
+        // Still listed, the stream open, and no audio arriving: the headset's
         // voice link is wedged. Reconnect it the way Sound settings' Connect does,
         // then reopen the mic. The player hears about it in the window.
-        if microphone.as_ref().is_some_and(Microphone::stalled)
+        if microphone.as_ref().is_some_and(|mic| mic.stalled() && mic.listed())
             && healed_at.is_none_or(|at| at.elapsed() > HEAL_EVERY)
         {
             healed_at = Some(Instant::now());
@@ -392,12 +400,6 @@ pub fn listen(
             let _ = heard(Event::Notice(
                 "The headset's mic stopped sending audio, so I reconnected its voice link. If I still cannot hear you, reconnect the headset.",
             ));
-        }
-        // a dead stream is replaced between presses, never during one
-        if !holding && microphone.as_ref().is_some_and(Microphone::broken) {
-            eprintln!("microphone lost; waiting for it to come back");
-            microphone = None;
-            retry_mic = Instant::now();
         }
         if microphone.is_none() && Instant::now() >= retry_mic {
             retry_mic = Instant::now() + RETRY;

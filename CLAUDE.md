@@ -314,9 +314,11 @@ goes to a detached process.
 - **The headset is in the profile.** A Bluetooth headset's hands-free link can be
   8 kHz and hiss whenever audio plays; push-to-talk feedback is rumble (one firm
   pulse on press, one soft on release), with beeps off (`cue=hands-free`), and the
-  mic stays open since switching to hands-free outlasts a press. A mic that delivers nothing for 1.5 s is reconnected in place
+  mic stays open since switching to hands-free outlasts a press. A mic Windows
+  still lists that delivers nothing for 1.5 s is reconnected in place
   (`KSPROPERTY_ONESHOT_RECONNECT`, as Sound settings' Connect does) and the window
-  says so.
+  says so; a mic that is gone (unplugged, or the headset taken by a phone) is
+  waited for quietly and picked up when it is back.
 - **Every dropped clip says why in the window**: too little audio, nothing heard,
   only Whisper echoing its prompt (cut off when it prefixes real speech).
 - **Names are first and last** ("First Last"; `UnitName` gives only "First"). The

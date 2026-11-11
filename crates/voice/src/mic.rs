@@ -38,6 +38,8 @@ pub(crate) struct Microphone {
     pub(crate) channels: u16,
     // set from the stream's error callback when the device is gone, not merely late
     pub(crate) dead: Arc<AtomicBool>,
+    /// the device's name, as Windows lists it
+    pub(crate) name: String,
 }
 
 impl Microphone {
@@ -127,11 +129,17 @@ impl Microphone {
         .map_err(|err| io::Error::other(err.to_string()))?;
         stream.play().map_err(|err| io::Error::other(err.to_string()))?;
 
-        Ok(Self { _stream: stream, capture, rate, channels, dead })
+        Ok(Self { _stream: stream, capture, rate, channels, dead, name })
     }
 
     pub(crate) fn broken(&self) -> bool {
         self.dead.load(Ordering::Relaxed)
+    }
+
+    /// Whether Windows still lists the device as an input: a headset taken by
+    /// another device (a phone) is not, though its stream may not have failed yet.
+    pub(crate) fn listed(&self) -> bool {
+        input_names().contains(&self.name)
     }
 
     pub(crate) fn start(&self) {
