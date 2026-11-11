@@ -75,3 +75,41 @@ The bugs were all in identity and placement, not in the ledger:
    at once, slow Whisper, missed message).
 3. Game: a renderer that draws the snapshot plus overlays by the three rules,
    replacing Jobs.lua's matching and Transcript's key ordering.
+
+## Proposal (for the player's yes): an exact identity for a clip
+
+Today a cancel pressed on a "hearing you" line names the clip by when it was
+let go, and the PC takes the job let go nearest that time, within 1.2 s,
+across two clocks the game has to line up by learning their 2.3 s gap
+(`jobs::heard_at`, `RELEASE_MATCH`; the model's `offset`, `takeClip`). That is
+a heuristic: two clips close together, or a clock drift, can name the wrong
+one.
+
+**Why the architecture permits it:** the game invents a clip's identity on
+its own (its clock at release), when the only identity both sides share is
+one the PC makes: the job id, made the instant the PC sees the release.
+
+**The exact design:** the PC tells the game the job id when a clip is let go,
+in a `{ kind = "heard", job = <id>, slot = ... }` message (the job's state is
+`hearing`, so it is just the ledger's first message about that job). The
+game's hearing line is drawn from that message, so its X carries the job id
+and a cancel says `cancel <id>`, as every other cancel already does. Nothing
+is matched, no clock is lined up, no hearing cancel command exists.
+
+**What it removes:** `heard_at`, `RELEASE_MATCH`, `cancel_clip` and the
+`hear` command on the PC; on the game the clip placeholders, `Released`,
+`DropHearing`, `CancelClip`, `takeClip`, the learned clock offset, `nowMs`'s
+wall-clock catch, and the `Claim` hidden/dup rules (a cancelled hearing job's
+words are dropped on the PC, which already never sends them).
+
+**What it costs:** the hearing line appears when the message lands, about a
+second after you let go, not the instant you do, and the X with it. And every
+clip costs one more send, which holds the channel for a bell (the 2 s that
+once delayed a short request's own line). Whisper usually takes ~1.4 s, so
+the line may often arrive with, or after, the words: then it shows only the
+words. If the instant feedback matters, the pad's rumble on release is the
+instant cue, and the hearing line stays exact.
+
+**Not proposed:** keeping an instant local line beside the exact one. It
+needs matching the local line to the PC's message, which is the same
+heuristic again.
