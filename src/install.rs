@@ -15,6 +15,14 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     // Modules.lua is built from modules/, never edited by hand
     modules::regenerate(None)?;
     let addon = addons.join(ADDON);
+    // folders the running game cannot see until it is restarted
+    let mut fresh: Vec<String> = Vec::new();
+    let mut note_fresh = |dir: &Path| {
+        if !dir.exists() {
+            fresh.push(dir.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default());
+        }
+    };
+    note_fresh(&addon);
     copy_dir(&source, &addon)?;
     remove_stale(&source, &addon, generated(ADDON))?;
     // the ledger the setup window's uninstall works from
@@ -25,6 +33,7 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
         let name = entry.file_name();
         if entry.file_type()?.is_dir() && name != ADDON {
             let installed = addons.join(&name);
+            note_fresh(&installed);
             copy_dir(&entry.path(), &installed)?;
             remove_stale(&entry.path(), &installed, generated(&name.to_string_lossy()))?;
             written.push(installed);
@@ -56,6 +65,7 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     }
     for slot in 1..=SLOTS {
         let dir = addons.join(slot_name(slot));
+        note_fresh(&dir);
         fs::create_dir_all(&dir)?;
         written.push(dir.clone());
         fs::write(dir.join(format!("{}.toc", slot_name(slot))), SLOT_TOC)?;
@@ -74,7 +84,14 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
         println!("warning: could not record what was installed, for uninstall: {err}");
     }
     println!("installed {ADDON} and {SLOTS} slots into {}", addons.display());
-    println!("fully restart the game so it sees the new folders");
+    match fresh.len() {
+        0 => println!("no new folders: a /reload loads the changes"),
+        n => println!(
+            "{n} new folder(s) ({}{}): fully restart the game so it sees them",
+            fresh.iter().take(3).cloned().collect::<Vec<_>>().join(", "),
+            if n > 3 { ", ..." } else { "" }
+        ),
+    }
     Ok(())
 }
 
