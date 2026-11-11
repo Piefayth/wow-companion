@@ -17,30 +17,31 @@ local PAD_L, PAD_R, PAD_TOP = 10, 28, 6
 local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 local NOTE_FONT = "GameFontHighlightSmall"
 
--- Every turn on Blizzard's marble, as Guild News uses it (the player,
--- 2026-11-11: plain black "made me appreciate the marble"; the rock read as
--- flat grey). Marble is near black at full strength, so the same texture is
--- added over itself, which lifts its veining without flattening it. The two
--- owners differ by tint alone: the player's turns warm, replies neutral.
--- Turns parted by the quest log's divider.
-local MARBLE = [[Interface\FrameGeneral\UI-Background-Marble]]
-local TINT = { you = { 1, 0.8, 0.55 }, claude = { 1, 1, 1 } }
-local function marble(content, sublevel, tint)
+-- Every turn on the modern neutral slate, tiled as Blizzard tiles it
+-- (Blizzard_ChromieTimeUI.xml:72); the player's turns one step lighter by an
+-- additive copy of the same tile, never by hue (docs/proposals/
+-- companion-chat-look.md, round 2, option A: brown next to grey at the same
+-- darkness read as muddy). Turns parted by the quest log's divider.
+local SLATE = "UI-Frame-Neutral-BackgroundTile"
+local LIFT = { you = 0.25, claude = 0 }
+local function slate(content, sublevel)
 	local t = content:CreateTexture(nil, "BACKGROUND", nil, sublevel)
-	t:SetTexture(MARBLE, "REPEAT", "REPEAT")
+	t:SetAtlas(SLATE)
 	t:SetHorizTile(true)
 	t:SetVertTile(true)
-	t:SetVertexColor(tint[1], tint[2], tint[3])
 	return t
 end
+-- owner: whose turn, which sets how far the backing is lifted
+local function ownBand(band, owner)
+	band.lift:SetAlpha(LIFT[owner] or 0)
+end
 local function turnBand(content, owner)
-	local tint = TINT[owner] or TINT.claude
-	local band = marble(content, -1, tint)
-	local lift = marble(content, 0, tint)
+	local band = slate(content, -1)
+	local lift = slate(content, 0)
 	lift:SetBlendMode("ADD")
-	lift:SetAlpha(0.6)
 	lift:SetAllPoints(band)
 	band.lift = lift
+	ownBand(band, owner)
 	local divider = content:CreateTexture(nil, "ARTWORK")
 	divider:SetAtlas("QuestLog-frame-devider")
 	divider:SetAlpha(0.8)
@@ -370,10 +371,6 @@ WC.Transcript.newTranscript = newTranscript
 WC.Transcript.PAD_L, WC.Transcript.PAD_R = PAD_L, PAD_R
 -- the pending lines (Jobs.lua) are turns too: the same backing and divider
 WC.Transcript.turnBand = turnBand
-WC.Transcript.tint = function(band, owner)
-	local t = TINT[owner] or TINT.claude
-	band:SetVertexColor(t[1], t[2], t[3])
-	band.lift:SetVertexColor(t[1], t[2], t[3])
-end
+WC.Transcript.ownBand = ownBand
 WC.Transcript.TURN_GAP = TURN_GAP
 WC.Transcript.markRow = markRow

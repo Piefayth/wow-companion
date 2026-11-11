@@ -551,6 +551,35 @@ local function buildLog()
 		local middle = trough(0, 0.484375, 0.5, 0.8)
 		middle:SetPoint("TOP", top, "BOTTOM")
 		middle:SetPoint("BOTTOM", bottom, "TOP")
+		-- The channel inside the trough: the turns' slate under Blizzard's
+		-- inner shadow (ShadowOverlaySmallTemplate, UIPanelTemplates.xml:1045),
+		-- so it reads carved rather than void; above the trough's black, below
+		-- the thumb (a child of the track, so one level up).
+		local channel = track:CreateTexture(nil, "BORDER")
+		channel:SetAtlas("UI-Frame-Neutral-BackgroundTile")
+		channel:SetHorizTile(true)
+		channel:SetVertTile(true)
+		channel:SetPoint("TOPLEFT", arrows[1], "TOPLEFT", 0, 0)
+		channel:SetPoint("BOTTOMRIGHT", arrows[2], "BOTTOMRIGHT", 0, 0)
+		local madeShadow, shadow = pcall(CreateFrame, "Frame", nil, track, "ShadowOverlaySmallTemplate")
+		if madeShadow and shadow then
+			shadow:SetAllPoints(channel)
+			shadow:SetFrameLevel(track:GetFrameLevel())
+		end
+		-- The trough's left edge in the dividers' own art: one quest log
+		-- divider turned upright (as Blizzard_LFGVanilla_Listing.xml:292-305
+		-- does), so each turn's divider meets it in a T.
+		local edge = CreateFrame("Frame", nil, track)
+		edge:SetPoint("TOP", arrows[1], "TOPLEFT", 0, 0)
+		edge:SetPoint("BOTTOM", arrows[2], "BOTTOMLEFT", 0, 0)
+		edge:SetWidth(15)
+		edge:SetFrameLevel(track:GetFrameLevel() + 2)
+		local rule = edge:CreateTexture(nil, "OVERLAY")
+		rule:SetAtlas("QuestLog-frame-devider")
+		rule:SetAlpha(0.8)
+		rule:SetPoint("CENTER")
+		rule:SetRotation(math.pi / 2)
+		edge:SetScript("OnSizeChanged", function(_, w, h) rule:SetSize(h, w) end)
 		-- Nothing is stretched. The thumb is drawn as
 		-- Blizzard's WowTrimScrollBar thumb is (TrimScrollBar.xml and .lua): the
 		-- round end caps at their own size, and the centre *tiled*: its texture

@@ -317,7 +317,7 @@ refresh = function()
 			g.line:Show()
 			y = y + g.line:GetStringHeight()
 			local gutter = transcript0.Gutter and transcript0:Gutter() or WC.Transcript.PAD_R
-			WC.Transcript.tint(g.band, item[1]:find("You", 1, true) and "you" or "claude")
+			WC.Transcript.ownBand(g.band, item[1]:find("You", 1, true) and "you" or "claude")
 			g.band:ClearAllPoints()
 			g.band:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -top)
 			g.band:SetPoint("TOPRIGHT", transcript0.content, "TOPRIGHT", -gutter, -top)

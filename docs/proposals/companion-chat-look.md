@@ -112,3 +112,117 @@ Build A, reload, `tools/shot.ps1` the Chat tab with at least two turns of each
 and a code block, and look from the couch: can you tell whose turn it is
 without reading the header, can you see stone, is every line easy to read. If
 the tones are too close, move A's blue down; if marble itself feels wrong, C.
+
+# Round 2, 2026-11-11 12:09
+
+Where it stands (shot `companion-chat-1208.png`): marble with an additive lift
+on every turn, yours tinted (1, 0.8, 0.55); `QuestLog-frame-devider` between
+turns; the classic `UI-Character-ScrollBar` trough round the scroll bar. The
+player: best so far; keep the dividers and the trough's border. Wanted: depth
+in the gutter (it is pure black inside), the marble calmer, a better colour
+pairing, and (optional) the trough's border in the dividers' art.
+
+## Why brown on grey fails, and what to pair instead
+
+The two backings differ in *hue* (warm vs cool) at the same low value and low
+saturation; at that darkness two hues don't read as two colours, they read as
+one colour gone muddy, and the eye goes to the clash rather than to the text.
+Blizzard's lists never do that: alternate rows in one window differ in
+*value* only (the auction house stripes, round 1's option B), and colour is
+spent on the gold trim and the text. So: **one material for both owners,
+your turns one step lighter**, the gold dividers doing the separating. The
+material should be quieter than marble: marble's veins are large, high-contrast
+shapes that compete with 16-px text on a TV; the lift made that worse by
+raising exactly the veins.
+
+## Option A (recommended): the modern neutral stone, one material, value steps
+
+- **Replies**: atlas `UI-Frame-Neutral-BackgroundTile`, tiled
+  (`SetHorizTile(true)`, `SetVertTile(true)`), vertex 1, alpha 1, blend
+  `BLEND`, layer `BACKGROUND` sublevel 1, `TOPLEFT`/`BOTTOMRIGHT` of the turn
+  (stopping at the gutter as today). Blizzard tiles it exactly so:
+  `Blizzard_ChromieTimeUI/Blizzard_ChromieTimeUI.xml:72` and
+  `Blizzard_CovenantPreviewUI/Blizzard_CovenantPreviewUI.xml:76`
+  (`horizTile="true" vertTile="true" setAllPoints="true"`). It is the dark,
+  fine-grained slate of the modern neutral frame: texture you can see, no
+  large veins.
+- **Yours**: the same texture, same settings, plus an additive copy of itself
+  on top (layer `BACKGROUND` sublevel 2, blend `ADD`, alpha 0.25, untinted).
+  This is the lift you already accept, used only to step your turns up in
+  value, never down (no vertex dimming, so no flat box), and no hue at all.
+  If the step is too small on the TV, raise the alpha (0.25 → 0.35); never tint.
+- **Drop**: the marble, its lift on replies, and the (1, 0.8, 0.55) tint
+  (`Transcript.lua` `MARBLE` and its comment, which then go stale).
+- **Dividers**: unchanged (`QuestLog-frame-devider`, alpha 0.8, 15 tall).
+- **Gutter (depth)**: inside the trough, behind arrows and thumb, the same
+  `UI-Frame-Neutral-BackgroundTile` tiled (layer `BACKGROUND` sublevel 1,
+  vertex 1), then Blizzard's inner shadow over it: a frame inheriting
+  `ShadowOverlaySmallTemplate`
+  (`Blizzard_UIPanelTemplates/Mainline/UIPanelTemplates.xml:1045`; the
+  `Interface\Common\ShadowOverlay-Corner/-Top/-Bottom/-Left/-Right` pieces,
+  24 px) set to all points of the trough's inside, frame level just above the
+  stone and below the arrows/thumb. The edges fall into black and the middle
+  shows stone: a carved channel rather than a void. The trough's own pieces
+  stay on top as its border.
+- **Trough border in the dividers' art (the wish)**: one vertical
+  `QuestLog-frame-devider` down the gutter's left side, from the top arrow to
+  the bottom arrow, alpha 0.8, layer `OVERLAY` of a frame above the turns.
+  Blizzard turns a horizontal divider vertical exactly this way:
+  `Blizzard_GroupFinder_VanillaStyle/Mainline/Blizzard_LFGVanilla_Listing.xml:292-305`
+  (a frame sized to the line, the atlas with `rotation="90"`,
+  `setAllPoints`); in Lua `SetAtlas` then `SetRotation(math.pi / 2)` on a
+  texture whose unrotated size is (gutter height × 15), centred on the gutter's
+  left edge. Each turn's horizontal divider already stops at the gutter, so
+  its right flare now meets the vertical one: the T-joints the player
+  described. The trough's left edge pieces are then hidden behind it (keep the
+  top, bottom and right pieces: the border they liked). Check one shot: if the
+  rotated atlas's flares sit at the wrong ends, flip with `SetTexCoord`
+  rather than adding pieces.
+- **Looks like**: one calm slate, your turns a shade lighter, gold filigree
+  between every turn running into a gold rule beside a stone channel the
+  scroll thumb rides in.
+
+## Option B: plain black, given depth instead of texture
+
+The history says plain black read best and only looked bare. Bareness here is
+the absence of edges and depth, not of veins, so add those and keep black.
+
+- **Both owners**: `Interface\DialogFrame\UI-DialogBox-Background-Dark`, tiled,
+  vertex 1, alpha 1, layer `BACKGROUND` sublevel 1 (the file `Transcript.lua`
+  already uses for `row.band`). Yours add the ADD lift as in A, alpha 0.3.
+- **Depth per turn**: `ShadowOverlaySmallTemplate` over each turn's backing
+  (cited above), so each slab has darkened edges and reads recessed between
+  the gold dividers.
+- **Gutter and border**: as A, with the dark dialog background in the gutter
+  in place of the slate.
+- **Looks like**: the old black, but each turn a recessed panel framed in
+  gold; maximum text contrast. Risk: the ADD lift on near-black may be too
+  small a step to tell owners apart; if so, A.
+
+## Option C: a generated slate, only if A's tile reads wrong on the TV
+
+Native art is preferred and A should be tried first; this exists for the case
+where `UI-Frame-Neutral-BackgroundTile` turns out too light, too blue or too
+patterned in this client.
+
+- **File**: `addon/WowCompanion_Agent/Art/Slate.tga`, 256 × 256, 32-bit
+  uncompressed TGA (alpha 255 everywhere), made by a script in `tools/`.
+- **Depicts**: dark fine-grained stone, Blizzard's FrameGeneral style without
+  veins. Base colour RGB (30, 28, 26) (warm charcoal). Two octaves of
+  *periodic* value noise (periods 32 px and 8 px, so the tile wraps
+  seamlessly), amplitude ±6 and ±3 levels on all three channels equally; a
+  third sparse layer of 1-2 px specks at +10 levels, density 0.5%. No lines,
+  no shapes larger than 32 px: nothing the eye can follow behind text.
+- **Tiling**: `SetTexture(path, "REPEAT", "REPEAT")`, then
+  `SetTexCoord(0, w/256, 0, h/256)` from the turn's size at each layout, so
+  it tiles at 1:1 pixel scale.
+- **Owners**: replies vertex 1; yours the ADD lift at 0.25 (as A). Gutter:
+  the same file plus `ShadowOverlaySmallTemplate`; border as A.
+
+## How to judge
+
+Build A, reload, shot the Chat tab with two turns of each owner and the scroll
+bar visible, and look from the couch: is the text easy, can you tell your
+turns without reading the header, does the gutter look carved, do the
+dividers' flares meet the vertical rule. Knobs, in order: the lift's alpha;
+then B if the slate is wrong; C only if both native materials fail.
