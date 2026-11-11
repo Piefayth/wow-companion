@@ -1,8 +1,10 @@
 -- Is the companion on the PC up? Shown the way addons show themselves: a button
 -- on the minimap's rim, and an entry in the minimap's addon drawer (the one a
 -- controller can reach). Either opens the Companion window (WowCompanion_Agent). The button is in
--- full colour while the companion can hear the player, and greyed with a red
--- edge when it cannot, so nobody talks into a companion that is not running.
+-- full colour while the companion can hear the player, yellow while it runs
+-- without a microphone (gone: unplugged, or the headset taken by a phone), and
+-- greyed with a red edge when it is not running, so nobody talks into a
+-- companion that cannot hear them.
 --
 -- How it knows: the companion keeps one of two silent bells present while it can
 -- hear the player and swaps which one every 4 seconds (src/heartbeat.rs). A swap
@@ -36,7 +38,9 @@ end
 
 local function describe(tooltip)
 	tooltip:AddLine("WoW Companion")
-	if up then
+	if up and not WC.Link.Mic() then
+		tooltip:AddLine("Companion running, no microphone: connect it and it is picked up.", 1, 0.82, 0)
+	elseif up then
 		local talk = WowCompanion_Glyph and WowCompanion_Glyph(WowCompanion_TalkKey) or "the talk button"
 		tooltip:AddLine(("Listening: hold %s to talk."):format(talk), 0.4, 0.9, 0.4)
 	else
@@ -138,7 +142,10 @@ local function show(isUp)
 	if (up and not isUp) or (up == false and isUp) then WC.Link.Heartbeat(isUp) end
 	up = isUp
 	icon:SetDesaturated(not isUp)
-	if isUp then
+	if isUp and not WC.Link.Mic() then
+		border:SetVertexColor(1, 0.82, 0)
+		icon:SetVertexColor(1, 0.85, 0.3)
+	elseif isUp then
 		border:SetVertexColor(1, 1, 1)
 		icon:SetVertexColor(1, 1, 1)
 	else

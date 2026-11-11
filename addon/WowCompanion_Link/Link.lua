@@ -101,6 +101,15 @@ function handlers.heard()
 	return "heard"
 end
 
+-- The companion's state: `mic` false while the chosen microphone is gone
+-- (unplugged, or the headset taken by a phone). Assumed there at every load
+-- until the companion says otherwise; Status.lua draws it.
+local mic = true
+function handlers.status(inbox)
+	if inbox.mic ~= nil then mic = inbox.mic and true or false end
+	return "status: mic " .. tostring(mic)
+end
+
 -- With the agents off (dictation only), what would be a conversation line (a
 -- clip that sent nothing, a reconnected headset, a crash) comes as a notice,
 -- shown as Link shows its own problems. With the agents on it is never sent.
@@ -340,4 +349,6 @@ WC.Link = {
 	say = say,
 	MessagesSent = function() return nextSlot - 1 end,
 	Audit = audit,
+	-- false while the companion has no microphone (handlers.status)
+	Mic = function() return mic end,
 }
