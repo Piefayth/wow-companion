@@ -36,6 +36,9 @@ them.
 8. **Heuristics**: thresholds, time windows, "close enough" matching, guessing
    from text shape (the player's standing rule: a heuristic needs their
    explicit permission). Name each and the exact signal that would replace it.
+   Permitted by the player (2026-11-11), not findings: speech handling
+   (stripping Whisper's prompt echo, dropping clips below a level), and matching
+   a spoken name to the closest player name. Speech is approximate by nature.
 9. **Bug classes**: for the fixes since the last review, what in the structure
    permitted each bug, and whether that structure is still producing them
    (strings built by surgery and parsed by prefix, state kept twice, rules only

@@ -39,8 +39,8 @@ what agents are editing now. Counts are from 2026-11-11.
 | Combat guard "somewhere before" a call; function ends by indentation | tools/luarules.py | 1.2 above makes the rule exact | after L2 |
 | Cancel matched to the nearest clip within 1.2 s, across two clocks | src/jobs.rs (heard_at) | an identity both sides know | Main to propose |
 | "Is this request about chat?" by keywords | src/context.rs wants_chat | the agent asks for live chat when it wants it (a step), instead of the PC guessing from words | PC-side Claude |
-| Whisper's prompt echo stripped by text; quiet clips by a level threshold | crates/voice/src/lib.rs, mic.rs | Whisper's own no-speech probability; a prompt that cannot echo | **player to decide** |
-| Spoken names matched to the closest player name | Lua name lookup | speech is approximate by nature | **player to decide** (permission or another design) |
+| Whisper's prompt echo stripped by text; quiet clips by a level threshold | crates/voice/src/lib.rs, mic.rs | (speech is approximate) | permitted by the player, 2026-11-11 |
+| Spoken names matched to the closest player name | Lua name lookup | (speech is approximate) | permitted by the player, 2026-11-11 |
 
 Not guesses: the 1.5 s clip join (the player's own spec), bell length and slot
 counts (measured), the strip's cell size (a format).
