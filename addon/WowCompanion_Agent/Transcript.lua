@@ -157,7 +157,10 @@ function Transcript:ToBottom()
 	end)
 end
 
-function Transcript:Row(font, text, indent, gap, r, g, b)
+-- owner (optional): this row begins a turn, on that owner's backing. Made
+-- here, before the row is placed: an appended row is placed at once, and a
+-- backing added after that stretched the turn before it instead.
+function Transcript:Row(font, text, indent, gap, r, g, b, owner)
 	local fs = self.content:CreateFontString(nil, "OVERLAY", font)
 	fs:SetJustifyH("LEFT")
 	fs:SetJustifyV("TOP")
@@ -166,7 +169,8 @@ function Transcript:Row(font, text, indent, gap, r, g, b)
 	fs:SetSpacing(LINE_SPACING)
 	if r then fs:SetTextColor(r, g, b) end
 	fs:SetText(text)
-	local row = { fs = fs, indent = indent or 0, gap = self.gap or gap or 0 }
+	local row = { fs = fs, indent = indent or 0, gap = self.gap or gap or 0,
+		header = owner and true or nil, turn = owner and turnBand(self.content, owner) or nil }
 	self.gap = nil
 	-- Confirmed lines are only ever appended (the player, 2026-11-10: the
 	-- view must be "predictable and non-disruptive"): a line placed among ones
@@ -239,11 +243,9 @@ function Transcript:Add(who, text, continued, at, job)
 		if voice then
 			local stamp = date("%H:%M", at or time())
 			local header = ("%s%s|r  |cff5c6370%s|r"):format(voice[2], voice[1], stamp)
-			local row = self:Row("GameFontNormalSmall", header, 0, TURN_GAP)
+			local row = self:Row("GameFontNormalSmall", header, 0, TURN_GAP, nil, nil, nil, who)
 			-- your own message's header carries its controls (Jobs.lua)
 			if who == "you" then row.you = true end
-			row.header = true
-			row.turn = turnBand(self.content, who)
 			row.job = job
 			self.gap = 3
 		end
@@ -276,9 +278,7 @@ end
 -- the work goes on; at the end it is taken away if nothing came after it
 -- (the reply takes its place), else it says how the work ended and stays.
 function Transcript:AddLive(header, text)
-	local head = self:Row("GameFontNormalSmall", header, 0, TURN_GAP)
-	head.header = true
-	head.turn = turnBand(self.content, "claude")
+	local head = self:Row("GameFontNormalSmall", header, 0, TURN_GAP, nil, nil, nil, "claude")
 	self.gap = 3
 	local line = self:Row(BODY_FONT, text, 0, 2, 0.6, 0.6, 0.6)
 	return { head = head, line = line }
