@@ -1,4 +1,4 @@
-//! Spoken chat lines: channel words, discards, the dictation inbox.
+//! Dictated chat lines: channel words, discards, the chat box messages.
 
 use crate::message::Msg;
 
@@ -91,12 +91,6 @@ pub(crate) fn channeled(text: &str) -> String {
         return trimmed.to_string();
     }
     format!("{slash} {message}")
-}
-
-/// Dictation: `text` as chat should get it (a channel turned into its slash
-/// command), `raw` as it was said, for any other text box the player is in.
-pub(crate) fn dictation_inbox(raw: &str, routed: &str) -> Msg {
-    Msg::new("chat").text("text", routed).text("raw", raw.trim())
 }
 
 /// Dictation from the L1+R1 chord: for the chat box, never the agent. `wheel`

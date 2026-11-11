@@ -47,6 +47,7 @@ const SCHEMA: &str = r#"{
   "properties": {
     "say":   { "type": "string" },
     "look":  { "type": "boolean" },
+    "fresh": { "type": "boolean" },
     "steps": {
       "type": "array",
       "items": {
@@ -81,6 +82,9 @@ pub struct Spoken {
     pub inbox: Option<crate::message::Msg>,
     /// the agent wants to see its steps' results: call it again after the reload
     pub look: bool,
+    /// the player asked to start this conversation over: after this answer it
+    /// begins anew
+    pub fresh: bool,
     /// `module` steps, stored in modules/ before sending: name, and code or None
     /// to remove (src/modules.rs)
     pub modules: Vec<(String, Option<String>)>,
@@ -328,7 +332,7 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
     // the step limit is not a fault: the work so far stands and the conversation
     // can carry on (the companion does, a few times). The result names it.
     if envelope.get("subtype").and_then(Value::as_str) == Some("error_max_turns") {
-        let spoken = Spoken { say: String::new(), inbox: None, look: false, modules: Vec::new(), out_of_steps: true };
+        let spoken = Spoken { say: String::new(), inbox: None, look: false, fresh: false, modules: Vec::new(), out_of_steps: true };
         return Ok(Answer { spoken, thread });
     }
     if envelope.get("is_error").and_then(Value::as_bool) == Some(true) {
@@ -371,6 +375,7 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
         })
         .collect();
     let look = command.get("look").and_then(Value::as_bool) == Some(true);
+    let fresh = command.get("fresh").and_then(Value::as_bool) == Some(true);
     // looking needs a reload, and a reload needs the player's press: offer it,
     // unless the answer already offers its own button
     if look && buttons == 0 {
@@ -382,7 +387,7 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
         1 => built.pop(),
         _ => Some(Msg::new("batch").list("steps", built)),
     };
-    Ok(Answer { spoken: Spoken { say, inbox, look, modules, out_of_steps: false }, thread })
+    Ok(Answer { spoken: Spoken { say, inbox, look, fresh, modules, out_of_steps: false }, thread })
 }
 
 /// One step as the message the addon's dispatch accepts.

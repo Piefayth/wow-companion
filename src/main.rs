@@ -207,7 +207,7 @@ fn main() {
 
 /// The whole thing: controller, microphone, speech, the channel, and the
 /// conversations with the agent. One talk button: a trigger held with it picks the
-/// conversation, L1+R1 dictates, and a line opening with a channel word is chat.
+/// conversation, and L1+R1 dictates into the chat box.
 fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     // one companion at a time (src/lifecycle.rs)
     lifecycle::refuse_second()?;
@@ -474,9 +474,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         }
                     };
                     voice::mark("gathered");
-                    if !spoken_shortcut(&slot, &text, job, &session, &courier) {
-                        request(&addons, &slot, text, job, &session, &looking, &courier);
-                    }
+                    request(&addons, &slot, text, job, &session, &looking, &courier);
                 });
                 Ok(())
             }
@@ -490,41 +488,6 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         }
     }
     Ok(())
-}
-
-/// What speech cannot say any other way (Whisper never writes "/p", and a
-/// controller cannot type it), done for a spoken clip `job` in conversation
-/// `slot`: "scratch that" alone clears the chat box, "start over" alone begins
-/// the conversation afresh, and a line opening with a channel word ("party,
-/// pulling now") goes to the chat box. True when it was one of those; its job
-/// then just ends. Typed requests never come here: typing can say all three.
-fn spoken_shortcut(slot: &str, text: &str, job: u64, session: &Mutex<agent::Session>, courier: &Courier) -> bool {
-    let handled = || {
-        jobs::finish(job, jobs::State::Answered);
-    };
-    if discards(text) {
-        println!("  clearing the chat box");
-        handled();
-        let _ = courier.send(Out::Now(Msg::new("chat").flag("clear", true)));
-        let _ = courier.send(Out::Line(Line::new(slot, "you", text)));
-        return true;
-    }
-    let plain: String = text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>().to_lowercase();
-    if matches!(plain.trim(), "start over" | "new conversation" | "fresh start" | "reset conversation") {
-        handled();
-        session.lock().map(|mut s| s.forget()).ok();
-        let _ = courier.send(Out::Line(Line::new(slot, "you", "(started this conversation over)")));
-        return true;
-    }
-    let routed = channeled(text);
-    if routed != text.trim() {
-        println!("  chat line: {routed}");
-        handled();
-        let _ = courier.send(Out::Now(dictation_inbox(text, &routed)));
-        let _ = courier.send(Out::Line(Line::new(slot, "you", &format!("(to chat) {routed}"))));
-        return true;
-    }
-    false
 }
 
 /// A request to the agent in conversation `slot`, as its job `job`, on the

@@ -372,6 +372,12 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         .ended(jobs::members(group))
         .steps(answer.inbox.clone());
     post(addons, reply)?;
+    // asked to start over: the next request begins a new conversation
+    if answer.fresh {
+        println!("  this conversation starts over");
+        session.forget();
+        return Ok(false);
+    }
     if answer.look {
         println!("  waiting for the reload to look at the results");
     }

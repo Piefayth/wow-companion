@@ -138,12 +138,11 @@ Tests: `cargo test --workspace`.
 
 - `wow-companion run` (options from `settings.toml`, written by the setup window;
   `run <AddOns> <model> ask=minus mic=<name>` overrides them)
-  (one talk button: a line opening with a channel word goes to chat, the rest to
-  the agent; `chat=on:home` brings back a separate dictation button)
+  (one talk button, everything said to the agent; L1+R1 is dictation into chat)
   **Conversation slots**: a trigger (L1, L2, R1, R2) held with minus sends the
   request to that slot's own conversation (`thread-l2.txt`…), shown as "[L2] …";
-  slots run side by side. **L2+R2 together is Quick** (`agent::QUICK_SLOT`): Sonnet at low effort (Haiku was too weak, the player, 2026-11-10), 12 turns, a trimmed export, for chat, links and buttons. Saying "start over" alone in a conversation begins it
-  fresh. Home is free. Only the main conversation can `look`.
+  slots run side by side. **L2+R2 together is Quick** (`agent::QUICK_SLOT`): Sonnet at low effort (Haiku was too weak, the player, 2026-11-10), 12 turns, a trimmed export, for chat, links and buttons. Asked to start over, the agent sets `fresh` and the
+  conversation begins anew after its answer. Home is free. Only the main conversation can `look`.
   starts the companion. It runs from a copy (with its DLLs) in its own folder under
   `%LOCALAPPDATA%\wow-companion\bin`, so `cargo build` works while it runs.
 - **For players: `wow-companion start`** (the setup window's Start with Windows):
