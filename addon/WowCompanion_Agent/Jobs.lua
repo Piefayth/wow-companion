@@ -52,8 +52,7 @@ local model
 local function getModel()
 	if model then return model end
 	if type(WowCompanionAgentDB) ~= "table" or not WC.JobsModel then return nil end
-	WowCompanionAgentDB.jobModel = WowCompanionAgentDB.jobModel or { jobs = WowCompanionAgentDB.jobs }
-	WowCompanionAgentDB.jobs = nil
+	WowCompanionAgentDB.jobModel = WowCompanionAgentDB.jobModel or {}
 	WowCompanionAgentDB.lines = WowCompanionAgentDB.lines or {}
 	model = WC.JobsModel.new({
 		now = nowMs,
@@ -390,21 +389,8 @@ refresh = function()
 	for _, job in ipairs(list) do
 		if job.slot == view and job.state == "running" and not job.cancel then running = job end
 	end
-	-- bound once to the message it belongs to (its queued line, or your newest
-	-- line not bound to another job), so it can never wander onto an older one
-	local runRow
-	if running then
-		running.row = rowOf(running)
-		if not running.row then
-			local taken = {}
-			for _, job in pairs(jobs) do if job.row then taken[job.row] = true end end
-			for i = #(transcript.rows or {}), 1, -1 do
-				local row = transcript.rows[i]
-				if row.you and row.fs:IsShown() and not taken[row] then running.row = row break end
-			end
-		end
-		runRow = running.row
-	end
+	-- its own line: every line of yours carries its job (src/requests.rs)
+	local runRow = running and rowOf(running)
 	if runRow then
 		used = used + 1
 		local pair = pairsPool[used]
@@ -465,12 +451,7 @@ WC.Jobs.Refresh = function()
 	if WC.Jobs.Chain then pcall(WC.Jobs.Chain) end
 end
 
--- the old entry points, kept so callers cost nothing: each message's `job`
--- and `state` carry everything
-function WC.Jobs.Note(inbox) WC.Jobs.Apply(inbox) end
 WC.Jobs.Model = getModel
-function WC.Jobs.Started() WC.Jobs.Refresh() end
-function WC.Jobs.Gone() WC.Jobs.Refresh() end
 
 
 -- Shortcuts while the Companion window has the controller's focus (the

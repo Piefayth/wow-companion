@@ -517,7 +517,7 @@ local function valueOf(e)
 	if not e.item then return nil end
 	local price = WC.Use("price")
 	local ok, v = pcall(function() return price and price.auction(e.item) end)
-	if ok and type(v) == "number" and v > 0 then return GetCoinTextureString and GetCoinTextureString(v) or (v .. "c") end
+	if ok and type(v) == "number" and v > 0 then return GetMoneyString(v) end
 end
 local function describeDone(done)
 	local parts = {}

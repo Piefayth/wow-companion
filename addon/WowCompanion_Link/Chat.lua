@@ -215,12 +215,8 @@ local function boardRow()
 		or ("%d lines are waiting: open chat"):format(n)) or nil, { state = "waiting", keep = true })
 end
 
-local function trace(what, box)
-	if WC.ChatChannel and WC.ChatChannel.Trace then WC.ChatChannel.Trace(what, box) end
-end
 local function into(box, text)
 	box:SetText(text)
-	trace("into chat box", box)
 	return ("chat box holds %q"):format(box:GetText() or "")
 end
 
@@ -247,7 +243,6 @@ local function chatLine(line, words)
 		if words and words ~= "" then return into(box, had .. " " .. words) end
 	end
 	waitingLines[#waitingLines + 1] = line
-	trace("line waiting", box)
 	boardRow()
 	return ("waiting for the chat box: %q"):format(line)
 end
@@ -256,8 +251,7 @@ end
 -- ActivateChat, which every way of opening chat ends in (a key, the pad's
 -- radial focusing the chat frame, a click: the edit box's OnEditFocusGained
 -- calls it), and which has shown and focused the box by the time it returns,
--- so no timer. A line that cannot go in stays waiting and the board says why;
--- every attempt is in the chat box trace (WC.ChatChannel.Trace).
+-- so no timer. A line that cannot go in stays waiting and the board says why.
 local function refusedBecause(box)
 	if not box:HasFocus() then return "the chat box opened without the cursor in it" end
 	local had = box:GetText() or ""
@@ -274,7 +268,6 @@ hooksecurefunc(ChatFrameUtil, "ActivateChat", function(box)
 	if #waitingLines == 0 or not (box and box.GetText and box.SetText) then return end
 	local why = refusedBecause(box)
 	if why then
-		trace("waiting line refused: " .. why, box)
 		waitingWhy(why)
 		return
 	end
@@ -290,7 +283,6 @@ hooksecurefunc(ChatFrameUtil, "OpenChat", function(text)
 	justPlaced = nil
 	if not (placed and text) then return end
 	table.insert(waitingLines, 1, placed.line)
-	trace("waiting line pushed back: chat opened with its own text", placed.box)
 	waitingWhy(("chat opened with its own text (%q); send or clear that, then open chat again"):format(text))
 end)
 

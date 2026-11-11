@@ -34,12 +34,7 @@ local function build()
 	f:SetToplevel(true)
 	f:SetClampedToScreen(true)
 	-- where Blizzard's bags sit (UpdateContainerFrameAnchors): bottom right, 85 up
-	local bx = 4
-	if GetInitialContainerFrameOffsetX then
-		local ok, v = pcall(GetInitialContainerFrameOffsetX)
-		if ok and type(v) == "number" then bx = v end
-	end
-	f.home = { "BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -bx, CONTAINER_OFFSET_Y or 85 }
+	f.home = { "BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -4, CONTAINER_OFFSET_Y or 85 }
 	f:SetPoint(unpack(f.home))
 	f:SetBackdrop({
 		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",

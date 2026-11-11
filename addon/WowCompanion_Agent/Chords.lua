@@ -1,8 +1,6 @@
 -- WowCompanion_Agent: name lookups and chord learning, as WC.Chords. The pad
 -- itself is read by WowCompanion_Link (Pad.lua, WC.Pad).
 
-local function cvar(...) return WC.Probes.cvar(...) end
-
 -- Name lookups, asked rather than assumed.
 --
 -- This client is 1.60.1: not retail, and not any Classic we have a reference for.
@@ -16,31 +14,12 @@ local function spellName(id)
 			return info.name
 		end
 	end
-	if GetSpellInfo then
-		local ok, name = pcall(GetSpellInfo, id)
-		if ok then
-			if type(name) == "table" then
-				return name.name
-			elseif type(name) == "string" then
-				return name
-			end
-		end
-	end
 	return nil
 end
 
--- Written as two ifs rather than a loop over { C_Item and ..., GetItemInfo }:
--- ipairs stops at the first nil, so if the namespaced form were missing the loop
--- would never reach the global one. That exact hole cost us an afternoon already.
 local function itemName(id)
 	if C_Item and C_Item.GetItemInfo then
 		local ok, name = pcall(C_Item.GetItemInfo, id)
-		if ok and type(name) == "string" then
-			return name
-		end
-	end
-	if GetItemInfo then
-		local ok, name = pcall(GetItemInfo, id)
 		if ok and type(name) == "string" then
 			return name
 		end

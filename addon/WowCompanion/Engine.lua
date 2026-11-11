@@ -104,7 +104,6 @@ do
 	function WC.SetFocusButton(frame, button)
 		later(key("button", frame), function()
 			if SmartNavigation_SetButtonFrame then SmartNavigation_SetButtonFrame(button) end
-			if SmartNavigation_SetReturnFrameFocusButton then SmartNavigation_SetReturnFrameFocusButton(frame, button) end
 		end)
 	end
 	-- up and down from button go to these (nil: the cursor chooses)

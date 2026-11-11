@@ -7,13 +7,11 @@
 
 Agent.lua
 Sandbox.lua
-Tests.lua
 Window.lua
 Transcript.lua
 JobsModel.lua
 Jobs.lua
 Chords.lua
-Probes.lua
 Export.lua
 FocusLog.lua
 ItemView.lua

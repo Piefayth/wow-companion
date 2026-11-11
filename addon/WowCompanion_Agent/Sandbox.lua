@@ -3,9 +3,124 @@
 
 local effectiveModules = WC.Companion.modules
 local remember = WC.Companion.remember
-local function taintScan(...) return WC.Tests.taintScan(...) end
 local replySlot_now = WC.Companion.replySlot
 local handlers = {}
+
+-- The taint scan. issecurevariable asks of every global, and every
+-- string-keyed field of every global table, who last wrote it; a name that
+-- turns insecure between a scan before agent code and one after, and is not
+-- ours, is taint that code caused, named by variable.
+local function ours(name)
+	name = tostring(name)
+	return name:find("WowCompanion", 1, true) or name:find("WOWCOMPANION", 1, true)
+end
+
+-- The scan asks about some 265,000 variables, about 300 ms in one go: a frame the
+-- player sees freeze. So it is spread over frames, at most BUDGET_MS of each, and
+-- done(tainted, checked) is called when it has asked about every one. The names
+-- are taken first (one bare pass over _G, and over a table's fields when it is
+-- reached; the filtering is in the budgeted steps), since a table must not be
+-- walked across frames while others add to it.
+local BUDGET_MS = 2
+local scanner = CreateFrame("Frame")
+local scans = {}
+local function startScan(scan)
+	local names = {}
+	for name, value in pairs(_G) do
+		if type(name) == "string" then names[#names + 1] = name end
+	end
+	scan.names, scan.at, scan.fields, scan.f = names, 0, nil, 0
+end
+-- one variable asked about; false when the scan is through
+local function step(scan)
+	local fields = scan.fields
+	if fields and scan.f < #fields then
+		scan.f = scan.f + 1
+		local field = fields[scan.f]
+		if ours(field) then return true end
+		local ok, secure, by = pcall(issecurevariable, scan.table, field)
+		scan.checked = scan.checked + 1
+		if ok and not secure then scan.tainted[scan.name .. "." .. field] = tostring(by) end
+		return true
+	end
+	scan.at = scan.at + 1
+	local name = scan.names[scan.at]
+	if not name then return false end
+	scan.fields = nil
+	if ours(name) then return true end
+	local ok, secure, by = pcall(issecurevariable, name)
+	scan.checked = scan.checked + 1
+	if ok and not secure then scan.tainted[name] = tostring(by) end
+	local value = rawget(_G, name)
+	scan.fields, scan.f, scan.name, scan.table = nil, 0, name, nil
+	if type(value) == "table" then
+		-- forbidden frames refuse to be walked; pcall keeps one from ending the scan
+		local list = {}
+		if pcall(function()
+			for field in pairs(value) do
+				if type(field) == "string" then list[#list + 1] = field end
+			end
+		end) then
+			scan.fields, scan.table = list, value
+		end
+	end
+	return true
+end
+scanner:Hide()
+scanner:SetScript("OnUpdate", function(self)
+	local scan = scans[1]
+	if not scan then return self:Hide() end
+	if not scan.names then
+		startScan(scan)
+		return
+	end
+	local stop = debugprofilestop() + BUDGET_MS
+	repeat
+		if not step(scan) then
+			table.remove(scans, 1)
+			pcall(scan.done, scan.tainted, scan.checked)
+			return
+		end
+	until debugprofilestop() >= stop
+end)
+local function taintScan(done)
+	scans[#scans + 1] = { done = done, tainted = {}, checked = 0 }
+	scanner:Show()
+end
+
+-- the variables newly tainted between two scans, each with who tainted it
+local function fresh(before, after, skip)
+	local list = {}
+	for label, by in pairs(after) do
+		if before[label] == nil and not (skip and skip(label)) then
+			list[#list + 1] = ("%s (by %s)"):format(label, by)
+		end
+	end
+	table.sort(list)
+	return list
+end
+
+-- "Interface action failed because of an AddOn" is shown by this function, and it
+-- fires even when ADDON_ACTION_BLOCKED does not reach us. hooksecurefunc runs after
+-- the original without tainting it. Every hit is kept with its time.
+if hooksecurefunc and DisplayInterfaceActionBlockedMessage then
+	hooksecurefunc("DisplayInterfaceActionBlockedMessage", function()
+		WowCompanionAgentDB.blockedNotices = WowCompanionAgentDB.blockedNotices or {}
+		local stamp = date("%H:%M:%S")
+		-- who asked: SecureHelper's wrapped calls (FrameHidden, MarkFrame*) fail
+		-- here without ADDON_ACTION_BLOCKED, so the stack is the only name for it
+		local stack = debugstack and debugstack(2, 8, 0) or ""
+		local ours = stack:match("(WowCompanion[%w_]*[/%.%w_]*:%d+)")
+		table.insert(WowCompanionAgentDB.blockedNotices, stamp .. (ours and (" " .. ours) or ""))
+		-- the whole stack, kept apart: the caller is often Blizzard code run for us
+		WowCompanionAgentDB.blockedStacks = WowCompanionAgentDB.blockedStacks or {}
+		table.insert(WowCompanionAgentDB.blockedStacks, stamp .. " " .. (stack:gsub("\n", " | ")):sub(1, 2000))
+		while #WowCompanionAgentDB.blockedStacks > 10 do table.remove(WowCompanionAgentDB.blockedStacks, 1) end
+		while #WowCompanionAgentDB.blockedNotices > 40 do table.remove(WowCompanionAgentDB.blockedNotices, 1) end
+		-- the window's log must never break this hook
+		pcall(remember, "probe", "interface action failed notice at " .. stamp)
+	end)
+end
 
 -- Code the agent writes, run here.
 --
@@ -20,9 +135,9 @@ local handlers = {}
 --    player, spend gold, leave groups. Those names are refused in the environment
 --    the code runs in. This is a guard against mistakes, not an adversary: Lua has
 --    ways around an environment, and getfenv/loadstring, the obvious ones, are shut.
---  * Taint and crashes. Every run is followed by the same issecurevariable diff as
---    /wc place, so code that would break A and B says so by name, and nothing runs
---    in combat. A C-level crash cannot be caught; see /wc alive.
+--  * Taint and crashes. Every run is followed by the taint scan above, so code
+--    that would break A and B says so by name, and nothing runs in combat. A
+--    C-level crash cannot be caught.
 --
 -- Code arrives two ways: `lua` runs once and reports what it printed and returned;
 -- `module` is also stored in SavedVariables and run again at every login, which is
@@ -164,7 +279,7 @@ local function runCode(label, code, before)
 	end
 	local whose = replySlot_now()
 	C_Timer.After(1.5, function() taintScan(function(after)
-		local fresh = WC.Tests.fresh(before, after, function(name) return moduleGlobals[name] end)
+		local fresh = fresh(before, after, function(name) return moduleGlobals[name] end)
 		run.taint = #fresh == 0 and "none" or table.concat(fresh, "; ")
 		if #fresh > 0 then
 			remember("probe", ("%s tainted %d variable(s): %s -- /reload clears it"):format(
@@ -243,5 +358,7 @@ WC.Sandbox.loadModules = loadModules
 WC.Sandbox.results = results
 WC.Sandbox.Busy = function() return busy or #queue > 0 end
 WC.Sandbox.Queue = enqueue
+WC.Sandbox.taintScan = taintScan
+WC.Sandbox.fresh = fresh
 
-for kind, fn in pairs(handlers) do WC.Companion.addHandler(kind, fn) end
+for kind, fn in pairs(handlers) do WC.Link.Handle(kind, fn) end

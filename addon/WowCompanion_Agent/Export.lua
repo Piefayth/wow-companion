@@ -47,7 +47,7 @@ end
 
 -- The context export: what the agent
 -- reads after every reload, written into SavedVariables at logout, and the form
--- notes it rests on. It reads Chords, Probes and Companion through their named
+-- notes it rests on. It reads Chords and Companion through their named
 -- functions; Agent.lua calls WC.Export.Context() / WC.Export.NoteForms().
 
 local chords = WC.Chords
@@ -62,7 +62,6 @@ local chordFor = chords.chordFor
 local itemName = chords.itemName
 local slotHas = chords.slotHas
 local spellName = chords.spellName
-local cvar = WC.Probes.cvar
 local effectiveModules = WC.Companion.modules
 
 local function noteForms()
@@ -300,13 +299,6 @@ local function exportContext()
 		line(("class: %s"):format(tostring(UnitClass("player"))))
 		line(("race: %s"):format(tostring(UnitRace("player"))))
 		line(("faction: %s"):format(tostring(UnitFactionGroup("player"))))
-		if GetSpecialization and GetSpecializationInfo then
-			local index = GetSpecialization()
-			if index then
-				local _, specName = GetSpecializationInfo(index)
-				line(("spec: %s"):format(tostring(specName)))
-			end
-		end
 		if GetMoney then
 			line(("copper: %s"):format(tostring(GetMoney())))
 		end
@@ -521,7 +513,7 @@ local function exportContext()
 				line(("forms/stances: %s; at export: %s"):format(table.concat(formNames, ", "),
 					form == 0 and "none" or (formNames[form] or tostring(form))))
 				line(("GamepadStanceBarOverride: %s (the setting that picks which bar shows form actions)")
-					:format(tostring(cvar("GamepadStanceBarOverride"))))
+					:format(tostring(C_CVar.GetCVar("GamepadStanceBarOverride"))))
 				line("-- changing form or stance: where the player does it is in their profile, never assumed")
 			end
 			local stats = WowCompanionAgentDB.chordStats
@@ -740,11 +732,6 @@ local function exportContext()
 	-- Lua errors are not here: the PC reads them live from the game's own log
 	-- (src/context.rs, Logs/General.log), where Blizzard writes every one
 	section("blocked", function()
-		local wc = WowCompanionAgentDB.windowCombat
-		if wc then
-			line(("-- Companion window at the last fight's start: still protected=%s, extra secure children stowed: %s; last close: %s; last hidden: %s")
-				:format(tostring(wc.protectedAfter), wc.stowedExtra ~= "" and tostring(wc.stowedExtra) or "none", tostring(wc.lastHide), tostring(wc.lastOnHide)))
-		end
 		local blocked = WowCompanionAgentDB.blocked or {}
 		line("-- actions the game blocked (\"Interface action failed\"), newest first")
 		for at = #blocked, math.max(1, #blocked - 9), -1 do

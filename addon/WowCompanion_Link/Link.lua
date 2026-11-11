@@ -23,28 +23,13 @@ local function say(message)
 	print("|cff66ccffCompanion|r " .. message)
 end
 
-local function record(key, value)
-	-- storing nil would delete the key rather than save it, quietly losing the
-	-- result instead of reporting that we got nothing
-	WowCompanionLinkDB.probe = WowCompanionLinkDB.probe or {}
-	WowCompanionLinkDB.probe[key] = value == nil and "nil" or value
+-- a message that could not be handled, said in chat
+local function report(key, value)
 	say(key .. ": " .. tostring(value))
 end
 
 local function slotName(n)
 	return ("%s_S%03d"):format(SLOTS_PREFIX, n)
-end
-
--- PlaySoundFile claims every file will play, even empty ones, so only IsPlaying counts
-local function listen(path, heard)
-	local _, handle = PlaySoundFile(path, "Master")
-	C_Timer.After(0.15, function()
-		local playing = handle ~= nil and C_Sound.IsPlaying(handle)
-		if handle then
-			StopSound(handle)
-		end
-		heard(playing)
-	end)
 end
 
 -- What the helper is allowed to ask for. A dispatch table rather than loadstring on
@@ -129,12 +114,6 @@ function handlers.notice(inbox)
 	return "notice shown"
 end
 
-function handlers.probe(inbox)
-	WowCompanionLinkDB.probe = WowCompanionLinkDB.probe or {}
-	WowCompanionLinkDB.probe.received = (WowCompanionLinkDB.probe.received or 0) + 1
-	return ("message %d, %ds after the helper wrote it"):format(inbox.n, time() - inbox.sent)
-end
-
 -- One message, as if it had come alone (from a slot's list or the mailbox).
 -- A handler returning WC.Link.HELD (a line held already) ends it there: its
 -- steps ran when it first came.
@@ -142,7 +121,7 @@ local HELD = "held already"
 local function dispatch(inbox, label)
 	local handler = handlers[inbox.kind or ""]
 	if not handler then
-		record(label, "unknown kind: " .. tostring(inbox.kind))
+		report(label, "unknown kind: " .. tostring(inbox.kind))
 		return
 	end
 	current = inbox.slot
@@ -157,10 +136,7 @@ local function dispatch(inbox, label)
 			inbox.text and (" " .. tostring(inbox.text):sub(1, 60)) or ""))
 	end
 	local ok, result = pcall(handler, inbox)
-	-- only probe traffic is worth narrating in chat
-	if inbox.kind == "probe" or not ok then
-		record(label, ok and tostring(result) or ("error: " .. tostring(result)))
-	end
+	if not ok then report(label, "error: " .. tostring(result)) end
 	if result == HELD then
 		current = nil
 		return
@@ -172,7 +148,7 @@ local function dispatch(inbox, label)
 	if following and handlers[following.kind or ""] then
 		local done, outcome = pcall(handlers[following.kind], following)
 		if not done then
-			record(label .. " follow-up", "error: " .. tostring(outcome))
+			report(label .. " follow-up", "error: " .. tostring(outcome))
 		end
 		WC.Send("LINK_STEP", following, done, outcome)
 	end
@@ -187,11 +163,11 @@ local function receive()
 	local inbox = WowCompanion_Inbox
 	WowCompanion_Inbox = nil
 	if not loaded or not inbox then
-		record("slot " .. slot, "failed: " .. tostring(reason))
+		report("slot " .. slot, "failed: " .. tostring(reason))
 		return
 	end
 	if inbox.kind ~= "list" or type(inbox.messages) ~= "table" then
-		record("slot " .. slot, "not a list: " .. tostring(inbox.kind))
+		report("slot " .. slot, "not a list: " .. tostring(inbox.kind))
 		return
 	end
 	for _, message in ipairs(inbox.messages) do
@@ -307,16 +283,12 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- save was lost and the addon loaded empty (read by src/backups.rs)
 		db.loads = (db.loads or 0) + 1
 		set = db.loads % 3
-		-- the game saves before it reloads, so hold on to the session just read
-		db.previous = db.probe
-		db.probe = {}
+		db.previous, db.probe = nil, nil
 	elseif event == "PLAYER_LOGIN" then
 		if type(WowCompanionLinkDB.talkKey) == "string" then
 			WowCompanion_TalkKey = WowCompanionLinkDB.talkKey
 		end
 		pcall(bindTap)
-		local version, build, _, toc = GetBuildInfo()
-		record("client", ("%s.%s, toc %d"):format(version, build, toc))
 	elseif event == "PLAYER_ENTERING_WORLD" and not polling then
 		-- after every addon's PLAYER_LOGIN (the Agent's window is built and
 		-- refilled by then): the mailbox (WowCompanion_Mailbox, src/ledger.rs),
@@ -369,8 +341,5 @@ WC.Link = {
 	end,
 	Slash = function(word, fn) slash[word] = fn end,
 	say = say,
-	record = record,
-	-- listen for one of our signal sounds (Signals/<file>) playing
-	ListenSignal = function(file, heard) return listen(SIGNALS .. file, heard) end,
 	MessagesSent = function() return nextSlot - 1 end,
 }

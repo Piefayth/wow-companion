@@ -107,22 +107,11 @@ function M:Apply(inbox)
 	self:changed()
 end
 
--- The mailbox's job states at load, merged forward. A job this window holds
--- unended that the mailbox does not list is one the PC never knew (from before
--- the ledger): nothing can move it, so it goes
+-- The mailbox's job states at load, merged forward.
 function M:Mail(jobs)
-	local listed = {}
 	for _, e in ipairs(type(jobs) == "table" and jobs or {}) do
 		local id = type(e) == "table" and tonumber(e.job)
-		if id then
-			listed[id] = true
-			self:advance(id, e.slot, e.state)
-		end
-	end
-	for id, job in pairs(self.jobs) do
-		if RANK[job.state] < 3 and not listed[id] then
-			self.jobs[id], self.store.jobs[id] = nil, nil
-		end
+		if id then self:advance(id, e.slot, e.state) end
 	end
 	self:changed()
 end

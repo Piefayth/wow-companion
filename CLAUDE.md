@@ -98,11 +98,11 @@ yes; don't reinvent what Claude Code has.
   - `WowCompanion_Agent` (needs Link): `Agent.lua` the Companion window's
     conversations, the waiting lines and board rows, the offered button, the
     agents' kinds, `/wc`'s agent commands (`WC.Companion` for the files beside
-    it). `Sandbox.lua` agent code (`lua`, `module` steps, taint measuring).
-    `Tests.lua`, `Window.lua` (the window and its tabs), `Transcript.lua` (lines
+    it). `Sandbox.lua` agent code (`lua`, `module` steps, the taint scan,
+    blocked-action notices). `Window.lua` (the window and its tabs), `Transcript.lua` (lines
     only append), `JobsModel.lua` (pure, property-tested: `python
     tools/test_jobs.py`, needs `lupa`) and `Jobs.lua` (draws it), `Chords.lua`
-    (name lookups, chord learning), `Probes.lua`, `Export.lua` (the context
+    (name lookups, chord learning), `Export.lua` (the context
     export, bag contents too), `FocusLog.lua`, `ItemView.lua`, `LinkCatcher.lua`
     (links caught for the agents), `Modules.lua` (generated). Saved:
     `WowCompanionAgentDB`.

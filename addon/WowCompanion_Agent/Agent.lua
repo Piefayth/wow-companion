@@ -9,7 +9,6 @@ WC.Saved("WowCompanion_Agent", "WowCompanionAgentDB")
 -- how much conversation to keep; it rides in SavedVariables, so not unbounded
 local LOG_KEEP = 300
 
-local blocked = 0
 local logWindow
 local pendingTicker
 local actionButton
@@ -17,7 +16,7 @@ local actionButton
 -- one agent replaced the Quit another had just offered. Each keeps its own; the
 -- one secure button shows the offer of the conversation in view.
 local offers = {}
-local say, record = WC.Link.say, WC.Link.record
+local say = WC.Link.say
 -- the conversation of the message being handled (WowCompanion_Link), so what its
 -- steps report lands in that conversation, not whichever one is in view
 local function replySlot() return WC.Link.Current() end
@@ -42,16 +41,10 @@ local function buildLog(...) return WC.Window.buildLog(...) end
 local function logFrame()
 	if not logWindow then
 		logWindow = buildLog()
-		-- who closed it, when it vanishes on its own (the player, 2026-11-10)
 		-- opening the window shows the conversation in view: its news is seen
 		logWindow:HookScript("OnShow", function()
 			local unread = WowCompanion_Unread and WowCompanion_Unread()
 			if unread and WowCompanion_ViewSlot then unread[WowCompanion_ViewSlot()] = nil end
-		end)
-		logWindow:HookScript("OnHide", function()
-			WowCompanionAgentDB.windowCombat = WowCompanionAgentDB.windowCombat or {}
-			WowCompanionAgentDB.windowCombat.lastOnHide = ("%s combat=%s by %s"):format(date("%H:%M:%S"),
-				tostring(InCombatLockdown()), ((debugstack(3, 3, 0) or "?"):gsub("\n", " | ")):sub(1, 300))
 		end)
 	end
 	return logWindow
@@ -106,9 +99,8 @@ stowWatch:SetScript("OnEvent", function(_, event)
 		end
 		-- anything else secure inside the window (a button another file added)
 		-- would keep it protected and bring back the vanishing: stow those too,
-		-- with their anchors, and write down who they were
+		-- with their anchors
 		local frame = logWindow
-		local found = {}
 		local function walk(f)
 			for _, child in ipairs({ f:GetChildren() }) do
 				if child:IsProtected() and not stowed[child] then
@@ -120,20 +112,13 @@ stowWatch:SetScript("OnEvent", function(_, event)
 						child:SetParent(stash)
 						child:SetPoint("CENTER")
 					end)
-					if ok then
-						extraStowed[child] = { parent = parent, points = points }
-						found[#found + 1] = tostring(child:GetName() or child:GetObjectType())
-					end
+					if ok then extraStowed[child] = { parent = parent, points = points } end
 				else
 					walk(child)
 				end
 			end
 		end
 		if frame then pcall(walk, frame) end
-		WowCompanionAgentDB.windowCombat = {
-			at = time(), stowedExtra = table.concat(found, ", "),
-			protectedAfter = frame and frame:IsProtected() or nil,
-		}
 		noteCombat(true)
 		return
 	end
@@ -189,8 +174,8 @@ end
 local renderPending
 -- the last reply or error per conversation, shown in its row for a while
 local recent, RECENT_FOR = {}, 30
--- opts (optional): state = the word shown instead of replied, keep = no expiry.
--- No text clears the row.
+-- opts (optional): state = the word shown instead of replied ("problem" is
+-- drawn red), keep = no expiry. No text clears the row.
 function WowCompanion_Recent(slot, text, opts)
 	opts = type(opts) == "table" and opts or {}
 	recent[slot or ""] = text and { text = text, at = GetTime(), state = opts.state, keep = opts.keep } or nil
@@ -264,9 +249,8 @@ renderPending = function()
 		elseif entry then
 			line = row(slot, "ffd100", ("working %ds"):format(now - entry.since), entry.text .. dots)
 		elseif done then
-			local bad = done.text:find("ff7777", 1, true)
-			line = row(slot, bad and "ff6060" or done.state and "ffd100" or "40ff40",
-				bad and "problem" or done.state or "replied", done.text)
+			line = row(slot, done.state == "problem" and "ff6060" or done.state and "ffd100" or "40ff40",
+				done.state or "replied", done.text)
 		end
 		if line then
 			lines[#lines + 1] = line
@@ -330,19 +314,6 @@ local function paintConversations()
 end
 
 paintHook = paintConversations
-
--- Asks the companion to stop a conversation (the player, 2026-11-10). The game
--- cannot write to the PC while it runs, so the request is drawn on the data
--- strip, which the companion watches (src/strip.rs serve); it ends the agent,
--- drops what was queued, and answers with a `stopped` message.
--- `sendNow`: interrupt the running request; it and the queued ones run together.
-function WowCompanion_Stop(slot, sendNow)
-	slot = slot or viewSlot
-	if not (WowCompanion_Strip and WowCompanion_Strip.Send) then return end
-	WowCompanion_Strip.Send(("WCCMD %d%04d %s %s"):format(time(), math.random(0, 9999),
-		sendNow and "now" or "stop", slot ~= "" and slot or "main"), 2.5)
-	setPending("stopping", slot)
-end
 
 -- `quiet`: not news (a notice about the player's own clip), so it lights nothing
 local function remember(who, text, continued, slot, job, quiet)
@@ -565,7 +536,7 @@ function handlers.log(inbox)
 	-- the words go in, so a reply takes the work entry's place instead of
 	-- landing under it.
 	if inbox.slot and not inbox.pending and inbox.state ~= "queued" then
-		if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
+		if WC.Jobs then pcall(WC.Jobs.Apply, inbox) end
 		if not (WC.Jobs and WC.Jobs.Running(islot)) then setPending(nil, islot) end
 	end
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
@@ -578,7 +549,7 @@ function handlers.log(inbox)
 		remember(who, text, nil, islot, who == "you" and inbox.job or nil, quiet)
 	end
 	-- the job's state, once its line is in the transcript to carry its controls
-	if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
+	if WC.Jobs then pcall(WC.Jobs.Apply, inbox) end
 	-- a line with `pending` starts the waiting line after its words, so the work
 	-- entry comes below what it answers (2026-11-11)
 	if inbox.pending and inbox.state ~= "queued" then setPending(inbox.pending, islot) end
@@ -597,21 +568,16 @@ function handlers.log(inbox)
 		if who == "claude" and first ~= "" then
 			WowCompanion_Recent(islot, first)
 		elseif who == "error" and first ~= "" then
-			WowCompanion_Recent(islot, "|cffff7777" .. first .. "|r")
+			WowCompanion_Recent(islot, first, { state = "problem" })
 		end
 	end
 	return ("logged %d line(s)"):format(lines)
 end
 
--- when the game itself last toggled the window on a tap (TALK_TAP)
-local nativeToggleAt = 0
 -- Closing in combat (the player, 2026-11-10: "can't close the companion window
 function WowCompanion_HideWindow()
 	local frame = logWindow
 	if not frame then return end
-	WowCompanionAgentDB.windowCombat = WowCompanionAgentDB.windowCombat or {}
-	WowCompanionAgentDB.windowCombat.lastHide = ("%s combat=%s protected=%s"):format(date("%H:%M:%S"),
-		tostring(InCombatLockdown()), tostring(frame:IsProtected()))
 	frame:Hide() -- plain Hide; see the /wc log note on HideUIPanel
 end
 local function windowOpen()
@@ -624,16 +590,6 @@ local function toggleWindow()
 	else
 		reveal(frame)
 	end
-end
-
--- The helper's own tap message, about a second later: ignored when the game
--- already handled that tap, or it would undo the toggle.
-function handlers.show()
-	if GetTime() - nativeToggleAt < 4 then
-		return "already toggled in game"
-	end
-	reveal(logFrame())
-	return "shown"
 end
 
 -- A clip let go, named by the job the PC made for it (src/jobs.rs): the
@@ -663,17 +619,13 @@ function handlers.ack(inbox)
 	return "ack"
 end
 
--- The PC's answer to a cancel or a stop: the states of the jobs it touched.
+-- The PC's answer to a cancel: the states of the jobs it touched.
 function handlers.stopped(inbox)
 	local slot = inbox.slot or ""
 	if WC.Jobs then WC.Jobs.Apply(inbox) end
 	settleTranscribing(slot)
 	-- the conversation works while a job of it runs (the ledger says)
 	if WC.Jobs and WC.Jobs.Running and not WC.Jobs.Running(slot) then setPending(nil, slot) end
-	-- a cancel shows on the message itself; a stop of the whole conversation says so
-	if inbox.dropped then
-		remember("claude", "Stopped. Anything queued behind it was dropped.", nil, slot)
-	end
 	return "stopped"
 end
 
@@ -752,26 +704,6 @@ function handlers.batch(inbox)
 	from(1)
 end
 
-local function dumpApi(...) return WC.Probes.dumpApi(...) end
-local function dumpDocs(...) return WC.Probes.dumpDocs(...) end
-local function probeApi(...) return WC.Probes.probeApi(...) end
-local function probeGamepad(...) return WC.Probes.probeGamepad(...) end
-local function probeSound(...) return WC.Probes.probeSound(...) end
-local function surveyApi(...) return WC.Probes.surveyApi(...) end
--- moved to Chords.lua
-local function itemName(...) return WC.Chords.itemName(...) end
-local function learnChords(...) return WC.Chords.learnChords(...) end
-local function spellName(...) return WC.Chords.spellName(...) end
-local function spoken(...) return WC.Chords.spoken(...) end
-local function noteForms() return WC.Export.NoteForms() end
-local function exportContext() return WC.Export.Context() end
-
--- moved to Tests.lua
-local function placeTest(...) return WC.Tests.placeTest(...) end
-local function placeVerdict(...) return WC.Tests.placeVerdict(...) end
-local function probeChat(...) return WC.Tests.probeChat(...) end
-local function probeMacro(...) return WC.Tests.probeMacro(...) end
-local function taintScan(...) return WC.Tests.taintScan(...) end
 -- Put a spell, macro or item on a bar slot, or empty one.
 --
 -- Cleared by measurement, not assumed: PlaceAction and PutActionInSlot into the
@@ -787,11 +719,11 @@ local function describeSlot(slot)
 		return "nothing"
 	end
 	if kind == "spell" then
-		return "spell " .. tostring(spellName(id) or id)
+		return "spell " .. tostring(WC.Chords.spellName(id) or id)
 	elseif kind == "macro" then
 		return "macro " .. tostring(GetMacroInfo(id) or id)
 	elseif kind == "item" then
-		return "item " .. tostring(itemName(id) or id)
+		return "item " .. tostring(WC.Chords.itemName(id) or id)
 	end
 	return tostring(kind) .. " " .. tostring(id)
 end
@@ -837,11 +769,6 @@ function handlers.bar(inbox)
 	return ("slot %d: %s, was %s"):format(slot, after, before)
 end
 
--- from the helper too, so the bell path is measured and not just the slash command
-function handlers.place(inbox)
-	return placeTest(inbox.variant or "")
-end
-
 local function loadModules(...) return WC.Sandbox.loadModules(...) end
 
 local frame = CreateFrame("Frame")
@@ -856,7 +783,7 @@ frame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 frame:SetScript("OnEvent", function(_, event, ...)
 	if event == "UPDATE_SHAPESHIFT_FORM" then
 		-- a moment later, once the book has swapped its entries
-		C_Timer.After(0.2, function() pcall(noteForms) end)
+		C_Timer.After(0.2, function() pcall(WC.Export.NoteForms) end)
 		return
 	end
 	if event == "PLAYER_LOGIN" then
@@ -874,7 +801,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 			for slot, e in pairs(board.recent or {}) do
 				local age = type(e) == "table" and (tonumber(e.age) or 0) + gone
 				if age and e.text and age < RECENT_FOR then
-					recent[slot] = { text = e.text, at = GetTime() - age }
+					recent[slot] = { text = e.text, at = GetTime() - age, state = e.state }
 				end
 			end
 			-- what each conversation was doing and since when; shown again only for
@@ -884,20 +811,19 @@ frame:SetScript("OnEvent", function(_, event, ...)
 			end
 			renderPending()
 		end)
-		probeSound()
 		-- after login settles: modules may build frames on top of Blizzard's
 		C_Timer.After(2, loadModules)
 		-- read-only: polls the pad and the buttons' pushed state, hooks nothing
-		pcall(learnChords)
+		pcall(WC.Chords.learnChords)
 	elseif event == "PLAYER_LOGOUT" then
 		-- a failed export must not cost the rest of the save
-		pcall(exportContext)
+		pcall(WC.Export.Context)
 		-- the board lives in memory only; keep it for the next session to show
 		pcall(function()
 			local clock = GetTime()
 			local board = { at = time(), recent = {}, working = {} }
 			for slot, done in pairs(recent) do
-				board.recent[slot] = { text = done.text, age = clock - done.at }
+				board.recent[slot] = { text = done.text, age = clock - done.at, state = done.state }
 			end
 			-- when the work began, in wall time, so its count goes on after the reload
 			for slot, entry in pairs(working) do
@@ -911,7 +837,6 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- kept for the agents (the export) and the Status tab, not said in the
 		-- conversation: it is a diagnosis, not news for the player
 		local addon, func = ...
-		blocked = blocked + 1
 		local list = WowCompanionAgentDB.blocked or {}
 		WowCompanionAgentDB.blocked = list
 		local last = list[#list]
@@ -927,12 +852,9 @@ end)
 
 -- what WowCompanion_Link and the other addons say on the bus
 local bus = WC.Module("Agent")
--- a short tap of the talk button: the window, at once, instead of waiting a
--- second for the helper's own `show`
-bus:On("TALK_TAP", function()
-	nativeToggleAt = GetTime()
-	toggleWindow()
-end)
+-- a short tap of the talk button opens or closes the window (the game alone
+-- decides a tap: the PC sends nothing for one)
+bus:On("TALK_TAP", function() toggleWindow() end)
 -- a hold let go: a clip on its way to Whisper shows as hearing at once
 bus:On("TALK_HELD", function(slot)
 	setTranscribing(slot, true)
@@ -958,37 +880,7 @@ for kind, fn in pairs(handlers) do WC.Link.Handle(kind, fn) end
 
 -- /wc's agent commands (WowCompanion_Link owns /wc and its talkkey, quiet, listen)
 local slash = WC.Link.Slash
-slash("chat", function() probeChat() end)
-slash("macro", function() probeMacro() end)
-slash("sound", function() probeSound() end)
-slash("gamepad", function() probeGamepad() end)
-slash("api", function() probeApi() end)
-slash("dump", function() dumpApi() end)
-slash("docs", function() dumpDocs() end)
-slash("alive", function() surveyApi() end)
-slash("context", function() say(("context: %d lines; /reload to write it to disk"):format(exportContext())) end)
-slash("place", function(variant)
-	-- deferred a tick: the Enter that submitted this is still unwinding
-	C_Timer.After(0.1, function() say(placeTest(variant or "")) end)
-end)
-slash("verdict", function(which) say(placeVerdict(which)) end)
-slash("taint", function()
-	say("scanning, over a few seconds")
-	taintScan(function(tainted, checked)
-		local names = WC.Tests.fresh({}, tainted)
-		WowCompanionAgentDB.taint = table.concat(names, "\n")
-		say(("%d tainted of %d checked; /reload to write the list"):format(#names, checked))
-	end)
-end)
--- the macro test target: no side effects, and unmistakable when it fires.
--- remember() rather than say(), so the answer survives to SavedVariables
-slash("ping", function()
-	remember("probe", "pong at " .. date("%H:%M:%S") .. " -- the macro ran")
-	record("macrotext runs", "yes, at " .. date("%H:%M:%S"))
-end)
--- point the button at our own slash command: pong appearing means macrotext runs
-slash("test", function() say(offer("Run /wc ping", "/wc ping")) end)
-slash("button", function() say(offer("Reload UI", "/reload")) end)
+slash("context", function() say(("context: %d lines; /reload to write it to disk"):format(WC.Export.Context())) end)
 -- plain Hide, not HideUIPanel (WowCompanion_HideWindow)
 slash("log", function() toggleWindow() end)
 slash("clear", function()
@@ -1003,21 +895,11 @@ end)
 WC.Companion = {
 	LOG_KEEP = LOG_KEEP,
 	remember = remember,            -- a line in the conversation window
-	say = say,                      -- a line in the chat frame
-	record = record,                -- a probe result, kept in the save file
 	window = logFrame,              -- the Companion window, built on first use
-	activeEditBox = function() return WC.Chat.ActiveBox() end, -- the chat box the player has open, or nil
 	modules = effectiveModules,     -- every agent module, name -> code
 	stow = stow,                    -- a secure button out of the window for a fight
 	-- the waiting entry of a conversation ("" is Main): { text, since, ... } or nil
 	working = function(slot) return working[slot or ""] end,
-	-- listen for one of our signal sounds (Signals/<file>) playing
-	listenSignal = function(file, heard) return WC.Link.ListenSignal(file, heard) end,
-	offerButton = function() return actionButton end,
-	blockedCount = function() return blocked end,
-	messagesSent = function() return WC.Link.MessagesSent() end,
 	-- the conversation the message now being handled belongs to
 	replySlot = replySlot,
-	-- a message kind fn(inbox) handles
-	addHandler = function(kind, fn) WC.Link.Handle(kind, fn) end,
 }
