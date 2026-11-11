@@ -116,6 +116,8 @@ fn leave(reason: &str) -> ! {
     while IN_FLIGHT.load(Ordering::SeqCst) > 0 {
         thread::sleep(Duration::from_millis(100));
     }
+    // what is queued for the game goes out first (lines are in the mailbox anyway)
+    crate::channel::flush();
     voice::SHUTDOWN.store(true, Ordering::SeqCst);
     let asked = Instant::now();
     while !voice::STOPPED.load(Ordering::SeqCst) && asked.elapsed() < Duration::from_secs(3) {
@@ -183,7 +185,7 @@ pub(crate) fn watch(addons: &Path) {
                     "{clients} game clients are running: every message goes to all of them. One client per install for now."
                 );
                 println!("{text}");
-                let _ = send_inbox(&addons, &log_inbox_in(None, "error", &text, None, None));
+                let _ = post(&addons, crate::message::Line::new("", "error", &text));
             } else if clients <= 1 {
                 told_clients = false;
             }

@@ -1,6 +1,7 @@
 //! The message channel to the game: slots, the cursor, bells, sending.
 
 use super::*;
+use crate::message::{Line, Msg, Out};
 
 pub(crate) const PROGRESS_STOP: u32 = 14;
 // 512, not 64: a session spent all 64 (progress lines were nearly half) and every
@@ -47,89 +48,197 @@ pub(crate) fn known_slots(addons: &Path) -> u32 {
     counted.unwrap_or(64).min(SLOTS)
 }
 
-// One send at a time: each one silences every bell before ringing its own and
-// takes the next slot, so progress updates and replies from different threads
-// would otherwise step on each other.
-pub(crate) static SENDING: Mutex<()> = Mutex::new(());
+/// What waits for the next slot, in the order it was posted: lines (numbered
+/// and kept by the ledger first) and messages about now.
+enum Pending {
+    Line(Line),
+    Now(Msg),
+}
 
-pub(crate) fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
-    let sent = send_inbox_once(addons, inbox);
-    if let Err(err) = &sent {
+impl Pending {
+    fn msg(&self) -> Msg {
+        match self {
+            Pending::Line(line) => line.msg(true),
+            Pending::Now(msg) => msg.clone(),
+        }
+    }
+
+    /// A progress line that only says what a request is doing now: a newer one
+    /// for the same request makes it worthless. A `started` one is not: it ends
+    /// the queued mark on its request's line.
+    fn progress_of(&self) -> Option<i128> {
+        match self {
+            Pending::Now(msg) if msg.kind() == Some("progress") && !msg.has("started") => msg.int_of("job"),
+            _ => None,
+        }
+    }
+}
+
+struct Queue {
+    waiting: Vec<Pending>,
+    /// A batch is being delivered (taken off `waiting`, its bell not yet silent).
+    delivering: bool,
+    sender: bool,
+}
+
+static QUEUE: Mutex<Queue> = Mutex::new(Queue { waiting: Vec::new(), delivering: false, sender: false });
+static MOVED: std::sync::Condvar = std::sync::Condvar::new();
+
+fn queue() -> std::sync::MutexGuard<'static, Queue> {
+    QUEUE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Everything goes through one sender thread (one per process), which takes
+/// all that is waiting when it is free: one slot and one bell per batch, not
+/// per message (the player, 2026-11-11: "the messaging performance is
+/// important to me").
+fn enqueue(addons: &Path, item: Pending) {
+    let mut queue = queue();
+    queue.waiting.push(item);
+    if !queue.sender {
+        queue.sender = true;
+        let addons = addons.to_path_buf();
+        let _ = thread::Builder::new().name("sender".into()).spawn(move || sender(&addons));
+    }
+    MOVED.notify_all();
+}
+
+/// A conversation line: numbered and kept by the ledger (src/ledger.rs), then
+/// queued. A line that cannot go out live (the game closed, the slots spent)
+/// is in the mailbox, which the game takes at its next load.
+pub(crate) fn post(addons: &Path, line: Line) -> io::Result<()> {
+    let line = crate::ledger::number(addons, line);
+    enqueue(addons, Pending::Line(line));
+    Ok(())
+}
+
+/// A message about now (progress, a stop's answer, steps of chat): lost when
+/// the game is closed, since nothing would read it.
+pub(crate) fn send(addons: &Path, msg: &Msg) -> io::Result<()> {
+    enqueue(addons, Pending::Now(msg.clone()));
+    Ok(())
+}
+
+/// What the courier carries, queued in order.
+pub(crate) fn send_out(addons: &Path, out: Out) -> io::Result<()> {
+    match out {
+        Out::Line(line) => post(addons, line),
+        Out::Now(msg) => send(addons, &msg),
+    }
+}
+
+/// Wait until everything queued so far is delivered or set aside (before a
+/// process exits, and for the `send` command).
+pub(crate) fn flush() {
+    let mut queue = queue();
+    while !queue.waiting.is_empty() || queue.delivering {
+        queue = MOVED.wait(queue).unwrap_or_else(|poisoned| poisoned.into_inner());
+    }
+}
+
+fn sender(addons: &Path) {
+    loop {
+        let batch = {
+            let mut queue = queue();
+            while queue.waiting.is_empty() {
+                queue = MOVED.wait(queue).unwrap_or_else(|poisoned| poisoned.into_inner());
+            }
+            queue.delivering = true;
+            std::mem::take(&mut queue.waiting)
+        };
+        deliver_batch(addons, batch);
+        queue().delivering = false;
+        MOVED.notify_all();
+    }
+}
+
+/// The batch without what it supersedes, exactly: of the progress lines about
+/// one request, only the newest stays. Order is kept.
+fn supersede(batch: Vec<Pending>) -> Vec<Pending> {
+    let mut newest: std::collections::HashMap<i128, usize> = std::collections::HashMap::new();
+    for (at, item) in batch.iter().enumerate() {
+        if let Some(job) = item.progress_of() {
+            newest.insert(job, at);
+        }
+    }
+    batch
+        .into_iter()
+        .enumerate()
+        .filter(|(at, item)| item.progress_of().is_none_or(|job| newest.get(&job) == Some(at)))
+        .map(|(_, item)| item)
+        .collect()
+}
+
+/// What could not go out: a line is in the mailbox already; the changes a
+/// reply carried run only as it arrives live, so an error line says they did
+/// not (the player, 2026-11-11), and they never run later.
+fn set_aside(addons: &Path, items: Vec<Pending>, why: &str) {
+    for item in items {
+        match item {
+            Pending::Line(line) => {
+                println!("  line {} of [{}] waits in the mailbox for the next load ({why})", line.n, if line.slot.is_empty() { "main" } else { &line.slot });
+                if line.steps.is_some() {
+                    let text = format!("The changes that reply carried (macros, bars, code) did not run: {why}. Ask again to apply them.");
+                    let _ = post(addons, Line::new(&line.slot, "error", &text));
+                }
+            }
+            Pending::Now(msg) => println!("  not sent ({why}): {}", msg.lua().chars().take(120).collect::<String>()),
+        }
+    }
+}
+
+fn deliver_batch(addons: &Path, batch: Vec<Pending>) {
+    let mut batch = supersede(batch);
+    match game_running() {
+        Ok(true) => {}
+        Ok(false) => return set_aside(addons, batch, "the game is closed"),
+        Err(err) => return set_aside(addons, batch, &err.to_string()),
+    }
+    // the last slots are for replies: what a request is doing can go unsaid
+    if slots_used(addons) + PROGRESS_STOP >= known_slots(addons) {
+        batch.retain(|item| item.progress_of().is_none());
+    }
+    // A line, a progress line, a reload, a show: read by handlers every version
+    // of the addon has, so a stale UI can still take them. Blocking those is how a
+    // finished answer sat undelivered behind "reload first" while the window spun
+    // "thinking". A reload is the cure for staleness itself.
+    match addon_is_stale(addons) {
+        Ok(true) => {
+            let (keep, stale): (Vec<Pending>, Vec<Pending>) = batch
+                .into_iter()
+                .partition(|item| matches!(item.msg().kind(), Some("log" | "progress" | "reload" | "show")));
+            set_aside(addons, stale, "the addon on disk is newer than the running UI session: /reload in game first");
+            batch = keep;
+        }
+        Ok(false) => {}
+        Err(err) => return set_aside(addons, batch, &err.to_string()),
+    }
+    if batch.is_empty() {
+        return;
+    }
+    let list = slot_message(&batch);
+    if let Err(err) = ring(addons, &list) {
         if err.to_string().contains("slots are spent") {
             // nothing can reach the game to say so; the pad can
             voice::ALERT.store(true, Ordering::SeqCst);
         }
-        // a conversation line that could not go out waits for the next game
-        // session instead of being lost (src/undelivered.rs)
-        if inbox.starts_with("{ kind = \"log\"") {
-            crate::undelivered::keep(addons, inbox, err);
-            return Ok(());
-        }
+        set_aside(addons, batch, &err.to_string());
     }
-    sent
 }
 
-/// How many game clients are running (multiboxing: each reads every message).
-pub(crate) fn game_clients() -> usize {
-    wow_companion_settings::platform::process_count("Wow.exe")
+/// What one slot holds: `{ kind = "list", messages = { ... } }`, every message
+/// of the batch in order (the game applies each as if it came alone).
+fn slot_message(batch: &[Pending]) -> Msg {
+    let messages: Vec<Msg> = batch.iter().map(Pending::msg).collect();
+    for msg in &messages {
+        crate::audit::note("send", "", &msg.lua().chars().take(200).collect::<String>());
+    }
+    Msg::new("list").list("messages", messages)
 }
 
-pub(crate) fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
-    voice::mark(&format!("send asked: {}", inbox.chars().take(50).collect::<String>()));
-    crate::audit::note("send", "", &inbox.chars().take(200).collect::<String>());
-    // Status updates (progress, "transcribing") are advisory: they go out only when
-    // the channel is free, and are dropped when it is busy, since a newer one or
-    // the reply itself follows. Every send holds the channel for the bell's 2 s,
-    // and status updates were 40 of 66 sends, so replies queued behind half a
-    // minute of them (measured 2026-11-10).
-    let advisory = inbox.starts_with("{ kind = \"progress\"") || inbox.starts_with("{ kind = \"transcribing\"");
-    let _one_at_a_time = if advisory {
-        match SENDING.try_lock() {
-            Ok(guard) => guard,
-            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-            Err(std::sync::TryLockError::WouldBlock) => return Ok(()),
-        }
-    } else {
-        SENDING.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-    };
-    // the board is read now, with the channel held: nothing finishing while we
-    // waited for it can be undone by an older list
-    let board;
-    let inbox = if inbox == BOARD_NOW {
-        board = board_inbox();
-        board.as_str()
-    } else {
-        inbox
-    };
-    if !game_running()? {
-        // a conversation line waits in the save file for the next login
-        if crate::offline::keep(addons, inbox)? {
-            return Ok(());
-        }
-        return Err(io::Error::other("Wow.exe isn't running, so nothing would read this"));
-    }
-    // A reply or a progress line is read by handlers every version of the addon
-    // has, so a stale UI can still take it. Blocking those is how a finished answer
-    // sat undelivered behind "reload first" while the window spun "thinking".
-    // A reload is the same: every version has it, and it is the cure for staleness.
-    if (inbox.starts_with("{ kind = \"progress\"") || inbox.starts_with("{ kind = \"transcribing\""))
-        && slots_used(addons) + PROGRESS_STOP >= known_slots(addons)
-    {
-        // the last slots are for replies; a skipped progress line is no loss
-        return Ok(());
-    }
-    let always_readable = ["log", "progress", "reload", "board", "transcribing", "show"]
-        .iter()
-        .any(|kind| inbox.starts_with(&format!("{{ kind = \"{kind}\"")))
-        // a status line made non-advisory by a leading flag is still one the
-        // oldest addon reads
-        || inbox.starts_with("{ started = true, kind = \"progress\"")
-        || inbox.starts_with("{ resync = true, kind = \"progress\"");
-    if !always_readable && addon_is_stale(addons)? {
-        return Err(io::Error::other(
-            "the addon on disk is newer than the running UI session: /reload in game first",
-        ));
-    }
+/// One slot and one bell: the 2026-11-09 protocol (CLAUDE.md, "Changing the
+/// channel"), unchanged.
+fn ring(addons: &Path, msg: &Msg) -> io::Result<()> {
     voice::mark("send has the channel");
     let slot = next_slot(addons)?;
     // A bell left ringing is a command that fires again on every /reload: the addon's
@@ -139,8 +248,8 @@ pub(crate) fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     for bell in 1..=BELLS {
         bells::empty_message(&signals.join(bell_name(bell)))?;
     }
-    deliver(addons, slot, inbox)?;
-    println!("sent in slot {slot}: {inbox}");
+    deliver(addons, slot, msg)?;
+    println!("sent in slot {slot}: {}", msg.lua());
     ring_catch_up(&signals, slot);
     voice::mark(&format!("bell rung, slot {slot}"));
     thread::sleep(BELL_HEARD);
@@ -148,12 +257,17 @@ pub(crate) fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn deliver(addons: &Path, slot: u32, inbox: &str) -> io::Result<()> {
+/// How many game clients are running (multiboxing: each reads every message).
+pub(crate) fn game_clients() -> usize {
+    wow_companion_settings::platform::process_count("Wow.exe")
+}
+
+pub(crate) fn deliver(addons: &Path, slot: u32, msg: &Msg) -> io::Result<()> {
     let signals = addons.join(ADDON).join("Signals");
     // when it was written, so a catch-up load can tell this session's message from
     // one left in the slot by an earlier session
     let sent = SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_secs()).unwrap_or_default();
-    let lua = format!("WowCompanion_Inbox = {inbox}\nWowCompanion_Sent = {sent}\n");
+    let lua = format!("WowCompanion_Inbox = {}\nWowCompanion_Sent = {sent}\n", msg.lua());
     // the inbox lands first: the bell is what tells the addon to go read it
     write_reporting(&addons.join(slot_name(slot)).join("Inbox.lua"), lua.as_bytes())?;
     bells::ring_message(&signals.join(bell_name(slot)))?;
@@ -362,5 +476,48 @@ pub(crate) fn ring_catch_up(signals: &Path, slot: u32) {
     }
     if let Err(err) = bells::ring(&signals.join(catch_up_name(slot))) {
         println!("catch-up bell not rung for slot {slot}: {err}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::jobs::State;
+
+    fn progress(job: u64, text: &str) -> Pending {
+        Pending::Now(Msg::new("progress").text("text", text).int("job", job))
+    }
+
+    #[test]
+    fn a_batch_keeps_only_the_newest_progress_per_request_and_everything_else() {
+        let batch = vec![
+            progress(1, "reading a"),
+            Pending::Line(Line::new("l1", "you", "hi").job(2, State::Running)),
+            progress(2, "thinking"),
+            progress(1, "reading b"),
+            Pending::Now(Msg::new("progress").flag("started", true).text("text", "thinking").int("job", 3)),
+            Pending::Now(Msg::new("progress").flag("started", true).text("text", "thinking").int("job", 3)),
+            progress(2, "writing"),
+            Pending::Now(Msg::new("stopped").text("slot", "")),
+        ];
+        let kept: Vec<String> = supersede(batch).iter().map(|item| item.msg().lua()).collect();
+        assert_eq!(kept.len(), 6, "{kept:#?}");
+        assert!(kept[0].contains("who = \"you\""), "a line stays, in its place: {kept:#?}");
+        assert!(kept[1].contains("reading b"), "job 1's newest only: {kept:#?}");
+        assert!(kept[2].contains("started = true") && kept[3].contains("started = true"), "a started one is never superseded");
+        assert!(kept[4].contains("writing"), "job 2's newest only: {kept:#?}");
+        assert!(kept[5].contains("stopped"));
+        assert!(!kept.iter().any(|lua| lua.contains("reading a") || lua.contains("\"thinking\", job = 2")));
+    }
+
+    #[test]
+    fn one_slot_holds_the_whole_batch_as_a_list_in_order() {
+        let mut line = Line::new("", "claude", "done").steps(Some(Msg::new("reload")));
+        line.n = 4;
+        let batch = vec![Pending::Now(Msg::new("heard").int("job", 9).text("slot", "r1").text("state", "hearing")), Pending::Line(line)];
+        assert_eq!(
+            slot_message(&batch).lua(),
+            r#"{ kind = "list", messages = { { kind = "heard", job = 9, slot = "r1", state = "hearing" }, { kind = "log", slot = "", n = 4, who = "claude", text = "done", andThen = { kind = "reload" } } } }"#
+        );
     }
 }

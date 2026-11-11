@@ -5,5 +5,6 @@
 docs/wow-ui-source/
 tools/__pycache__/
 addon/WowCompanion/Modules.lua
+addon/WowCompanion_Mailbox/Mail.lua
 crates/setup/target/
 dist/

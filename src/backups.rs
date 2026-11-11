@@ -2,16 +2,15 @@
 //!
 //! WoW keeps one `.bak` of a save file. If a file ever fails to parse, the
 //! addon starts empty, and at the next logout the game writes that empty state
-//! over it: the player's history, settings and traces are gone. On 2026-11-11 an
-//! edit of ours (a reply appended while the game was closed) broke the file's Lua
-//! for a few minutes; a check caught it before the game read it. So:
+//! over it: the player's history, settings and traces are gone. We never edit
+//! the save (lines made while the game is closed go to the mailbox,
+//! src/ledger.rs), so:
 //!
 //! - every save the game writes is copied here (the last `KEEP` per file);
-//! - our own edits are checked to still be sound Lua before they replace the
-//!   file, with a copy taken first (`before_edit`);
-//! - a save that looks reset (far fewer conversation lines than the one before)
-//!   is reported in game, and `wow-companion restore-save` puts the newest good
-//!   copy back with the game closed.
+//! - a save whose load count went down (the addon loaded empty) is reported in
+//!   game, and `wow-companion restore-save` puts the newest good copy back with
+//!   the game closed, checked to be sound Lua, the file it replaces copied first
+//!   (`before_edit`).
 
 use std::{
     fs, io,

@@ -1,6 +1,7 @@
 //! Spoken chat lines: channel words, discards, the dictation inbox.
 
 use super::*;
+use crate::message::Msg;
 
 /// The last chat line sent to the chat box, and when: "edit that, ..." is
 /// handed to the agent with it, so the player can reword a line by voice.
@@ -98,25 +99,16 @@ pub(crate) fn channeled(text: &str) -> String {
 
 /// Dictation: `text` as chat should get it (a channel turned into its slash
 /// command), `raw` as it was said, for any other text box the player is in.
-pub(crate) fn dictation_inbox(raw: &str, routed: &str) -> String {
-    format!(
-        "{{ kind = \"chat\", text = {}, raw = {} }}",
-        lua_string(routed),
-        lua_string(raw.trim())
-    )
+pub(crate) fn dictation_inbox(raw: &str, routed: &str) -> Msg {
+    Msg::new("chat").text("text", routed).text("raw", raw.trim())
 }
 
 /// Dictation from the L1+R1 chord: for the chat box, never the agent. `wheel`
 /// asks the addon to put the chat wheel's channel on a line that names none.
-pub(crate) fn say_inbox(raw: &str, routed: &str) -> String {
-    format!(
-        "{{ kind = \"chat\", text = {}, raw = {}, wheel = {} }}",
-        lua_string(routed),
-        lua_string(raw.trim()),
-        routed == raw.trim()
-    )
+pub(crate) fn say_inbox(raw: &str, routed: &str) -> Msg {
+    Msg::new("chat").text("text", routed).text("raw", raw.trim()).flag("wheel", routed == raw.trim())
 }
 
-pub(crate) fn chat_inbox(text: &str) -> String {
-    format!("{{ kind = \"chat\", text = {} }}", lua_string(text))
+pub(crate) fn chat_inbox(text: &str) -> Msg {
+    Msg::new("chat").text("text", text)
 }

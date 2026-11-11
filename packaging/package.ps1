@@ -32,6 +32,8 @@ foreach ($personal in "ExtraButtons.lua") {
 }
 # the generated module bundle is rebuilt by install
 Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $stage "addon\WowCompanion\Modules.lua")
+# the mailbox is the player's: their companion writes it from their ledger at install
+Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $stage "addon\WowCompanion_Mailbox\Mail.lua")
 New-Item -ItemType Directory -Force (Join-Path $stage "docs") | Out-Null
 Get-ChildItem (Join-Path $root "docs") -File | Where-Object { $_.Name -notin "PLAN.md", "history.md" } | Copy-Item -Destination (Join-Path $stage "docs")
 Copy-Item (Join-Path $root "CLAUDE.md") $stage

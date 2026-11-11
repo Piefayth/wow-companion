@@ -10,10 +10,13 @@
 //!
 //! The game is told each change as (job, state) on the message that carries it.
 //! It keeps, per job, the furthest state it has seen and ignores anything
-//! behind it, so a late, repeated or reordered message can't undo a newer one,
-//! and a resync is simply every recent state, safe to apply whenever it lands.
+//! behind it, so a late, repeated or reordered message can't undo a newer one.
 //! A cancel from the game names a job and is idempotent, so the game may repeat
 //! it until it sees an end.
+//!
+//! Every change is mirrored into the ledger (src/ledger.rs), which keeps the
+//! states on disk and in the mailbox; a job leaves this table when a save shows
+//! the game has its end (`forget`).
 
 use std::collections::BTreeMap;
 
@@ -44,6 +47,12 @@ impl State {
         self.rank() == 3
     }
 
+    pub(crate) fn from_name(name: &str) -> Option<State> {
+        [State::Hearing, State::Queued, State::Running, State::Answered, State::Cancelled, State::Failed]
+            .into_iter()
+            .find(|state| state.name() == name)
+    }
+
     pub(crate) fn name(self) -> &'static str {
         match self {
             State::Hearing => "hearing",
@@ -66,9 +75,6 @@ pub(crate) struct Job {
     /// Requests answered together share the first one's id: cancelling one
     /// that runs ends the agent run they share.
     pub(crate) group: u64,
-    /// When the player let go of its first clip, wall clock (unix ms): a cancel
-    /// pressed in the game is matched to the clip it was pressed for by this.
-    released: u128,
     /// Clips released into it whose words have not come back yet.
     clips: u32,
     /// When its newest clip was let go: only a clip let go soon after joins.
@@ -79,31 +85,34 @@ pub(crate) struct Job {
     withdraw: bool,
     /// When words last arrived (gathering waits for a quiet moment).
     last_words: Instant,
-    /// What the agent is doing, for the board.
-    pub(crate) doing: String,
-    pub(crate) since: Instant,
-    changed: Instant,
     pid: Option<u32>,
 }
 
 static JOBS: Mutex<BTreeMap<u64, Job>> = Mutex::new(BTreeMap::new());
 static LAST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Ended jobs are kept this long, for resyncs and late cancels.
-const KEEP: Duration = Duration::from_secs(30 * 60);
-/// The game stamps a cancel with time(), to the second.
-
 fn with<R>(f: impl FnOnce(&mut BTreeMap<u64, Job>) -> R) -> R {
     let mut jobs = JOBS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     // every state change, whichever function made it, goes to the audit trail
+    // and the ledger
     let before: Vec<(u64, State)> = jobs.values().map(|job| (job.id, job.state)).collect();
     let out = f(&mut jobs);
+    let mut changed = before.len() != jobs.len();
     for job in jobs.values() {
         match before.iter().find(|(id, _)| *id == job.id) {
             Some((_, was)) if *was == job.state => {}
-            Some((_, was)) => crate::audit::note("job", &job.slot, &format!("{} {} -> {}", job.id, was.name(), job.state.name())),
-            None => crate::audit::note("job", &job.slot, &format!("{} new {}", job.id, job.state.name())),
+            Some((_, was)) => {
+                changed = true;
+                crate::audit::note("job", &job.slot, &format!("{} {} -> {}", job.id, was.name(), job.state.name()))
+            }
+            None => {
+                changed = true;
+                crate::audit::note("job", &job.slot, &format!("{} new {}", job.id, job.state.name()))
+            }
         }
+    }
+    if changed {
+        crate::ledger::mirror(jobs.values().map(|job| (job.id, job.slot.clone(), job.state)).collect());
     }
     out
 }
@@ -125,9 +134,13 @@ fn next_id() -> u64 {
     }
 }
 
-fn insert(jobs: &mut BTreeMap<u64, Job>, slot: &str, state: State, text: &str, released: u128) -> u64 {
-    jobs.retain(|_, job| !(job.state.ended() && job.changed.elapsed() > KEEP));
+fn insert(jobs: &mut BTreeMap<u64, Job>, slot: &str, state: State, text: &str) -> u64 {
     let id = next_id();
+    put(jobs, id, slot, state, text);
+    id
+}
+
+fn put(jobs: &mut BTreeMap<u64, Job>, id: u64, slot: &str, state: State, text: &str) {
     let now = Instant::now();
     jobs.insert(
         id,
@@ -137,23 +150,43 @@ fn insert(jobs: &mut BTreeMap<u64, Job>, slot: &str, state: State, text: &str, r
             state,
             text: text.to_string(),
             group: id,
-            released,
             clips: 0,
             last_release: now,
             withdraw: false,
             last_words: now,
-            doing: String::new(),
-            since: now,
-            changed: now,
             pid: None,
         },
     );
-    id
+}
+
+/// At a start: the jobs the ledger kept, as they stand (the ledger has already
+/// ended the ones left running). Ids keep growing above them.
+pub(crate) fn restore(kept: &[(u64, String, State)]) {
+    with(|jobs| {
+        for (id, slot, state) in kept {
+            put(jobs, *id, slot, *state, "");
+            LAST_ID.fetch_max(*id, Ordering::SeqCst);
+        }
+    })
+}
+
+/// Requests whose end the game has saved (the ledger's confirmation): gone.
+pub(crate) fn forget(ids: &[u64]) {
+    if ids.is_empty() {
+        return;
+    }
+    with(|jobs| {
+        for id in ids {
+            if jobs.get(id).is_some_and(|job| job.state.ended()) {
+                jobs.remove(id);
+            }
+        }
+    })
 }
 
 /// A new request that skipped hearing (typed, or a resumed look).
 pub(crate) fn create(slot: &str, text: &str, state: State) -> u64 {
-    with(|jobs| insert(jobs, slot, state, text, now_ms()))
+    with(|jobs| insert(jobs, slot, state, text))
 }
 
 /// A clip was let go in this conversation. A clip let go within JOIN of the
@@ -161,22 +194,26 @@ pub(crate) fn create(slot: &str, text: &str, state: State) -> u64 {
 /// otherwise a new job starts. Joining every clip while one was still heard
 /// merged separate messages whenever Whisper was slow (the player, 2026-11-10:
 /// an 11 s transcription swallowed the two messages after it).
+/// Returns the job and whether it is new: a new job's first message to the
+/// game is `heard`, which names it, so a cancel of the clip names its job (an
+/// exact identity both sides share; docs/proposals/conversation-sync.md).
 pub(crate) const JOIN: Duration = Duration::from_millis(1500);
-pub(crate) fn hear(slot: &str) -> u64 {
+pub(crate) fn hear(slot: &str) -> (u64, bool) {
     with(|jobs| {
         let joinable = jobs
             .values()
-            .find(|job| job.slot == slot && job.state == State::Hearing && job.last_release.elapsed() <= JOIN);
-        let id = match joinable {
-            Some(job) => job.id,
-            None => insert(jobs, slot, State::Hearing, "", now_ms()),
+            .find(|job| job.slot == slot && job.state == State::Hearing && job.last_release.elapsed() <= JOIN)
+            .map(|job| job.id);
+        let (id, new) = match joinable {
+            Some(id) => (id, false),
+            None => (insert(jobs, slot, State::Hearing, ""), true),
         };
         let job = jobs.get_mut(&id).unwrap();
         job.clips += 1;
         job.last_release = Instant::now();
         crate::audit::note("hear", slot, &format!("{id} clip {}", job.clips));
         job.last_words = Instant::now();
-        id
+        (id, new)
     })
 }
 
@@ -202,7 +239,6 @@ pub(crate) fn words(slot: &str, text: &str) -> Option<(u64, bool)> {
         // every clip came back empty: nothing to ask, it just ends
         if job.clips == 0 && job.text.is_empty() {
             job.state = State::Failed;
-            job.changed = Instant::now();
             return None;
         }
         Some((job.id, first))
@@ -223,7 +259,6 @@ pub(crate) fn gathered(id: u64, quiet: Duration, holding: bool) -> Option<Result
         }
         // out of hearing; queued until the caller says it runs
         job.state = State::Queued;
-        job.changed = Instant::now();
         Some(Ok(job.text.clone()))
     })
 }
@@ -238,10 +273,6 @@ pub(crate) fn advance(id: u64, to: State) -> Result<State, State> {
         }
         let was = job.state;
         job.state = to;
-        job.changed = Instant::now();
-        if to == State::Running && was != State::Running {
-            job.since = Instant::now();
-        }
         Ok(was)
     })
 }
@@ -257,7 +288,6 @@ pub(crate) fn finish(group: u64, to: State) -> bool {
             let job = jobs.get_mut(&id).unwrap();
             if !job.state.ended() {
                 job.state = to;
-                job.changed = Instant::now();
                 finished = true;
             }
         }
@@ -283,13 +313,10 @@ pub(crate) fn take_queued(slot: &str, lead: u64) -> Option<Vec<(u64, String)>> {
             .filter(|job| job.slot == slot && job.state == State::Queued)
             .map(|job| (job.id, job.text.clone()))
             .collect();
-        let now = Instant::now();
         for (id, _) in &taken {
             let job = jobs.get_mut(id).unwrap();
             job.state = State::Running;
             job.group = lead;
-            job.since = now;
-            job.changed = now;
         }
         Some(taken).filter(|taken| !taken.is_empty())
     })
@@ -305,14 +332,6 @@ pub(crate) fn set_pid(group: u64, pid: u32) -> bool {
             live |= !job.state.ended();
         }
         live
-    })
-}
-
-pub(crate) fn set_doing(group: u64, doing: &str) {
-    with(|jobs| {
-        for job in jobs.values_mut().filter(|job| job.group == group && job.state == State::Running) {
-            job.doing = doing.to_string();
-        }
     })
 }
 
@@ -352,7 +371,6 @@ pub(crate) fn cancel(ids: &[u64]) -> Cancelled {
                 }
             }
             job.state = State::Cancelled;
-            job.changed = Instant::now();
             out.ended.push(job.clone());
         }
         out
@@ -370,24 +388,6 @@ pub(crate) fn live(slot: &str, only: Option<State>) -> Vec<u64> {
     })
 }
 
-
-/// The job made from the clip let go at `release` (unix ms): its identity, as
-/// the game names it (the game and the PC both see the release; the game's
-/// clock is lined up to the ms). Nearest within RELEASE_MATCH, ended or not.
-/// Clips let go closer together than JOIN are one job, so the match is never
-/// ambiguous, unlike a press time, which named the newest clip and cancelled
-/// the message after the one meant (the player, 2026-11-10).
-// the game corrects its clock by the offset it learned, and sends nothing
-// until it knows it; nearest within this, as tools/test_jobs.py simulates
-pub(crate) const RELEASE_MATCH: u128 = 5000;
-pub(crate) fn heard_at(slot: &str, release: u128) -> Option<u64> {
-    with(|jobs| {
-        jobs.values()
-            .filter(|job| job.slot == slot && job.released.abs_diff(release) <= RELEASE_MATCH)
-            .min_by_key(|job| job.released.abs_diff(release))
-            .map(|job| job.id)
-    })
-}
 
 /// The words of requests in this conversation that the agent saw and you then
 /// cancelled, not yet told to it; each is told once (the player, 2026-11-10:
@@ -409,54 +409,11 @@ pub(crate) fn get(ids: &[u64]) -> Vec<Job> {
     with(|jobs| ids.iter().filter_map(|id| jobs.get(id).cloned()).collect())
 }
 
-/// What each conversation's running request is doing, for the board.
-pub(crate) fn working() -> Vec<(String, String, Instant)> {
-    with(|jobs| {
-        let mut out: Vec<(String, String, Instant)> = Vec::new();
-        for job in jobs.values().filter(|job| job.state == State::Running) {
-            if !out.iter().any(|(slot, _, _)| *slot == job.slot) {
-                let doing = if job.doing.is_empty() { "thinking" } else { &job.doing };
-                out.push((job.slot.clone(), doing.to_string(), job.since));
-            }
-        }
-        out
-    })
-}
-
-/// Every job a fresh UI session should know about: all that have not ended,
-/// and those that ended in the last ten minutes.
-pub(crate) fn recent() -> Vec<Job> {
-    with(|jobs| {
-        jobs.values()
-            .filter(|job| job.state != State::Hearing && (!job.state.ended() || job.changed.elapsed() < Duration::from_secs(600)))
-            .cloned()
-            .collect()
-    })
-}
-
-/// `{ job = 1, slot = "l1", state = "cancelled" }`, the entries of a `list`.
-/// Every request answered together with `group` (its members, the lead too).
-pub(crate) fn members(group: u64) -> Vec<Job> {
-    with(|jobs| jobs.values().filter(|job| job.group == group).cloned().collect())
-}
-
-/// `, list = { ... }` naming each member and its state: a reply or a failure
-/// says exactly which messages it ended, so the game infers nothing (one
-/// cancelled during the run stays cancelled; tools/test_jobs.py, invariant 1).
-pub(crate) fn members_field(group: u64) -> String {
-    format!(", list = {{ {} }}", entries(&members(group)))
-}
-
-pub(crate) fn entries(jobs: &[Job]) -> String {
-    jobs.iter()
-        .map(|job| format!("{{ job = {}, slot = {}, state = \"{}\" }}", job.id, lua_string(&job.slot), job.state.name()))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-/// `, job = 7, state = "running"`: the fields every message about a job carries.
-pub(crate) fn fields(id: u64, state: State) -> String {
-    format!(", job = {id}, state = \"{}\"", state.name())
+/// Every request answered together with `group` (its members, the lead too),
+/// each with its state: a reply or a failure says exactly which messages it
+/// ended, so the game infers nothing (tools/test_jobs.py, invariant 1).
+pub(crate) fn members(group: u64) -> Vec<(u64, String, State)> {
+    with(|jobs| jobs.values().filter(|job| job.group == group).map(|job| (job.id, job.slot.clone(), job.state)).collect())
 }
 
 #[cfg(test)]
@@ -475,21 +432,18 @@ mod tests {
         assert!(take_withdrawn("t-withdraw").is_empty());
     }
 
-    /// Two clips in flight, let go 1.6 s apart: separate jobs, each cancel
-    /// names its own clip, and each clip's words go to its own job (the
-    /// player, 2026-11-10: a cancel hit the message after the one meant, and
-    /// a slow transcription swallowed the next message).
+    /// Two clips in flight, let go 1.6 s apart: separate jobs, each new one
+    /// says so (its `heard` names it, so its cancel names its job), and each
+    /// clip's words go to its own job (the player, 2026-11-10: a cancel hit the
+    /// message after the one meant, and a slow transcription swallowed the next).
     #[test]
     fn two_clips_in_flight_stay_two_and_a_cancel_names_its_own() {
-        let first = hear("t-two");
-        assert_eq!(hear("t-two"), first, "a clip let go at once joins");
+        let (first, new) = hear("t-two");
+        assert!(new);
+        assert_eq!(hear("t-two"), (first, false), "a clip let go at once joins");
         std::thread::sleep(Duration::from_millis(1600));
-        let second = hear("t-two");
-        assert_ne!(first, second, "a clip let go later is its own message");
-        // the game names a clip by its release, the PC matches the nearest
-        assert_eq!(heard_at("t-two", first as u128 + 40), Some(first));
-        assert_eq!(heard_at("t-two", second as u128 - 40), Some(second));
-        assert_eq!(heard_at("t-two", second as u128 + 8000), None);
+        let (second, new) = hear("t-two");
+        assert!(new && first != second, "a clip let go later is its own message");
         // words come back in order: the first clip's (two clips) then the second's
         assert_eq!(words("t-two", "one"), Some((first, true)));
         assert_eq!(words("t-two", "more"), Some((first, false)));
@@ -531,18 +485,18 @@ mod tests {
 
     #[test]
     fn clips_gather_into_one_job_and_a_cancel_drops_late_words() {
-        let id = hear("t-hear");
-        assert_eq!(hear("t-hear"), id, "a second clip joins the first");
+        let (id, _) = hear("t-hear");
+        assert_eq!(hear("t-hear"), (id, false), "a second clip joins the first");
         assert_eq!(words("t-hear", "open my"), Some((id, true)));
         cancel(&[id]);
         assert_eq!(words("t-hear", "bags"), None);
         // the next clip is a new job
-        assert_ne!(hear("t-hear"), id);
+        assert_ne!(hear("t-hear").0, id);
     }
 
     #[test]
     fn gathering_waits_for_every_clip_then_queues() {
-        let id = hear("t-gather");
+        let (id, _) = hear("t-gather");
         hear("t-gather");
         words("t-gather", "one");
         assert!(gathered(id, Duration::ZERO, false).is_none(), "a clip is still out");
@@ -553,7 +507,7 @@ mod tests {
 
     #[test]
     fn a_clip_with_no_words_ends_its_job() {
-        let id = hear("t-empty");
+        let (id, _) = hear("t-empty");
         assert_eq!(words("t-empty", "  "), None);
         assert_eq!(state(id), Some(State::Failed));
     }
@@ -571,6 +525,24 @@ mod tests {
         let cancelled = cancel(&[a]);
         assert_eq!(cancelled.ended.len(), 2);
         assert_eq!(cancelled.pids, vec![9]);
+    }
+
+    #[test]
+    fn restored_jobs_answer_and_new_ids_grow_above_them() {
+        let far = next_id() + 1_000_000;
+        restore(&[(far, "t-restore".to_string(), State::Failed)]);
+        assert_eq!(state(far), Some(State::Failed));
+        assert!(cancel(&[far]).ended.is_empty(), "an ended job stays ended");
+        assert!(next_id() > far);
+        forget(&[far]);
+        assert_eq!(state(far), None);
+    }
+
+    #[test]
+    fn a_job_still_running_is_not_forgotten() {
+        let id = create("t-forget", "x", State::Running);
+        forget(&[id]);
+        assert_eq!(state(id), Some(State::Running));
     }
 
     #[test]

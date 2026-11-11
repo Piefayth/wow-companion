@@ -1,6 +1,7 @@
 //! Install, and the probe and bridge tools.
 
 use super::*;
+use crate::message::Msg;
 
 pub(crate) const PROBE_MESSAGES: u32 = 10;
 pub(crate) const PROBE_SPACING: Duration = Duration::from_secs(3);
@@ -58,6 +59,11 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
             fs::write(dir.join("Inbox.lua"), "")?;
         }
     }
+    // the mailbox the game takes at every load (src/ledger.rs), from the ledger
+    // on disk; never the repo's (it has none: an install must not wipe lines)
+    if let Err(err) = crate::ledger::write_mailbox(addons) {
+        println!("warning: the mailbox could not be written: {err}");
+    }
     if let Err(err) = wow_companion_settings::changes::record_folders(&written) {
         println!("warning: could not record what was installed, for uninstall: {err}");
     }
@@ -86,7 +92,7 @@ pub(crate) fn probe(addons: &Path) -> io::Result<()> {
     for n in 1..=PROBE_MESSAGES {
         let sent = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let slot = next_slot(addons)?;
-        deliver(addons, slot, &format!("{{ kind = \"probe\", n = {n}, sent = {sent} }}"))?;
+        deliver(addons, slot, &Msg::new("probe").int("n", n).int("sent", sent))?;
         used.push(slot);
         println!("sent message {n} in slot {slot}");
         thread::sleep(PROBE_SPACING);
@@ -102,48 +108,33 @@ pub(crate) fn probe(addons: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn send(addons: &Path, args: &[String]) -> io::Result<()> {
-    let inbox = match args {
+pub(crate) fn send_command(addons: &Path, args: &[String]) -> io::Result<()> {
+    // conversation lines go through the running companion (`tell`): only it
+    // numbers them (src/ledger.rs)
+    let msg = match args {
         [kind, text] if kind == "chat" => chat_inbox(text),
-        [kind, name, body] if kind == "macro" => format!(
-            "{{ kind = \"macro\", name = {}, body = {} }}",
-            lua_string(name),
-            lua_string(body)
-        ),
-        [kind, text] if kind == "log" => {
-            format!("{{ kind = \"log\", text = {} }}", lua_string(text))
-        }
-        [kind, who, text] if kind == "log" => format!(
-            "{{ kind = \"log\", who = {}, text = {} }}",
-            lua_string(who),
-            lua_string(text)
-        ),
-        [kind] if kind == "reload" => "{ kind = \"reload\" }".to_string(),
+        [kind, name, body] if kind == "macro" => Msg::new("macro").text("name", name).text("body", body),
+        [kind] if kind == "reload" => Msg::new("reload"),
         // offer a secure button: the player presses it, so anything macro text can do
-        [kind, label, text] if kind == "press" => format!(
-            "{{ kind = \"press\", label = {}, macro = {} }}",
-            lua_string(label),
-            lua_string(text)
-        ),
-        [kind, code] if kind == "lua" => format!("{{ kind = \"lua\", code = {} }}", lua_string(code)),
+        [kind, label, text] if kind == "press" => Msg::new("press").text("label", label).text("macro", text),
+        [kind, code] if kind == "lua" => Msg::new("lua").text("code", code),
         // spell|macro|item|empty, as the agent would send it
-        [kind, slot, what, name] if kind == "bar" => format!(
-            "{{ kind = \"bar\", slot = {}, what = {}, name = {} }}",
-            slot.parse::<u32>().map_err(|_| io::Error::other("slot must be a number"))?,
-            lua_string(what),
-            lua_string(name)
-        ),
+        [kind, slot, what, name] if kind == "bar" => Msg::new("bar")
+            .int("slot", slot.parse::<u32>().map_err(|_| io::Error::other("slot must be a number"))?)
+            .text("what", what)
+            .text("name", name),
         // the PlaceAction taint test, delivered the way real bar edits would be
-        [kind, variant] if kind == "place" => {
-            format!("{{ kind = \"place\", variant = {} }}", lua_string(variant))
-        }
+        [kind, variant] if kind == "place" => Msg::new("place").text("variant", variant),
         _ => {
             return Err(io::Error::other(
                 "usage: send chat <text> | send macro <name> <body> | send reload | send bar <slot> <spell|macro|item|empty> <name> | send place <variant>",
             ));
         }
     };
-    send_inbox(addons, &inbox)
+    send(addons, &msg)?;
+    // this process ends here: its one message goes out first
+    crate::channel::flush();
+    Ok(())
 }
 
 /// Round-trip probe: PC to game through the slot channel, game back to PC through
@@ -161,7 +152,7 @@ pub(crate) fn bridge(addons: &Path) -> io::Result<()> {
     println!("chat log: {} ({already} bytes so far)", chat_log.display());
 
     let sent = Instant::now();
-    send_inbox(addons, &format!("{{ kind = \"bridge\", nonce = {nonce} }}"))?;
+    send(addons, &Msg::new("bridge").int("nonce", nonce as i128))?;
     println!("waiting for {nonce} to reach the log");
 
     let nonce = nonce.to_string();

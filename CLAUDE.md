@@ -45,18 +45,22 @@ yes; don't reinvent what Claude Code has.
   Files: `lib.rs` (the push-to-talk loop), `mic.rs`, `transcribe.rs`, `cue.rs`,
   `bluetooth.rs` (the hands-free reconnect).
 - `src/`: the helper, one job per file: `main.rs` (command dispatch, `run`'s
-  wiring of the voice loop), `channel.rs` (slots, the cursor, sending, bells),
-  `requests.rs` (asking the agent, progress, auto-continue, re-sync, `tell`),
-  `jobs.rs` (the request ledger: each request's one state, forward only; cancels
-  and replies race there, and every message about a request carries `job` and `state`),
+  wiring of the voice loop), `channel.rs` (slots, the cursor, bells; one sender
+  thread takes everything pending into one slot and one bell, a `list`),
+  `message.rs` (every message to the game as a value, written as Lua in one place;
+  a conversation `Line` is numbered), `ledger.rs` (every line until the game has
+  saved it, and every job's state, on disk and in the mailbox addon the game reads
+  at every load; docs/proposals/ledger.md), `savedvars.rs` (the save file read as
+  values), `requests.rs` (asking the agent, progress, auto-continue, cancels, `tell`),
+  `jobs.rs` (each request's one state, forward only; cancels and replies race
+  there; a clip's job is named to the game by `heard` when it is let go),
   `context.rs` (the export, profile and integrations the agent gets), `chat.rs`
   (spoken chat lines), `restart.rs`, `install.rs`, `agent.rs` (the agent and its
   rules), `bells.rs`, `heartbeat.rs`, `doctor.rs`, `modules.rs`; its life:
   `lifecycle.rs` (one companion at a time, clean exits, pause, two clients),
   `watcher.rs` + `tray.rs` (`start`: wakes it with WoW, the tray icon),
   `crash.rs` (crash.log, a panicked request ends failed), `logfile.rs`
-  (companion.log), `undelivered.rs` (a line that could not go out waits for the
-  next session). What the OS gives (locks, processes, autostart) is behind
+  (companion.log). What the OS gives (locks, processes, autostart) is behind
   `crates/settings/src/platform.rs`, Windows only for now.
 - `addon/WowCompanion/`: the in-game half, one job per file, in .toc order
   (split 2026-11-10 so conversations stop editing the same file; a change goes in

@@ -1,7 +1,8 @@
-//! Requests to the agent: asking, progress, auto-continue, what each
-//! conversation is doing, re-sync after a reload, typed requests.
+//! Requests to the agent: asking, progress, auto-continue, cancels and stops,
+//! typed requests.
 
 use super::*;
+use crate::message::{job_entry, Line, Msg};
 
 // how often the window hears what the agent is doing, and how many times per
 // request at most: every update spends one of the session's 64 slots
@@ -57,73 +58,10 @@ pub(crate) fn watch_for_looks(addons: &Path, session: &Mutex<agent::Session>, lo
             Ok(false) => {}
             Err(err) => {
                 eprintln!("  looking again failed: {err}");
-                tell_failure(addons, &err);
+                tell_failure(addons, "", &err);
             }
         }
     }
-}
-
-/// Replies sent lately: when, their first line, and the message itself. A reply
-/// sent while the game was reloading reached a UI session that was going away.
-pub(crate) static REPLIES: Mutex<Vec<(SystemTime, String, String)>> = Mutex::new(Vec::new());
-
-/// A new UI session began (the save file was just written). After the addon has
-/// loaded: send again every reply from the 10 minutes before the save that the
-/// save's log does not hold, then where every request stands.
-pub(crate) fn resync(addons: &Path) {
-    let addons = addons.to_path_buf();
-    thread::spawn(move || {
-        thread::sleep(Duration::from_secs(8));
-        let saved_at = session_began(&addons).unwrap_or_default();
-        let saved = saved_variables_text(&addons).unwrap_or_default();
-        let replies = REPLIES.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
-        for (sent, first, inbox) in replies {
-            let millis = sent.duration_since(UNIX_EPOCH).map(|at| at.as_millis()).unwrap_or_default();
-            if millis > saved_at || saved_at - millis > 600_000 {
-                continue;
-            }
-            // the save writes strings escaped; a prefix is enough to recognise one
-            let escaped: String = first.replace('\\', "\\\\").replace('"', "\\\"").chars().take(60).collect();
-            if !escaped.is_empty() && !saved.contains(&escaped) {
-                println!("resync: a reply the game never logged, sent again: {first}");
-                if let Err(err) = send_inbox(&addons, &inbox) {
-                    eprintln!("  resync: {err}");
-                }
-            }
-        }
-        // One `board` message, always, even with nothing working: the addon shows
-        // the board it saved at the reload and this is what corrects it. Read when
-        // the channel is ours (send_inbox_once), so it is never older than a reply
-        // sent before it; and its job states only move the game's forward anyway.
-        if let Err(err) = send_inbox(&addons, BOARD_NOW) {
-            eprintln!("  resync: {err}");
-        }
-    });
-}
-
-/// Stands for the board as it is when the channel is free to send it.
-pub(crate) const BOARD_NOW: &str = "{ kind = \"board\", now = true }";
-
-/// The board: each conversation's running request (`working`, what every addon
-/// reads) and every recent request's state (`list`, from the ledger, which the
-/// addon merges forward only).
-pub(crate) fn board_inbox() -> String {
-    let entries: Vec<String> = jobs::working()
-        .iter()
-        .map(|(slot, doing, since)| {
-            format!(
-                "{{ slot = {}, text = {}, since = {} }}",
-                lua_string(slot),
-                lua_string(doing),
-                since.elapsed().as_secs()
-            )
-        })
-        .collect();
-    format!(
-        "{{ kind = \"board\", resync = true, working = {{ {} }}, list = {{ {} }} }}",
-        entries.join(", "),
-        jobs::entries(&jobs::recent())
-    )
 }
 
 /// End agent processes (each with its whole tree: its shell commands too,
@@ -143,14 +81,13 @@ fn end_processes(pids: &[u32]) {
 
 /// Tell the game where these jobs stand now, after a cancel, whether or not it
 /// changed anything: the game waits on this to resolve its "cancelling...".
-/// `older` keeps the fields addons before the ledger read.
-fn tell_states(addons: &Path, slot: &str, ids: &[u64], older: &str) {
-    let message = format!(
-        "{{ kind = \"stopped\", slot = {}{older}, list = {{ {} }} }}",
-        lua_string(slot),
-        jobs::entries(&jobs::get(ids))
-    );
-    if let Err(err) = send_inbox(addons, &message) {
+fn tell_states(addons: &Path, slot: &str, ids: &[u64], flags: &[(&'static str, bool)]) {
+    let mut message = Msg::new("stopped").text("slot", slot);
+    for (flag, on) in flags {
+        message = message.flag(flag, *on);
+    }
+    let message = message.list("list", jobs::get(ids).iter().map(|job| job_entry(job.id, &job.slot, job.state)).collect());
+    if let Err(err) = send(addons, &message) {
         eprintln!("  telling the game failed: {err}");
     }
 }
@@ -170,13 +107,13 @@ pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool
     if send_now {
         if before != Some(jobs::State::Queued) {
             println!("  send now: request {req} is not waiting; nothing to end");
-            tell_states(addons, slot, &[req], "");
+            tell_states(addons, slot, &[req], &[]);
             return;
         }
         let running = jobs::live(slot, Some(jobs::State::Running));
         let done = jobs::cancel(&running);
         end_processes(&done.pids);
-        tell_states(addons, slot, &running, ", sendNow = true");
+        tell_states(addons, slot, &running, &[("sendNow", true)]);
         return;
     }
     let done = jobs::cancel(&[req]);
@@ -187,32 +124,9 @@ pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool
     // the list says each job's state; that is the whole answer
     let mut ids = vec![req];
     ids.extend(done.ended.iter().map(|job| job.id).filter(|id| *id != req));
-    tell_states(addons, slot, &ids, "");
+    tell_states(addons, slot, &ids, &[]);
 }
 
-
-/// Cancel pressed on a clip still shown as being heard, named by when it was
-/// let go (`release`, unix ms). The clip itself is cancelled wherever it got
-/// to: dropped while heard, or cancelled as a request; an ended one is only
-/// reported, so the game shows what really happened.
-pub(crate) fn cancel_clip(addons: &Path, slot: &str, release: u128) {
-    println!("cancel clip [{}] let go at {release}", if slot.is_empty() { "main" } else { slot });
-    match jobs::heard_at(slot, release) {
-        Some(id) if jobs::state(id) == Some(jobs::State::Hearing) => {
-            jobs::cancel(&[id]);
-            tell_states(addons, slot, &[id], ", hearing = true");
-        }
-        Some(id) if jobs::state(id).is_some_and(|state| !state.ended()) => {
-            cancel_request(addons, slot, id, false);
-            // the game resolves its clip by this answer too
-            tell_states(addons, slot, &[id], ", hearing = true");
-        }
-        found => {
-            println!("  that clip had already ended, or none was let go then");
-            tell_states(addons, slot, &found.into_iter().collect::<Vec<_>>(), ", hearing = true, nothing = true");
-        }
-    }
-}
 
 /// Stop: end the running request; `drop_queue` drops everything waiting too
 /// (Send now on the conversation ends only the running one).
@@ -221,7 +135,7 @@ pub(crate) fn stop(addons: &Path, slot: &str, drop_queue: bool) {
     let done = jobs::cancel(&ids);
     println!("stop [{}]: {} ended", if slot.is_empty() { "main" } else { slot }, done.ended.len());
     end_processes(&done.pids);
-    tell_states(addons, slot, &ids, &format!(", dropped = {drop_queue}"));
+    tell_states(addons, slot, &ids, &[("dropped", drop_queue)]);
 }
 
 /// Every queued request of this conversation, taken as one run led by `lead`,
@@ -231,10 +145,7 @@ pub(crate) fn run_queued(addons: &Path, slot: &str, lead: u64) -> Option<String>
     // the others' lines leave the queue too: their request starts with this one
     for (id, _) in &taken {
         if *id != lead {
-            let _ = send_inbox(
-                addons,
-                &format!("{{ started = true, kind = \"progress\", text = \"thinking\", slot = {}{} }}", lua_string(slot), jobs::fields(*id, jobs::State::Running)),
-            );
+            let _ = send(addons, &started(slot, *id));
         }
     }
     if taken.len() == 1 {
@@ -262,15 +173,16 @@ pub(crate) fn watch_commands(addons: &Path) {
                     cancel_request(addons, &main(slot), req, *verb == "now");
                 }
             }
-            ["WCCMD", _nonce, "hear", slot, release] => {
-                if let Ok(release) = release.parse::<u128>() {
-                    cancel_clip(addons, &main(slot), release);
-                }
-            }
             ["WCCMD", _nonce, verb @ ("stop" | "now"), slot] => stop(addons, &main(slot), *verb == "stop"),
             _ => {}
         }
     })
+}
+
+/// `{ kind = "progress", started = true, ... }`: a request has started; it
+/// ends the queued mark on its line.
+fn started(slot: &str, id: u64) -> Msg {
+    Msg::new("progress").flag("started", true).text("text", "thinking").text("slot", slot).int("job", id).text("state", jobs::State::Running.name())
 }
 
 /// A request that failed: its job ends failed and the game is told, unless a
@@ -281,9 +193,8 @@ pub(crate) fn failed(addons: &Path, slot: &str, group: u64, err: io::Error) -> i
         return Ok(false);
     }
     eprintln!("  not delivered: {err}");
-    let line = log_inbox_in(Some(slot), "error", &format!("That request failed: {err}"), None, None)
-        .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{}{}", jobs::fields(group, jobs::State::Failed), jobs::members_field(group)), 1);
-    send_inbox(addons, &line)?;
+    let line = Line::new(slot, "error", &format!("That request failed: {err}")).job(group, jobs::State::Failed).ended(jobs::members(group));
+    post(addons, line)?;
     Ok(false)
 }
 
@@ -299,8 +210,6 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         println!("  dropped: {} before it started", state.name());
         return Ok(false);
     }
-    let req_field = jobs::fields(group, jobs::State::Running);
-    jobs::set_doing(group, "thinking");
     // start the agent before announcing ourselves: the announcement costs a bell
     // wait, the agent costs several seconds, and they may as well run together
     voice::mark(&format!("agent starting [{}]", session.slot));
@@ -334,13 +243,11 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
     // closed) must not end the request, or the agent works on unheard and its
     // reply is lost (L1's, 2026-11-11)
     let announced = if shown {
-        // `started` first, so this one is not advisory: it is what ends the queued
-        // mark on the request's line, and must not be dropped on a busy channel
-        send_inbox(addons, &format!("{{ started = true, kind = \"progress\", text = \"thinking\", slot = {}{req_field} }}", lua_string(&session.slot)))
+        // a `started` progress is never dropped on a busy channel: it is what
+        // ends the queued mark on the request's line
+        send(addons, &started(&session.slot, group))
     } else {
-        let line = log_inbox_in(Some(&session.slot), "you", spoken, Some("thinking"), None)
-            .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{req_field}"), 1);
-        send_inbox(addons, &line)
+        post(addons, Line::new(&session.slot, "you", spoken).pending("thinking").job(group, jobs::State::Running))
     };
     if let Err(err) = announced {
         println!("  not announced ({err}); the request goes on");
@@ -361,8 +268,8 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
                         latest = newer;
                     }
                     if sent < PROGRESS_LIMIT {
-                        let inbox = format!("{{ kind = \"progress\", text = {}, slot = {}, job = {group} }}", lua_string(&latest), lua_string(&slot));
-                        if send_inbox(&addons, &inbox).is_ok() {
+                        let progress = Msg::new("progress").text("text", &latest).text("slot", &slot).int("job", group);
+                        if send(&addons, &progress).is_ok() {
                             sent += 1;
                         }
                     }
@@ -373,7 +280,6 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         let mut progress = |doing: &str| {
             voice::mark(&format!("agent: {}", doing.chars().take(60).collect::<String>()));
             println!("  ... {doing}");
-            jobs::set_doing(group, doing);
             let _ = tell.send(doing.to_string());
         };
         // A request that runs out of steps carries on by itself, a few times: the
@@ -437,7 +343,7 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         let mut offered = RELOAD_OFFERED.lock().unwrap();
         if *offered != stamp {
             *offered = stamp;
-            let _ = send_inbox(addons, "{ kind = \"reload\" }");
+            let _ = send(addons, &Msg::new("reload"));
         }
     }
     // near the end of the session's slots, say so while a reply can still arrive
@@ -458,16 +364,11 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         println!("  cancelled while answering: reply dropped");
         return Ok(false);
     }
-    let reply = log_inbox_in(Some(&session.slot), "claude", &say, None, answer.inbox.as_deref())
-        .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{}{}", jobs::fields(group, jobs::State::Answered), jobs::members_field(group)), 1);
-    {
-        let first = say.lines().find(|line| !line.trim().is_empty()).unwrap_or_default().to_string();
-        let mut replies = REPLIES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        replies.push((SystemTime::now(), first, reply.clone()));
-        let excess = replies.len().saturating_sub(20);
-        replies.drain(..excess);
-    }
-    send_inbox(addons, &reply)?;
+    let reply = Line::new(&session.slot, "claude", &say)
+        .job(group, jobs::State::Answered)
+        .ended(jobs::members(group))
+        .steps(answer.inbox.clone());
+    post(addons, reply)?;
     if answer.look {
         println!("  waiting for the reload to look at the results");
     }
@@ -481,42 +382,14 @@ pub(crate) fn think(addons: &Path, spoken: &str) -> io::Result<()> {
     let waiting = session.start(spoken, context)?;
     let answer = session.finish(waiting, |doing| println!("  ... {doing}"))?;
     println!("({:.1}s) say: {}", started.elapsed().as_secs_f32(), answer.say);
-    println!("would send: {}", answer.inbox.as_deref().unwrap_or("nothing"));
+    println!("would send: {}", answer.inbox.as_ref().map(Msg::lua).unwrap_or_else(|| "nothing".into()));
     Ok(())
 }
 
-/// Built field by field rather than by patching a finished string: the first attempt
-/// spliced `andThen` onto the end and dropped the comma, which the client reported as
-/// a Lua syntax error from inside a slot.
-pub(crate) fn log_inbox(who: &str, text: &str, pending: Option<&str>, also: Option<&str>) -> String {
-    log_inbox_in(None, who, text, pending, also)
-}
-
-/// A log line that belongs to one conversation ("" is the main one, "l2" a
-/// trigger slot), so the window files it there.
-pub(crate) fn log_inbox_in(slot: Option<&str>, who: &str, text: &str, pending: Option<&str>, also: Option<&str>) -> String {
-    let mut fields = vec![
-        "kind = \"log\"".to_string(),
-        format!("who = {}", lua_string(who)),
-        format!("text = {}", lua_string(text)),
-    ];
-    if let Some(slot) = slot {
-        fields.push(format!("slot = {}", lua_string(slot)));
-    }
-    if let Some(label) = pending {
-        fields.push(format!("pending = {}", lua_string(label)));
-    }
-    if let Some(inbox) = also {
-        fields.push(format!("andThen = {inbox}"));
-    }
-    format!("{{ {} }}", fields.join(", "))
-}
-
-/// A request that failed says so in the window, and stops the spinner: a console
-/// line nobody is watching is how a stuck-looking agent happens.
-pub(crate) fn tell_failure(addons: &Path, err: &io::Error) {
-    let line = format!("That request failed: {err}");
-    if let Err(also) = send_inbox(addons, &log_inbox("error", &line, None, None)) {
+/// A request that failed says so in its conversation, and stops the spinner: a
+/// console line nobody is watching is how a stuck-looking agent happens.
+pub(crate) fn tell_failure(addons: &Path, slot: &str, err: &io::Error) {
+    if let Err(also) = post(addons, Line::new(slot, "error", &format!("That request failed: {err}"))) {
         eprintln!("  and telling the game failed too: {also}");
     }
 }

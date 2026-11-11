@@ -124,6 +124,8 @@ pub(crate) fn watch_for_restart(args: Vec<String>) {
         while IN_FLIGHT.load(Ordering::SeqCst) > 0 {
             thread::sleep(Duration::from_millis(100));
         }
+        // what is queued for the game goes out first (lines are in the mailbox anyway)
+        crate::channel::flush();
         voice::SHUTDOWN.store(true, Ordering::SeqCst);
         let asked = Instant::now();
         while !voice::STOPPED.load(Ordering::SeqCst) && asked.elapsed() < Duration::from_secs(3) {

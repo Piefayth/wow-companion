@@ -354,7 +354,7 @@ fn serve_one(addons: &Path, lua: &str, seconds: f64) -> Result<Vec<u8>, String> 
     if !channel::game_running().map_err(|err| err.to_string())? {
         return Err("the game is closed".into());
     }
-    channel::send_inbox(addons, &format!("{{ kind = \"lua\", code = {} }}", lua_string(lua)))
+    channel::send(addons, &crate::message::Msg::new("lua").text("code", lua))
         .map_err(|err| format!("the Lua could not be sent: {err}"))?;
     watch(seconds).map_err(|why| {
         format!("no strip in {seconds:.0} s ({why}); the game runs Lua from the companion out of combat only, and the code must call WowCompanion_Strip.Send")

@@ -100,13 +100,76 @@ message), written as Lua in one place. The channel tells a line from a status
 message by its type, not by the text's prefix; every `replacen` and
 `starts_with("{ kind = ...")` goes.
 
-## The game's part (Main builds it once approved)
+## Built on the PC (2026-11-11)
 
-Hold `WowCompanionDB.lines`; at load, take the mailbox before the window draws;
-apply each line by its number and ignore one already held, whether it came
-from the mailbox or a slot. Its state handling (forward-only per job) is
-unchanged. The mailbox is a new addon folder: one game restart, which lands
-with the addon split's.
+`src/message.rs` (one `Msg` written as Lua in one place; a `Line`),
+`src/ledger.rs`, `src/savedvars.rs`; the channel's one sender thread batches
+(`src/channel.rs`). With it, the player's two additions: the exact clip identity
+(docs/proposals/conversation-sync.md) and batching ("the messaging performance
+is important to me").
+
+## The game's part (Main builds it): the exact formats
+
+**Every slot** now holds one list, the batch, in the order sent:
+
+```lua
+WowCompanion_Inbox = { kind = "list", messages = { <message>, <message>, ... } }
+WowCompanion_Sent = <unix seconds>
+```
+
+Apply each message in order as if it had come alone. A batch is everything
+that waited while the previous bell was held; of the plain progress lines about
+one job only the newest is in it.
+
+**A line** (`kind = "log"`) always names its conversation and its number:
+
+```lua
+{ kind = "log", slot = "l1", n = 12, who = "claude", text = "...",
+  pending = "thinking",            -- optional: the spinner's text until the next line
+  job = 1794363312223, state = "answered",   -- optional: the request it is about
+  list = { { job = 1794363312223, slot = "l1", state = "answered" }, ... },  -- optional: what it ended
+  queued = true,                   -- optional: shown waiting
+  andThen = <message> }            -- optional, live only: the reply's steps
+```
+
+`slot` is "" for the main conversation and is always present (a line no longer
+goes to the conversation in view). Apply a line by `(slot, n)`: one already
+held is ignored. Keep `WowCompanionDB.lines[slot]` = the highest `n` held with
+none missing below it; that is what the PC confirms by at each save.
+
+**A clip let go** is named at once:
+
+```lua
+{ kind = "heard", job = 1794363312300, slot = "r1", state = "hearing" }
+```
+
+Draw the hearing line from it; its cancel is `WCCMD <nonce> cancel <slot> <job>`
+like every other cancel. The PC no longer reads `WCCMD ... hear ...`, and
+`stopped` no longer carries `hearing` or `nothing` (it carries `sendNow` and
+`dropped` as before, and its `list`).
+
+**The mailbox**, `Interface\AddOns\WowCompanion_Mailbox\Mail.lua`, loaded by
+the game with the `WowCompanion_Mailbox` addon (`## Dependencies: WowCompanion`)
+at every login and reload:
+
+```lua
+WowCompanion_Mail = {
+  written = <unix ms>,
+  lines = { <a line as above, never with andThen>, ... },   -- every line not yet confirmed
+  jobs = { { job = <id>, slot = "", state = "running" }, ... },  -- every job not yet confirmed ended
+}
+```
+
+At load (the mailbox addon's `ADDON_LOADED`, or `PLAYER_LOGIN`), before the
+window draws: apply its lines exactly as lines from a slot, and merge its job
+states forward only (as the board's list was). It replaces the board message
+the PC sent after a reload, which is gone. `WowCompanionDB.jobModel.jobs[id].state`
+stays as it is: the PC drops a job once the save records its end.
+
+**No longer sent:** `board`, `transcribing`, lines without a `slot`.
+
+**Until this game side lands**, the running addon does not know `list`, `heard`
+or the mailbox: the player must not play on the new PC build before it.
 
 ## Decided by the player (2026-11-11)
 

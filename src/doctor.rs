@@ -49,6 +49,23 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
             .unwrap_or_default();
         line(true, "crashes", &format!("last: {last} ({})", crashes.display()));
     }
+    // every conversation line until the game has saved it (src/ledger.rs)
+    let problems = crate::ledger::problems();
+    let waiting = crate::companion_dir()
+        .ok()
+        .and_then(|dir| fs::read(dir.join("ledger.json")).ok())
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|ledger| ledger["lines"].as_array().map(Vec::len));
+    let mailbox = addons.join(crate::ledger::MAILBOX).join("Mail.lua").exists();
+    line(
+        problems.is_empty() && mailbox,
+        "ledger",
+        &match (problems.is_empty(), mailbox) {
+            (true, true) => format!("{} line(s) not yet saved by the game, all in the mailbox", waiting.unwrap_or(0)),
+            (true, false) => format!("no mailbox in {}: `install`", addons.join(crate::ledger::MAILBOX).display()),
+            (false, _) => problems.join(" | "),
+        },
+    );
     let pending = crate::companion_dir().map(|dir| dir.join("restart.request").exists()).unwrap_or(false);
     line(!pending, "restart", if pending { "a restart is waiting for the companion to go idle" } else { "none pending" });
     line(true, "agent", if agent_busy() { "working on a request" } else { "idle" });

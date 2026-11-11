@@ -25,6 +25,7 @@ use std::{
 };
 
 use serde_json::Value;
+use crate::message::Msg;
 
 // Opus by default: Sonnet was quick and got chords, bars and multi-step requests
 // wrong often enough that the player noticed. `run ... agent=sonnet` trades back.
@@ -396,8 +397,8 @@ offer to attack, move, target, or take any action in combat.";
 pub struct Spoken {
     /// the line to show in the companion window
     pub say: String,
-    /// the inbox table to deliver, or None when nothing should change in game
-    pub inbox: Option<String>,
+    /// the steps to deliver, or None when nothing should change in game
+    pub inbox: Option<crate::message::Msg>,
     /// the agent wants to see its steps' results: call it again after the reload
     pub look: bool,
     /// `module` steps, stored in modules/ before sending: name, and code or None
@@ -679,7 +680,7 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
     if buttons > 1 {
         return Err(io::Error::other("more than one button in one answer; only one can be offered"));
     }
-    let mut built = steps.iter().map(step_inbox).collect::<io::Result<Vec<String>>>()?;
+    let mut built = steps.iter().map(step_inbox).collect::<io::Result<Vec<Msg>>>()?;
     let modules = steps
         .iter()
         .filter(|step| step.get("kind").and_then(Value::as_str) == Some("module"))
@@ -694,51 +695,38 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
     // looking needs a reload, and a reload needs the player's press: offer it,
     // unless the answer already offers its own button
     if look && buttons == 0 {
-        built.push("{ kind = \"reload\" }".to_string());
+        built.push(Msg::new("reload"));
     }
     // several steps still ride in one message: one bell, applied in order
     let inbox = match built.len() {
         0 => None,
         1 => built.pop(),
-        _ => Some(format!("{{ kind = \"batch\", steps = {{ {} }} }}", built.join(", "))),
+        _ => Some(Msg::new("batch").list("steps", built)),
     };
     Ok(Answer { spoken: Spoken { say, inbox, look, modules, out_of_steps: false }, thread })
 }
 
-/// One step as the inbox table the addon's dispatch accepts.
-fn step_inbox(command: &Value) -> io::Result<String> {
+/// One step as the message the addon's dispatch accepts.
+fn step_inbox(command: &Value) -> io::Result<Msg> {
     Ok(match field(command, "kind")? {
         "chat" => crate::chat_inbox(field(command, "text")?),
-        "send" => match command.get("label").and_then(Value::as_str) {
-            Some(label) => format!(
-                "{{ kind = \"send\", text = {}, label = {} }}",
-                crate::lua_string(field(command, "text")?),
-                crate::lua_string(label)
-            ),
-            None => format!("{{ kind = \"send\", text = {} }}", crate::lua_string(field(command, "text")?)),
-        },
-        "macro" => format!(
-            "{{ kind = \"macro\", name = {}, body = {} }}",
-            crate::lua_string(field(command, "name")?),
-            crate::lua_string(field(command, "body")?)
-        ),
-        "press" => format!(
-            "{{ kind = \"press\", label = {}, macro = {} }}",
-            crate::lua_string(field(command, "label")?),
-            crate::lua_string(field(command, "macro")?)
-        ),
-        "reload" => "{ kind = \"reload\" }".to_string(),
-        "lua" => format!("{{ kind = \"lua\", code = {} }}", crate::lua_string(field(command, "code")?)),
+        "send" => {
+            let send = Msg::new("send").text("text", field(command, "text")?);
+            match command.get("label").and_then(Value::as_str) {
+                Some(label) => send.text("label", label),
+                None => send,
+            }
+        }
+        "macro" => Msg::new("macro").text("name", field(command, "name")?).text("body", field(command, "body")?),
+        "press" => Msg::new("press").text("label", field(command, "label")?).text("macro", field(command, "macro")?),
+        "reload" => Msg::new("reload"),
+        "lua" => Msg::new("lua").text("code", field(command, "code")?),
         "module" => {
-            let name = field(command, "name")?;
+            let module = Msg::new("module").text("name", field(command, "name")?);
             if command.get("remove").and_then(Value::as_bool) == Some(true) {
-                format!("{{ kind = \"module\", name = {}, remove = true }}", crate::lua_string(name))
+                module.flag("remove", true)
             } else {
-                format!(
-                    "{{ kind = \"module\", name = {}, code = {} }}",
-                    crate::lua_string(name),
-                    crate::lua_string(field(command, "code")?)
-                )
+                module.text("code", field(command, "code")?)
             }
         }
         "bar" => {
@@ -749,11 +737,7 @@ fn step_inbox(command: &Value) -> io::Result<String> {
                 .ok_or_else(|| io::Error::other(format!("no usable slot in {command}")))?;
             let what = field(command, "what")?;
             let name = if what == "empty" { "" } else { field(command, "name")? };
-            format!(
-                "{{ kind = \"bar\", slot = {slot}, what = {}, name = {} }}",
-                crate::lua_string(what),
-                crate::lua_string(name)
-            )
+            Msg::new("bar").int("slot", slot).text("what", what).text("name", name)
         }
         other => return Err(io::Error::other(format!("unknown kind {other:?}"))),
     })

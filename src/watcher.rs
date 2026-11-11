@@ -160,10 +160,14 @@ fn watch(choices: mpsc::Receiver<Choice>) {
             was_running = true;
             launched = None;
             let paused = lifecycle::pause_file().map(|path| path.exists()).unwrap_or(false);
+            // what the ledger reports (src/ledger.rs: the mailbox not taken, a
+            // file it could not write) is said on the icon too
+            let ledger = crate::ledger::problems();
+            let also = ledger.first().map(|problem| format!("; {problem}")).unwrap_or_default();
             if paused {
-                say(Look::Paused, "paused (the talk button does nothing)", &mut said);
+                say(Look::Paused, &format!("paused (the talk button does nothing){also}"), &mut said);
             } else {
-                say(Look::Listening, "listening", &mut said);
+                say(Look::Listening, &format!("listening{also}"), &mut said);
             }
             thread::sleep(Duration::from_secs(1));
             continue;

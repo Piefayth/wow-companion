@@ -15,6 +15,7 @@
 //! `WowCompanionDB.bridgeProbe`; `clean` deletes the probe's files.
 
 use super::*;
+use crate::savedvars::Lua;
 use std::{
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
@@ -677,140 +678,6 @@ fn report(addons: &Path) -> io::Result<()> {
     Ok(())
 }
 
-// ------------------------------------------------- the game's saved table
-
-/// A value as the game writes SavedVariables: strings, numbers, booleans, nil,
-/// and tables of `["key"] = value`, `[n] = value` and bare list entries
-/// (`value, -- [n]`).
-#[derive(Debug, Clone, PartialEq)]
-enum Lua {
-    Text(String),
-    Number(f64),
-    Bool(bool),
-    Nil,
-    Table(Vec<(Option<Lua>, Lua)>),
-}
-
-impl Lua {
-    /// One value from the start of `text`, and what follows it.
-    fn parse(text: &str) -> Result<(Lua, &str), String> {
-        let text = skip(text);
-        let mut chars = text.chars();
-        match chars.next() {
-            Some('{') => {
-                let mut rest = skip(&text[1..]);
-                let mut entries = Vec::new();
-                while !rest.starts_with('}') {
-                    if rest.is_empty() {
-                        return Err("a table is not closed".into());
-                    }
-                    let (key, after_key) = if let Some(inner) = rest.strip_prefix('[') {
-                        let (key, after) = Lua::parse(inner)?;
-                        let after = skip(after).strip_prefix(']').ok_or("a key is not closed")?;
-                        let after = skip(after).strip_prefix('=').ok_or("a key has no value")?;
-                        (Some(key), after)
-                    } else {
-                        (None, rest)
-                    };
-                    let (value, after) = Lua::parse(after_key)?;
-                    entries.push((key, value));
-                    rest = skip(after);
-                    if let Some(after_comma) = rest.strip_prefix(',').or_else(|| rest.strip_prefix(';')) {
-                        rest = skip(after_comma);
-                    }
-                }
-                Ok((Lua::Table(entries), &rest[1..]))
-            }
-            Some('"') => {
-                let mut out = String::new();
-                let mut iter = text[1..].char_indices();
-                while let Some((at, c)) = iter.next() {
-                    match c {
-                        '"' => return Ok((Lua::Text(out), &text[1 + at + 1..])),
-                        '\\' => match iter.next().map(|(_, c)| c) {
-                            Some('n') => out.push('\n'),
-                            Some('r') => out.push('\r'),
-                            Some('t') => out.push('\t'),
-                            Some(other) => out.push(other),
-                            None => break,
-                        },
-                        other => out.push(other),
-                    }
-                }
-                Err("a string is not closed".into())
-            }
-            _ => {
-                let end = text.find(|c: char| c == ',' || c == '}' || c == ']' || c.is_whitespace()).unwrap_or(text.len());
-                let word = &text[..end];
-                let value = match word {
-                    "true" => Lua::Bool(true),
-                    "false" => Lua::Bool(false),
-                    "nil" => Lua::Nil,
-                    number => Lua::Number(number.parse().map_err(|_| format!("not a value: {number:?}"))?),
-                };
-                Ok((value, &text[end..]))
-            }
-        }
-    }
-
-    fn get(&self, key: &str) -> Option<&Lua> {
-        match self {
-            Lua::Table(entries) => entries.iter().find(|(k, _)| k.as_ref() == Some(&Lua::Text(key.into()))).map(|(_, v)| v),
-            _ => None,
-        }
-    }
-
-    /// The table's list part, in order (bare entries and [1], [2]...).
-    fn list(&self) -> Vec<&Lua> {
-        let Lua::Table(entries) = self else { return Vec::new() };
-        let mut numbered: Vec<(f64, &Lua)> = Vec::new();
-        let mut next = 1.0;
-        for (key, value) in entries {
-            match key {
-                None => {
-                    numbered.push((next, value));
-                    next += 1.0;
-                }
-                Some(Lua::Number(index)) => numbered.push((*index, value)),
-                _ => {}
-            }
-        }
-        numbered.sort_by(|a, b| a.0.total_cmp(&b.0));
-        numbered.into_iter().map(|(_, value)| value).collect()
-    }
-
-    fn number(&self) -> Option<f64> {
-        if let Lua::Number(n) = self { Some(*n) } else { None }
-    }
-
-    fn text(&self) -> String {
-        match self {
-            Lua::Text(text) => text.clone(),
-            Lua::Number(n) if n.fract() == 0.0 && n.abs() < 1e15 => format!("{}", *n as i64),
-            Lua::Number(n) => format!("{n:.3}"),
-            Lua::Bool(b) => b.to_string(),
-            Lua::Nil => "nil".into(),
-            Lua::Table(_) => "{...}".into(),
-        }
-    }
-
-    fn text_of(&self, key: &str) -> String {
-        self.get(key).map(Lua::text).unwrap_or_else(|| "?".into())
-    }
-}
-
-/// Whitespace and `--` comments skipped.
-fn skip(mut text: &str) -> &str {
-    loop {
-        text = text.trim_start();
-        if let Some(comment) = text.strip_prefix("--") {
-            text = comment.find('\n').map_or("", |at| &comment[at..]);
-        } else {
-            return text;
-        }
-    }
-}
-
 /// What the measured widths say about the written ones. Each ratio
 /// measured/written is printed as numbers; "a constant scale" means every ratio
 /// equals the first to within 0.1% (stated, so the reader sees the threshold),
@@ -915,19 +782,6 @@ mod tests {
         let found = probe_line(&bad, read_at);
         assert_eq!((found.arrived, found.whole()), (70, false));
         assert_eq!(&text_pattern(64)[60..64], "89AB");
-    }
-
-    #[test]
-    fn the_games_saved_table_is_read() {
-        let saved = "{\n[\"log\"] = {\n{\n[\"seq\"] = 1,\n[\"ok\"] = true,\n[\"via\"] = \"LogMessage\",\n[\"result\"] = \"nil\",\n}, -- [1]\n},\n[\"font\"] = {\n{\n[\"n\"] = 2,\n[\"widths\"] = {\n12.5, -- [1]\n-3, -- [2]\n1e-05, -- [3]\n},\n[\"chars\"] = \"AB\\\"C\",\n},\n},\n[1794357313662] = {\n},\n}\n";
-        let (value, rest) = Lua::parse(saved).unwrap();
-        assert_eq!(rest.trim(), "");
-        let log = value.get("log").unwrap().list();
-        assert_eq!((log[0].text_of("seq"), log[0].text_of("ok"), log[0].text_of("via")), ("1".into(), "true".into(), "LogMessage".into()));
-        let font = value.get("font").unwrap().list()[0];
-        assert_eq!(font.text_of("chars"), "AB\"C");
-        let widths: Vec<f64> = font.get("widths").unwrap().list().iter().filter_map(|v| v.number()).collect();
-        assert_eq!(widths, vec![12.5, -3.0, 1e-05]);
     }
 
     /// The tailer on a stand-in General.log, with the probe's data in a scratch

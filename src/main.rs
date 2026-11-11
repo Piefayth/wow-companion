@@ -13,15 +13,16 @@ mod context;
 mod restart;
 mod chat;
 mod install;
-mod offline;
 mod jobs;
+mod ledger;
+mod message;
+mod savedvars;
 mod audit;
 mod strip;
 mod crash;
 mod lifecycle;
 mod logfile;
 mod tray;
-mod undelivered;
 mod watcher;
 mod backups;
 mod bridge_probe;
@@ -31,6 +32,7 @@ use context::*;
 use restart::*;
 use chat::*;
 use install::*;
+use message::{Line, Msg, Out};
 
 use wow_companion_pad as pad;
 use wow_companion_voice as voice;
@@ -100,7 +102,7 @@ fn main() {
         // running companion as if spoken there
         [command, slot, words @ ..] if command == "tell" && !words.is_empty() => tell(slot, &words.join(" ")),
         [command, addons] if command == "probe" => probe(Path::new(addons)),
-        [command, addons, rest @ ..] if command == "send" => send(Path::new(addons), rest),
+        [command, addons, rest @ ..] if command == "send" => send_command(Path::new(addons), rest),
         // the agent's answer, printed and never delivered: for trying the agent
         // without a game to send into
         [command, addons, spoken] if command == "think" => think(Path::new(addons), spoken),
@@ -177,7 +179,7 @@ fn main() {
                 if role.ends_with(" tap") {
                     return Ok(());
                 }
-                send_inbox(addons, &chat_inbox(text))
+                send(addons, &chat_inbox(text))
             })
         }
         _ => {
@@ -228,10 +230,21 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     crash::install(addons);
     lifecycle::hold()?;
     lifecycle::watch(addons);
-    undelivered::watch(addons);
+    // every line until the game has saved it, and every job's state, on disk
+    // and in the mailbox the game reads at load (src/ledger.rs); jobs the last
+    // companion left running end now, each with a line
+    let recovered = ledger::open(addons);
     // docs/proposals/bridge-probe.md: measures while the game runs, changes nothing
     bridge_probe::start(addons);
-    crash::after_start(addons);
+    {
+        let addons = addons.to_path_buf();
+        thread::spawn(move || {
+            for line in recovered {
+                let _ = send_line_now(&addons, line);
+            }
+            crash::after_start(&addons);
+        });
+    }
     {
         let args: Vec<String> = env::args().skip(1).collect();
         thread::spawn(move || watch_for_restart(args));
@@ -280,19 +293,19 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     // the agent was talking at the same time (measured: a request made while
     // another ran). One courier thread delivers in order instead.
     let courier = {
-        let (post, mailbox) = std::sync::mpsc::channel::<String>();
+        let (out, waiting) = std::sync::mpsc::channel::<Out>();
         let addons = addons.to_path_buf();
         thread::spawn(move || {
-            for inbox in mailbox {
-                if let Err(err) = send_inbox(&addons, &inbox) {
+            for message in waiting {
+                if let Err(err) = send_out(&addons, message) {
                     eprintln!("  not delivered: {err}");
                 }
             }
         });
-        post
+        out
     };
-    let deliver = |inbox: String| {
-        courier.send(inbox).map_err(|_| io::Error::other("the courier thread has stopped"))
+    let deliver = |message: Out| {
+        courier.send(message).map_err(|_| io::Error::other("the courier thread has stopped"))
     };
     // One conversation per trigger slot (L1, L2, R1, R2), each its own thread,
     // made on first use; "" is the main one. Different slots run side by side.
@@ -359,9 +372,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         Ok(guard) => (guard, false),
                         Err(std::sync::TryLockError::Poisoned(poisoned)) => (poisoned.into_inner(), false),
                         Err(std::sync::TryLockError::WouldBlock) => {
-                            let line = log_inbox_in(Some(&slot), "you", &text, None, None)
-                                .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{}", jobs::fields(job, jobs::state(job).unwrap_or(jobs::State::Queued))), 1);
-                            let _ = courier.send(line);
+                            let line = Line::new(&slot, "you", &text).queued().job(job, jobs::state(job).unwrap_or(jobs::State::Queued));
+                            let _ = courier.send(Out::Line(line));
                             (session.lock().unwrap_or_else(|poisoned| poisoned.into_inner()), true)
                         }
                     };
@@ -380,7 +392,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         Ok(_) => {}
                         Err(err) => {
                             eprintln!("  not delivered: {err}");
-                            tell_failure(&addons, &err);
+                            tell_failure(&addons, &slot, &err);
                         }
                     }
                 });
@@ -396,13 +408,14 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             // a tap opens the window: one slot, of 512. A bell of its own (no slot)
             // was tried and failed: the game holds a constantly polled bell open,
             // so it could never be rung (measured: locked for 10 s straight)
-            "ask tap" => deliver("{ kind = \"show\" }".to_string()),
+            "ask tap" => deliver(Out::Now(Msg::new("show"))),
             // the voice loop's own news (a reconnected headset), for the window
-            "notice" => deliver(log_inbox("error", text, None, None)),
+            "notice" => deliver(Out::Line(Line::new("", "error", text))),
             // a clip's own notice ("nothing was sent") goes to the conversation it
             // was for, not whichever one the window shows ("ask@r2 notice")
             r if r.ends_with(" notice") || r.ends_with(" unheard") => {
                 let role = r.trim_end_matches(" notice").trim_end_matches(" unheard");
+                // the clip's own conversation; dictation's (L1+R1) is the main one
                 let slot = match role {
                     "ask" => Some(""),
                     _ => role.strip_prefix("ask@").filter(|slot| *slot != "say"),
@@ -412,7 +425,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 if let (Some(slot), true) = (slot, r.ends_with(" notice")) {
                     jobs::words(slot, "");
                 }
-                deliver(log_inbox_in(slot, "error", text, None, None))
+                deliver(Out::Line(Line::new(slot.unwrap_or(""), "error", text)))
             }
             _ if role.ends_with(" tap") => Ok(()),
             r if r.starts_with("ask") && r.ends_with(" heard") => {
@@ -423,7 +436,13 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 // still being gathered joins it
                 let role = r.trim_end_matches(" heard");
                 if role == "ask" || (role.starts_with("ask@") && role != "ask@say") {
-                    jobs::hear(role.strip_prefix("ask@").unwrap_or(""));
+                    let slot = role.strip_prefix("ask@").unwrap_or("");
+                    // a new clip's job is named to the game at once: its hearing
+                    // line carries the id, and a cancel names it (no clock matching)
+                    if let (id, true) = jobs::hear(slot) {
+                        let heard = Msg::new("heard").int("job", id).text("slot", slot).text("state", jobs::State::Hearing.name());
+                        return deliver(Out::Now(heard));
+                    }
                 }
                 // Not sent any more (2026-11-10): the addon hears minus come up
                 // and shows "transcribing" itself, at once. Sending it held the
@@ -441,14 +460,14 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             // with, else on the one picked on the chat wheel (the addon adds it)
             "ask@say" => {
                 if discards(text) {
-                    return deliver("{ kind = \"chat\", clear = true }".to_string());
+                    return deliver(Out::Now(Msg::new("chat").flag("clear", true)));
                 }
                 let routed = channeled(text);
                 *LAST_CHAT.lock().unwrap() = Some((routed.clone(), Instant::now()));
                 println!("  dictated: {routed}");
                 // no line in a conversation (the player: agents need not see
                 // every dictation); the chat box itself shows it
-                deliver(say_inbox(text, &routed))
+                deliver(Out::Now(say_inbox(text, &routed)))
             }
             r if r == "ask" || r.starts_with("ask@") => {
                 let slot = r.strip_prefix("ask@").unwrap_or("").to_string();
@@ -494,9 +513,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     if discards(&text) {
                         println!("  clearing the chat box");
                         handled();
-                        let _ = courier.send("{ kind = \"chat\", clear = true }".to_string());
+                        let _ = courier.send(Out::Now(Msg::new("chat").flag("clear", true)));
                         // a line without `pending` also clears "got it, transcribing"
-                        let _ = courier.send(log_inbox("you", &text, None, None));
+                        let _ = courier.send(Out::Line(Line::new(&slot, "you", &text)));
                         return;
                     }
                     // "start over" / "new conversation" alone: this conversation
@@ -505,7 +524,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     if matches!(plain.trim(), "start over" | "new conversation" | "fresh start" | "reset conversation") {
                         handled();
                         session.lock().map(|mut s| s.forget()).ok();
-                        let _ = courier.send(log_inbox_in(Some(&slot), "you", "(started this conversation over)", None, None));
+                        let _ = courier.send(Out::Line(Line::new(&slot, "you", "(started this conversation over)")));
                         return;
                     }
                     let routed = channeled(&text);
@@ -513,8 +532,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         println!("  chat line: {routed}");
                         handled();
                         *LAST_CHAT.lock().unwrap() = Some((routed.clone(), Instant::now()));
-                        let _ = courier.send(dictation_inbox(&text, &routed));
-                        let _ = courier.send(log_inbox("you", &format!("(to chat) {routed}"), None, None));
+                        let _ = courier.send(Out::Now(dictation_inbox(&text, &routed)));
+                        let _ = courier.send(Out::Line(Line::new(&slot, "you", &format!("(to chat) {routed}"))));
                         return;
                     }
                     // "edit ..." / "change ..." soon after a chat line: the agent gets
@@ -551,9 +570,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                             // line; the board and WORKING keep the running request's
                             // progress, which the waiting line used to overwrite
                             // (the player, 2026-11-10).
-                            let line = log_inbox_in(Some(&slot), "you", &text, None, None)
-                                .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{}", jobs::fields(job, jobs::state(job).unwrap_or(jobs::State::Queued))), 1);
-                            let _ = courier.send(line);
+                            let line = Line::new(&slot, "you", &text).queued().job(job, jobs::state(job).unwrap_or(jobs::State::Queued));
+                            let _ = courier.send(Out::Line(line));
                             // waiting messages go together (the player, 2026-11-10:
                             // "it should send every queued message"): the first to get
                             // the conversation takes all of them (jobs::take_queued)
@@ -578,7 +596,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         Ok(false) => {}
                         Err(err) => {
                             eprintln!("  not delivered: {err}");
-                            tell_failure(&addons, &err);
+                            tell_failure(&addons, &slot, &err);
                         }
                     }
                 });
@@ -586,14 +604,14 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             }
             _ if discards(text) => {
                 println!("  clearing the chat box");
-                deliver("{ kind = \"chat\", clear = true }".to_string())
+                deliver(Out::Now(Msg::new("chat").flag("clear", true)))
             }
             _ => {
                 let routed = channeled(text);
                 if routed != text {
                     println!("  as: {routed}");
                 }
-                deliver(dictation_inbox(text, &routed))
+                deliver(Out::Now(dictation_inbox(text, &routed)))
             }
         },
     )?;
@@ -603,6 +621,15 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         loop {
             thread::park();
         }
+    }
+    Ok(())
+}
+
+/// A line the ledger has numbered already (the ones it made at the start):
+/// sent live if the game runs; it is in the mailbox either way.
+fn send_line_now(addons: &Path, line: Line) -> io::Result<()> {
+    if game_running()? {
+        send(addons, &line.msg(false))?;
     }
     Ok(())
 }
@@ -631,7 +658,7 @@ fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
 mod tests {
     use super::channeled;
     use super::*;
-    use std::time::{Duration, Instant, SystemTime};
+    use std::time::{Duration, SystemTime};
 
     /// A throwaway game folder: <root>/Interface/AddOns/WowCompanion and the
     /// account's SavedVariables, which is where the slot cursor's reset comes from.
@@ -684,20 +711,6 @@ mod tests {
         assert_eq!(lua_string(r#"say "hi""#), r#""say \"hi\"""#);
         assert_eq!(lua_string(r"C:\x"), r#""C:\\x""#);
         assert_eq!(lua_string("a\nb"), r#""a\nb""#);
-    }
-
-    #[test]
-    fn the_board_lists_every_working_conversation_and_every_recent_state() {
-        let running = jobs::create("t-board", "hi", jobs::State::Running);
-        jobs::set_doing(running, "reading \"main.rs\"");
-        let ended = jobs::create("t-board2", "bye", jobs::State::Running);
-        jobs::finish(ended, jobs::State::Answered);
-        let inbox = board_inbox();
-        // never opens with its kind, or the send would treat it as droppable
-        assert!(inbox.starts_with("{ kind = \"board\", resync = true, working = {"), "{inbox}");
-        assert!(inbox.contains("slot = \"t-board\", text = \"reading \\\"main.rs\\\"\""), "{inbox}");
-        assert!(!inbox.contains("slot = \"t-board2\", text"), "an answered one is not working: {inbox}");
-        assert!(inbox.contains(&format!("{{ job = {ended}, slot = \"t-board2\", state = \"answered\" }}")), "{inbox}");
     }
 
     #[test]

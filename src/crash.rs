@@ -7,9 +7,9 @@
 //!   while it runs (`working_on`), and the hook ends that job failed and tells
 //!   the game, from a thread of its own: the panicking thread may hold the
 //!   ledger's lock, so the hook itself takes no lock.
-//! - A panic on the main thread (the voice loop) ends the process. The hook
-//!   writes the jobs still in flight to `inflight.txt`, if the ledger answers
-//!   within half a second, and the next start tells the game each one failed.
+//! - A panic on the main thread (the voice loop) ends the process. The jobs it
+//!   left in flight are on disk in the ledger (src/ledger.rs), which ends them
+//!   at the next start with a line each.
 //! - At every start, a crash recorded since the last start is said once in the
 //!   window, so a companion that started again on its own is not a mystery.
 
@@ -80,9 +80,7 @@ pub(crate) fn install(addons: &Path) {
         let backtrace = std::backtrace::Backtrace::force_capture();
         let on = job.map(|job| format!(", on job {job}")).unwrap_or_default();
         note(&format!("panic in thread '{name}' (pid {}){on}: {info}\n{backtrace}\n", std::process::id()));
-        if name == "main" {
-            save_in_flight();
-        } else if let Some(job) = job {
+        if let (false, Some(job)) = (name == "main", job) {
             thread::spawn(move || {
                 // after the panicking thread has let go of whatever it held
                 thread::sleep(Duration::from_millis(300));
@@ -98,62 +96,24 @@ fn fail(job: u64, why: &str) {
     let _ = requests::failed(addons, &found.slot, found.group, io::Error::other(why.to_string()));
 }
 
-/// The process is going: every job not yet ended, to `inflight.txt`.
-fn save_in_flight() {
-    let (tell, heard) = std::sync::mpsc::channel();
-    thread::spawn(move || {
-        let live: Vec<(u64, String)> =
-            jobs::recent().into_iter().filter(|job| !job.state.ended()).map(|job| (job.id, job.slot)).collect();
-        let _ = tell.send(live);
-    });
-    let Ok(live) = heard.recv_timeout(Duration::from_millis(500)) else { return };
-    let Some(path) = file("inflight.txt") else { return };
-    let text: String = live.iter().map(|(id, slot)| format!("{id}\t{slot}\n")).collect();
-    let _ = fs::write(path, text);
-}
-
-/// At a start: the jobs a crash left in flight end failed in the game, and a
-/// crash since the last start is said once.
+/// At a start: a crash recorded since the last start is said once (a line of
+/// the main conversation: kept by the ledger, so it reaches the window even
+/// with the game closed).
 pub(crate) fn after_start(addons: &Path) {
-    let addons = addons.to_path_buf();
-    thread::spawn(move || {
-        // after the heartbeat and the addon have had a moment
-        thread::sleep(Duration::from_secs(5));
-        if let Some(path) = file("inflight.txt") {
-            if let Ok(text) = fs::read_to_string(&path) {
-                for line in text.lines() {
-                    let Some((id, slot)) = line.split_once('\t') else { continue };
-                    let Ok(id) = id.parse::<u64>() else { continue };
-                    let inbox = log_inbox_in(
-                        Some(slot),
-                        "error",
-                        "That request was lost: the companion stopped unexpectedly while on it (crash.log has what happened). Ask again.",
-                        None,
-                        None,
-                    )
-                    .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{}", jobs::fields(id, jobs::State::Failed)), 1);
-                    if let Err(err) = send_inbox(&addons, &inbox) {
-                        eprintln!("  could not say a crashed request failed: {err}");
-                    }
-                }
-                let _ = fs::remove_file(&path);
-            }
-        }
-        let (Some(crashes), Some(seen)) = (log_path(), file("crash.seen")) else { return };
-        let size = fs::metadata(&crashes).map(|m| m.len()).unwrap_or(0);
-        let known: u64 = fs::read_to_string(&seen).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(0);
-        if size > known {
-            let text = format!(
-                "The companion stopped unexpectedly and is running again. What happened is in {}.",
-                crashes.display()
-            );
-            if send_inbox(&addons, &log_inbox_in(None, "error", &text, None, None)).is_ok() {
-                let _ = fs::write(&seen, size.to_string());
-            }
-        } else if size < known {
+    let (Some(crashes), Some(seen)) = (log_path(), file("crash.seen")) else { return };
+    let size = fs::metadata(&crashes).map(|m| m.len()).unwrap_or(0);
+    let known: u64 = fs::read_to_string(&seen).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(0);
+    if size > known {
+        let text = format!(
+            "The companion stopped unexpectedly and is running again. What happened is in {}.",
+            crashes.display()
+        );
+        if post(addons, crate::message::Line::new("", "error", &text)).is_ok() {
             let _ = fs::write(&seen, size.to_string());
         }
-    });
+    } else if size < known {
+        let _ = fs::write(&seen, size.to_string());
+    }
 }
 
 #[cfg(test)]
