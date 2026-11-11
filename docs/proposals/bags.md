@@ -48,3 +48,27 @@ player agrees how it feels (profile: no new bindings unasked, one focus).
 ## Still open
 
 - Colours for the verdicts; which views besides sections and storage order.
+
+## Combat: why it is hard, and the way through (2026-11-10)
+
+Why: in a fight the bag radial opens Blizzard's bags, and the game's controller
+cursor (SmartNavigation) focuses *their* frame. Insecure code may not take that
+focus or bind the pad mid-fight, so ours could only lie over theirs in storage
+order (mirror mode); our sections never applied. The invisible-focus moment is
+theirs at alpha 0 keeping the cursor after ours went away.
+
+The way through, from Blizzard's own code (Blizzard_GamepadSmartNavigation):
+navigation is pure geometry over the focused frame's buttons (`IsButtonValid`
+uses each button's centre), **unless a button has a custom cursor anchor**,
+whose `relativeTo` frame's rect is used instead
+(`SmartNavigation_SetCustomCursorAnchorPointForFrame`, used by Blizzard's
+settings and dropdowns). It writes through SecureHelper, which allows insecure
+callers out of combat and stores the value securely (no taint).
+`SmartNavigation_SetNavigationOverride` likewise sets explicit neighbours.
+
+Plan: out of combat, anchor each of Blizzard's bag item buttons to our slot for the
+same bag and slot. In a fight their (invisible) frame keeps the native cursor, but
+the cursor moves over and draws on our sectioned layout, and cross and square press
+their own secure buttons: one focus, native, sorted. Their bag-bar cells are anchored
+to ours or marked ignored. Re-anchored after bag changes, out of combat only. Our
+secure pad stays for our own macro until the native path is proven.
