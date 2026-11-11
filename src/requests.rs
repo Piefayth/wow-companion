@@ -372,7 +372,21 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
 {chat}", context.unwrap_or_default()));
         }
     }
-    let waiting = match session.start(spoken, context) {
+    // what you cancelled after the agent had it is in its conversation; it
+    // must know those words were withdrawn
+    let withdrawn = jobs::take_withdrawn(&session.slot);
+    let told;
+    let spoken_for_agent = if withdrawn.is_empty() {
+        spoken
+    } else {
+        let list: Vec<String> = withdrawn.iter().map(|text| format!("- \"{}\"", text.replace('\n', " "))).collect();
+        told = format!(
+            "(The player cancelled these earlier messages while you were on them; they are withdrawn: do not answer or act on them, and do not count them as said:\n{})\n\n{spoken}",
+            list.join("\n")
+        );
+        &told
+    };
+    let waiting = match session.start(spoken_for_agent, context) {
         Ok(waiting) => waiting,
         Err(err) => return failed(addons, &session.slot, group, err),
     };

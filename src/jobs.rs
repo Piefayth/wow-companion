@@ -73,6 +73,10 @@ pub(crate) struct Job {
     clips: u32,
     /// When its newest clip was let go: only a clip let go soon after joins.
     last_release: Instant,
+    /// Cancelled while the agent had it: its words are in the conversation the
+    /// agent keeps, so the next request tells it they were withdrawn. Cleared
+    /// once told.
+    withdraw: bool,
     /// When words last arrived (gathering waits for a quiet moment).
     last_words: Instant,
     /// What the agent is doing, for the board.
@@ -137,6 +141,7 @@ fn insert(jobs: &mut BTreeMap<u64, Job>, slot: &str, state: State, text: &str, r
             released,
             clips: 0,
             last_release: now,
+            withdraw: false,
             last_words: now,
             doing: String::new(),
             since: now,
@@ -340,6 +345,7 @@ pub(crate) fn cancel(ids: &[u64]) -> Cancelled {
                 continue;
             }
             if job.state == State::Running {
+                job.withdraw = true;
                 if let Some(pid) = job.pid {
                     if !out.pids.contains(&pid) {
                         out.pids.push(pid);
@@ -392,6 +398,22 @@ pub(crate) fn heard_at(slot: &str, release: u128) -> Option<u64> {
             .filter(|job| job.slot == slot && job.released.abs_diff(release) <= RELEASE_MATCH)
             .min_by_key(|job| job.released.abs_diff(release))
             .map(|job| job.id)
+    })
+}
+
+/// The words of requests in this conversation that the agent saw and you then
+/// cancelled, not yet told to it; each is told once (the player, 2026-11-10:
+/// a cancelled message was answered as if it had been said).
+pub(crate) fn take_withdrawn(slot: &str) -> Vec<String> {
+    with(|jobs| {
+        jobs.values_mut()
+            .filter(|job| job.slot == slot && job.withdraw)
+            .map(|job| {
+                job.withdraw = false;
+                job.text.clone()
+            })
+            .filter(|text| !text.trim().is_empty())
+            .collect()
     })
 }
 
@@ -454,6 +476,17 @@ mod tests {
     use super::*;
 
     // the ledger is one static table, so each test uses its own conversation
+    /// A message cancelled while the agent had it is told to the agent once;
+    /// one cancelled while still queued never reached it and is not.
+    #[test]
+    fn a_cancelled_message_the_agent_saw_is_withdrawn_once() {
+        let seen = create("t-withdraw", "do the thing", State::Running);
+        let unseen = create("t-withdraw", "and this", State::Queued);
+        cancel(&[seen, unseen]);
+        assert_eq!(take_withdrawn("t-withdraw"), vec!["do the thing".to_string()]);
+        assert!(take_withdrawn("t-withdraw").is_empty());
+    }
+
     /// Two clips in flight, let go 1.6 s apart: separate jobs, each cancel
     /// names its own clip, and each clip's words go to its own job (the
     /// player, 2026-11-10: a cancel hit the message after the one meant, and
