@@ -69,6 +69,7 @@ local function getModel()
 end
 
 
+local RANK_LIVE = { hearing = true, queued = true, running = true }
 local refresh
 WC.Jobs = WC.Jobs or {}
 
@@ -247,7 +248,7 @@ refresh = function()
 	if entry then
 		local live, cancelling = false, false
 		for _, job in pairs(jobs) do
-			if job.slot == view and job.state == "running" then
+			if job.slot == view and RANK_LIVE[job.state] then
 				if job.cancel then cancelling = true else live = true end
 			end
 		end
@@ -455,7 +456,6 @@ function WC.Jobs.Gone() WC.Jobs.Refresh() end
 -- focusedFrame, read, never set): the d-pad and face buttons belong to the
 -- cursor then anyway, so nothing of the bars is taken. Set and cleared out of
 -- combat only; the window cannot hold focus in a fight.
-local RANK_LIVE = { hearing = true, queued = true, running = true }
 local function newest(state)
 	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
 	if not getModel() then return end

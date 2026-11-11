@@ -562,13 +562,6 @@ function handlers.log(inbox)
 	-- already held, from a slot or the mailbox, is not applied again
 	local islot = inbox.slot or ""
 	if WC.Jobs and not WC.Jobs.Hold(islot, inbox.n) then return WC.Link.HELD end
-	-- `pending` starts the waiting line; any message without it clears it, so the
-	-- reply arriving is what stops the spinner
-	-- the view never jumps on its own (the player, 2026-11-10): a reply in
-	-- another conversation lights it up in the list, and what you said does not
-	-- `pending` starts this conversation's waiting line; a line without it ends it
-	-- a queued request leaves the running one's waiting line alone
-	if (inbox.slot or inbox.pending) and inbox.state ~= "queued" then setPending(inbox.pending, islot) end
 	if who == "you" then setTranscribing(islot, false) end
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
@@ -581,6 +574,11 @@ function handlers.log(inbox)
 	end
 	-- the job's state, once its line is in the transcript to carry its controls
 	if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
+	-- then the waiting line, so the work entry it draws comes after the words it
+	-- answers (a fast cancel left "stopped" above them, 2026-11-11): `pending`
+	-- starts this conversation's waiting line, a line without it ends it, and a
+	-- queued request leaves the running one's alone
+	if (inbox.slot or inbox.pending) and inbox.state ~= "queued" then setPending(inbox.pending, islot) end
 	-- reveal, not Show: ShowUIPanel returns at once for a frame already shown, so a
 	-- window opened by a plain Show never becomes a panel and the controller's
 	-- window toggle cannot reach it until it is closed and opened again
