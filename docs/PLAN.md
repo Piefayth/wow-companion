@@ -23,114 +23,84 @@ on its command line means one is). Two writers on one file is how replies got lo
 
 ## Next, in order
 
-### 0. The engine: structure like the big UI packs (the player, 2026-11-10)
+### 1. Promises already made (checked against the code, 2026-11-11)
 
-Lessons from ElvUI-style packs: one engine table, modules with a lifecycle, a
-message bus, per-module settings, then smaller files.
+1. **Speech: both engines stay** (the player, 2026-11-11: Whisper is "much higher
+   quality", streaming's speed "way too good to give up"; on streaming for now).
+   Nothing is deleted; the setup window's Engine choice is the switch.
+2. **Remove the settings moves.** `WC.MoveSaved`, every `WC.Saved` move function
+   and `WowCompanionCharDB` (Engine.lua, Agent, Link, Fonts, Pins, BuffWatch, Core's
+   .toc): docs/proposals/addon-split.md says "once the player has logged in on
+   every character". This account has one character, Pietra Fayth, saved since
+   the split (its `WowCompanionCharDB` is empty), so it can go now.
+3. **Remove Link.lua's one-session clean-up** (`db.frameBells, db.slotBells,
+   db.slotBellWatch, db.bridgeProbe, db.leftAt = nil`, "remove next session"): a
+   session has saved since and none of those keys are left.
+4. **The addon split's PC side, the rest** (docs/proposals/addon-split.md, items
+   5-6): install and uninstall per addon (`install <AddOns> [names]`), the setup
+   window offering each extra and showing its options only when installed, and the
+   agent's rules for an addon only when `WowCompanionDB.addons` lists it (Core
+   writes it; nothing on the PC reads it yet). Done of it: Signals, saved files,
+   Modules.lua, stale files removed by install, agents Off.
+5. **The mailbox's absence said in game** (docs/proposals/ledger.md, failure
+   table: "not built yet"): Link.lua takes `WowCompanion_Mail` if it is a table
+   and says nothing when it is missing.
+6. **CI on every push** (docs/proposals/rule-compliance.md, 4): `luacheck`,
+   `luaglobals`, `luarules`, `tools/test_jobs.py` and `cargo test`. Only the
+   release workflow exists.
+7. **The first tech debt review** (docs/review.md): recurring, by an agent that did
+   not write the code; `docs/reviews/` is still empty.
+8. **Dated history in comments**: 48 comments in `addon/`, `src/`, `crates/` still
+   say "the player, 2026-11-1x"; move them to docs/history.md, one file at a time
+   (rule-compliance 3). Also stale: the bridge probe in the comments of
+   `src/context.rs` and `src/savedvars.rs`, and streaming-speech.md's "0.5 s poll"
+   and "1.4 s to the first bell" (the slot bells changed both).
+9. **Measured by use**: each agent Lua run records the API names it called and
+   whether it errored, and `tools/api_surface.py` promotes those to measured. Today
+   it reads only `docs/api-useful.md`.
+10. **Friend release, untested parts** (memory note, 2026-11-10): the CUDA release
+   job and the setup window's uninstall button by hand. The Xbox mapping is done
+   (XInput).
 
-1. **Engine `WC`** (done 2026-11-10): `WC.Module` registry with Enable/Disable
-   and `after` order, replace-safe; `M:Event`, `M:On`, `WC.Send`; `WC.Settings`;
-   `WC.AfterCombat`; the focus helpers.
-2. **The addon split** (built 2026-11-11, docs/proposals/addon-split.md): Core,
-   Link, Agent and standalone extras, each with its own saved table, the
-   player's settings moved once. Waits on the PC side (the Rust changes listed
-   there) before the next login.
+### 2. Voice bindings in Core (the player, 2026-11-11; designed, not built)
 
-### 1. Make the loop tight
+docs/proposals/addon-split.md, addendum: exact phrases the player sets, each
+readying an action the player's press carries out, no agent. Measure first
+whether a `/cast` line our code puts in a chat box the player opened runs on
+their send in combat; if not, in a fight the same bindings live on a wheel. With
+streaming speech, a phrase can be recognised before the button is let go.
 
-Being built by the terminal session (the player's call, 2026-11-09). The foundation: everything after this is cheaper once requests are never lost,
-never invisible and never slow for no reason.
+### 3. Bags (the player: "item stuff has been my biggest problem")
 
-1. **Safe self-restart.** (Done, 2026-11-09: `wow-companion restart`.) `run` checks for a restart request (a file), finishes the
-   request in flight, and exits; a small loop relaunches the new build. Then the
-   agent can rebuild and restart the companion without ever losing a reply, and
-   nobody has to kill anything.
-2. **A visible queue.** (Done.) A request made while another runs shows at once in the
-   window as "waiting", not only when it starts.
-3. **The slot budget.** (Done: progress stops at 50, replies warn from 56.) 64 messages per UI session, and progress lines spend them.
-   Warn in the window at about 50, offer Reload at the limit, and stop progress
-   lines before replies run out. Today running out fails silently.
-4. **A lighter CLAUDE.md.** It is ~28 KB, read on every request, and partly history
-   ("we skip a game-to-PC channel", superseded designs). Split it into a short file
-   of what is true now and `docs/history.md` for how we got here. Every request
-   gets faster and stops reading claims that are no longer true.
-5. **Dictation into any focused text box** (done), not only chat: the auction house
-   search, a mail recipient, any search field. The player focused it, so setting
-   its text is the same as chat. It turns voice into typing everywhere.
-7. **Cancel a misspoken request** (the player, 2026-11-09, after several garbled
-   clips went through). Controller first: (a) while the talk button is held, a
-   second button (circle, or capture) throws the clip away before it is
-   transcribed; (b) while the agent is thinking, a Cancel button in the Companion
-   window stops the request in flight (kill that `claude` child, drop its reply,
-   keep the thread). "Never mind" by voice stays as the fallback. Show the
-   transcript first in the window, so a misheard line is visible before it acts.
-6. **Measured by use.** Each agent Lua run records which API names it called and
-   whether it errored; `tools/api_surface.py` promotes those from inferred to
-   measured. The map gets truer as the agent works, at no extra cost.
+Built: the window in and out of combat, verdicts, Sections by default, Sell all at
+a vendor, bag swap, make room, sort from the triangle menu, contents in the
+export. Open, as docs/proposals/bags.md:
+- Colours for the verdicts, and which views besides sections and storage order.
+- Filters and finding by voice ("show what I can sell", a name moves focus there).
+- Item level and quality on icons; upgrade arrows from GearQuest.
+- Bag swap on a real swap (`WCSwapBag` is untested).
+- Later: bank in the window, alts' bags offline, quick mail and auction posting.
 
-### 2. Controller features
+### 4. Controller features
 
 In the player's order (2026-11-09). From `docs/api-surface.md`, all live in Forever:
 
-- **Self-filling wheels** (first): food and drink, quest items, mounts, toys, travel,
-  party. Plus a **magic slot**: one slot on a wheel that becomes "the thing you just
-  asked for" ("I need my hearthstone" puts it there).
-- **Find things in my bags, fast**: say or pick it, and it is found, shown, usable.
-- **Quest helper**: next objective on screen, a waypoint to it, its items on a wheel,
-  track and abandon without the quest log.
-- **Vendor button**: sell greys and repair in one press at a merchant.
+- **Self-filling wheels**: `items` and `quest` rules exist (Wheel.lua). Left:
+  mounts, toys, travel, party, and the **magic slot** ("I need my hearthstone"
+  puts it there).
+- **Quest helper**: next objective, waypoint, its items on a wheel, track and
+  abandon without the quest log. The live route (guide capability), nav, pins and
+  errands exist; for quests Polestar has no guide for, a generated guide
+  registered as data (`Polestar.Import`, `ns.RegisterPack`).
+- **Vendor**: Sell all is built; repair in the same press is not (agent Lua
+  refuses `RepairAllItems`; it needs the player's press).
 - **Crafting queue**: "make ten of these and whatever levels me", one press per craft.
 - **Mail**: collect all; send materials to an alt.
-- **Bags**: sort, summarise what is new or sellable, use from a wheel.
 - **Roles**: talents, equipment sets and bars per role, swapped with one press.
 - **Auction house**: search, price and prepare; the player presses post or buy.
-
-### Later: the Companion window's controls (the player, 2026-11-09)
-
-Not the main initiative now. A full button row was too many for the main screen;
-much of what the player wants is contextual, so think **tabs** (e.g. transcript,
-actions, settings) with at most a few buttons on the main view. Constraints already
-known: a window button cannot reach the PC (no game-to-PC channel), so app actions
-(cancel, retry, new conversation) are minus chords the helper reads off the pad;
-the offered button must never take focus while the window is hidden (that broke
-the bars once, cause not yet reproduced).
-
-- **Several conversations** (the player, 2026-11-10, an idea): separate threads,
-  each its own agent session, picked from a side list in the window.
-
-- **Home as a wheel button** (the player, 2026-11-10, an idea): Home tap, or Home
-  with a modifier, opens a wheel. Home + trigger and Home held already start a
-  conversation over, so a tap and the remaining chords are what is free. The PC
-  reads Home, so opening a wheel needs a press the game can see: likely a binding
-  on the game side, measured first.
-
-### Next up: a game-to-PC data strip (the player, 2026-11-10)
-
-Data the PC needs without a reload, read by screenshot (the player allowed it).
-Not text: a tight strip of solid colour cells in the **very bottom-right corner**,
-shown only for the moment of the shot and gone right after (no lingering cards:
-the player's rule). Bytes in RGB per cell, corner markers and a header with
-length and checksum, compressed payloads paged across shots; decoded by code on
-the PC at full resolution. Built beside the PC-to-game channel, never touching it.
-
-### Agent features the player picked (2026-11-10)
-
-- **Missing buff alerts**: Thorns and Mark of the Wild off you (and a party member)
-  out of combat, as a small Blizzard-style reminder, one press to the Buffs wheel.
-- **Bag management** (the player, 2026-11-10), read live over the data strip:
-  - **Evaluate**: keep / vendor / auction (Auctionator price vs vendor) / use now,
-    checked against equipped gear, bag slots and professions first.
-  - **Sort**: `C_Container.SortBags`, only on the player's word (no button, nothing automatic).
-  - **Make room**: what to destroy first when space runs out (least value, not a
-    quest item, not a tool for a known profession).
-  - **Trade for space**: built as the `MakeRoom` module: loot with full bags names
-    the cheapest bag item to drop for the most valuable loot.
-- **Guidance on demand for any quest**, not only Polestar's route: read the quest
-  log over the data strip, look objectives up in Polestar's Codex (NPCs, objects,
-  coordinates, drop rates), pin and arrow them.
-
-- **Not wanted** (the player, 2026-11-10): conversation slots pre-assigned a job
-  ("L2 is gear"). Slots stay general.
+- **Home as a wheel button** (an idea, still liked, not designed): Home is free;
+  opening a wheel needs a press the game can see, so a game-side binding, measured
+  first and agreed before building (profile: no new bindings unasked).
 
 ### Later: a custom look (the player, 2026-11-09)
 
@@ -142,87 +112,42 @@ paging and modifiers still work in combat, then styled our own way. Also: the
 experience bar, which floats at the bottom out of keeping with everything else.
 Start from the three things on screen that bother the player most.
 
-### 3. Decided
+### Waiting on the player
 
-- **No live pixel channel** (2026-11-09): reloads stay the return path. Screenshots
-  could carry data live, but that is the ToS-grey pixel strip; the player said no.
-- **Opus for everything** (2026-11-09): smarts over speed, even for quick requests.
+- **Addons vetted, not picked**: Undying 0.28.3 (closed source), BuddiesQuestForever
+  1.0.32, GearedForever 1.0.1 (in `target/vet/`). UpQuest Forever rejected.
+  Installed since: Polestar 0.3.5, GearQuest Forever (DRUID module), Auctionator.
+- **Old bell files**: none left in the installed Signals; doctor lists any that
+  appear.
 
-### Addon installs waiting for one restart (the player, 2026-11-09)
+## Decided
 
-Install all together, one game restart, once the player's research list is done.
-- **Polestar 0.3.5**: vetted and approved. GitHub fitzforge/polestar, release zip
-  `Polestar-0.3.5.zip` (SHA256 ef9184e6...16d36c), staged at `target/vet/`.
-  Addon only, not the desktop client. Turn party-chat progress off after install.
-- **Undying 0.28.3**: vetted (closed source, no "next upgrade" finder yet); the
-  player has not decided.
-- **UpQuest Forever**: rejected for now (51-60 paywalled, closed, 187 downloads).
-- Downloaded and file-checked in `target/vet/` (Lua, XML, toc, media only, no
-  escaping paths): BuddiesQuestForever 1.0.32 (`bqf.zip`), GearQuest Forever
-  1.1.2 (`gq.zip`, core + one module per class: enable only DRUID), GearedForever
-  1.0.1 (`gf.zip`). Awaiting the player's picks.
+- **The data strip is the live game-to-PC path** (the player, 2026-11-10;
+  replaces "no live pixel channel" of 2026-11-09): colour cells our code draws,
+  read by the companion. Reloads stay the path for the full export.
+- **Opus for every conversation; Quick (L2+R2) is Sonnet at low effort** (the
+  player, 2026-11-10: Haiku was too weak).
+- **Conversation slots stay general** (the player, 2026-11-10): never pre-assigned
+  a job ("L2 is gear").
+- **No relaunching the game from the PC** (2026-11-10). Measured in Battle.net's log:
 
-### Restarting the game (investigated 2026-11-10)
+  | Route | Result |
+  |---|---|
+  | `Battle.net.exe --exec="launch wowf"`, `launch_uid wowf`, `--uri="battlenet://wowf"` | selects Forever, never presses Play |
+  | `Wow.exe` directly | asks to log in |
+  | `Wow.exe -launcherlogin -uid wowf` | "unable to reconnect": the login token comes only from Battle.net's launch |
+  | the Agent's local API, 127.0.0.1:1120 | 401 on every path, locked to Battle.net |
+  | Battle.net's accessibility tree | not exposed (CEF), no Play button to invoke |
+  | click Play | launched |
 
-Every attempt so far failed, and now we know why. Measured, in Battle.net's own log:
-
-| Route | Result |
-|---|---|
-| `Battle.net.exe --exec="launch wowf"` | selects Forever ("Selecting game family by id: wowf"), never presses Play |
-| `--exec="launch_uid wowf"` | selects it ("Selecting game by uid"), never presses Play |
-| `--uri="battlenet://wowf"` | selects it, never presses Play |
-| `Wow.exe` directly | asks to log in |
-| `Wow.exe -launcherlogin -uid wowf` (Battle.net's own arguments) | "unable to reconnect, please log in": the login token comes only from Battle.net's launch |
-| the Agent's local API, 127.0.0.1:1120 | 401 on every path: locked to Battle.net, and not ours to work around |
-| Battle.net's accessibility tree | not exposed (CEF renders without one), so no Play button to invoke |
-| **click Play** (Battle.net to the front, click the Forever card's Play) | **launched**, with Battle.net's `-launcherlogin -uid wowf` and the login handed over |
-
-Also: the agent's detached relaunch script died mid-wait (its log stops), most likely
-ended with the agent's turn. Anything that waits for the player belongs in the
-companion, the long-running process.
-
-The one route that works is a synthetic click, so it is a last resort with rules:
-the companion owns it (a relaunch request beside `restart.request`; the agent offers
-`/quit`), it selects Forever with `--uri="battlenet://wowf"`, finds the Play button by
-looking at the window rather than a fixed position (the first time: half-scale
-window offset 776,276, full 1552,552, new layout, Forever the first card), clicks,
-and then **must verify**: `Wow.exe` with `-launcherlogin` within 30 s, or say so in
-the window. It can break when Blizzard changes the launcher; it must never fail
-quietly. Not built yet: the player's call.
-
-### The to-do list, as the player left it (2026-11-10, 02:30)
-
-- **Missing-buff notices**: wanted; how they show is still to agree. The snapshot
-  checks Mark of the Wild and Thorns (Omen of Clarity is a proc in Forever, never
-  a buff to cast: never report it).
-- **Bag sort**: only when the player says so. `C_Container.SortBags()` from a
-  `lua` step; no button, nothing automatic.
-- **Guidance for quests Polestar has no guide for**: wanted, through Polestar's
-  own display if it can be done. Options: its arrow and our pins today; a
-  generated guide registered as data (`Polestar.Import`, `ns.RegisterPack`) later.
-- **Home wheel**: still liked, not designed.
-- **Cancel a request in flight**: passed on for now.
-- **Invisible-focus bug**: not seen again since the one time; closed until it is.
-- **Auto-relaunch**: only possible by clicking Battle.net's Play, which is
-  computer use; dropped.
-- **Trimming the addon's memory**: not wanted.
-- **L2 and R2 bits**: confirmed working.
-
-### Our bag window (the player, 2026-11-10: "item stuff has been my biggest problem")
-
-Built and verified in combat (how: CLAUDE.md, "A window usable in combat"). The
-player's terms hold: items usable in combat, item targeting works, the bag key opens
-it. Done: window, pad, bag key, Blizzard stand-in, triangle menu, bag swap
-(`WCSwapBag`, untested on a real swap), contents in the export.
-Next, as `docs/proposals/bags.md` (to agree first): (2) sections and prices: keep / vendor / auction from Auctionator, extending
-MakeRoom; a reusable sell list the player confirms at the vendor (design to agree);
-(3) filters by voice, a make-room view.
-
-### 4. Small and open
-
-- Restarting the game: the last attempt failed; worth a look when it matters.
-- The offered button's controller shortcut (PADDRIGHT): confirm it fires.
-- Which form of a two-part name a whisper accepts.
+  The one working route is clicking Play, which is computer use on the player's
+  screen: dropped. A detached relaunch script also died with the agent's turn;
+  anything that waits for the player belongs in the companion.
+- **Not wanted**: trimming the addon's memory.
+- **A chat line goes only into Blizzard's chat box the player opened** (the
+  player, 2026-11-11): the send preview and dictation into other text boxes
+  (2026-11-09) are gone; a line waits for the next box they open.
+- **Closed until seen again**: the invisible-focus bug (once, 2026-11-10).
 
 ## Done
 
@@ -230,7 +155,44 @@ MakeRoom; a reusable sell list the player confirms at the vendor (design to agre
   Claude Code; progress, a seconds count, and replies that always arrive; chat
   channels by voice, drafts cleared on cancel; addon vetting; Blizzard's UI source
   for this build; the API surface and its terms; Lua errors exported; conversations
-  that survive restarts; wheels (the agent's, and the player's favourite).
-- 2026-11-09: minimap pins the agent draws from coordinates in conversation
-  (`WCPins`; how and why in `docs/api-useful.md`, "Minimap pins"). The player:
-  "we're really going to want that feature in the future." Next: world map pins.
+  that survive restarts; wheels; minimap pins from coordinates (`WCPins`); safe
+  self-restart (`wow-companion restart`); a visible queue; the slot budget.
+- 2026-11-10, the loop: CLAUDE.md split into what is true and docs/history.md;
+  conversation slots on the triggers and Quick; one talk button (channel words go
+  to chat); typed requests (`tell`); auto-continue at the step limit; the jobs
+  ledger (`src/jobs.rs`, one forward-only state per request); cancel and Send now
+  from the window, carried to the PC by the strip; the window's state in a pure,
+  property-tested model (JobsModel.lua); an audit trail (`tools/audit.py`).
+- 2026-11-10, the window and look: tabs, a conversation picker, Blizzard's scroll
+  bar, glyphs that follow the pad, the toast board per conversation, the minimap
+  status button with unread dot, live interface fonts, opens and closes in combat.
+- 2026-11-10, game features: the bag window (combat-usable, verdicts, sections,
+  Sell all, bag swap, make room); combat interact; capabilities and providers
+  (price, nav, gear, itemSource, guide, pins; Polestar, Auctionator, GearQuest);
+  errands with tracker, tab and live arrow; watched buffs per character and their
+  glow (BuffWatch, BuffGlow); the `send` step; class-neutral (nothing druid ships).
+- 2026-11-10, structure: the engine `WC` (modules, bus, settings, AfterCombat, focus
+  helpers safe in a fight); `WC.Core` reach-ins gone; split main.rs, the voice crate
+  and the big Lua files; `tools/luarules.py`, `tools/luaglobals.py`; save files
+  backed up and resets told by the load count.
+- 2026-11-10, for other players: the setup window, settings.toml, XInput pads with
+  Guide as talk button, optional integrations, the profile split, the release
+  workflow (Vulkan, CPU, optional CUDA), an uninstall ledger, the watcher and tray
+  (`start`), crash.log, one companion at a time.
+- 2026-11-10, the data strip: game to PC by colour cells, decoded by the companion
+  (`src/strip.rs`); agents read chat with `strip --chat` when they need it.
+- 2026-11-11, the channel: the ledger and mailbox (lines numbered, every line
+  until the game saved it; offline, undelivered and resync code removed); one typed
+  message (`src/message.rs`) and batching; the clip's exact identity (`heard`);
+  the slot bells became the channel after a clean trial (the message, catch-up and
+  frame bells, the 2 s wait and `BELL_LINGER` removed); no process launches on the
+  send path.
+- 2026-11-11, the addon split: Core, Link, Agent and the extras, each with its own
+  saved table, and the PC side (Signals, saved files, Modules.lua, install).
+- 2026-11-11, speech: streaming Nemotron on trial beside Whisper, chosen in the
+  setup window; the player's first verdict for streaming. Whisper's audio
+  resampled through a windowed-sinc low-pass.
+- 2026-11-11, the rest: dictation only (the agents Off); the bridge probe run and
+  removed (C_Log too slow, late fonts never load, strip capture moved to DXGI
+  Desktop Duplication); taint scans spread over frames; the spellbook export fixed;
+  the version in the setup window and doctor; the window scale slider.
