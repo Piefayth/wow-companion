@@ -245,6 +245,14 @@ pub(crate) fn words(slot: &str, text: &str) -> Option<(u64, bool)> {
     })
 }
 
+/// A clip of `slot` came back with no words: Some(its job) when that ended the
+/// job (every clip of it was empty), so the notice can name it to the game.
+pub(crate) fn empty(slot: &str) -> Option<u64> {
+    let id = with(|jobs| jobs.values().filter(|job| job.slot == slot && job.clips > 0).min_by_key(|job| job.id).map(|job| job.id))?;
+    words(slot, "");
+    (state(id) == Some(State::Failed)).then_some(id)
+}
+
 /// Gathering: Some(Ok(words)) once no clip is out and none came for `quiet`
 /// (the job then stops hearing and is the caller's to queue or run), None to
 /// keep waiting, Some(Err) when it was cancelled.

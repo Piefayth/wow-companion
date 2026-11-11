@@ -442,11 +442,15 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     _ => role.strip_prefix("ask@").filter(|slot| *slot != "say"),
                 };
                 // a transcript that came back empty: its clip is back (a clip too
-                // short for Whisper, " unheard", never left)
+                // short for Whisper, " unheard", never left), and a job it ended
+                // is named on the notice, so the game's "hearing you" ends with it
+                let mut line = Line::new(slot.unwrap_or(""), "error", text);
                 if let (Some(slot), true) = (slot, r.ends_with(" notice")) {
-                    jobs::words(slot, "");
+                    if let Some(job) = jobs::empty(slot) {
+                        line = line.job(job, jobs::State::Failed);
+                    }
                 }
-                deliver(Out::Line(Line::new(slot.unwrap_or(""), "error", text)))
+                deliver(Out::Line(line))
             }
             _ if role.ends_with(" tap") => Ok(()),
             r if r.starts_with("ask") && r.ends_with(" heard") => {
