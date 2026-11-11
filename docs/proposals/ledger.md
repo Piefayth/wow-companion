@@ -81,7 +81,7 @@ login. The mailbox removes the wait and the signal.)
 | The ledger cannot be written (disk full, permissions) | in the window and `doctor`: lines are not safe while the game is closed |
 | The mailbox cannot be written | in the window and `doctor`: the lines it should hold are named |
 | The save cannot be read at a confirmation | `doctor`; nothing is dropped, so the mailbox keeps those lines and the game ignores what it holds |
-| A save after a load still lacks lines the mailbox held (the mailbox addon disabled or broken) | the tray and `doctor`: "the game did not take its mailbox", with which lines |
+| The mailbox addon did not load (disabled or broken) | the game, at load: `WowCompanion_Mail` is always written, so its absence is certain (not built yet). The PC cannot tell: it never knows when the game loaded, and its guess (every confirmation a load) reported its own warnings as missing after each companion restart |
 | Slots spent before the session ends | the pad buzz (as now); the lines are in the mailbox for the next load |
 
 ## What it deletes

@@ -35,9 +35,6 @@ pub(crate) struct Book {
     lines: Vec<Line>,
     /// Every request the game has not saved an end for, and its state.
     jobs: Vec<(u64, String, State)>,
-    /// Per conversation, the highest number the mailbox held at the last
-    /// confirmation: the game loaded it then, so its next save holds it.
-    expected: BTreeMap<String, u64>,
 }
 
 /// What a save says the game holds.
@@ -48,16 +45,6 @@ pub(crate) struct Held {
     pub(crate) lines: Option<BTreeMap<String, u64>>,
     /// Requests whose end the save records.
     pub(crate) ended: Vec<u64>,
-}
-
-/// What a confirmation did.
-#[derive(Default, Debug, PartialEq)]
-pub(crate) struct Confirmed {
-    /// Ended requests the game has saved: the jobs table forgets them.
-    pub(crate) forget: Vec<u64>,
-    /// Lines the mailbox held at the last load that the save still lacks, per
-    /// conversation (first and last number).
-    pub(crate) untaken: Vec<(String, u64, u64)>,
 }
 
 impl Book {
@@ -82,24 +69,12 @@ impl Book {
         }
     }
 
-    /// A save landed: drop what it holds, and check that it holds what the
-    /// mailbox held when the game last loaded.
-    pub(crate) fn confirm(&mut self, held: &Held) -> Confirmed {
-        let mut out = Confirmed::default();
+    /// A save landed: drop what it holds. Returns the ended requests it saved,
+    /// which the jobs table forgets.
+    pub(crate) fn confirm(&mut self, held: &Held) -> Vec<u64> {
         if let Some(lines) = &held.lines {
             self.continue_above(lines);
-            for (slot, expected) in &self.expected {
-                let have = lines.get(slot).copied().unwrap_or(0);
-                if have < *expected {
-                    out.untaken.push((slot.clone(), have + 1, *expected));
-                }
-            }
             self.lines.retain(|line| line.n > lines.get(&line.slot).copied().unwrap_or(0));
-            self.expected = BTreeMap::new();
-            for line in &self.lines {
-                let max = self.expected.entry(line.slot.clone()).or_insert(0);
-                *max = (*max).max(line.n);
-            }
         }
         let ended: Vec<u64> = self
             .jobs
@@ -108,8 +83,7 @@ impl Book {
             .map(|(id, _, _)| *id)
             .collect();
         self.jobs.retain(|(id, _, _)| !ended.contains(id));
-        out.forget = ended;
-        out
+        ended
     }
 
     /// The jobs as they stand now (src/jobs.rs), mirrored.
@@ -157,7 +131,6 @@ impl Book {
             "next": self.next,
             "lines": self.lines.iter().map(line_json).collect::<Vec<_>>(),
             "jobs": self.jobs.iter().map(|(id, slot, state)| json!([id, slot, state.name()])).collect::<Vec<_>>(),
-            "expected": self.expected,
         })
     }
 
@@ -182,7 +155,7 @@ impl Book {
                 Ok((id, slot, state))
             })
             .collect::<Result<Vec<_>, String>>()?;
-        Ok(Book { next: counts("next")?, lines, jobs, expected: counts("expected")? })
+        Ok(Book { next: counts("next")?, lines, jobs })
     }
 }
 
@@ -417,17 +390,12 @@ pub(crate) fn confirm(addons: &Path) {
     );
     let mut guard = LEDGER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let Some(store) = guard.as_mut() else { return };
-    let confirmed = store.book.confirm(&held);
-    let mut news = save(store);
+    let forget = store.book.confirm(&held);
+    let news = save(store);
     drop(guard);
-    let untaken: Vec<String> = confirmed.untaken.iter().map(|(slot, a, b)| format!("{} {a}-{b}", conversation(slot))).collect();
-    news.extend(problem(
-        "untaken",
-        (!untaken.is_empty()).then(|| format!("the game did not take its mailbox: its save lacks lines {} that the mailbox held when it loaded.", untaken.join(", "))),
-    ));
     say(addons, news);
     // after the ledger's lock is let go: the jobs table calls back into it
-    jobs::forget(&confirmed.forget);
+    jobs::forget(&forget);
 }
 
 /// `install`: the mailbox from the ledger on disk, so a fresh install has it
@@ -500,26 +468,10 @@ mod tests {
     }
 
     #[test]
-    fn a_mailbox_the_game_did_not_take_is_named() {
-        let mut book = Book::default();
-        for _ in 0..4 {
-            book.number(Line::new("r2", "you", "x"));
-        }
-        // a save before any load: nothing was expected yet
-        assert!(book.confirm(&held(&[("r2", 1)], &[])).untaken.is_empty());
-        // the mailbox held 2-4 at that load; the next save still holds only 2
-        let confirmed = book.confirm(&held(&[("r2", 2)], &[]));
-        assert_eq!(confirmed.untaken, vec![("r2".to_string(), 3, 4)]);
-        // the one after holds them all
-        assert!(book.confirm(&held(&[("r2", 4)], &[])).untaken.is_empty());
-    }
-
-    #[test]
     fn a_save_without_lines_confirms_nothing() {
         let mut book = Book::default();
         book.number(Line::new("", "you", "x"));
-        let confirmed = book.confirm(&Held { lines: None, ended: vec![] });
-        assert!(confirmed.untaken.is_empty());
+        book.confirm(&Held { lines: None, ended: vec![] });
         assert_eq!(book.lines.len(), 1);
     }
 
@@ -539,9 +491,8 @@ mod tests {
     fn ended_jobs_leave_once_the_save_records_them() {
         let mut book = Book::default();
         book.mirror(vec![(1, "".into(), State::Answered), (2, "".into(), State::Running), (3, "l1".into(), State::Cancelled)]);
-        let confirmed = book.confirm(&held(&[], &[1, 2]));
         // 2 is still running here: a save naming it ended changes nothing yet
-        assert_eq!(confirmed.forget, vec![1]);
+        assert_eq!(book.confirm(&held(&[], &[1, 2])), vec![1]);
         assert_eq!(book.jobs().iter().map(|(id, _, _)| *id).collect::<Vec<_>>(), vec![2, 3]);
     }
 
