@@ -11,14 +11,17 @@ local LOG_KEEP = WC.Companion.LOG_KEEP
 -- cannot do any of that (one font, no hanging indent), so this is a scroll
 -- frame of font strings, one per line, stacked top to bottom.
 local TURN_GAP, PARA_GAP, LINE_SPACING = 14, 7, 2
+-- The scroll frame fills its well edge to edge so the backings do; the text
+-- keeps its margins inside it, the right one clear of the scroll bar.
+local PAD_L, PAD_R, PAD_TOP = 10, 28, 6
 local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 local NOTE_FONT = "GameFontHighlightSmall"
 
--- Each turn sits on Blizzard's marble at full strength, as Guild News does;
--- the player's turns tinted warm (the achievement window's move on its rock),
--- replies plain. A dimmed texture reads as a flat box (the first try,
--- 2026-11-11), so nothing is dimmed. Turns are parted by the quest log's
--- divider. docs/proposals/companion-chat-look.md, option A.
+-- Two tones by owner: the player's turns on Blizzard's marble at full
+-- strength, as Guild News uses it, tinted warm; replies, most of the reading,
+-- on the window's own black, which reads best (the player, 2026-11-11: marble
+-- under every turn lost the alternation and the contrast). Nothing dimmed: a
+-- dimmed texture reads as a flat box. Turns parted by the quest log's divider.
 local MARBLE = [[Interface\FrameGeneral\UI-Background-Marble]]
 local WARM = { 1, 0.86, 0.66 }
 local function turnBand(content, owner)
@@ -26,7 +29,7 @@ local function turnBand(content, owner)
 	band:SetTexture(MARBLE, "REPEAT", "REPEAT")
 	band:SetHorizTile(true)
 	band:SetVertTile(true)
-	if owner == "you" then band:SetVertexColor(WARM[1], WARM[2], WARM[3]) end
+	if owner == "you" then band:SetVertexColor(WARM[1], WARM[2], WARM[3]) else band:SetAlpha(0) end
 	local divider = content:CreateTexture(nil, "ARTWORK")
 	divider:SetAtlas("QuestLog-frame-devider")
 	divider:SetAlpha(0.8)
@@ -67,7 +70,7 @@ local function newTranscript(parent)
 	local content = CreateFrame("Frame", nil, scroll)
 	content:SetSize(1, 1)
 	scroll:SetScrollChild(content)
-	local t = setmetatable({ scroll = scroll, content = content, rows = {}, height = 0 }, Transcript)
+	local t = setmetatable({ scroll = scroll, content = content, rows = {}, height = PAD_TOP }, Transcript)
 	scroll:EnableMouseWheel(true)
 	scroll:SetScript("OnMouseWheel", function(self, delta)
 		local range = self:GetVerticalScrollRange()
@@ -88,12 +91,12 @@ end
 -- place one row below the last; returns the new bottom
 function Transcript:Place(row, y, width)
 	local turnTop = y
-	y = y + (y > 0 and row.gap or 0)
+	y = y + (y > PAD_TOP and row.gap or 0)
 	if row.turn then
 		-- the backing starts halfway into the gap above, so turns meet edge to edge
 		local top = turnTop + math.floor((y - turnTop) / 2)
 		row.turn:ClearAllPoints()
-		row.turn:SetPoint("TOPLEFT", self.content, "TOPLEFT", -6, -top)
+		row.turn:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -top)
 		row.turn:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", 0, -top)
 		row.turn:SetHeight(1)
 		-- centred on the boundary with the turn above; none above the first
@@ -105,8 +108,8 @@ function Transcript:Place(row, y, width)
 	end
 	local fs = row.fs
 	fs:ClearAllPoints()
-	fs:SetPoint("TOPLEFT", self.content, "TOPLEFT", row.indent, -y)
-	fs:SetWidth(width - row.indent - 4)
+	fs:SetPoint("TOPLEFT", self.content, "TOPLEFT", PAD_L + row.indent, -y)
+	fs:SetWidth(width - PAD_L - PAD_R - row.indent)
 	local height = fs:GetStringHeight()
 	if row.marker then
 		row.marker:ClearAllPoints()
@@ -114,8 +117,8 @@ function Transcript:Place(row, y, width)
 	end
 	if row.band then
 		row.band:ClearAllPoints()
-		row.band:SetPoint("TOPLEFT", self.content, "TOPLEFT", row.indent - 6, -y + 3)
-		row.band:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", 0, -y + 3)
+		row.band:SetPoint("TOPLEFT", self.content, "TOPLEFT", PAD_L + row.indent - 6, -y + 3)
+		row.band:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", -PAD_R + 6, -y + 3)
 		row.band:SetHeight(height + 6)
 		height = height + 3
 	end
@@ -140,7 +143,7 @@ function Transcript:Layout()
 	local fraction = range > 0 and offset / range or 1
 	self.content:SetWidth(width)
 	self.turnBand = nil
-	local y = 0
+	local y = PAD_TOP
 	for _, row in ipairs(self.rows) do
 		y = self:Place(row, y, width)
 	end
@@ -333,7 +336,7 @@ function Transcript:Clear()
 		if row.divider then row.divider:Hide() end
 	end
 	self.turnBand = nil
-	self.rows, self.height, self.code, self.gap = {}, 0, false, nil
+	self.rows, self.height, self.code, self.gap = {}, PAD_TOP, false, nil
 	self.live = nil
 	self.content:SetHeight(1)
 end
@@ -341,4 +344,5 @@ end
 
 WC.Transcript = WC.Transcript or {}
 WC.Transcript.newTranscript = newTranscript
+WC.Transcript.PAD_L, WC.Transcript.PAD_R = PAD_L, PAD_R
 WC.Transcript.markRow = markRow

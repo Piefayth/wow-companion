@@ -301,14 +301,14 @@ refresh = function()
 		if item then
 			y = y + 14 -- TURN_GAP, as Transcript.lua spaces a new message
 			g.head:ClearAllPoints()
-			g.head:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -y)
+			g.head:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", WC.Transcript.PAD_L, -y)
 			g.head:SetText(item[1])
 			g.head:Show()
 			g.head.y = y
 			y = y + g.head:GetStringHeight() + 3
 			g.line:ClearAllPoints()
-			g.line:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", 0, -y)
-			g.line:SetWidth(math.max(50, width - 4))
+			g.line:SetPoint("TOPLEFT", transcript0.content, "TOPLEFT", WC.Transcript.PAD_L, -y)
+			g.line:SetWidth(math.max(50, width - WC.Transcript.PAD_L - WC.Transcript.PAD_R))
 			g.line:SetText(item[2])
 			g.line:Show()
 			y = y + g.line:GetStringHeight()
@@ -336,7 +336,7 @@ refresh = function()
 		end
 		x.job = line.job
 		x:ClearAllPoints()
-		x:SetPoint("TOPRIGHT", transcript0.content, "TOPLEFT", width - 4, -(line.head.y - 3))
+		x:SetPoint("TOPRIGHT", transcript0.content, "TOPLEFT", width - WC.Transcript.PAD_R, -(line.head.y - 3))
 		x:SetFrameLevel(transcript0.content:GetFrameLevel() + 5)
 		x:Show()
 	end

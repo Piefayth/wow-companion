@@ -320,8 +320,10 @@ local function buildTabs(frame, messages, pending)
 	chatWell:SetPoint("BOTTOMRIGHT", -(16 + WELL + 6), 32)
 	table.insert(frame.chatParts, chatWell)
 	messages.scroll:ClearAllPoints()
-	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", 10, -8)
-	messages.scroll:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT", -28, 8)
+	-- edge to edge inside the inset, so the turns' backings reach it; the
+	-- margins are the transcript's own (Transcript.lua PAD_*)
+	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", 3, -3)
+	messages.scroll:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT", -3, 3)
 	messages.scroll:SetFrameLevel(chatWell:GetFrameLevel() + 2)
 	if frame.chatParts[1] and frame.chatParts[2] then
 		frame.chatParts[1]:ClearAllPoints()
