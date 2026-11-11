@@ -24,10 +24,11 @@ on one file is how replies got lost.
 
 ## Next, in order
 
-1. **The tech debt review** (docs/review.md), first of all (the player,
-   2026-11-11): by an agent that did not write the code, changing nothing, into
-   `docs/reviews/<date>.md`; fixes follow only once the player picks them. Then
-   recurring.
+1. **The tech debt review's fixes, once the player picks them**
+   (`docs/reviews/2026-11-11.md`, the first review, done 2026-11-11 by an agent
+   that did not write the code). Its three to do first: the window drawn from the
+   jobs model only; the agent's rules in Markdown, with `errands` in its context;
+   the old paths removed. Reviews recur (docs/review.md).
 
 ## Decided
 
