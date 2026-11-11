@@ -54,9 +54,12 @@ on one file is how replies got lost.
   screen: dropped. A detached relaunch script also died with the agent's turn;
   anything that waits for the player belongs in the companion.
 - **Not wanted**: trimming the addon's memory.
-- **A chat line goes only into Blizzard's chat box the player opened** (the
-  player, 2026-11-11): the send preview and dictation into other text boxes
-  (2026-11-09) are gone; a line waits for the next box they open.
+- **Dictation goes where the cursor is** (the player, 2026-11-11): a text box
+  other than chat with the keyboard focus (the auction house search, a mail
+  recipient) gets the words as said; otherwise the chat box on the wheel's
+  channel. A chat line (dictation's, or an agent's chat step, which is chat
+  only) goes into Blizzard's chat box the player opened, or waits for the next
+  one they open; the send preview is gone.
 - **Both speech engines stay** (the player, 2026-11-11): Whisper for quality,
   streaming for speed; the setup window's Engine choice is the switch.
 - **Closed until seen again**: the invisible-focus bug (once, 2026-11-10).

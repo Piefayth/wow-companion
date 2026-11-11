@@ -316,44 +316,25 @@ end
 -- Not agent code, so it is not refused in combat as a lua step is.
 WC.Link.Handle("send", function(inbox) return chatLine(inbox.text or "") end)
 
--- Dictation (L1+R1, `wheel`: the words as said, on the channel picked on the
--- chat wheel): into the chat box the player opened, or waiting for the next
--- one they open (chatLine). An agent's chat step: below.
+-- Dictation (L1+R1, `wheel`) goes where the cursor is (the player,
+-- 2026-11-11): a text box other than chat with the keyboard focus (the auction
+-- house search, a mail recipient, any search field) gets the words as said,
+-- appended, no channel; otherwise the chat box on the wheel's channel. An
+-- agent's chat step (a whole line) goes only to the chat box. A chat line goes
+-- into the chat box the player opened, or waits for the next one (chatLine).
 -- Never opens one itself: when we called ChatFrame_OpenChat, the gamepad focus
 -- restore on close came back blocked and the A and B buttons died.
 WC.Link.Handle("chat", function(inbox)
 	local text = (inbox.text or ""):gsub("^%s+", "")
-	if inbox.wheel then return chatLine(WC.ChatChannel.Line(text), text) end
-	-- Any text box the player put the cursor in takes dictation: the auction
-	-- house search, a mail recipient, a search field, as said; only chat gets
-	-- the words as a slash command.
-	local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
-	local chatBox = activeEditBox()
-	if focused and focused ~= chatBox and focused.SetText and focused.GetText
-		and focused.IsObjectType and focused:IsObjectType("EditBox") and focused:IsVisible() then
-		focused:SetText((focused:GetText() or "") .. (inbox.text or ""))
+	if not inbox.wheel then return chatLine(text) end
+	local focused = GetCurrentKeyBoardFocus()
+	if focused and focused ~= activeEditBox() and focused.IsObjectType and focused:IsObjectType("EditBox")
+		and focused:IsVisible() then
+		local had = focused:GetText() or ""
+		focused:SetText(had == "" and text or (had .. " " .. text))
 		return ("%s holds %q"):format(tostring(focused:GetName() or "a text box"), focused:GetText())
 	end
-	local box = chatBox
-	if not box or not box:IsVisible() then
-		problem("No text box open, so nothing was written. Open chat or click into a search box, then speak.")
-		return "refused: no text box open"
-	end
-	-- append, so speaking twice builds a line instead of replacing it
-	local text = inbox.text or ""
-	local rest = text:match("^/w%s+(.+)") or text:match("^/whisper%s+(.+)")
-	if rest then
-		local target, message, label = WowCompanion_ResolveWhisper(rest)
-		if not target then
-			problem("Whisper not written: " .. message .. ".")
-			return "refused: " .. message
-		end
-		text = "/w " .. target .. " " .. message
-		toast("|cffffd100Whisper|r to " .. label .. ": press send when it reads right", 0.9, 0.9, 0.9, 8)
-	end
-	box:SetText((box:GetText() or "") .. text)
-	parsed(box)
-	return ("chat box holds %q"):format(box:GetText())
+	return chatLine(WC.ChatChannel.Line(text), text)
 end)
 
 -- The controller's cancel takes the box's focus away, and Blizzard closes it then
