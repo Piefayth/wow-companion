@@ -328,17 +328,22 @@ local function buildTabs(frame, messages)
 	-- transcript on the left and the scroll column (BAR wide) on the right.
 	-- Everything in the well anchors to one of the two, never to a number of
 	-- its own, so backings, shadows and the bar cannot drift apart.
-	local EDGE, BAR = 3, 22
+	local EDGE, BAR = 3, 24
 	local level = chatWell:GetFrameLevel()
-	local column = _G["WCChatScrollColumn"] or CreateFrame("Frame", "WCChatScrollColumn", chatWell)
-	column:SetPoint("TOPRIGHT", -EDGE, -EDGE)
-	column:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
+	-- The column is an inset of its own, the same InsetFrameTemplate as the
+	-- wells, so the border between it and the transcript is the window's own
+	-- border art (the classic trough's file is not in this client)
+	local column = _G["WCChatScrollColumn"] or CreateFrame("Frame", "WCChatScrollColumn", chatWell, "InsetFrameTemplate")
+	-- flush with the well's own edges, so the two borders coincide there and
+	-- only the column's left border shows, between it and the transcript
+	column:SetPoint("TOPRIGHT")
+	column:SetPoint("BOTTOMRIGHT")
 	column:SetWidth(BAR)
 	column:SetFrameLevel(level + 1)
 	table.insert(frame.chatParts, column)
 	messages.scroll:ClearAllPoints()
 	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", EDGE, -EDGE)
-	messages.scroll:SetPoint("BOTTOMRIGHT", column, "BOTTOMLEFT")
+	messages.scroll:SetPoint("BOTTOMRIGHT", column, "BOTTOMLEFT", 0, EDGE)
 	messages.scroll:SetFrameLevel(level + 2)
 	-- the column: the replies' stone under Blizzard's inner shadow
 	-- (ShadowOverlaySmallTemplate, UIPanelTemplates.xml:1045), so it reads
@@ -347,15 +352,16 @@ local function buildTabs(frame, messages)
 	channel:SetTexture(WC.Transcript.STONE.claude, "REPEAT", "REPEAT")
 	channel:SetHorizTile(true)
 	channel:SetVertTile(true)
-	channel:SetAllPoints()
+	channel:SetPoint("TOPLEFT", EDGE, -EDGE)
+	channel:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
 	local madeShadow, shadow = pcall(CreateFrame, "Frame", nil, column, "ShadowOverlaySmallTemplate")
-	if madeShadow and shadow then shadow:SetAllPoints() end
+	if madeShadow and shadow then shadow:SetAllPoints(channel) end
 	if frame.chatParts[1] and frame.chatParts[2] then
 		frame.chatParts[1]:ClearAllPoints()
-		frame.chatParts[1]:SetPoint("TOP", column, "TOP", 0, -1)
+		frame.chatParts[1]:SetPoint("TOP", column, "TOP", 0, -(EDGE + 1))
 		frame.chatParts[1]:SetFrameLevel(level + 3)
 		frame.chatParts[2]:ClearAllPoints()
-		frame.chatParts[2]:SetPoint("BOTTOM", column, "BOTTOM", 0, 1)
+		frame.chatParts[2]:SetPoint("BOTTOM", column, "BOTTOM", 0, EDGE + 1)
 		frame.chatParts[2]:SetFrameLevel(level + 3)
 	end
 	if frame.scrollTrack then frame.scrollTrack:SetFrameLevel(level + 3) end

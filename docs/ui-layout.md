@@ -18,10 +18,15 @@ The chat well, for example:
     column's bottom left. The turns' backings and dividers fill its width
     (Transcript.lua); text keeps `PAD_L`/`PAD_R`/`PAD_TOP` margins inside it.
     The top shadow (`lip`) spans its top.
-  - the **scroll column** (`WCChatScrollColumn`, `BAR` wide, flush with the
-    border's right): the channel's stone and inner shadow fill it, the upright
-    divider is its left edge, the arrows sit at its ends, the thumb's track
-    between them.
+  - the **scroll column** (`WCChatScrollColumn`, `BAR` wide): an inset of its
+    own (`InsetFrameTemplate`), flush with the well's edges so their borders
+    coincide and only its left border shows, between it and the transcript.
+    The channel's stone and inner shadow fill its inside, the arrows sit at its
+    ends, the thumb's track between them.
+- A border is the window's own border art (an inset), never a rotated or
+  borrowed strip: `SetRotation` turns a texture inside its rect without
+  turning the rect, and files from other clients may not exist in this one
+  (`UI-Character-ScrollBar` does not).
 
 To add a piece: decide which rect it belongs to and anchor it to that rect's
 points. To change the bar's width or the border, change `BAR` or `EDGE`;
