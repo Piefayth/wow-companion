@@ -12,7 +12,7 @@ cpal = "0.18.2"
 # each for every architecture ggml supports. Set CUDAARCHS=89 to build for this
 # GPU alone. Nothing outside this crate's manifest can invalidate it now.
 whisper-rs = { version = "0.16.0" }
-# The streaming engine on trial (docs/proposals/streaming-speech.md): sherpa-onnx
+# The streaming engine (docs/proposals/streaming-speech.md): sherpa-onnx
 # runs NVIDIA's Nemotron streaming model on the CPU, so it never competes with
 # the game for the GPU. Prebuilt libraries, downloaded into target/ at build time.
 # Shared, not static: its static libraries use the static C runtime (MT) and

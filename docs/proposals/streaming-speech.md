@@ -5,6 +5,10 @@ it'd be huge"; "current speed already very limiting". Measured on this PC
 (i9-12900KF, RTX 4090), game closed, on synthetic clips. **Synthetic speech flatters
 every engine; the player's own voice, in game, must confirm before anything ships.**
 
+**Outcome (2026-11-11): both engines stay**, chosen in the setup window. After
+playing with both, the player: "whisper is much higher quality, but streaming
+speed is way too good to give up".
+
 ## The answer so far
 
 1. **The slowness is not Whisper's own speed.** On an idle GPU, Whisper as configured
@@ -84,8 +88,7 @@ streaming; here both engines get them or neither does.
 every build; the setup window's Speech card picks one (Engine: Whisper or
 Streaming), or `settings.toml` says `speech = "streaming"` and `stream_model =
 "<folder>"`. The window downloads the model from k2-fsa's release (checked by
-SHA-256, unpacked, the archive deleted) after showing NVIDIA's licence. After the
-player's verdict the losing engine is deleted, code and setting both.
+SHA-256, unpacked, the archive deleted) after showing NVIDIA's licence.
 
 - **How it runs:** the voice loop feeds the mic's audio to the engine's thread
   while the button is held (`crates/voice/src/stream.rs`); partial words go to the

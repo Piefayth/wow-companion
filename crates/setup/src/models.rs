@@ -1,5 +1,5 @@
 //! Getting a speech model onto a new PC: which Whisper model suits it, the
-//! streaming engine's model (on trial), and a download that is checked before it
+//! streaming engine's model, and a download that is checked before it
 //! is used.
 //!
 //! Whisper's files are whisper.cpp's own, from Hugging Face, pinned to one commit
@@ -61,7 +61,7 @@ pub const MODELS: &[Model] = &[
     },
 ];
 
-/// The streaming engine's model, on trial (docs/proposals/streaming-speech.md):
+/// The streaming engine's model (docs/proposals/streaming-speech.md):
 /// NVIDIA's Nemotron streaming 0.6B (160 ms chunks, int8) as k2-fsa's sherpa-onnx
 /// release packs it. An archive: unpacked into a folder named after it, then
 /// deleted. Licensed by NVIDIA Corporation under the NVIDIA Open Model License,

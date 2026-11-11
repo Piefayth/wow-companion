@@ -1,12 +1,10 @@
-//! The streaming engine, on trial against Whisper (docs/proposals/streaming-speech.md):
+//! The streaming engine, Whisper's alternative (docs/proposals/streaming-speech.md):
 //! NVIDIA's Nemotron streaming 0.6B through sherpa-onnx, on the CPU, so it never
 //! competes with the game for the GPU. Audio goes in while the button is held;
 //! its partial text stays on the PC (each message to the game costs one of 512
-//! slots); the final text at release goes the way Whisper's does.
-//!
-//! A trial the player asked for (2026-11-11), not a kept fallback: the setup
-//! window offers both engines until the player has compared them in play, then
-//! the losing engine is deleted.
+//! slots); the final text at release goes the way Whisper's does. Less accurate
+//! than Whisper and much faster; the player keeps both (2026-11-11), and the
+//! setup window picks one.
 
 use std::{
     fs, io,
@@ -150,7 +148,7 @@ pub(crate) fn run(recognizer: OnlineRecognizer, feed: Receiver<Feed>, done: Send
 /// engine on a recorded clip fed at the pace of speech (100 ms of audio every
 /// 100 ms), as the voice loop feeds it: each partial with how far into the audio
 /// it came, then the time from the end of the audio to the final text, the
-/// number the trial compares with Whisper's.
+/// number to compare with Whisper's.
 pub fn transcribe_stream_file(dir: &Path, wav: &Path, vocabulary: &[String]) -> io::Result<()> {
     let (samples, channels, rate) = crate::transcribe::read_wav(&fs::read(wav)?)?;
     let mono: Vec<f32> = samples

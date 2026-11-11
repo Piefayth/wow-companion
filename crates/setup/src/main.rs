@@ -71,7 +71,7 @@ struct Setup {
     agent: String,
     /// `cpu` when the player chose the CPU build
     engine: String,
-    /// `whisper` or `streaming` (the engine on trial), and the streaming model's folder
+    /// `whisper` or `streaming`, and the streaming model's folder
     speech: String,
     stream_model: String,
     found_addons: Vec<String>,
@@ -434,20 +434,17 @@ impl Setup {
             Talk::Idle => Status::Todo("try it"),
         };
         look::card(ui, 4, "Speech recognition", status, |ui| {
-            // The streaming engine is on trial against Whisper (the player,
-            // 2026-11-11): both are offered until the player has compared them in
-            // play; then the one they keep stays and the other is removed.
             ui.label(RichText::new("Engine").color(look::MUTED));
             ui.horizontal(|ui| {
                 if ui.radio(self.speech != "streaming", "Whisper (graphics card)").clicked() {
                     self.speech = "whisper".into();
                 }
-                if ui.radio(self.speech == "streaming", "Streaming (CPU, on trial)").clicked() {
+                if ui.radio(self.speech == "streaming", "Streaming (CPU)").clicked() {
                     self.speech = "streaming".into();
                 }
             });
             ui.label(
-                RichText::new("Streaming hears you while you talk and has the text the moment you let go, and leaves the graphics card to the game. On trial: try both in play, and the one you keep stays.")
+                RichText::new("Whisper is the more accurate: it hears the whole clip when you let go, then writes it, which takes half a second or more. Streaming hears you while you talk and has the text the moment you let go, and leaves the graphics card to the game, but gets a few more words wrong.")
                     .small()
                     .color(look::MUTED),
             );

@@ -43,11 +43,11 @@ yes; don't reinvent what Claude Code has.
   so learning and names work the same; Guide (the default talk button there) via
   `XInputGetStateEx`; rumble works. Button names follow the pad (`press_for`).
 - `crates/voice`: mic (`cpal`) and speech, its own crate
-  so the CUDA build is not invalidated by edits elsewhere. Two engines **on trial**
-  (the player, 2026-11-11; `speech=whisper|streaming`, chosen in the setup window):
-  Whisper (the model and GPU backend the setup window chose) and the streaming
-  engine (NVIDIA Nemotron via sherpa-onnx on the CPU, fed while the button is held;
-  `stream_model=` its folder). The losing one is deleted after the player's verdict.
+  so the CUDA build is not invalidated by edits elsewhere. **Two engines, both
+  kept** (the player, 2026-11-11: Whisper is more accurate, streaming much faster;
+  `speech=whisper|streaming`, chosen in the setup window): Whisper (the model and
+  GPU backend the setup window chose) and the streaming engine (NVIDIA Nemotron via
+  sherpa-onnx on the CPU, fed while the button is held; `stream_model=` its folder).
   sherpa-onnx is linked as DLLs (its static build's C runtime clashes with
   Whisper's), so they sit beside every exe: the bin copy and the release copy them.
   Files: `lib.rs` (the push-to-talk loop), `mic.rs`, `transcribe.rs`, `stream.rs`,

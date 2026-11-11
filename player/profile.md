@@ -55,6 +55,6 @@ none of this. When the player states a new preference or changes one, write it h
 - Headset: AirPods Max (8 kHz hands-free link, hisses when audio plays), so
   push-to-talk feedback is rumble and beeps are off.
 - GPU: RTX 4090, Whisper large-v3-turbo on CUDA (`CUDAARCHS=89`).
-- Speech (2026-11-11): on the streaming engine; "a lot better", accuracy slightly
-  lower but fine. Whisper not yet deleted: that waits for their final word.
+- Speech (2026-11-11): keeps both engines. Whisper is "much higher quality",
+  streaming's speed "way too good to give up"; on streaming for now.
 - Installed addons the agent may use: see the request's `== integrations ==`.

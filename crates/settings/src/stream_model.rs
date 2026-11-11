@@ -1,4 +1,4 @@
-//! The streaming speech model's folder (the engine on trial, crates/voice
+//! The streaming speech model's folder (the streaming engine, crates/voice
 //! stream.rs): the files it holds, and the bpe.vocab sherpa-onnx needs to turn
 //! hotwords into the model's tokens, made from its tokens.txt. Shared by the
 //! setup window, which downloads and unpacks the model, and the voice loop,

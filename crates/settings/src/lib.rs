@@ -9,7 +9,7 @@
 //! model file), `engine` (`cpu` to use the CPU build a release ships beside the
 //! GPU one), and the run options: `pad` (vid:pid), `ask` (the talk button: a
 //! name or byte:mask), `chat`, `mic`, `cue`, `volume`, `agent`, `speech`
-//! (`whisper` or `streaming`, the engine on trial) and `stream_model` (the
+//! (`whisper` or `streaming`) and `stream_model` (the
 //! streaming model's folder).
 
 pub mod changes;

@@ -322,7 +322,7 @@ const ZEROS: f64 = 6.0;
 /// Whisper wants 16 kHz mono f32. Resampled through a Hann-windowed sinc
 /// low-pass at 99% of the lower Nyquist, six zero crossings wide: the filter
 /// sherpa-onnx (Kaldi's resampler) applies to the streaming engine's input, so
-/// both engines on trial hear the same audio. What it replaced doubled each
+/// both engines hear the same audio. What it replaced doubled each
 /// sample of an 8 kHz mic, mirroring the voice into 4-8 kHz, and let half of
 /// what a 48 kHz mic heard above 8 kHz fold back into the voice.
 pub(crate) fn to_whisper(samples: &[f32], channels: u16, rate: u32) -> Vec<f32> {

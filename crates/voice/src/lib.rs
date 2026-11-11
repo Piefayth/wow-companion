@@ -1,5 +1,5 @@
 //! Push-to-talk voice capture. Hold a controller chord, speak, release: Whisper
-//! gets the whole clip at release, or the streaming engine on trial (stream.rs)
+//! gets the whole clip at release, or the streaming engine (stream.rs)
 //! hears it while the button is held and has the text at release. Stays on this
 //! machine, so a hot mic can't leak the room.
 
@@ -172,7 +172,7 @@ pub fn listen(
         .unwrap_or(CUE_VOLUME);
 
     // One engine, chosen in the setup window (`speech=`): Whisper, or the streaming
-    // engine on trial (stream.rs). Loading is the slow part, so it is done once
+    // engine (stream.rs). Loading is the slow part, so it is done once
     // and kept resident; results come back on `results` either way, in order.
     let (outbox, results) = std::sync::mpsc::channel::<Done>();
     let engine = match option(options, "speech").unwrap_or("whisper") {
