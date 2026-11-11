@@ -19,6 +19,8 @@ mod message;
 mod savedvars;
 mod audit;
 mod strip;
+#[cfg(windows)]
+mod duplication;
 mod crash;
 mod lifecycle;
 mod logfile;

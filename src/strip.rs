@@ -18,7 +18,7 @@ use super::*;
 pub(crate) const CELL: usize = 4;
 pub(crate) const COLS: usize = 256;
 /// How tall a full read is: 64 rows of cells, about 49 KB.
-const FULL_HEIGHT: usize = 256;
+pub(crate) const FULL_HEIGHT: usize = 256;
 const MAGIC_A: [u8; 3] = [0xC0, 0xFF, 0xEE];
 const MAGIC_B: [u8; 3] = [0x12, 0x34, 0x56];
 
@@ -89,105 +89,17 @@ pub(crate) fn decode(shot: &Shot) -> Result<Vec<u8>, String> {
 }
 
 /// The corner, `height` pixels tall and one strip (1024 px) wide, in real
-/// pixels whatever the display scaling; each grab is timed for the bridge probe
+/// pixels and the game's colours whatever the display's scaling and mode
+/// (src/duplication.rs); each grab is timed for the bridge probe
 /// (docs/proposals/bridge-probe.md, section 3).
 pub(crate) fn capture(height: usize) -> io::Result<Shot> {
     let began = Instant::now();
-    let shot = grab(height);
+    #[cfg(windows)]
+    let shot = crate::duplication::grab(height);
+    #[cfg(not(windows))]
+    let shot = Err(io::Error::other("the data strip is read on Windows only"));
     crate::bridge_probe::note_capture(height, began.elapsed(), shot.is_ok());
     shot
-}
-
-#[cfg(windows)]
-fn grab(height: usize) -> io::Result<Shot> {
-    use std::ffi::c_void;
-    type Handle = *mut c_void;
-    #[repr(C)]
-    struct BitmapInfo {
-        size: u32,
-        width: i32,
-        height: i32,
-        planes: u16,
-        bit_count: u16,
-        compression: u32,
-        size_image: u32,
-        x_pels: i32,
-        y_pels: i32,
-        clr_used: u32,
-        clr_important: u32,
-        colors: [u32; 4],
-    }
-    #[link(name = "user32")]
-    unsafe extern "system" {
-        fn GetDC(window: Handle) -> Handle;
-        fn ReleaseDC(window: Handle, dc: Handle) -> i32;
-        fn GetSystemMetrics(index: i32) -> i32;
-        fn SetProcessDPIAware() -> i32;
-    }
-    #[link(name = "gdi32")]
-    unsafe extern "system" {
-        fn CreateCompatibleDC(dc: Handle) -> Handle;
-        fn CreateCompatibleBitmap(dc: Handle, width: i32, height: i32) -> Handle;
-        fn SelectObject(dc: Handle, object: Handle) -> Handle;
-        fn BitBlt(dst: Handle, x: i32, y: i32, w: i32, h: i32, src: Handle, sx: i32, sy: i32, rop: u32) -> i32;
-        fn GetDIBits(dc: Handle, bitmap: Handle, start: u32, lines: u32, bits: *mut c_void, info: *mut BitmapInfo, usage: u32) -> i32;
-        fn DeleteObject(object: Handle) -> i32;
-        fn DeleteDC(dc: Handle) -> i32;
-    }
-    const SRCCOPY: u32 = 0x00CC_0020;
-    static DPI_AWARE: std::sync::Once = std::sync::Once::new();
-    let width = CELL * COLS;
-    // SAFETY: plain GDI calls on handles made here and released before returning;
-    // the buffer is width * height * 4 bytes, what a 32-bit top-down DIB of that
-    // size needs.
-    unsafe {
-        // real pixels, not ones scaled by the display setting (150% here)
-        DPI_AWARE.call_once(|| {
-            SetProcessDPIAware();
-        });
-        let (screen_w, screen_h) = (GetSystemMetrics(0), GetSystemMetrics(1));
-        let screen = GetDC(std::ptr::null_mut());
-        if screen.is_null() {
-            return Err(io::Error::other("no screen to read"));
-        }
-        let memory = CreateCompatibleDC(screen);
-        let bitmap = CreateCompatibleBitmap(screen, width as i32, height as i32);
-        let old = SelectObject(memory, bitmap);
-        let mut pixels = vec![0u8; width * height * 4];
-        let copied = BitBlt(memory, 0, 0, width as i32, height as i32, screen, screen_w - width as i32, screen_h - height as i32, SRCCOPY);
-        let mut info = BitmapInfo {
-            size: 40,
-            width: width as i32,
-            height: -(height as i32),
-            planes: 1,
-            bit_count: 32,
-            compression: 0,
-            size_image: 0,
-            x_pels: 0,
-            y_pels: 0,
-            clr_used: 0,
-            clr_important: 0,
-            colors: [0; 4],
-        };
-        let read = if copied != 0 {
-            GetDIBits(memory, bitmap, 0, height as u32, pixels.as_mut_ptr().cast(), &mut info, 0)
-        } else {
-            0
-        };
-        SelectObject(memory, old);
-        DeleteObject(bitmap);
-        DeleteDC(memory);
-        ReleaseDC(std::ptr::null_mut(), screen);
-        if read == 0 {
-            return Err(io::Error::other("the screen could not be read"));
-        }
-        Ok(Shot { width, height, pixels })
-    }
-}
-
-#[cfg(not(windows))]
-fn grab(_height: usize) -> io::Result<Shot> {
-    Err(io::Error::other("the data strip is read on Windows only"))
 }
 
 /// Up to three looks a moment apart: a strip just drawn may not be painted yet.
@@ -435,6 +347,26 @@ pub(crate) fn command(args: &[String]) -> io::Result<()> {
 mod tests {
     use super::*;
 
+    /// The cells Strip.lua draws for `text`, in order: the magic, the length, the
+    /// two sums, the bytes three to a cell, and the last row's unused cells black.
+    fn cells_for(text: &[u8]) -> Vec<[u8; 3]> {
+        let (mut a, mut b) = (0u32, 0u32);
+        for byte in text {
+            a = (a + *byte as u32) % 16_777_216;
+            b = (b + a) % 16_777_216;
+        }
+        let triple = |v: u32| [(v >> 16) as u8, (v >> 8) as u8, v as u8];
+        let mut cells = vec![MAGIC_A, MAGIC_B, triple(text.len() as u32), triple(a), triple(b)];
+        for chunk in text.chunks(3) {
+            let mut cell = [0u8; 3];
+            cell[..chunk.len()].copy_from_slice(chunk);
+            cells.push(cell);
+        }
+        let rows = cells.len().div_ceil(COLS);
+        cells.resize(rows * COLS, [0, 0, 0]);
+        cells
+    }
+
     /// A capture holding what Strip.lua draws for `text`: its cells as 4x4
     /// blocks from the bottom-left of a 1024-wide shot, unused cells of the last
     /// row black, the rest of the shot `background`.
@@ -445,21 +377,7 @@ mod tests {
             pixels.extend_from_slice(&[background[2], background[1], background[0], 255]);
         }
         let mut shot = Shot { width, height, pixels };
-        let (mut a, mut b) = (0u32, 0u32);
-        for byte in text {
-            a = (a + *byte as u32) % 16_777_216;
-            b = (b + a) % 16_777_216;
-        }
-        let triple = |v: u32| [(v >> 16) as u8, (v >> 8) as u8, v as u8];
-        let mut cells = vec![[0xC0, 0xFF, 0xEE], [0x12, 0x34, 0x56], triple(text.len() as u32), triple(a), triple(b)];
-        for chunk in text.chunks(3) {
-            let mut cell = [0u8; 3];
-            cell[..chunk.len()].copy_from_slice(chunk);
-            cells.push(cell);
-        }
-        let rows = cells.len().div_ceil(COLS);
-        cells.resize(rows * COLS, [0, 0, 0]);
-        for (i, cell) in cells.iter().enumerate() {
+        for (i, cell) in cells_for(text).iter().enumerate() {
             let (col, row) = (i % COLS, i / COLS);
             for dy in 0..CELL {
                 for dx in 0..CELL {

@@ -1927,6 +1927,7 @@ name = "wow-companion"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "windows",
  "wow-companion-pad",
  "wow-companion-settings",
  "wow-companion-voice",
