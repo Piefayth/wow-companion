@@ -52,7 +52,6 @@ local function check()
   end
 end
 function M:Enable()
-  if WCMakeRoomFrame then WCMakeRoomFrame:UnregisterAllEvents() end
   self:Event('LOOT_OPENED', function() check() end)
   self:Event('UI_ERROR_MESSAGE', function(_, _, msg) if msg == ERR_INV_FULL then check() end end)
 end

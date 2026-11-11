@@ -34,8 +34,6 @@ end
 function M:Enable()
   WowCompanionDB.links = WowCompanionDB.links or {}
   WowCompanionDB.tradeLinks = WowCompanionDB.tradeLinks or {}
-  -- the frame the pre-engine version used, if this session still has it
-  if WCLinkCatcherFrame then WCLinkCatcherFrame:UnregisterAllEvents() end
   for _, e in ipairs(EVENTS) do self:Event(e, heard) end
 end
 
