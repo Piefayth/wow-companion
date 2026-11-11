@@ -190,16 +190,15 @@ Other game facts already worked out:
   on the Buffs wheel already.
 - Sorting bags when the player asks: a `lua` step calling `C_Container.SortBags()`
   (not protected; out of combat). Only on their word, never on your own.
-- Our bag window: the `Bags` module (modules/Bags.lua), `WCBags`; opened by
-  the `Bags` macro (`/click WCBagsToggle`, TopBar down) and the keyboard bag keys.
-  Each slot is a secure `/use bag slot` button, usable in combat. The pad's own bag
-  opener is Blizzard's radial and shortcut bar, which has no binding to take.
-  Its buttons follow Blizzard's controller bags: square use, cross pick up and put
-  down, triangle more (bar, split, link, destroy, sort), circle back or close.
+- Our bag window: `WCBags` (addon/WowCompanion/Bags*.lua), opened by the `Bags`
+  macro (`/click WCBagsToggle`) and the keyboard bag keys, in combat too. The pad's
+  own bag opener (Blizzard's radial) opens Blizzard's bags, which ours stands in for.
+  Buttons follow Blizzard's controller bags: square use, cross pick up and put down,
+  triangle more (out of combat: bar, split, equip a spare bag, destroy, sort),
+  circle back or close.
   Linking an item: `C_Container.GetContainerItemLink(bag, slot)` (find it by name in
   the bags), then `WowCompanion_Preview` with the slash line; for a whisper resolve
-  the name first. `WowCompanionDB.bagLink` holds the item the player chose to link
-  from the bag menu (say: send it to Name).
+  the name first.
   Swapping in a bigger bag: `WCSwapBag(what, into, dry)` (modules/BagSwap.lua)
   empties the bag it replaces into the other bags, equips the new one, and puts the
   old one where it was; it says when there is not room. `what` a name or item ID

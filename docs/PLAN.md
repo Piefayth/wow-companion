@@ -37,11 +37,11 @@ message bus, per-module settings, then smaller files.
 3. ~~Bags onto the engine~~: Bags left modules/ for the addon's own files (a
    controller-managed window must not run as a module: taint).
 4. **Split Companion.lua** (done 2026-11-10): Engine, Style, Companion (channel and
-   core, ~4,600 lines), Pins, Strip, Bags. Checked: no file uses another's locals
+   core), Pins, Strip, Bags, and since then the files CLAUDE.md lists. Checked: no file uses another's locals
    (tools/addon_locals.py). Companion keeps fallbacks so the channel stands alone.
    Further splits (board, log window, preview) need their shared locals turned
    into WC fields first.
-5. Later: move saved data (links, tradeLinks, pins, bagLink) under
+5. Later: move saved data (links, tradeLinks, pins) under
    `WowCompanionDB.mods.<Name>` with a one-time copy; until then keep the old keys.
 
 ### 1. Make the loop tight
@@ -123,13 +123,12 @@ the PC at full resolution. Built beside the PC-to-game channel, never touching i
 
 ### Agent features the player picked (2026-11-10)
 
-- **Bag sorting** (a button; the sort itself is the game's own `C_Container.SortBags`).
 - **Missing buff alerts**: Thorns and Mark of the Wild off you (and a party member)
   out of combat, as a small Blizzard-style reminder, one press to the Buffs wheel.
 - **Bag management** (the player, 2026-11-10), read live over the data strip:
   - **Evaluate**: keep / vendor / auction (Auctionator price vs vendor) / use now,
     checked against equipped gear, bag slots and professions first.
-  - **Sort**: the game's own `C_Container.SortBags`, as a button or wheel slot.
+  - **Sort**: `C_Container.SortBags`, only on the player's word (no button, nothing automatic).
   - **Make room**: what to destroy first when space runs out (least value, not a
     quest item, not a tool for a known profession).
   - **Trade for space**: built as the `MakeRoom` module: loot with full bags names
@@ -219,29 +218,13 @@ quietly. Not built yet: the player's call.
 
 ### Our bag window (the player, 2026-11-10: "item stuff has been my biggest problem")
 
-The player's terms, not to be compromised: **items usable in combat**, **item
-targeting works** (enchants, spells waiting for an item), **the default bag key opens
-it** (override the bag bindings to our toggle; a custom key only if that fails).
-
-Design:
-- One `SecureActionButtonTemplate` per bag slot, `type=item`, `item="bag slot"`, set
-  once out of combat. A button is welded to its slot, so nothing needs re-pointing in
-  combat: contents redraw in place (icons, counts are not protected). Using an item,
-  selling at a vendor, attaching to mail or trade, and applying a pending spell target
-  all go through C_Container.UseContainerItem's own behaviour.
-- Layout (sections: quest, upgrades, junk, Skinning mats, consumables, sell or
-  auction) is rearranged out of combat only; in combat positions freeze, items
-  stay usable.
-- Open and close from a `SecureHandlerClickTemplate` button whose snippet shows or
-  hides the window, so the bag key works in combat. The bag commands' keys
-  (OPENALLBAGS, TOGGLEBACKPACK) are overridden to it at login.
-- D-pad: our own grid order, through secure snippets (SetBindingClick inside the
-  restricted environment, bound while open, cleared on close), so it also works in
-  combat. A clicks the focused slot's button.
-- Prices from Auctionator, upgrades from GearQuest, quest marks and sell warnings
-  from Polestar's data, drawn by us.
-Stages: (1) window, secure slot buttons, bag key, d-pad; (2) sections and prices;
-(3) filters by voice, make-room view.
+Built and verified in combat (how: CLAUDE.md, "A window usable in combat"). The
+player's terms hold: items usable in combat, item targeting works, the bag key opens
+it. Done: window, pad, bag key, Blizzard stand-in, triangle menu, bag swap
+(`WCSwapBag`, untested on a real swap), contents in the export.
+Next: (2) sections and prices: keep / vendor / auction from Auctionator, extending
+MakeRoom; a reusable sell list the player confirms at the vendor (design to agree);
+(3) filters by voice, a make-room view.
 
 ### 4. Small and open
 

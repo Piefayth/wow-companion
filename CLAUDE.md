@@ -59,10 +59,15 @@ yes; don't reinvent what Claude Code has.
   - `Sandbox.lua` agent code (`lua`, `module` steps, the sandbox, taint measuring).
     `Tests.lua` taint and PlaceAction tests. `Window.lua` the Companion window and
     its tabs. `Transcript.lua` its text and the queued mark. `Board.lua` the toast
-    and agents' board. `Chat.lua` whisper lookup, send preview, item viewer.
-    `Chords.lua` name lookups, the pad, chord learning. `Probes.lua` probes and API
-    dumps. `Export.lua` the context export. `Pins.lua`, `Strip.lua`, `Bags.lua`,
-    `Status.lua` (minimap button), `Modules.lua` (generated).
+    and agents' board. `Jobs.lua` each message's state on screen (the PC's ledger).
+    `Chat.lua` whisper lookup, send preview, item viewer. `ChatWheel.lua` spoken
+    chat without the agent (L1+R1). `Chords.lua` name lookups, the pad, chord
+    learning. `Probes.lua` probes and API dumps. `Export.lua` the context export
+    (bag contents too). `Pins.lua`, `Strip.lua`. The bag window: `BagsInput.lua`
+    (the secure pad), `BagsMenu.lua` (triangle), `Bags.lua`, `BagsStandIn.lua`
+    (over Blizzard's). `Interact.lua` combat loot/interact key. `Fonts.lua` live
+    interface fonts. `Status.lua` (minimap button). `Providers/` capabilities
+    (price, nav, gear, itemSource, guide). `Modules.lua` (generated).
   - Files share nothing local. `tools/split_addon.py` moves a block out of
     Companion.lua as a pure move (anchored by text, refuses if the file changes
     under it). `addon/WowCompanion_Wheel/`: the wheels.
