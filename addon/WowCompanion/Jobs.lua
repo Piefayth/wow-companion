@@ -477,7 +477,15 @@ refresh = function()
 		end
 		pair.x.job = running
 		pair.x:ClearAllPoints()
-		pair.x:SetPoint("TOPRIGHT", runRow.fs, "TOPRIGHT", -4, 3)
+		-- on the thinking line, the work it cancels (the player, 2026-11-10:
+		-- an X on a message already sent read as cancelling the message); the
+		-- message itself still carries the tombstone
+		local head = entry and ghosts[1] and ghosts[1].head
+		if head and head:IsShown() and head.y then
+			pair.x:SetPoint("TOPRIGHT", transcript0.content, "TOPLEFT", width - 4, -(head.y - 3))
+		else
+			pair.x:SetPoint("TOPRIGHT", runRow.fs, "TOPRIGHT", -4, 3)
+		end
 		pair.x:Show()
 		pair.go:Hide()
 	end
