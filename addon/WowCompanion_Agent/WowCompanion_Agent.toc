@@ -6,6 +6,9 @@
 ## Group: WowCompanion
 
 Agent.lua
+Stow.lua
+Offer.lua
+Steps.lua
 Sandbox.lua
 Window.lua
 Transcript.lua

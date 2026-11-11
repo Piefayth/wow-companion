@@ -35,7 +35,8 @@ end
 
 -- a slot that casts a watched spell, or a macro opening a wheel that holds one
 local function slotFor(watched)
-	local wheels = WowCompanionWheelDB and WowCompanionWheelDB.wheels or {}
+	local wheels = {}
+	if WCWheel then WCWheel.Each(function(name, def) wheels[name] = def end) end
 	for slot = 181, 272 do
 		local kind, id = GetActionInfo(slot)
 		if kind == "spell" and id then

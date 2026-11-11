@@ -185,7 +185,8 @@ local function reachLines(line, frames)
 			end
 		end
 	end
-	local wheels = WowCompanionWheelDB and WowCompanionWheelDB.wheels or {}
+	local wheels = {}
+	if WCWheel then WCWheel.Each(function(name, def) wheels[name] = def end) end
 	for wheel, def in pairs(wheels) do
 		for _, slot in ipairs(def.slots or {}) do
 			if slot.spell then

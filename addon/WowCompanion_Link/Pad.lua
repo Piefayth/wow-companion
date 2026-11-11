@@ -1,7 +1,7 @@
 -- WowCompanion_Link: the pad as the client maps it, and which conversation a
 -- talk-button press is for.
 --   WC.Pad.State() -> modifiers (sorted names), bases ({ [PADDUP] = true, ... }) | nil
---   WowCompanion_PadSlot() -> "", "l1", "l2", "r1", "r2", "quick" or "say"
+--   WowCompanion_PadSlot() -> a conversation (WC.Conversations) or dictation
 -- The pad as the client maps it: modifiers held (triggers, shoulders, sticks,
 -- sorted) and the d-pad and face buttons held. nil when there is no pad to read.
 local function padState()
@@ -44,7 +44,7 @@ function WowCompanion_PadSlot()
 	-- L2 and R2 together are the quick conversation, as on the PC
 	if held.l2 and held.r2 then return "quick" end
 	-- L1 and R1 together are dictation (ChatWheel.lua), no conversation
-	if held.l1 and held.r1 then return "say" end
+	if held.l1 and held.r1 then return WC.Conversations.DICTATION end
 	for _, slot in ipairs({ "l1", "l2", "r1", "r2" }) do
 		if held[slot] then return slot end
 	end

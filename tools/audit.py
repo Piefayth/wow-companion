@@ -1,4 +1,4 @@
-"""Print the audit trail: the PC's (audit.log) and the game's (WowCompanionAgentDB.audit,
+"""Print the audit trail: the PC's (audit.log) and the game's (WowCompanionLinkDB.audit,
 as of the last reload) merged into one timeline.
 
     python -I tools/audit.py [--minutes 30] [--slot main] [--grep word]
@@ -35,7 +35,7 @@ def game_lines():
     roots = [r"S:\World of Warcraft\_forever_\WTF\Account"]
     files = []
     for root in roots:
-        files += glob.glob(os.path.join(root, "*", "SavedVariables", "WowCompanion_Agent.lua"))
+        files += glob.glob(os.path.join(root, "*", "SavedVariables", "WowCompanion_Link.lua"))
     out = []
     for name in files:
         text = open(name, encoding="utf-8", errors="replace").read()

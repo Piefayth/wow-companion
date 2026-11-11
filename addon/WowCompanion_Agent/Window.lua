@@ -304,8 +304,10 @@ local function buildTabs(frame, messages)
 		local pins = WCPins and #WCPins.List() or 0
 		add("Map pins", pins == 0 and grey .. "none|r" or tostring(pins))
 		local wheels = {}
-		for key, wheel in pairs(WowCompanionWheelDB and WowCompanionWheelDB.wheels or {}) do
-			wheels[#wheels + 1] = (wheel.label or key) .. " " .. grey .. "(" .. #(wheel.slots or {}) .. ")|r"
+		if WCWheel then
+			WCWheel.Each(function(key, wheel)
+				wheels[#wheels + 1] = (wheel.label or key) .. " " .. grey .. "(" .. #(wheel.slots or {}) .. ")|r"
+			end)
 		end
 		table.sort(wheels)
 		add("Wheels", #wheels > 0 and table.concat(wheels, ", ") or grey .. "none|r")
@@ -408,8 +410,7 @@ local function buildTabs(frame, messages)
 	end
 	if frame.scrollTrack then frame.scrollTrack:SetFrameLevel(level + 3) end
 	frame.convButtons = {}
-	local LABELS = { [""] = "Main", l1 = "L1", l2 = "L2", r1 = "R1", r2 = "R2", quick = "Quick" }
-	for i, key in ipairs({ "", "l1", "l2", "r1", "r2", "quick" }) do
+	for i, key in ipairs(WC.Conversations.list) do
 		local b = CreateFrame("Button", nil, well)
 		-- Blizzard's own geometry (AuctionCategoryButtonTemplate): a 21-tall
 		-- button, its art 32 tall from the top-left (-2, 0), since the atlas has
@@ -449,9 +450,9 @@ local function buildTabs(frame, messages)
 		-- Main is the one in view after a reload, so its news is being read
 		if kept and key == "" then kept[""] = nil end
 		if kept and kept[key] then
-			b:SetText("|cff40ff40" .. LABELS[key] .. "  new|r")
+			b:SetText("|cff40ff40" .. WC.Conversations.Label(key) .. "  new|r")
 		else
-			b:SetText(LABELS[key])
+			b:SetText(WC.Conversations.Label(key))
 		end
 		b:SetScript("OnClick", function() WowCompanion_SetConversation(key) end)
 		WC.MarkFocusable(b)

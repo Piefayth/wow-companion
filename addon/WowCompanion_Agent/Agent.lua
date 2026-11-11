@@ -1,8 +1,8 @@
--- WowCompanion_Agent: the agents' half. The Companion window and its
--- conversations, the waiting lines and the board's rows, the offered button,
--- the agents' message kinds (registered with WC.Link.Handle), /wc's agent
--- commands, and what the other files of this addon ask of it (WC.Companion).
--- The channel itself is WowCompanion_Link's.
+-- WowCompanion_Agent: the agents' half. This file: the Companion window and
+-- its conversations, the log, the board's rows, the conversation message kinds,
+-- /wc's agent commands, and what the other files of this addon ask of it
+-- (WC.Companion). Beside it: Stow.lua (the window in a fight), Offer.lua (the
+-- offered button), Steps.lua (an answer's steps). The channel is Link's.
 
 WC.Saved("WowCompanion_Agent", "WowCompanionAgentDB")
 
@@ -11,11 +11,6 @@ local LOG_KEEP = 300
 
 local logWindow
 local pendingTicker
-local actionButton
--- One offered button per conversation (the player, 2026-11-10): a Reload from
--- one agent replaced the Quit another had just offered. Each keeps its own; the
--- one secure button shows the offer of the conversation in view.
-local offers = {}
 local say = WC.Link.say
 -- the conversation of the message being handled (WowCompanion_Link), so what its
 -- steps report lands in that conversation, not whichever one is in view
@@ -43,8 +38,7 @@ local function logFrame()
 		logWindow = buildLog()
 		-- opening the window shows the conversation in view: its news is seen
 		logWindow:HookScript("OnShow", function()
-			local unread = WowCompanion_Unread and WowCompanion_Unread()
-			if unread and WowCompanion_ViewSlot then unread[WowCompanion_ViewSlot()] = nil end
+			WC.Companion.seen(WowCompanion_ViewSlot())
 		end)
 	end
 	return logWindow
@@ -58,89 +52,6 @@ local function toastIdleShown(...) return WC.Board.toastIdleShown(...) end
 local function reveal(frame)
 	toast(nil)
 	WC.ShowPanel(frame)
-end
-
--- The window in combat (the player, 2026-11-10: "randomly disappearing and
--- sometimes showing up in combat is completely useless"). A secure button
--- inside a frame makes that frame protected, and a protected frame cannot be
--- shown or hidden by an addon mid-fight: that was the whole mess. So the
--- window's secure buttons (the offered press, Reload) are stowed in a hidden
--- holder of their own as combat begins (PLAYER_REGEN_DISABLED runs just before
--- the lockdown, the last moment protected frames can move), which leaves the
--- window an ordinary frame: a tap opens and closes it all fight long. They go
--- back when the fight ends, and a window opened mid-fight becomes a panel again
--- so the controller's focus cycle reaches it.
-local stowed = {}
-local extraStowed = {}
-local stash = CreateFrame("Frame", "WowCompanionStash", UIParent)
-stash:Hide()
-local combatNote
-local function noteCombat(inCombat)
-	local frame = logWindow
-	if not frame then return end
-	if not combatNote then
-		combatNote = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-		combatNote:SetPoint("BOTTOM", frame, "BOTTOM", 0, 14)
-		combatNote:SetText("In combat: reading only. Buttons come back when the fight ends.")
-	end
-	combatNote:SetShown(inCombat and true or false)
-end
-local stowWatch = CreateFrame("Frame")
-stowWatch:RegisterEvent("PLAYER_REGEN_DISABLED")
-stowWatch:RegisterEvent("PLAYER_REGEN_ENABLED")
-stowWatch:SetScript("OnEvent", function(_, event)
-	if event == "PLAYER_REGEN_DISABLED" then
-		for button in pairs(stowed) do
-			pcall(function()
-				button:ClearAllPoints()
-				button:SetParent(stash)
-				button:SetPoint("CENTER")
-			end)
-		end
-		-- anything else secure inside the window (a button another file added)
-		-- would keep it protected and bring back the vanishing: stow those too,
-		-- with their anchors
-		local frame = logWindow
-		local function walk(f)
-			for _, child in ipairs({ f:GetChildren() }) do
-				if child:IsProtected() and not stowed[child] then
-					local points = {}
-					for i = 1, child:GetNumPoints() do points[i] = { child:GetPoint(i) } end
-					local parent = child:GetParent()
-					local ok = pcall(function()
-						child:ClearAllPoints()
-						child:SetParent(stash)
-						child:SetPoint("CENTER")
-					end)
-					if ok then extraStowed[child] = { parent = parent, points = points } end
-				else
-					walk(child)
-				end
-			end
-		end
-		if frame then pcall(walk, frame) end
-		noteCombat(true)
-		return
-	end
-	for button, restore in pairs(stowed) do pcall(restore, button) end
-	for child, was in pairs(extraStowed) do
-		pcall(function()
-			child:SetParent(was.parent)
-			child:ClearAllPoints()
-			for _, pt in ipairs(was.points) do child:SetPoint(unpack(pt)) end
-		end)
-	end
-	wipe(extraStowed)
-	noteCombat(false)
-end)
--- button: a secure button that lives in the window; restore(button) puts it back
-local function stow(button, restore)
-	stowed[button] = restore
-	if InCombatLockdown() then
-		-- built mid-fight cannot happen (secure buttons are built out of combat),
-		-- but say so rather than leave the window protected without knowing
-		say("stow: " .. tostring(button:GetName()) .. " registered in combat")
-	end
 end
 
 local function colouredFor(who)
@@ -161,9 +72,10 @@ end
 -- conversation on the board, its seconds in the list, the work line in the
 -- window (Jobs.lua). Nothing here keeps a state of its own.
 -- "chat" is not a conversation: its row says a line is waiting for the chat box
-local SLOT_ORDER = { "", "l1", "l2", "r1", "r2", "quick", "chat" }
+local SLOT_ORDER = { "chat" }
+for i, slot in ipairs(WC.Conversations.list) do table.insert(SLOT_ORDER, i, slot) end
 local function slotLabel(slot)
-	return slot == "" and "Main" or slot == "quick" and "Quick" or slot == "chat" and "Chat" or slot:upper()
+	return slot == "chat" and "Chat" or WC.Conversations.Label(slot)
 end
 local renderPending
 -- the last reply or error per conversation, shown in its row for a while
@@ -235,7 +147,6 @@ if WC.Jobs then WC.Jobs.Changed = function() renderPending() end end
 -- (""), and with a trigger held each of L1, L2, R1, R2 is its own. Every line
 -- remembers which it belongs to; the window shows one at a time, picked with the
 -- buttons above the transcript, and a slot with news it has not shown glows.
-local CONVERSATIONS = { "", "l1", "l2", "r1", "r2", "quick" }
 local viewSlot = ""
 -- which conversations have news not yet looked at, kept in SavedVariables so a
 -- reload does not forget a reply waiting in another conversation (the player,
@@ -245,8 +156,11 @@ local function unreadSet()
 	WowCompanionAgentDB.unread = WowCompanionAgentDB.unread or {}
 	return WowCompanionAgentDB.unread
 end
--- for the minimap button: the conversations with news not yet looked at
-function WowCompanion_Unread() return unreadSet() end
+-- news seen or arrived: the minimap button (Link's Status.lua) hears it
+local function setUnread(slot, on)
+	unreadSet()[slot] = on or nil
+	WC.Send("UNREAD", unreadSet())
+end
 local function paintConversations()
 	local frame = logWindow
 	if not (frame and frame.convButtons) then return end
@@ -327,7 +241,7 @@ local function remember(who, text, continued, slot, job, quiet)
 	-- unless they checked); the minimap button shows it (Status.lua)
 	if not continued and not quiet and (who == "claude" or who == "error")
 		and (slot ~= viewSlot or not (logWindow and logWindow:IsShown())) then
-		unreadSet()[slot] = true
+		setUnread(slot, true)
 		paintConversations()
 	end
 end
@@ -347,123 +261,13 @@ function WowCompanion_ViewSlot() return viewSlot end
 
 function WowCompanion_SetConversation(slot)
 	viewSlot = slot or ""
-	unreadSet()[viewSlot] = nil
+	setUnread(viewSlot, false)
 	-- the button follows the view: each conversation shows its own offer
-	if WowCompanion_ShowOffer then WowCompanion_ShowOffer(viewSlot) end
+	WC.Offer.Show(viewSlot)
 	if renderPending then renderPending() end
 	logFrame().messages:Clear()
 	replayLog()
 	paintConversations()
-end
-
--- A button in the Companion window, retargeted on demand.
---
--- Protected calls are refused from insecure code, but a hardware button press is
--- trusted -- so for anything we cannot do ourselves, we put a button in front of the
--- player and they press it. It lives inside the window rather than on an action bar
--- so the gamepad cursor has a normal piece of UI to land on, and because it costs no
--- binding and no bar slot.
---
--- SecureActionButtonTemplate for the secure path, UIPanelButtonTemplate so it looks
--- like the game's own. Macro text is the limit of what it can do, which is also the
--- limit of what the player could type -- it grants no power they lacked.
-local function buildActionButton()
-	local frame = logFrame()
-	if not actionButton then
-		local made, button = pcall(CreateFrame, "Button", "WowCompanionDo", frame,
-			"SecureActionButtonTemplate, UIPanelButtonTemplate")
-		if not made or not button then
-			return "could not build the button: " .. tostring(button)
-		end
-		actionButton = button
-		-- at the foot of the conversation list, the list's width, under its
-		-- buttons (the player, 2026-11-10): it belongs to the conversation in view
-		local function place(b)
-			b:SetParent(frame)
-			b:ClearAllPoints()
-			local last = frame.convButtons and (frame.convButtons.quick or frame.convButtons.r2)
-			if last then
-				b:SetSize(last:GetWidth(), 24)
-				b:SetPoint("TOP", last, "BOTTOM", 0, -10)
-				b:SetFrameLevel(last:GetFrameLevel() + 2)
-			else
-				b:SetSize(150, 22)
-				b:SetPoint("BOTTOMRIGHT", -18, 8)
-			end
-		end
-		place(actionButton)
-		stow(actionButton, place)
-		-- Measured, one variable at a time. "AnyUp": the wrapper runs -- PreClick and
-		-- PostClick both fire -- and the macro does not, which reads exactly like a
-		-- permissions refusal and is not one. Both edges: runs, but twice, once down
-		-- and once up. "AnyDown" alone: runs once. That is the answer.
-		--
-		-- Attributes are still set first, which is cheap and conventional, but the
-		-- edge is what decides whether the macro fires at all.
-		actionButton:SetAttribute("type", "macro")
-		actionButton:RegisterForClicks("AnyDown")
-
-		-- the cursor can land on it, and goes to it when the window takes focus
-		WC.MarkFocusable(actionButton)
-		WC.SetFocusButton(frame, actionButton)
-		actionButton:SetScript("PostClick", function(self)
-			if self.slot then offers[self.slot] = nil end
-			self:Hide()
-		end)
-	end
-	return frame
-end
-
--- Put the view's offer on the button, or take the button away when it has none.
--- Secure attributes cannot change in combat; the button then stays as it was
--- until the next switch.
-local function showOffer(slot)
-	if InCombatLockdown() then return "in combat" end
-	local held = offers[slot]
-	if not held then
-		if actionButton then
-			actionButton.slot = nil
-			actionButton:Hide()
-		end
-		return "nothing"
-	end
-	local label, macro = held.label, held.macro
-	buildActionButton()
-	if not actionButton then return "nothing" end
-	actionButton.slot = slot
-	actionButton:SetAttribute("macrotext", macro)
-	actionButton:SetText(label)
-	actionButton:Show()
-	-- the cursor reaches it, and L3 presses it while the window has focus
-	-- (Jobs.lua); nothing else is bound to it
-	return "shown"
-end
-WowCompanion_ShowOffer = showOffer
-
-local function offer(label, macro, slot)
-	-- attributes on a secure frame cannot be set in combat, and this is
-	-- configuration anyway
-	if InCombatLockdown() then
-		return "refused: in combat"
-	end
-	slot = slot or replySlot() or viewSlot
-	offers[slot] = { label = label, macro = macro }
-	local where = slotLabel(slot)
-	if slot ~= viewSlot then
-		-- the view never jumps on its own: the button waits in its conversation
-		remember("claude", ("button |cffffffff%s|r runs |cff9ad5ff%s|r — it waits in this conversation")
-			:format(label, macro), nil, slot)
-		toast(("|cffffd100%s|r  has a button for you: |cffffffff%s|r (open %s)"):format(where, label, where),
-			0.8, 0.8, 0.8, 30)
-		return ("offering %q in %s, not in view"):format(label, where)
-	end
-	local bound = showOffer(slot)
-	-- show the macro, not just the label: the player is the one authorising this, and
-	-- "Do it" tells them nothing about what they would be running
-	remember("claude", ("button |cffffffff%s|r runs |cff9ad5ff%s|r — it is in the window")
-		:format(label, macro), nil, slot)
-	toast(("|cffffd100Claude|r  a button in the window: |cffffffff%s|r"):format(label), 0.8, 0.8, 0.8, 30)
-	return ("offering %q which runs %q, bound to %s"):format(label, macro, bound)
 end
 
 -- What the helper is allowed to ask for. A dispatch table rather than loadstring on
@@ -550,146 +354,6 @@ function handlers.stopped()
 	return "stopped"
 end
 
-function handlers.macro(inbox)
-	if InCombatLockdown() then
-		return "refused: in combat"
-	end
-	if not inbox.name then
-		return "refused: no macro name"
-	end
-	local index = GetMacroIndexByName(inbox.name)
-	if index and index > 0 then
-		EditMacro(index, inbox.name, inbox.icon, inbox.body)
-		return ("edited macro %s at %d"):format(inbox.name, index)
-	end
-	index = CreateMacro(inbox.name, inbox.icon or "INV_MISC_QUESTIONMARK", inbox.body, false)
-	-- deliberately not placed on a bar: PlaceAction taints the UI, so bar edits are
-	-- their own operation followed by a reload
-	return index and ("created macro %s at %d"):format(inbox.name, index) or "CreateMacro failed"
-end
-
-
--- A reload clears taint, flushes SavedVariables and resets the slot cursor. We
--- cannot do it ourselves: ReloadUI wraps a protected call, and asking from insecure
--- code comes back as "WowCompanion called Reload()".
---
--- A real button press is a hardware event, and that is the one path the client
--- trusts. So build a secure button on the fly, point it at a macro, and let the
--- player press it: the click runs through the secure path, taints nothing, and is
--- never blocked. Anything expressible as a macro can go through here.
-function handlers.reload(inbox)
-	return offer("Reload UI", "/reload", inbox and inbox.slot)
-end
-
--- Whatever the helper asks for, as a button the player presses. The macro text is
--- the limit of what this can do, which is also the limit of what the player could
--- type themselves -- so it grants no power they did not already have.
-function handlers.press(inbox)
-	return offer(inbox.label or "Do it", inbox.macro or "", inbox.slot)
-end
-
-
--- What a step did, in the window, so a refusal ("in combat", "no macro named")
--- is seen rather than silently dropped. Only kinds whose result is news: chat,
--- lua and press already show themselves.
--- a lua or module step reports itself when it has run (Sandbox.lua)
-local REPORTED = { bar = true, macro = true }
-local function report(step, ok, outcome)
-	if not ok then
-		remember("error", ("%s failed: %s"):format(tostring(step.kind), tostring(outcome)))
-	elseif REPORTED[step.kind] and type(outcome) == "string" then
-		remember(outcome:find("^refused") and "error" or "game", outcome)
-	end
-end
-
--- Several steps from one answer, in order, each reported. One failing does not
--- stop the rest: they were asked for together, but each stands on its own, and
--- the report says which landed. Agent code runs after a taint scan spread over
--- frames (Sandbox.lua), so the steps after it wait for it, in the same
--- conversation.
-function handlers.batch(inbox)
-	local slot = WC.Link.Current()
-	local steps = inbox.steps or {}
-	local function from(first)
-		for at = first, #steps do
-			if WC.Sandbox.Busy() then
-				WC.Sandbox.Queue(function(done)
-					WC.Link.As(slot, from, at)
-					done()
-				end)
-				return
-			end
-			report(steps[at], WC.Link.Run(steps[at]))
-		end
-	end
-	from(1)
-end
-
--- Put a spell, macro or item on a bar slot, or empty one.
---
--- Cleared by measurement, not assumed: PlaceAction and PutActionInSlot into the
--- slots the gamepad UI draws (189, 202) newly tainted 0 of ~265,000 variables and
--- raised no blocked-action notice. Configuration, out of combat, like a macro.
---
--- Whatever the slot held comes back on the cursor and is dropped. It leaves the bar
--- only: spells stay in the spellbook, macros in the macro list. The reply names it,
--- so "put it back" has something to go on.
-local function describeSlot(slot)
-	local ok, kind, id = pcall(GetActionInfo, slot)
-	if not ok or not kind then
-		return "nothing"
-	end
-	if kind == "spell" then
-		return "spell " .. tostring(WC.Chords.spellName(id) or id)
-	elseif kind == "macro" then
-		return "macro " .. tostring(GetMacroInfo(id) or id)
-	elseif kind == "item" then
-		return "item " .. tostring(WC.Chords.itemName(id) or id)
-	end
-	return tostring(kind) .. " " .. tostring(id)
-end
-
-function handlers.bar(inbox)
-	if InCombatLockdown() then
-		return "refused: in combat"
-	end
-	local slot = tonumber(inbox.slot)
-	if not slot or slot < 1 or slot > WC.Chords.LAST_ACTION_SLOT or slot ~= math.floor(slot) then
-		return "refused: no valid slot"
-	end
-	local before = describeSlot(slot)
-	local what, name = inbox.what, inbox.name
-	ClearCursor()
-	if what == "empty" then
-		PickupAction(slot)
-		ClearCursor()
-		remember("claude", ("slot %d emptied (held %s)"):format(slot, before))
-		return ("slot %d emptied, held %s"):format(slot, before)
-	elseif what == "spell" then
-		C_Spell.PickupSpell(tonumber(name) or name)
-	elseif what == "macro" then
-		local index = GetMacroIndexByName(name or "")
-		if not index or index == 0 then
-			return ("refused: no macro named %q"):format(tostring(name))
-		end
-		PickupMacro(index)
-	elseif what == "item" then
-		C_Item.PickupItem(tonumber(name) or name)
-	else
-		return "refused: what must be spell, macro, item or empty"
-	end
-	-- nothing on the cursor means the name did not resolve: do not place nothing,
-	-- which would just empty the slot
-	if not GetCursorInfo() then
-		return ("refused: could not pick up %s %q"):format(tostring(what), tostring(name))
-	end
-	PlaceAction(slot)
-	ClearCursor()
-	local after = describeSlot(slot)
-	remember("claude", ("slot %d now %s (was %s)"):format(slot, after, before))
-	return ("slot %d: %s, was %s"):format(slot, after, before)
-end
-
 local function loadModules(...) return WC.Sandbox.loadModules(...) end
 
 local frame = CreateFrame("Frame")
@@ -712,6 +376,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- mailbox's lines come at PLAYER_ENTERING_WORLD, WowCompanion_Link)
 		logFrame()
 		replayLog()
+		WC.Send("UNREAD", unreadSet())
 		-- the last reply per conversation, as it stood when the reload saved
 		pcall(function()
 			local board = WowCompanionAgentDB.board
@@ -768,7 +433,6 @@ local bus = WC.Module("Agent")
 -- decides a tap: the PC sends nothing for one)
 bus:On("TALK_TAP", function() toggleWindow() end)
 bus:On("TOGGLE_WINDOW", function() toggleWindow() end)
-bus:On("LINK_STEP", function(step, ok, outcome) report(step, ok, outcome) end)
 bus:On("LINK_FAILED", function(text) remember("error", text) end)
 -- every job's state, as each message that names one is handled, and the
 -- mailbox's at load: the model is the window's one truth of what runs
@@ -796,7 +460,10 @@ WC.Companion = {
 	remember = remember,            -- a line in the conversation window
 	window = logFrame,              -- the Companion window, built on first use
 	modules = effectiveModules,     -- every agent module, name -> code
-	stow = stow,                    -- a secure button out of the window for a fight
+	-- the window if it has been built, else nil (never builds it)
+	built = function() return logWindow end,
 	-- the conversation the message now being handled belongs to
 	replySlot = replySlot,
+	-- the conversation's news has been seen
+	seen = function(slot) setUnread(slot or "", false) end,
 }

@@ -33,6 +33,17 @@ local function slotName(n)
 	return ("%s_S%03d"):format(SLOTS_PREFIX, n)
 end
 
+-- The game's half of the audit trail (src/audit.rs; tools/audit.py merges
+-- both): what arrived, what was drawn, what the window predicted. Kept in
+-- WowCompanionLinkDB.audit, the newest 600 lines, readable after a reload.
+local function audit(what, slot, detail)
+	if type(WowCompanionLinkDB) ~= "table" then return end
+	local log = WowCompanionLinkDB.audit or {}
+	WowCompanionLinkDB.audit = log
+	log[#log + 1] = ("%.0f game %s %s %s"):format(time() * 1000, WC.Conversations.Wire(slot), what, tostring(detail or ""))
+	while #log > 600 do table.remove(log, 1) end
+end
+
 -- What the helper is allowed to ask for. A dispatch table rather than loadstring on
 -- whatever arrives: the rule is configuration only, and this is where that rule lives.
 local handlers = {}
@@ -110,12 +121,12 @@ local function dispatch(inbox, label)
 		return
 	end
 	current = inbox.slot
-	if WowCompanion_Audit then
+	do
 		local list = {}
 		for _, e in ipairs(type(inbox.list) == "table" and inbox.list or {}) do
 			if type(e) == "table" then list[#list + 1] = ("%.0f=%s"):format(tonumber(e.job) or 0, tostring(e.state)) end
 		end
-		WowCompanion_Audit("recv", inbox.slot, ("%s%s%s%s%s%s"):format(tostring(inbox.kind),
+		audit("recv", inbox.slot, ("%s%s%s%s%s%s"):format(tostring(inbox.kind),
 			inbox.job and (" job=%.0f"):format(inbox.job) or "", inbox.state and (" " .. inbox.state) or "",
 			inbox.who and (" who=" .. inbox.who) or "", #list > 0 and (" list{" .. table.concat(list, ",") .. "}") or "",
 			inbox.text and (" " .. tostring(inbox.text):sub(1, 60)) or ""))
@@ -328,4 +339,5 @@ WC.Link = {
 	Slash = function(word, fn) slash[word] = fn end,
 	say = say,
 	MessagesSent = function() return nextSlot - 1 end,
+	Audit = audit,
 }

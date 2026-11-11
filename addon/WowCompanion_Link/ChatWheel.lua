@@ -150,7 +150,7 @@ do
 	watch:Hide()
 	watch:SetScript("OnUpdate", function(self, elapsed)
 		self.t = (self.t or 0) + elapsed
-		if not ring:IsShown() and WowCompanion_PadSlot and WowCompanion_PadSlot() == "say" then
+		if not ring:IsShown() and WowCompanion_PadSlot and WowCompanion_PadSlot() == WC.Conversations.DICTATION then
 			ring.pick = current()
 			light(ring.pick)
 			ring:Show()
@@ -190,7 +190,7 @@ do
 	local ENDED = { answered = true, cancelled = true, failed = true }
 	WC.Module("ChatDictation"):On("JOB_MESSAGE", function(inbox)
 		local id = tonumber(inbox.job)
-		if inbox.slot ~= "say" or not id then return end
+		if inbox.slot ~= WC.Conversations.DICTATION or not id then return end
 		if inbox.state == "hearing" then
 			if not waiting:IsShown() then waiting.t = 0 end
 			waiting.jobs[id] = true

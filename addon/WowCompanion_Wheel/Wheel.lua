@@ -15,6 +15,8 @@
 --       { spell = "<a spell the character knows>" }, { item = 6948 }, { macro = "Ping" },
 --       { emote = "WAVE" }, { macrotext = "/sit", label = "Sit", icon = 134400 } } })
 --   WCWheel.Remove("travel")   WCWheel.List()
+-- Read by other addons through WCWheel.Each(fn(name, wheel)) only: the saved
+-- table is this file's.
 -- No wheel ships: a character starts with none, and each is made on request
 -- from what that character has.
 -- A slot may carry `label` and `icon` to override what is looked up.
@@ -637,6 +639,12 @@ end
 
 function W.Macro(name)
     return "/click WCWheel_" .. name .. " Macro"
+end
+
+-- every wheel, name and definition (slots, label), for the addons that read
+-- them (the export's reach, the Status tab, the buff glow); nothing before login
+function W.Each(fn)
+    for name, wheel in pairs(WowCompanionWheelDB and WowCompanionWheelDB.wheels or {}) do fn(name, wheel) end
 end
 
 function W.List()

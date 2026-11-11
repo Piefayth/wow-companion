@@ -21,11 +21,14 @@ local up = false
 
 local function openWindow() WC.Send("TOGGLE_WINDOW") end
 
-local SLOT_NAMES = { [""] = "Main", l1 = "L1", l2 = "L2", r1 = "R1", r2 = "R2", quick = "Quick" }
+-- the conversations with news not yet looked at, as the Agent announces them
+-- (UNREAD on the bus); none without the Agent
+local unread = {}
+WC.Module("Status"):On("UNREAD", function(set) unread = set or {} end)
 local function unreadNames()
 	local names = {}
-	for slot, on in pairs(WowCompanion_Unread and WowCompanion_Unread() or {}) do
-		if on then names[#names + 1] = SLOT_NAMES[slot] or slot end
+	for slot, on in pairs(unread) do
+		if on then names[#names + 1] = WC.Conversations.Label(slot) end
 	end
 	table.sort(names)
 	return names

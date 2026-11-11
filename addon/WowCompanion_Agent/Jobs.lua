@@ -23,24 +23,15 @@ local jobs = {} -- the model's jobs (JobsModel.lua), once it is made
 local made = {} -- every icon button, for marking after a fight
 
 
--- The game's half of the audit trail (src/audit.rs; tools/audit.py merges
--- both): what arrived, what was drawn, what the window predicted. Kept in the
--- save file, the newest 600 lines; readable after a reload.
+-- what the window drew and predicted, in the channel's audit trail (Link.lua)
 local function wallMs() return time() * 1000 end
-function WowCompanion_Audit(what, slot, detail)
-	if type(WowCompanionAgentDB) ~= "table" then return end
-	local log = WowCompanionAgentDB.audit or {}
-	WowCompanionAgentDB.audit = log
-	log[#log + 1] = ("%.0f game %s %s %s"):format(wallMs(), (slot == nil or slot == "") and "main" or slot, what, tostring(detail or ""))
-	while #log > 600 do table.remove(log, 1) end
-end
-local function audit(what, slot, detail) pcall(WowCompanion_Audit, what, slot, detail) end
+local function audit(what, slot, detail) pcall(WC.Link.Audit, what, slot, detail) end
 
 local function command(verb, slot, id)
 	audit("draw", slot, ("%s%s"):format(verb, id and (" %.0f"):format(id) or ""))
 	if not (WowCompanion_Strip and WowCompanion_Strip.Send) then return end
 	WowCompanion_Strip.Send(("WCCMD %d%04d %s %s%s"):format(time(), math.random(0, 9999), verb,
-		slot ~= "" and slot or "main", id and (" " .. ("%.0f"):format(id)) or ""), 2.5)
+		WC.Conversations.Wire(slot), id and (" " .. ("%.0f"):format(id)) or ""), 2.5)
 end
 
 local function nowMs() return GetTime() * 1000 end
@@ -472,11 +463,8 @@ local function sendable()
 	local job = newest("queued")
 	if job and not job.sending and model:Running(job.slot) then return job end
 end
--- the offered button (Agent.lua): shown in the window, with a press waiting
-local function offerShown()
-	local b = _G.WowCompanionDo
-	return b and b:IsVisible() and b.slot ~= nil or false
-end
+-- the offered button (Offer.lua): its label while it waits for a press
+local function offerShown() return WC.Offer.Waiting() end
 local cancelKey = CreateFrame("Button", "WCJobsCancelKey", UIParent)
 cancelKey:SetScript("OnClick", function() cancel(newest()) end)
 local nowKey = CreateFrame("Button", "WCJobsNowKey", UIParent)
@@ -521,7 +509,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		local parts = {}
 		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " Cancel newest" end
 		if focused and sendable() then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
-		if focused and offerShown() then parts[#parts + 1] = glyph("PADLSTICK") .. " " .. (_G.WowCompanionDo:GetText() or "Press") end
+		if focused and offerShown() then parts[#parts + 1] = glyph("PADLSTICK") .. " " .. offerShown() end
 		window.jobsLegend:SetText(table.concat(parts, "     "))
 		window.jobsLegend:SetShown(#parts > 0)
 		if window.jobsCancelPrompt then window.jobsCancelPrompt:Hide() window.jobsNowPrompt:Hide() end
@@ -538,7 +526,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		-- it, on L3, which they never use in menus); autorun comes back when
 		-- the window lets go. The button itself is secure and the press is theirs
 		if want == "offer" then
-			SetOverrideBindingClick(keyOwner, true, "PADLSTICK", "WowCompanionDo", "LeftButton")
+			SetOverrideBindingClick(keyOwner, true, "PADLSTICK", WC.Offer.BUTTON, "LeftButton")
 		end
 		bound = want
 	end

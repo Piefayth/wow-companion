@@ -79,7 +79,8 @@ yes; don't reinvent what Claude Code has.
   the game.
   - `WowCompanion` (Core, needs nothing of the PC): `Engine.lua` (`WC`: modules,
     bus, settings, `WC.AfterCombat`, the focus helpers, capabilities, `WC.Saved`),
-    `Style.lua` (Blizzard look, glyphs, destroy dialog), `Board.lua` (the toast
+    `Conversations.lua` (the conversations as the PC names them, their labels;
+    `WC.Conversations`), `Style.lua` (Blizzard look, glyphs, destroy dialog), `Board.lua` (the toast
     and board; `WC.Board.Post`), `Providers/` (price, nav, gear, itemSource,
     guide, Polestar's pins). Saved: `WowCompanionDB` (module settings).
   - `WowCompanion_Link` (needs Core): the PC bridge. `Link.lua` the channel
@@ -98,7 +99,8 @@ yes; don't reinvent what Claude Code has.
   - `WowCompanion_Agent` (needs Link): `Agent.lua` the Companion window's
     conversations, the waiting lines and board rows, the offered button, the
     agents' kinds, `/wc`'s agent commands (`WC.Companion` for the files beside
-    it). `Sandbox.lua` agent code (`lua`, `module` steps, the taint scan,
+    it). `Stow.lua` (the window in a fight), `Offer.lua` (the offered button,
+    `WC.Offer`), `Steps.lua` (an answer's steps: batch, macro, bar). `Sandbox.lua` agent code (`lua`, `module` steps, the taint scan,
     blocked-action notices). `Window.lua` (the window and its tabs), `Transcript.lua` (lines
     only append), `JobsModel.lua` (pure, property-tested: `python
     tools/test_jobs.py`, needs `lupa`) and `Jobs.lua` (draws it), `Chords.lua`
