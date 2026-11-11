@@ -2,21 +2,7 @@
 //! seconds, so "is it broken?" is a check rather than a guess. Each line is OK or
 //! a problem with what it means; nothing here changes the game.
 
-use std::{
-    fs,
-    path::Path,
-    process::Command,
-    thread,
-    time::Duration,
-};
-
-fn agent_busy() -> bool {
-    Command::new("wmic")
-        .args(["process", "where", "name='claude.exe'", "get", "CommandLine"])
-        .output()
-        .map(|out| String::from_utf8_lossy(&out.stdout).contains("json-schema"))
-        .unwrap_or(false)
-}
+use std::{fs, path::Path, thread, time::Duration};
 
 fn line(ok: bool, what: &str, detail: &str) {
     println!("{} {what}: {detail}", if ok { "OK     " } else { "PROBLEM" });
@@ -50,32 +36,38 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
             .unwrap_or_default();
         line(true, "crashes", &format!("last: {last} ({})", crashes.display()));
     }
-    // every conversation line until the game has saved it (src/ledger.rs);
-    // dictation only has no conversation, so no ledger
+    let pending = crate::companion_dir().map(|dir| dir.join("restart.request").exists()).unwrap_or(false);
+    line(!pending, "restart", if pending { "a restart is waiting for the companion to go idle" } else { "none pending" });
+    // every conversation line until the game has saved it, and every request's
+    // state (src/ledger.rs); dictation only has no conversation, so no ledger
     let settings = wow_companion_settings::Settings::load();
     if settings.get("agent") == Some(wow_companion_settings::AGENT_OFF) {
         line(true, "ledger", "none: the agents are off");
+        line(true, "agent", "off (dictation only)");
     } else {
-        let problems = crate::ledger::problems();
-        let waiting = crate::companion_dir()
-            .ok()
-            .and_then(|dir| fs::read(dir.join("ledger.json")).ok())
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-            .and_then(|ledger| ledger["lines"].as_array().map(Vec::len));
-        let mailbox = addons.join(crate::ledger::MAILBOX).join("Mail.lua").exists();
-        line(
-            problems.is_empty() && mailbox,
-            "ledger",
-            &match (problems.is_empty(), mailbox) {
-                (true, true) => format!("{} line(s) not yet saved by the game, all in the mailbox", waiting.unwrap_or(0)),
-                (true, false) => format!("no mailbox in {}: `install`", addons.join(crate::ledger::MAILBOX).display()),
-                (false, _) => problems.join(" | "),
-            },
-        );
+        match crate::ledger::on_disk() {
+            Err(err) => line(false, "ledger", &format!("could not be read: {err}")),
+            Ok(book) => {
+                let problems = crate::ledger::problems();
+                let mailbox = addons.join(crate::ledger::MAILBOX).join("Mail.lua").exists();
+                line(
+                    problems.is_empty() && mailbox,
+                    "ledger",
+                    &match (problems.is_empty(), mailbox) {
+                        (true, true) => format!("{} line(s) not yet saved by the game, all in the mailbox", book.waiting()),
+                        (true, false) => format!("no mailbox in {}: `install`", addons.join(crate::ledger::MAILBOX).display()),
+                        (false, _) => problems.join(" | "),
+                    },
+                );
+                // the jobs a stopped companion left unended end at its next start
+                let open = book.jobs().iter().filter(|(_, _, state)| !state.ended()).count();
+                line(true, "agent", &match (companion, open) {
+                    (true, 0) | (false, _) => "idle".to_string(),
+                    (true, n) => format!("{n} request(s) not ended (hearing, queued or running)"),
+                });
+            }
+        }
     }
-    let pending = crate::companion_dir().map(|dir| dir.join("restart.request").exists()).unwrap_or(false);
-    line(!pending, "restart", if pending { "a restart is waiting for the companion to go idle" } else { "none pending" });
-    line(true, "agent", if agent_busy() { "working on a request" } else { "idle" });
 
     // slots: how many this UI session has spent, of how many the game can see
     let used = crate::slots_used(addons);

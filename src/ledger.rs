@@ -113,6 +113,11 @@ impl Book {
         &self.jobs
     }
 
+    /// How many lines the game has not saved yet.
+    pub(crate) fn waiting(&self) -> usize {
+        self.lines.len()
+    }
+
     /// `WowCompanion_Mail = {...}`: what the game takes at its next load.
     pub(crate) fn mailbox_lua(&self) -> String {
         let written = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
@@ -414,17 +419,21 @@ pub(crate) fn confirm(addons: &Path) {
     jobs::forget(&forget);
 }
 
+/// The ledger as the running companion last wrote it, for other processes
+/// (`install`, `doctor`); empty when there is none.
+pub(crate) fn on_disk() -> io::Result<Book> {
+    match fs::read(companion_dir()?.join("ledger.json")) {
+        Ok(bytes) => serde_json::from_slice::<Value>(&bytes)
+            .map_err(io::Error::other)
+            .and_then(|value| Book::from_json(&value).map_err(io::Error::other)),
+        Err(_) => Ok(Book::default()),
+    }
+}
+
 /// `install`: the mailbox from the ledger on disk, so a fresh install has it
 /// before the game's next launch (the running companion rewrites it anyway).
 pub(crate) fn write_mailbox(addons: &Path) -> io::Result<()> {
-    let path = companion_dir()?.join("ledger.json");
-    let book = match fs::read(&path) {
-        Ok(bytes) => serde_json::from_slice::<Value>(&bytes)
-            .map_err(io::Error::other)
-            .and_then(|value| Book::from_json(&value).map_err(io::Error::other))?,
-        Err(_) => Book::default(),
-    };
-    write_whole(&addons.join(MAILBOX).join("Mail.lua"), book.mailbox_lua().as_bytes())
+    write_whole(&addons.join(MAILBOX).join("Mail.lua"), on_disk()?.mailbox_lua().as_bytes())
 }
 
 #[cfg(test)]

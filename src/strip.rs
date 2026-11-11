@@ -130,19 +130,17 @@ fn answer_for<'a>(payload: &'a [u8], id: &str) -> Option<&'a [u8]> {
     payload.strip_prefix(request_prefix(id).as_bytes())
 }
 
-/// `lua`, with every `WowCompanion_Strip.Send` made while it runs (WCChatStrip's
-/// included) opening with read `id`'s prefix; Send is put back after, error or
-/// not. A strip drawn later, from a timer, carries no id and is not taken.
+/// `lua`, with `WowCompanion_Strip` bound to a stand-in whose Send opens every
+/// text with read `id`'s prefix. The binding is a local, so it holds for code
+/// the Lua leaves to run later (a timer, a callback) as much as for its first
+/// run, and the global is never changed, so no one else's Send is tagged.
 fn tagged(lua: &str, id: &str) -> String {
     let prefix = request_prefix(id).replace('\n', "\\n");
     format!(
         "local __wcreq_strip = WowCompanion_Strip\n\
          if not (__wcreq_strip and __wcreq_strip.Send) then error(\"the data strip is not loaded (WowCompanion_Link)\", 0) end\n\
-         local __wcreq_send = __wcreq_strip.Send\n\
-         __wcreq_strip.Send = function(text, seconds) return __wcreq_send(\"{prefix}\" .. tostring(text or \"\"), seconds) end\n\
-         local __wcreq_ok, __wcreq_err = pcall(function(...)\n{lua}\nend)\n\
-         __wcreq_strip.Send = __wcreq_send\n\
-         if not __wcreq_ok then error(__wcreq_err, 0) end"
+         local WowCompanion_Strip = setmetatable({{ Send = function(text, seconds) return __wcreq_strip.Send(\"{prefix}\" .. tostring(text or \"\"), seconds) end }}, {{ __index = __wcreq_strip }})\n\
+         return (function(...)\n{lua}\nend)()"
     )
 }
 
@@ -153,7 +151,7 @@ fn not_ours(payload: &[u8]) -> &'static str {
     } else if payload.starts_with(b"WCREQ ") {
         "only another read's strip showed"
     } else {
-        "only a strip without a read's id showed (the Lua must call WowCompanion_Strip.Send while it runs, not from a timer)"
+        "only a strip without a read's id showed (the Lua must call WowCompanion_Strip.Send by that name, not through another reference to it)"
     }
 }
 
@@ -212,9 +210,10 @@ fn follow_up(slot: &str, out: &Path, arrived: bool) -> io::Result<()> {
 }
 
 /// The Lua that has the game draw its recent chat and the profession links it
-/// caught (LinkCatcher's `WCChatStrip`), for an agent's `strip --chat`.
-const CHAT_LUA: &str = "if WCChatStrip then WCChatStrip() end";
-/// How long a chat read watches: `WCChatStrip` shows its strip for 6 s.
+/// caught (LinkCatcher's `WCChatText`), for 6 s, for an agent's `strip --chat`.
+const CHAT_LUA: &str = "if not WCChatText then error(\"the chat reader is not loaded (WowCompanion_Agent)\", 0) end\n\
+                        WowCompanion_Strip.Send(WCChatText(), 6)";
+/// How long a chat read watches: its strip shows for 6 s.
 const CHAT_SECONDS: f64 = 8.0;
 
 /// Where asks wait for the running companion: `<id>.ask` (first line the
@@ -505,17 +504,17 @@ mod tests {
     }
 
     #[test]
-    fn a_reads_lua_sends_with_its_id_while_it_runs_and_puts_send_back() {
-        let lua = "local t = {} t[1] = \"x\" WowCompanion_Strip.Send(table.concat(t), 8)";
+    fn a_reads_lua_sees_a_strip_that_tags_its_sends_and_the_global_is_untouched() {
+        let lua = "C_Timer.After(1, function() WowCompanion_Strip.Send(\"later\", 8) end)";
         let wrapped = tagged(lua, "42");
-        // the read's Lua runs unchanged inside, after Send opens with the id
+        // the read's Lua runs unchanged inside, below a local of the global's name
+        // whose Send opens with the id: closures it leaves behind keep that local
         let (before, after) = wrapped.split_once(&format!("\n{lua}\n")).expect("the Lua inside, on its own lines");
-        assert!(before.contains("__wcreq_send(\"WCREQ 42\\n\" .. tostring(text or \"\"), seconds)"), "{before}");
-        assert!(before.ends_with("pcall(function(...)"));
-        // put back after, whether the Lua failed or not, and its error passed on
-        let restore = after.find("__wcreq_strip.Send = __wcreq_send").expect("Send put back");
-        let rethrow = after.find("if not __wcreq_ok then error(__wcreq_err, 0) end").expect("the error passed on");
-        assert!(after.starts_with("end)") && restore < rethrow);
+        let binding = before.lines().find(|line| line.starts_with("local WowCompanion_Strip = ")).expect("the stand-in");
+        assert!(binding.contains("__wcreq_strip.Send(\"WCREQ 42\\n\" .. tostring(text or \"\"), seconds)"), "{binding}");
+        assert!(binding.contains("__index = __wcreq_strip"), "the rest of the strip shows through");
+        assert!(before.ends_with("return (function(...)") && after == "end)()", "its results come back");
+        assert!(!wrapped.contains(".Send ="), "no Send is ever replaced");
         assert!(!wrapped.contains("WCREQ 42\n"), "the newline is a Lua escape, not a line break in a string");
     }
 
