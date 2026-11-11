@@ -23,32 +23,29 @@ foreach ($file in $Extra) { Copy-Item $file $stage }
 # them beside the exe, and the exe cannot start without them. Both builds use
 # the same ones.
 $dlls = @(Get-ChildItem (Split-Path -Parent $Exe) -Filter *.dll)
-if ($dlls.Count -eq 0) { throw "no DLLs beside $Exe: the streaming engine's libraries are missing from the build" }
+if ($dlls.Count -eq 0) { throw "no DLLs beside ${Exe}: the streaming engine's libraries are missing from the build" }
 $dlls | Copy-Item -Destination $stage
 
-# what the companion and its agent read beside the exe (home() in src/main.rs)
-foreach ($dir in "addon", "modules", "integrations", "assets", "tools") {
-    Copy-Item -Recurse (Join-Path $root $dir) (Join-Path $stage $dir)
+# What git tracks: what the companion and its agent read beside the exe (home()
+# in src/main.rs), and everything CLAUDE.md points at, the source included. Never
+# what is generated (untracked) or this repo's own player's: their profile and
+# layout (player/), their plan (docs/PLAN.md, the developers' to-do), their
+# modules (another player's agent makes its own); nor the repo's own machinery.
+$tracked = @(git -C $root ls-files)
+if ($LASTEXITCODE -ne 0) { throw "git ls-files failed: run this in a checkout of the repo" }
+foreach ($file in $tracked) {
+    if ($file -match '^(player|modules|packaging|\.github)/' -or $file -in "docs/PLAN.md", ".gitignore") { continue }
+    $to = Join-Path $stage $file
+    New-Item -ItemType Directory -Force (Split-Path -Parent $to) | Out-Null
+    Copy-Item (Join-Path $root $file) $to
 }
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $stage "tools\__pycache__")
-# modules made for this repo's own player (their class, their bindings): another
-# player's agent makes their own
-foreach ($personal in "ExtraButtons.lua") {
-    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $stage "modules\$personal")
+foreach ($dir in "player", "modules", "models") {
+    New-Item -ItemType Directory -Force (Join-Path $stage $dir) | Out-Null
 }
-# the generated module bundle is rebuilt by install
-Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $stage "addon\WowCompanion_Agent\Modules.lua")
-# the mailbox is the player's: their companion writes it from their ledger at install
-Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $stage "addon\WowCompanion_Mailbox\Mail.lua")
-New-Item -ItemType Directory -Force (Join-Path $stage "docs") | Out-Null
-Get-ChildItem (Join-Path $root "docs") -File | Where-Object { $_.Name -notin "PLAN.md", "history.md" } | Copy-Item -Destination (Join-Path $stage "docs")
-Copy-Item (Join-Path $root "CLAUDE.md") $stage
-New-Item -ItemType Directory -Force (Join-Path $stage "player") | Out-Null
 # only the template: unzipping an update over an install must not overwrite the
 # profile the agent keeps (the companion makes profile.md from it when missing)
 Copy-Item (Join-Path $PSScriptRoot "profile.template.md") (Join-Path $stage "player\profile.template.md")
 Copy-Item (Join-Path $PSScriptRoot "README.txt") $stage
-New-Item -ItemType Directory -Force (Join-Path $stage "models") | Out-Null
 
 $zip = Join-Path $Out "$Name.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }

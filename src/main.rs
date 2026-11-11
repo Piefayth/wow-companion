@@ -709,6 +709,21 @@ mod tests {
         assert!(err.contains("slots are spent"), "{err}");
     }
 
+    /// The release script runs only when a release is made, so a mistake in it
+    /// waits there unseen (a `"$Exe:"` stopped it parsing, 2026-11-11): parse it.
+    #[cfg(windows)]
+    #[test]
+    fn the_release_script_parses() {
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("packaging").join("package.ps1");
+        let check = format!(
+            "$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile('{}', [ref]$null, [ref]$e); \
+             if ($e) {{ $e | ForEach-Object {{ $_.Message }}; exit 1 }}",
+            script.display()
+        );
+        let out = std::process::Command::new("powershell").args(["-NoProfile", "-Command", &check]).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stdout));
+    }
+
     #[test]
     fn every_slot_has_its_own_bell_in_each_set() {
         assert_eq!(slot_bell_name(0, 1), "g0-001.wav");

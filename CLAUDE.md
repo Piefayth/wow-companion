@@ -20,7 +20,9 @@ agreed, not only that the new path works. (The send preview gained combat focus
 and kept minus-to-send beside it; the player found it.)
 
 **What we do next is `docs/PLAN.md`**, with the
-player's standing terms. Read it before starting anything sizeable.
+player's standing terms. Read it before starting anything sizeable. It is the
+developers' plan and lives in the source repository only: a release ships
+without it, and an agent without it works from the player's requests.
 
 ## The player
 
