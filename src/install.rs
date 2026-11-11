@@ -191,9 +191,11 @@ pub(crate) fn send_command(addons: &Path, args: &[String]) -> io::Result<()> {
             .text("name", name),
         // the PlaceAction taint test, delivered the way real bar edits would be
         [kind, variant] if kind == "place" => Msg::new("place").text("variant", variant),
+        // the slot bell watcher's switch (docs/proposals/slot-bells.md): never typed in game
+        [kind, state] if kind == "slotbells" && (state == "on" || state == "off") => Msg::new("slotbells").flag("on", state == "on"),
         _ => {
             return Err(io::Error::other(
-                "usage: send chat <text> | send macro <name> <body> | send reload | send bar <slot> <spell|macro|item|empty> <name> | send place <variant>",
+                "usage: send chat <text> | send macro <name> <body> | send reload | send bar <slot> <spell|macro|item|empty> <name> | send place <variant> | send slotbells on|off",
             ));
         }
     };
