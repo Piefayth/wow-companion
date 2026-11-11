@@ -323,22 +323,55 @@ local function buildTabs(frame, messages)
 	chatWell:SetPoint("TOPLEFT", 4, -60)
 	chatWell:SetPoint("BOTTOMRIGHT", -(6 + WELL + 2), 26)
 	table.insert(frame.chatParts, chatWell)
+	-- The chat well's geometry, in one place (docs/ui-layout.md): inside the
+	-- inset's border (EDGE) there are two rects and nothing else, the
+	-- transcript on the left and the scroll column (BAR wide) on the right.
+	-- Everything in the well anchors to one of the two, never to a number of
+	-- its own, so backings, shadows and the bar cannot drift apart.
+	local EDGE, BAR = 3, 22
+	local level = chatWell:GetFrameLevel()
+	local column = _G["WCChatScrollColumn"] or CreateFrame("Frame", "WCChatScrollColumn", chatWell)
+	column:SetPoint("TOPRIGHT", -EDGE, -EDGE)
+	column:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
+	column:SetWidth(BAR)
+	column:SetFrameLevel(level + 1)
+	table.insert(frame.chatParts, column)
 	messages.scroll:ClearAllPoints()
-	-- edge to edge inside the inset, so the turns' backings reach it; the
-	-- margins are the transcript's own (Transcript.lua PAD_*)
-	-- 6 down, not 3: the inset's top border shows in full under the tabs, as it
-	-- does on the other pages, instead of text and shadow running into it
-	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", 3, -6)
-	messages.scroll:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT", -3, 3)
-	messages.scroll:SetFrameLevel(chatWell:GetFrameLevel() + 2)
+	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", EDGE, -EDGE)
+	messages.scroll:SetPoint("BOTTOMRIGHT", column, "BOTTOMLEFT")
+	messages.scroll:SetFrameLevel(level + 2)
+	-- the column: the replies' stone under Blizzard's inner shadow
+	-- (ShadowOverlaySmallTemplate, UIPanelTemplates.xml:1045), so it reads carved,
+	-- its left edge one quest log divider turned upright (as
+	-- Blizzard_LFGVanilla_Listing.xml:292-305 does) so each turn's divider meets
+	-- it in a T; the arrows at its ends and the thumb's track between them
+	local channel = column:CreateTexture(nil, "BACKGROUND")
+	channel:SetTexture(WC.Transcript.STONE.claude, "REPEAT", "REPEAT")
+	channel:SetHorizTile(true)
+	channel:SetVertTile(true)
+	channel:SetAllPoints()
+	local madeShadow, shadow = pcall(CreateFrame, "Frame", nil, column, "ShadowOverlaySmallTemplate")
+	if madeShadow and shadow then shadow:SetAllPoints() end
+	local edge = CreateFrame("Frame", nil, column)
+	edge:SetPoint("TOP", column, "TOPLEFT")
+	edge:SetPoint("BOTTOM", column, "BOTTOMLEFT")
+	edge:SetWidth(15)
+	edge:SetFrameLevel(level + 4)
+	local rule = edge:CreateTexture(nil, "OVERLAY")
+	rule:SetAtlas("QuestLog-frame-devider")
+	rule:SetAlpha(0.8)
+	rule:SetPoint("CENTER")
+	rule:SetRotation(math.pi / 2)
+	edge:SetScript("OnSizeChanged", function(_, w, h) rule:SetSize(h, w) end)
 	if frame.chatParts[1] and frame.chatParts[2] then
 		frame.chatParts[1]:ClearAllPoints()
-		frame.chatParts[1]:SetPoint("TOPRIGHT", chatWell, "TOPRIGHT", -5, -6)
-		frame.chatParts[1]:SetFrameLevel(chatWell:GetFrameLevel() + 3)
+		frame.chatParts[1]:SetPoint("TOP", column, "TOP", 0, -1)
+		frame.chatParts[1]:SetFrameLevel(level + 3)
 		frame.chatParts[2]:ClearAllPoints()
-		frame.chatParts[2]:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT", -5, 6)
-		frame.chatParts[2]:SetFrameLevel(chatWell:GetFrameLevel() + 3)
+		frame.chatParts[2]:SetPoint("BOTTOM", column, "BOTTOM", 0, 1)
+		frame.chatParts[2]:SetFrameLevel(level + 3)
 	end
+	if frame.scrollTrack then frame.scrollTrack:SetFrameLevel(level + 3) end
 	frame.convButtons = {}
 	local LABELS = { [""] = "Main", l1 = "L1", l2 = "L2", r1 = "R1", r2 = "R2", quick = "Quick" }
 	for i, key in ipairs({ "", "l1", "l2", "r1", "r2", "quick" }) do
@@ -398,8 +431,8 @@ local function buildTabs(frame, messages)
 	-- own ShadowOverlay-Top (SharedUIPanelTemplates.xml:195), above the
 	-- scrolling text so lines slide under it.
 	local lip = CreateFrame("Frame", nil, chatWell)
-	lip:SetPoint("TOPLEFT", 3, -6)
-	lip:SetPoint("TOPRIGHT", -3, -6)
+	lip:SetPoint("TOPLEFT", messages.scroll, "TOPLEFT")
+	lip:SetPoint("TOPRIGHT", messages.scroll, "TOPRIGHT")
 	lip:SetHeight(24)
 	lip:SetFrameLevel(chatWell:GetFrameLevel() + 3)
 	local shade = lip:CreateTexture(nil, "OVERLAY")
@@ -530,42 +563,12 @@ local function buildLog()
 	-- The scroll bar between the arrows: a thumb sized to
 	-- the share of the transcript in view and placed at the scroll position, in
 	-- Blizzard's own scroll bar art. Shown only, never dragged: the arrows scroll.
-	-- the turns' backings stop at the bar's left side (Transcript:Gutter)
-	messages.gutterFrame = arrows[1]
 	if #arrows == 2 then
 		local track = CreateFrame("Frame", nil, frame)
+		frame.scrollTrack = track
 		track:SetPoint("TOP", arrows[1], "BOTTOM", 0, -2)
 		track:SetPoint("BOTTOM", arrows[2], "TOP", 0, 2)
 		track:SetWidth(arrows[1]:GetWidth() > 0 and arrows[1]:GetWidth() or 16)
-		-- The scroll bar's channel: the replies' stone under Blizzard's
-		-- inner shadow (ShadowOverlaySmallTemplate, UIPanelTemplates.xml:1045),
-		-- so it reads carved rather than void; above the inset, below
-		-- the thumb (a child of the track, so one level up).
-		local channel = track:CreateTexture(nil, "BORDER")
-		channel:SetTexture(WC.Transcript.STONE.claude, "REPEAT", "REPEAT")
-		channel:SetHorizTile(true)
-		channel:SetVertTile(true)
-		channel:SetPoint("TOPLEFT", arrows[1], "TOPLEFT", 0, 0)
-		channel:SetPoint("BOTTOMRIGHT", arrows[2], "BOTTOMRIGHT", 0, 0)
-		local madeShadow, shadow = pcall(CreateFrame, "Frame", nil, track, "ShadowOverlaySmallTemplate")
-		if madeShadow and shadow then
-			shadow:SetAllPoints(channel)
-			shadow:SetFrameLevel(track:GetFrameLevel())
-		end
-		-- The channel's left edge in the dividers' own art: one quest log
-		-- divider turned upright (as Blizzard_LFGVanilla_Listing.xml:292-305
-		-- does), so each turn's divider meets it in a T.
-		local edge = CreateFrame("Frame", nil, track)
-		edge:SetPoint("TOP", arrows[1], "TOPLEFT", 0, 0)
-		edge:SetPoint("BOTTOM", arrows[2], "BOTTOMLEFT", 0, 0)
-		edge:SetWidth(15)
-		edge:SetFrameLevel(track:GetFrameLevel() + 2)
-		local rule = edge:CreateTexture(nil, "OVERLAY")
-		rule:SetAtlas("QuestLog-frame-devider")
-		rule:SetAlpha(0.8)
-		rule:SetPoint("CENTER")
-		rule:SetRotation(math.pi / 2)
-		edge:SetScript("OnSizeChanged", function(_, w, h) rule:SetSize(h, w) end)
 		-- Nothing is stretched. The thumb is drawn as
 		-- Blizzard's WowTrimScrollBar thumb is (TrimScrollBar.xml and .lua): the
 		-- round end caps at their own size, and the centre *tiled*: its texture

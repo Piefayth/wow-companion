@@ -11,9 +11,10 @@ local LOG_KEEP = WC.Companion.LOG_KEEP
 -- cannot do any of that (one font, no hanging indent), so this is a scroll
 -- frame of font strings, one per line, stacked top to bottom.
 local TURN_GAP, PARA_GAP, LINE_SPACING = 14, 7, 2
--- The scroll frame fills its well edge to edge so the backings do; the text
--- keeps its margins inside it, the right one clear of the scroll bar.
-local PAD_L, PAD_R, PAD_TOP = 10, 28, 6
+-- The scroll frame is the chat well's transcript rect (Window.lua,
+-- docs/ui-layout.md) and the backings fill it edge to edge; the text keeps
+-- these margins inside it.
+local PAD_L, PAD_R, PAD_TOP = 10, 10, 6
 local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 local NOTE_FONT = "GameFontHighlightSmall"
 
@@ -100,16 +101,6 @@ function Transcript:Width()
 	return width and width > 60 and width or nil
 end
 
--- How far the backings stop short of the content's right edge: up to the
--- scroll bar's left side (Window.lua sets gutterFrame to its up arrow), so
--- the gutter is the bar's own width.
-function Transcript:Gutter()
-	local bar, right = self.gutterFrame, self.content:GetRight()
-	local left = bar and bar:GetLeft()
-	if left and right and right > left then return math.floor(right - left + 1) end
-	return PAD_R - 2
-end
-
 -- place one row below the last; returns the new bottom
 function Transcript:Place(row, y, width)
 	local turnTop = y
@@ -120,7 +111,7 @@ function Transcript:Place(row, y, width)
 		row.turn:ClearAllPoints()
 		row.turn:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -top)
 		-- the backings and dividers stop where the scroll bar's gutter begins
-		row.turn:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", -self:Gutter(), -top)
+		row.turn:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", 0, -top)
 		row.turn:SetHeight(1)
 		-- centred on the boundary with the turn above; none above the first
 		row.divider:ClearAllPoints()
