@@ -128,7 +128,8 @@ enum Talk {
     Idle,
     Listening(Instant),
     Transcribing,
-    Heard { text: String, timing: String, device: String },
+    /// `device`: the graphics card Whisper ran on; None is the CPU
+    Heard { text: String, timing: String, device: Option<String> },
     Failed { why: String, details: String },
 }
 
@@ -553,8 +554,8 @@ impl Setup {
             Talk::Heard { text, timing, device } => {
                 ui.add_space(6.0);
                 look::quote(ui, if text.is_empty() { "(nothing)" } else { text });
-                ui.label(RichText::new(format!("{timing} on {device}")).small().color(look::MUTED));
-                if whisper && device == "CPU" && self.engine != "cpu" {
+                ui.label(RichText::new(format!("{timing} on {}", device.as_deref().unwrap_or("the CPU"))).small().color(look::MUTED));
+                if whisper && device.is_none() && self.engine != "cpu" {
                     ui.colored_label(look::WARN, "This ran on the CPU: the GPU build found no usable graphics card.");
                 }
             }
@@ -1112,11 +1113,11 @@ impl Setup {
                     .creation_flags(NO_WINDOW)
                     .output()
                     .map_err(|e| e.to_string())?;
-                Ok::<_, String>(format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
+                Ok::<_, String>((String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned()))
             })();
             *talk.lock().unwrap() = match result {
                 Err(why) => Talk::Failed { why, details: String::new() },
-                Ok(output) => judge(&output),
+                Ok((stdout, stderr)) => judge(&stdout, &stderr),
             };
         });
     }
@@ -1155,15 +1156,15 @@ fn check_agent(alias: &str) -> Result<(), String> {
         let _ = stdin.write_all(b"ok?");
     }
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    if out.status.success() && text.contains("\"is_error\":false") {
+    // `--output-format json`: one result object
+    let result = serde_json::from_slice::<serde_json::Value>(&out.stdout).ok();
+    if out.status.success() && result.as_ref().is_some_and(|result| result["is_error"] == false) {
         return Ok(());
     }
     // Claude Code's own message, when it gave one
-    let reason = text
-        .split("\"result\":\"")
-        .nth(1)
-        .and_then(|rest| rest.split('"').next())
+    let reason = result
+        .as_ref()
+        .and_then(|result| result["result"].as_str())
         .map(str::to_string)
         .unwrap_or_else(|| String::from_utf8_lossy(&out.stderr).trim().to_string());
     Err(if reason.is_empty() { "This model did not answer.".into() } else { reason })
@@ -1300,30 +1301,22 @@ impl Meter {
     }
 }
 
-/// What the companion's `transcribe` heard, how fast, and on which device.
-fn judge(output: &str) -> Talk {
-    let text = output.lines().find_map(|l| l.strip_prefix("text: ")).map(str::trim);
-    // Whisper: "<n>s of audio transcribed in <t>s"; the streaming engine: "<n>s
-    // of audio; final text <t> ms after the audio ended"
-    let timing = output.lines().find(|l| l.contains("transcribed in") || l.contains("final text")).unwrap_or("").trim().to_string();
-    let device = if output.contains("using Vulkan") || output.contains("ggml_vulkan: Found") {
-        "Vulkan (graphics card)"
-    } else if output.contains("using CUDA") {
-        "CUDA (graphics card)"
-    } else {
-        "CPU"
+/// What the companion's `transcribe` or `transcribe-stream` heard, how fast, and
+/// on which device: their last line of output, JSON. Without it the run failed,
+/// and everything it printed is the details.
+fn judge(stdout: &str, stderr: &str) -> Talk {
+    let result = stdout.lines().last().and_then(|line| serde_json::from_str::<serde_json::Value>(line).ok());
+    let Some(result) = result else {
+        return Talk::Failed { why: "Speech recognition did not run (see details).".into(), details: format!("{stdout}{stderr}").trim().to_string() };
     };
-    match text {
-        Some(text) => Talk::Heard { text: text.to_string(), timing, device: device.to_string() },
-        None => {
-            let details = output
-                .lines()
-                .filter(|l| !l.starts_with("whisper_full") && !l.contains("decoder") && !l.trim().is_empty())
-                .collect::<Vec<_>>()
-                .join("\n");
-            Talk::Failed { why: "Speech recognition did not run (see details).".into(), details }
-        }
-    }
+    let text = result["text"].as_str().unwrap_or_default().to_string();
+    let (audio, took) = (result["audio_seconds"].as_f64().unwrap_or_default(), result["took_ms"].as_u64().unwrap_or_default());
+    let timing = if result["engine"] == "streaming" {
+        format!("{audio:.1}s of audio; the text {took} ms after it ended")
+    } else {
+        format!("{audio:.1}s of audio transcribed in {:.2}s", took as f64 / 1000.0)
+    };
+    Talk::Heard { text, timing, device: result["device"].as_str().map(str::to_string) }
 }
 
 /// A model file as the dropdown shows it: its name and size.
@@ -1426,13 +1419,14 @@ mod tests {
     use super::{Clip, Talk, judge};
 
     #[test]
-    fn a_transcript_on_cuda_is_reported_with_its_device() {
-        let output = "whisper_backend_init_gpu: using CUDA0 backend\nmodel loaded in 1.66s\n6.1s of audio transcribed in 0.29s\ntext: Put Moonfire on the right bar.\n";
-        match judge(output) {
+    fn a_transcript_is_read_from_its_json_line_with_its_device() {
+        let stdout = "model loaded in 1.66s\n6.1s of audio transcribed in 0.29s\ntext: Put Moonfire on the right bar.\n\
+            {\"engine\":\"whisper\",\"text\":\"Put Moonfire on the right bar.\",\"audio_seconds\":6.1,\"took_ms\":290,\"device\":\"CUDA0 (NVIDIA GeForce RTX 4090)\"}\n";
+        match judge(stdout, "") {
             Talk::Heard { text, timing, device } => {
                 assert_eq!(text, "Put Moonfire on the right bar.");
                 assert_eq!(timing, "6.1s of audio transcribed in 0.29s");
-                assert_eq!(device, "CUDA (graphics card)");
+                assert_eq!(device.as_deref(), Some("CUDA0 (NVIDIA GeForce RTX 4090)"));
             }
             _ => panic!("expected a transcript"),
         }
@@ -1440,7 +1434,7 @@ mod tests {
 
     #[test]
     fn a_failed_load_fails_and_says_so() {
-        assert!(matches!(judge("Error: failed to load model\n"), Talk::Failed { .. }));
+        assert!(matches!(judge("", "Error: failed to load model\n"), Talk::Failed { .. }));
     }
 
     #[test]

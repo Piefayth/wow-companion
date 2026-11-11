@@ -11,7 +11,10 @@ cpal = "0.18.2"
 # the cuda feature builds ggml's CUDA backend from source: hundreds of .cu files,
 # each for every architecture ggml supports. Set CUDAARCHS=89 to build for this
 # GPU alone. Nothing outside this crate's manifest can invalidate it now.
-whisper-rs = { version = "0.16.0" }
+# raw-api: ggml's device list, to say which device Whisper runs on (a re-export
+# only: whisper-rs-sys and its CUDA build are untouched)
+whisper-rs = { version = "0.16.0", features = ["raw-api"] }
+serde_json = "1"
 # The streaming engine (docs/proposals/streaming-speech.md): sherpa-onnx
 # runs NVIDIA's Nemotron streaming model on the CPU, so it never competes with
 # the game for the GPU. Prebuilt libraries, downloaded into target/ at build time.

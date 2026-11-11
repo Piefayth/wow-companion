@@ -177,12 +177,15 @@ pub fn transcribe_stream_file(dir: &Path, wav: &Path, vocabulary: &[String]) -> 
     }
     let released = Instant::now();
     let text = finish(&recognizer, &stream, rate);
-    println!(
-        "{:.1}s of audio; final text {} ms after the audio ended",
-        mono.len() as f32 / rate as f32,
-        released.elapsed().as_millis()
-    );
+    let after = released.elapsed();
+    let audio = mono.len() as f32 / rate as f32;
+    println!("{audio:.1}s of audio; final text {} ms after the audio ended", after.as_millis());
     println!("text: {text}");
+    // the last line, for the setup window: the result as JSON (the CPU, always)
+    println!(
+        "{}",
+        serde_json::json!({ "engine": "streaming", "text": text, "audio_seconds": audio, "took_ms": after.as_millis() as u64, "device": null })
+    );
     Ok(())
 }
 

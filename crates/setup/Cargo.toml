@@ -16,3 +16,5 @@ sha2 = "0.11.1"
 # unpacking the streaming model's release archive (.tar.bz2)
 tar = "0.4"
 bzip2 = "0.6"
+# what `transcribe` and the `claude` CLI answer, read as JSON
+serde_json = "1"

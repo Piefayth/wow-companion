@@ -119,14 +119,40 @@ pub fn transcribe_file(model: &std::path::Path, wav: &std::path::Path) -> io::Re
     let loaded = loading.elapsed();
     let started = std::time::Instant::now();
     let text = transcribe(&whisper, &clip, &prompt(&[]))?;
+    let took = started.elapsed();
     println!("model loaded in {:.2}s", loaded.as_secs_f32());
-    println!(
-        "{:.1}s of audio transcribed in {:.2}s",
-        clip.len() as f32 / WHISPER_RATE as f32,
-        started.elapsed().as_secs_f32()
-    );
+    let audio = clip.len() as f32 / WHISPER_RATE as f32;
+    println!("{audio:.1}s of audio transcribed in {:.2}s", took.as_secs_f32());
     println!("text: {}", text.trim());
+    // the last line, for the setup window: the result as JSON
+    println!(
+        "{}",
+        serde_json::json!({ "engine": "whisper", "text": text.trim(), "audio_seconds": audio, "took_ms": took.as_millis() as u64, "device": whisper_device() })
+    );
     Ok(())
+}
+
+/// The device Whisper runs on, as whisper.cpp chooses it (`use_gpu` on, device
+/// 0): the first GPU ggml has registered, if it starts (whisper.cpp falls back
+/// to the CPU when it does not). None is the CPU.
+fn whisper_device() -> Option<String> {
+    use std::ffi::CStr;
+    use whisper_rs::whisper_rs_sys as ggml;
+    // SAFETY: ggml's registry calls; every pointer is checked before it is read,
+    // and the backend started here is freed before returning
+    unsafe {
+        let device = ggml::ggml_backend_dev_by_type(ggml::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_GPU);
+        if device.is_null() {
+            return None;
+        }
+        let backend = ggml::ggml_backend_dev_init(device, std::ptr::null());
+        if backend.is_null() {
+            return None;
+        }
+        ggml::ggml_backend_free(backend);
+        let text = |ptr: *const std::os::raw::c_char| if ptr.is_null() { String::new() } else { CStr::from_ptr(ptr).to_string_lossy().into_owned() };
+        Some(format!("{} ({})", text(ggml::ggml_backend_dev_name(device)), text(ggml::ggml_backend_dev_description(device))))
+    }
 }
 
 /// A WAV file's samples as f32, with its channel count and rate: 16-bit PCM or

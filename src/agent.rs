@@ -325,14 +325,13 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
     }
     let envelope = envelope.ok_or_else(|| io::Error::other(format!("claude gave no result: {}", complaint.trim())))?;
     let thread = envelope.get("session_id").and_then(Value::as_str).map(str::to_string);
+    // the step limit is not a fault: the work so far stands and the conversation
+    // can carry on (the companion does, a few times). The result names it.
+    if envelope.get("subtype").and_then(Value::as_str) == Some("error_max_turns") {
+        let spoken = Spoken { say: String::new(), inbox: None, look: false, modules: Vec::new(), out_of_steps: true };
+        return Ok(Answer { spoken, thread });
+    }
     if envelope.get("is_error").and_then(Value::as_bool) == Some(true) {
-        // the step limit is not a fault: the work so far stands and the
-        // conversation can carry on (the companion does, a few times)
-        let errors = envelope.get("errors").map(Value::to_string).unwrap_or_default();
-        if errors.contains("maximum number of turns") {
-            let spoken = Spoken { say: String::new(), inbox: None, look: false, modules: Vec::new(), out_of_steps: true };
-            return Ok(Answer { spoken, thread });
-        }
         return Err(io::Error::other(format!("claude reported an error: {envelope}")));
     }
     // `structured_output` is the schema'd answer already parsed; `result` carries
