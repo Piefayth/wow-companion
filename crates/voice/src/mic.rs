@@ -316,29 +316,97 @@ pub fn microphones() -> io::Result<()> {
     Ok(())
 }
 
-// Whisper wants 16 kHz mono f32. Averaging each output sample over its whole input
-// window both decimates and acts as a crude low-pass, which matters: plain
-// nearest-sample decimation from 48 kHz aliases badly enough to cost accuracy.
+/// The resampling filter's half width, in zero crossings of its sinc.
+const ZEROS: f64 = 6.0;
+
+/// Whisper wants 16 kHz mono f32. Resampled through a Hann-windowed sinc
+/// low-pass at 99% of the lower Nyquist, six zero crossings wide: the filter
+/// sherpa-onnx (Kaldi's resampler) applies to the streaming engine's input, so
+/// both engines on trial hear the same audio. What it replaced doubled each
+/// sample of an 8 kHz mic, mirroring the voice into 4-8 kHz, and let half of
+/// what a 48 kHz mic heard above 8 kHz fold back into the voice.
 pub(crate) fn to_whisper(samples: &[f32], channels: u16, rate: u32) -> Vec<f32> {
-    if samples.is_empty() {
-        return Vec::new();
-    }
     let channels = channels.max(1) as usize;
     let mono: Vec<f32> = samples
         .chunks(channels)
         .map(|frame| frame.iter().sum::<f32>() / frame.len() as f32)
         .collect();
-    if rate == WHISPER_RATE {
+    if rate == WHISPER_RATE || mono.is_empty() {
         return mono;
     }
-    let step = rate as f64 / WHISPER_RATE as f64;
-    let count = (mono.len() as f64 / step).floor() as usize;
-    (0..count)
-        .map(|index| {
-            let start = (index as f64 * step) as usize;
-            let end = (((index + 1) as f64 * step).ceil() as usize).clamp(start + 1, mono.len());
-            let window = &mono[start..end];
-            window.iter().sum::<f32>() / window.len() as f32
+    let (from, to) = (rate as usize, WHISPER_RATE as usize);
+    let common = gcd(from, to);
+    // every `phases` outputs advance `step` inputs, so one filter per phase serves all
+    let (step, phases) = (from / common, to / common);
+    // in cycles per input sample, and the filter's reach in input samples
+    let cutoff = 0.99 * 0.5 * from.min(to) as f64 / from as f64;
+    let reach = ZEROS / (2.0 * cutoff);
+    let filters: Vec<(i64, Vec<f32>)> = (0..phases)
+        .map(|phase| {
+            let at = (phase * step) as f64 / phases as f64;
+            let first = (at - reach).ceil() as i64;
+            let weights = (first..=(at + reach).floor() as i64)
+                .map(|input| {
+                    let distance = at - input as f64;
+                    let window = 0.5 * (1.0 + (std::f64::consts::PI * distance / reach).cos());
+                    let x = std::f64::consts::PI * 2.0 * cutoff * distance;
+                    let sinc = if x == 0.0 { 1.0 } else { x.sin() / x };
+                    (2.0 * cutoff * sinc * window) as f32
+                })
+                .collect();
+            (first, weights)
+        })
+        .collect();
+    (0..mono.len() * to / from)
+        .map(|output| {
+            let (first, weights) = &filters[output % phases];
+            let start = ((output / phases) * step) as i64 + first;
+            weights
+                .iter()
+                .enumerate()
+                .filter_map(|(tap, weight)| Some(mono.get(usize::try_from(start + tap as i64).ok()?)? * weight))
+                .sum()
         })
         .collect()
+}
+
+fn gcd(a: usize, b: usize) -> usize {
+    if b == 0 { a } else { gcd(b, a % b) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// How much of `tone` (Hz) a 16 kHz clip holds, as an amplitude.
+    fn amplitude(clip: &[f32], tone: f32) -> f32 {
+        let (mut re, mut im) = (0.0f64, 0.0f64);
+        for (n, sample) in clip.iter().enumerate() {
+            let phase = std::f64::consts::TAU * tone as f64 * n as f64 / WHISPER_RATE as f64;
+            re += *sample as f64 * phase.cos();
+            im -= *sample as f64 * phase.sin();
+        }
+        (2.0 * (re * re + im * im).sqrt() / clip.len() as f64) as f32
+    }
+
+    #[test]
+    fn an_8_khz_voice_is_not_mirrored_above_4_khz() {
+        let tone: Vec<f32> = (0..8000).map(|n| (std::f32::consts::TAU * 1000.0 * n as f32 / 8000.0).sin()).collect();
+        let clip = to_whisper(&tone, 1, 8000);
+        assert!((clip.len() as i32 - 16000).abs() < 32, "{} samples", clip.len());
+        assert!(amplitude(&clip, 1000.0) > 0.9);
+        // doubling each sample left this mirror at about 0.2 (cos 7π/16)
+        assert!(amplitude(&clip, 7000.0) < 0.01, "{}", amplitude(&clip, 7000.0));
+    }
+
+    #[test]
+    fn what_a_48_khz_mic_hears_above_8_khz_does_not_fold_into_the_voice() {
+        let tone: Vec<f32> = (0..48000).map(|n| (std::f32::consts::TAU * 10_000.0 * n as f32 / 48000.0).sin()).collect();
+        let clip = to_whisper(&tone, 1, 48000);
+        assert_eq!(clip.len(), 16000);
+        // a 10 kHz tone folds to 6 kHz; three-sample averaging let about 0.5 through
+        assert!(amplitude(&clip, 6000.0) < 0.01, "{}", amplitude(&clip, 6000.0));
+        let voice: Vec<f32> = (0..48000).map(|n| (std::f32::consts::TAU * 1000.0 * n as f32 / 48000.0).sin()).collect();
+        assert!(amplitude(&to_whisper(&voice, 1, 48000), 1000.0) > 0.9);
+    }
 }
