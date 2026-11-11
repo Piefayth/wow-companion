@@ -65,6 +65,7 @@ pub(crate) fn send_inbox(addons: &Path, inbox: &str) -> io::Result<()> {
 
 pub(crate) fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     voice::mark(&format!("send asked: {}", inbox.chars().take(50).collect::<String>()));
+    crate::audit::note("send", "", &inbox.chars().take(200).collect::<String>());
     // Status updates (progress, "transcribing") are advisory: they go out only when
     // the channel is free, and are dropped when it is busy, since a newer one or
     // the reply itself follows. Every send holds the channel for the bell's 2 s,

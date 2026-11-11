@@ -15,6 +15,7 @@ mod chat;
 mod install;
 mod offline;
 mod jobs;
+mod audit;
 use channel::*;
 use requests::*;
 use context::*;

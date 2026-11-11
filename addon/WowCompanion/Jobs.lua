@@ -30,7 +30,22 @@ end
 
 -- `at`: the press, in seconds (the nonce opens with it; a hearing cancel is
 -- matched to its clip by it, so a retry must carry the first press's time)
+-- The game's half of the audit trail (src/audit.rs; tools/audit.py merges
+-- both): what arrived, what was drawn, what the window predicted. Kept in the
+-- save file, the newest 600 lines; readable after a reload.
+local function wallMs() return time() * 1000 end
+function WowCompanion_Audit(what, slot, detail)
+	if type(WowCompanionDB) ~= "table" then return end
+	local log = WowCompanionDB.audit or {}
+	WowCompanionDB.audit = log
+	local ms = WC.Jobs and WC.Jobs.NowMs and WC.Jobs.NowMs() or wallMs()
+	log[#log + 1] = ("%.0f game %s %s %s"):format(ms, (slot == nil or slot == "") and "main" or slot, what, tostring(detail or ""))
+	while #log > 600 do table.remove(log, 1) end
+end
+local function audit(what, slot, detail) pcall(WowCompanion_Audit, what, slot, detail) end
+
 local function command(verb, slot, id, at)
+	audit("draw", slot, ("%s%s%s"):format(verb, id and (" %.0f"):format(id) or "", at and (" press=" .. at) or ""))
 	if not (WowCompanion_Strip and WowCompanion_Strip.Send) then return end
 	WowCompanion_Strip.Send(("WCCMD %d%04d %s %s%s"):format(at or time(), math.random(0, 9999), verb,
 		slot ~= "" and slot or "main", id and (" " .. ("%.0f"):format(id)) or ""), 2.5)
@@ -53,6 +68,8 @@ local function nowMs()
 	if wallOffset then return math.floor((GetTime() + wallOffset) * 1000) end
 	return time() * 1000 + 500
 end
+WC.Jobs = WC.Jobs or {}
+WC.Jobs.NowMs = nowMs
 
 -- A clip being heard has no job id on this side yet (the PC makes one when
 -- you let go, and its words arrive later with it). It is a placeholder of its
@@ -243,6 +260,7 @@ local function cancel(job)
 		local p = job.placeholder
 		if p.cancelled then return end
 		p.cancelled, p.pressAt = true, time()
+		audit("predict", job.slot, ("hearing %.0f cancelled"):format(p.releaseMs))
 		command("hear", job.slot, nil, p.pressAt)
 		if core.setTranscribing then core.setTranscribing(job.slot, false) end
 		-- drawn again until the clip is resolved (the strip can be missed); the
@@ -358,8 +376,10 @@ function WC.Jobs.Released(slot)
 	local last = list[#list]
 	if last and not last.cancelled and GetTime() - (last.lastAt or last.since) <= 1.5 then
 		last.lastAt = GetTime()
+		audit("predict", slot, ("hearing joins %.0f"):format(last.releaseMs))
 	else
 		list[#list + 1] = { since = GetTime(), lastAt = GetTime(), releaseMs = nowMs() }
+		audit("predict", slot, ("hearing %.0f"):format(list[#list].releaseMs))
 	end
 	refresh()
 end
@@ -398,6 +418,7 @@ function WC.Jobs.Claim(inbox, slot)
 	local job = jobs[id]
 	if job and job.logged then return "dup" end
 	local p = takePlaceholder(slot, id)
+	audit("claim", slot, ("%.0f placeholder=%s%s"):format(id, p and ("%.0f"):format(p.releaseMs) or "none", p and p.cancelled and " (cancelled: hidden)" or ""))
 	if not job then
 		job = { id = id, slot = slot, state = inbox.state or "queued", at = GetTime() }
 		jobs[id] = job

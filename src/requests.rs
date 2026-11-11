@@ -279,6 +279,9 @@ pub(crate) fn watch_commands(addons: &Path) {
         let _keep = child.stdin.take();
         if let Some(out) = child.stdout.take() {
             for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+                if line.starts_with("WCCMD") {
+                    crate::audit::note("cmd", "", &line);
+                }
                 let words: Vec<&str> = line.split_whitespace().collect();
                 let main = |slot: &str| if slot == "main" { String::new() } else { slot.to_string() };
                 match words.as_slice() {

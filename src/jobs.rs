@@ -91,7 +91,18 @@ const KEEP: Duration = Duration::from_secs(30 * 60);
 const PRESS_SLACK: u128 = 1000;
 
 fn with<R>(f: impl FnOnce(&mut BTreeMap<u64, Job>) -> R) -> R {
-    f(&mut JOBS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()))
+    let mut jobs = JOBS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    // every state change, whichever function made it, goes to the audit trail
+    let before: Vec<(u64, State)> = jobs.values().map(|job| (job.id, job.state)).collect();
+    let out = f(&mut jobs);
+    for job in jobs.values() {
+        match before.iter().find(|(id, _)| *id == job.id) {
+            Some((_, was)) if *was == job.state => {}
+            Some((_, was)) => crate::audit::note("job", &job.slot, &format!("{} {} -> {}", job.id, was.name(), job.state.name())),
+            None => crate::audit::note("job", &job.slot, &format!("{} new {}", job.id, job.state.name())),
+        }
+    }
+    out
 }
 
 pub(crate) fn now_ms() -> u128 {
@@ -159,6 +170,7 @@ pub(crate) fn hear(slot: &str) -> u64 {
         let job = jobs.get_mut(&id).unwrap();
         job.clips += 1;
         job.last_release = Instant::now();
+        crate::audit::note("hear", slot, &format!("{id} clip {}", job.clips));
         job.last_words = Instant::now();
         id
     })
@@ -171,6 +183,7 @@ pub(crate) fn words(slot: &str, text: &str) -> Option<(u64, bool)> {
     with(|jobs| {
         let job = jobs.values_mut().filter(|job| job.slot == slot && job.clips > 0).min_by_key(|job| job.id)?;
         job.clips -= 1;
+        crate::audit::note("words", slot, &format!("{} [{}] {}", job.id, job.state.name(), text.trim()));
         if job.state != State::Hearing {
             return None;
         }

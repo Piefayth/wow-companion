@@ -1186,6 +1186,16 @@ local function receive(catchingUp)
 		return
 	end
 	replySlot = inbox.slot
+	if WowCompanion_Audit then
+		local list = {}
+		for _, e in ipairs(type(inbox.list) == "table" and inbox.list or {}) do
+			if type(e) == "table" then list[#list + 1] = ("%.0f=%s"):format(tonumber(e.job) or 0, tostring(e.state)) end
+		end
+		WowCompanion_Audit("recv", inbox.slot, ("%s%s%s%s%s%s"):format(tostring(inbox.kind),
+			inbox.job and (" job=%.0f"):format(inbox.job) or "", inbox.state and (" " .. inbox.state) or "",
+			inbox.who and (" who=" .. inbox.who) or "", #list > 0 and (" list{" .. table.concat(list, ",") .. "}") or "",
+			inbox.text and (" " .. tostring(inbox.text):sub(1, 60)) or ""))
+	end
 	local ok, result = pcall(handler, inbox)
 	-- only probe traffic is worth narrating in chat; the window is where the rest goes
 	if inbox.kind == "probe" or not ok then
