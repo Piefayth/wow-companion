@@ -408,6 +408,16 @@ local function build()
 	end
 
 	function f:Mirror(blizz)
+		-- anchored (BagsStandIn.lua): their invisible slots navigate by ours, so
+		-- ours keeps its own layout, sections and all; only the mouse is theirs
+		if blizz and self.AnchoredTo and self.AnchoredTo(blizz) then
+			self.mirror = true
+			self.anchored = true
+			for _, b in ipairs(self.order) do b:EnableMouse(false) end
+			self:Paint()
+			return
+		end
+		self.anchored = nil
 		self.mirror = blizz and true or nil
 		if blizz then mirrorBagButtons() else for _, t in pairs(bagIcons) do t:Hide() end end
 		-- The legend stays (the player, 2026-11-10: no prompts in combat looked

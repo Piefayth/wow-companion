@@ -137,6 +137,65 @@ do
 			if ok and bag then WCBags:FocusOn(bag, button:GetID()) end
 		end, "WowCompanionMirror")
 	end
+	-- Combat, sorted (docs/proposals/bags.md): out of combat each of their slot
+	-- buttons gets a custom cursor anchor on our slot for the same bag and slot
+	-- (SmartNavigation_SetCustomCursorAnchorPointForFrame, Blizzard's own setter;
+	-- SecureHelper takes it from addons out of combat and stores it securely).
+	-- The controller cursor then measures and draws their buttons where ours are,
+	-- so in a fight, with their frame focused, it moves over our layout and the
+	-- presses are their own buttons'. Their bag-bar cells are left out of it.
+	local anchored = {}
+	local function anchorTheirs()
+		if InCombatLockdown() or not on() then return end
+		if not (SmartNavigation_SetCustomCursorAnchorPointForFrame and CreateAnchor) then return end
+		local blizz = theirs()
+		if not (blizz and blizz.EnumerateValidItems and WCBags.SlotFor) then return end
+		for _, b in blizz:EnumerateValidItems() do
+			local ok, bag = pcall(b.GetBagID, b)
+			local ours = ok and bag and WCBags:SlotFor(bag, b:GetID())
+			if ours and anchored[b] ~= ours then
+				if pcall(SmartNavigation_SetCustomCursorAnchorPointForFrame, b, CreateAnchor("CENTER", ours, "CENTER")) then
+					anchored[b] = ours
+				end
+			end
+		end
+		if GamepadBagBar and GamepadBagBar.GetBagButton and SmartNavigation_MarkFrameIgnored then
+			for bag = 0, 4 do
+				local ok, btn = pcall(GamepadBagBar.GetBagButton, GamepadBagBar, bag)
+				if ok and btn and not anchored[btn] then
+					if pcall(SmartNavigation_MarkFrameIgnored, btn) then anchored[btn] = true end
+				end
+			end
+		end
+	end
+	-- every shown slot of theirs anchored on ours: else the old overlay
+	local function anchoredTo(blizz)
+		if not blizz.EnumerateValidItems then return false end
+		local any = false
+		for _, b in blizz:EnumerateValidItems() do
+			if b:IsShown() then
+				local ok, bag = pcall(b.GetBagID, b)
+				if not (ok and bag and anchored[b] and anchored[b] == WCBags:SlotFor(bag, b:GetID())) then return false end
+				any = true
+			end
+		end
+		return any
+	end
+	if WCBags then WCBags.AnchoredTo = anchoredTo end
+	local anchorer = CreateFrame("Frame")
+	anchorer:RegisterEvent("BAG_UPDATE_DELAYED")
+	anchorer:RegisterEvent("PLAYER_ENTERING_WORLD")
+	anchorer:RegisterEvent("PLAYER_REGEN_ENABLED")
+	anchorer:SetScript("OnEvent", function()
+		if WCBags and not WCBags.AnchoredTo then WCBags.AnchoredTo = anchoredTo end
+		C_Timer.After(0.2, anchorTheirs)
+	end)
+	if EventRegistry and EventRegistry.RegisterCallback then
+		EventRegistry:RegisterCallback("ContainerFrame.OpenBag", function()
+			C_Timer.After(0.1, anchorTheirs)
+		end, "WowCompanionAnchor")
+	end
+
 	if ToggleBackpack_Combined then hooksecurefunc("ToggleBackpack_Combined", toggled) end
 	if ToggleAllBags then hooksecurefunc("ToggleAllBags", toggled) end
 	if WCBags then WCBags.followBlizzard = true end
