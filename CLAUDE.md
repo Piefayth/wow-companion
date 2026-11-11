@@ -13,6 +13,12 @@ data in a frame of ours, take the shot (`tools/shot.ps1`), `Read` it. Reading th
 player's screen for anything else needs their explicit ask. Looking never becomes
 acting for them.
 
+**A replacement removes what it replaces, in the same change** (the player,
+2026-11-10): the old path, its bindings, settings, fallbacks and notes. Before
+saying done, search for the old path's names and check the build against what was
+agreed, not only that the new path works. (The send preview gained combat focus
+and kept minus-to-send beside it; the player found it.)
+
 **What we do next is `docs/PLAN.md`**, with the
 player's standing terms. Read it before starting anything sizeable.
 
