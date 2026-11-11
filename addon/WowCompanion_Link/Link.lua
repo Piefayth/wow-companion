@@ -123,23 +123,6 @@ local function learnTalkKey()
 	say("press your talk button on the controller now")
 end
 
--- Probing for a game -> PC channel that is not the pixel strip.
--- `LoggingChat(true)` makes the client write chat to Logs\WoWChatLog.txt, a plain
--- text file the helper can tail; the marker goes out two ways and the helper
--- reports which, if any, reached disk.
-function handlers.bridge(inbox)
-	local running, failed = pcall(LoggingChat, true)
-	if not running then
-		return "LoggingChat failed: " .. tostring(failed)
-	end
-	local nonce = tostring(inbox.nonce or "?")
-	print(("WCBRIDGE-print %s"):format(nonce))
-	if DEFAULT_CHAT_FRAME then
-		DEFAULT_CHAT_FRAME:AddMessage(("WCBRIDGE-frame %s"):format(nonce))
-	end
-	return ("logging on: %s, marked %s"):format(tostring(LoggingChat()), nonce)
-end
-
 function handlers.probe(inbox)
 	WowCompanionLinkDB.probe = WowCompanionLinkDB.probe or {}
 	WowCompanionLinkDB.probe.received = (WowCompanionLinkDB.probe.received or 0) + 1
