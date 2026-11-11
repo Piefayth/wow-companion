@@ -110,8 +110,8 @@ fn main() {
         // tray icon (src/watcher.rs); `stop` ends companion and watcher cleanly
         [command] if command == "start" => watcher::start(),
         [command] if command == "stop" => lifecycle::stop(),
-        // a request typed into a conversation (main, l1, l2, r1, r2), taken by the
-        // running companion as if spoken there
+        // a request typed into a conversation (main, l1, l2, r1, r2, quick), for
+        // the running companion to ask that conversation's agent
         [command, slot, words @ ..] if command == "tell" && !words.is_empty() => tell(slot, &words.join(" ")),
         // the agent's answer, printed and never delivered: for trying the agent
         // without a game to send into
@@ -334,8 +334,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         }
     };
     // Typed requests (`wow-companion tell <slot> <text>`): a file per request in
-    // %LOCALAPPDATA%\wow-companion\typed, taken as if spoken into that
-    // conversation, so one can be asked from a terminal while the player is away.
+    // %LOCALAPPDATA%\wow-companion\typed: a request to that conversation's agent
+    // (the spoken shortcuts are for speech only), asked from a terminal.
     {
         let (addons, find_session, looking, courier) =
             (addons.to_path_buf(), slot_session.clone(), Arc::clone(&looking), courier.clone());
@@ -361,7 +361,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 let in_flight = InFlight::start();
                 thread::spawn(move || {
                     let _in_flight = in_flight;
-                    take_words(&addons, &slot, text, job, &session, &looking, &courier);
+                    request(&addons, &slot, text, job, &session, &looking, &courier);
                 });
             }
         });
@@ -474,7 +474,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         }
                     };
                     voice::mark("gathered");
-                    take_words(&addons, &slot, text, job, &session, &looking, &courier);
+                    if !spoken_shortcut(&slot, &text, job, &session, &courier) {
+                        request(&addons, &slot, text, job, &session, &looking, &courier);
+                    }
                 });
                 Ok(())
             }
@@ -490,12 +492,45 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     Ok(())
 }
 
-/// What was said or typed into conversation `slot`, as its job `job`, on the
-/// request's own thread. "Scratch that" alone clears the chat box, "start over"
-/// alone begins the conversation afresh, a line opening with a channel word
-/// ("party, pulling now") is chat, and anything else is a request to the agent,
-/// shown as waiting while one runs in the same conversation.
-fn take_words(
+/// What speech cannot say any other way (Whisper never writes "/p", and a
+/// controller cannot type it), done for a spoken clip `job` in conversation
+/// `slot`: "scratch that" alone clears the chat box, "start over" alone begins
+/// the conversation afresh, and a line opening with a channel word ("party,
+/// pulling now") goes to the chat box. True when it was one of those; its job
+/// then just ends. Typed requests never come here: typing can say all three.
+fn spoken_shortcut(slot: &str, text: &str, job: u64, session: &Mutex<agent::Session>, courier: &Courier) -> bool {
+    let handled = || {
+        jobs::finish(job, jobs::State::Answered);
+    };
+    if discards(text) {
+        println!("  clearing the chat box");
+        handled();
+        let _ = courier.send(Out::Now(Msg::new("chat").flag("clear", true)));
+        let _ = courier.send(Out::Line(Line::new(slot, "you", text)));
+        return true;
+    }
+    let plain: String = text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>().to_lowercase();
+    if matches!(plain.trim(), "start over" | "new conversation" | "fresh start" | "reset conversation") {
+        handled();
+        session.lock().map(|mut s| s.forget()).ok();
+        let _ = courier.send(Out::Line(Line::new(slot, "you", "(started this conversation over)")));
+        return true;
+    }
+    let routed = channeled(text);
+    if routed != text.trim() {
+        println!("  chat line: {routed}");
+        handled();
+        let _ = courier.send(Out::Now(dictation_inbox(text, &routed)));
+        let _ = courier.send(Out::Line(Line::new(slot, "you", &format!("(to chat) {routed}"))));
+        return true;
+    }
+    false
+}
+
+/// A request to the agent in conversation `slot`, as its job `job`, on the
+/// request's own thread: spoken or typed, shown as waiting while one runs in
+/// the same conversation, its reply sent, a failure said.
+fn request(
     addons: &Path,
     slot: &str,
     text: String,
@@ -504,32 +539,6 @@ fn take_words(
     looking: &Mutex<Option<Option<u128>>>,
     courier: &Courier,
 ) {
-    // not a request for the agent: the job just ends
-    let handled = || {
-        jobs::finish(job, jobs::State::Answered);
-    };
-    if discards(&text) {
-        println!("  clearing the chat box");
-        handled();
-        let _ = courier.send(Out::Now(Msg::new("chat").flag("clear", true)));
-        let _ = courier.send(Out::Line(Line::new(slot, "you", &text)));
-        return;
-    }
-    let plain: String = text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>().to_lowercase();
-    if matches!(plain.trim(), "start over" | "new conversation" | "fresh start" | "reset conversation") {
-        handled();
-        session.lock().map(|mut s| s.forget()).ok();
-        let _ = courier.send(Out::Line(Line::new(slot, "you", "(started this conversation over)")));
-        return;
-    }
-    let routed = channeled(&text);
-    if routed != text.trim() {
-        println!("  chat line: {routed}");
-        handled();
-        let _ = courier.send(Out::Now(dictation_inbox(&text, &routed)));
-        let _ = courier.send(Out::Line(Line::new(slot, "you", &format!("(to chat) {routed}"))));
-        return;
-    }
     // a slot's request is marked with it, in the window and for the agent
     // ("[L2] ..."), so both can tell the conversations apart
     let text = if slot.is_empty() { text } else { format!("[{}] {}", slot.to_uppercase(), text) };
