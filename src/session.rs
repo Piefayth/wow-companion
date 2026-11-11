@@ -1,9 +1,9 @@
 //! The game's UI session, read once (docs/reviews/2026-11-11.md, finding 3).
 //!
 //! The channel must know the session exactly: the slot cursor starts again with
-//! each one, and its bells are its set's. Until now the cursor took the session
+//! each one, and its bells are its set's. Today the cursor takes the session
 //! from Core's save's time and the game's start, the bell set from Link's load
-//! count, the slot count from a text search, and each of those read the save its
+//! count, the slot count from a text search, and each of those reads the save its
 //! own way. `Session` is one reading of Link's save, through savedvars: its load
 //! count, how many slots it saw, and when it was written, with when the game
 //! started.

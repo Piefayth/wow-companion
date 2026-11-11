@@ -284,9 +284,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     strip::serve_asks(addons);
     // The voice loop never sends anything itself. A send waits for any other send,
     // and for a bell file the game may hold, and the voice loop is what reads
-    // the pad: sending from it froze the buttons and the cues whenever
-    // the agent was talking at the same time (measured: a request made while
-    // another ran). One courier thread delivers in order instead.
+    // the pad: a send from it freezes the buttons and the cues while a request
+    // is talking. One courier thread delivers in order instead.
     let courier = {
         let (out, waiting) = std::sync::mpsc::channel::<Out>();
         let addons = addons.to_path_buf();
@@ -308,10 +307,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         map.insert(String::new(), Arc::clone(&session));
         Arc::new(Mutex::new(map))
     };
-    // Copied now, while nothing holds the main session. Creating a conversation
-    // used to lock the main one for these two fields, and the main one is held for
-    // a whole request: the voice loop waited minutes, the pad went dead and the
-    // rumble with it, until the request finished (2026-11-10).
+    // Copied now, while nothing holds the main session: it is held for a whole
+    // request, so locking it to make a conversation would leave the voice loop,
+    // the pad and the rumble waiting until that request finishes.
     let (base_model, base_setup) = {
         let main = session.lock().unwrap();
         (main.model.clone(), main.setup.clone())

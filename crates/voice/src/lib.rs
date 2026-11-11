@@ -38,8 +38,8 @@ const POLL: Duration = Duration::from_millis(16);
 /// A press released this quickly was a tap, not speech, and is no clip: the
 /// game answers the talk button's tap itself (it opens the Companion window).
 const TAP: Duration = Duration::from_millis(350);
-// A Bluetooth pad sleeps and a headset drops its hands-free link; either used to end
-// the app. Now a lost device is reopened on this cadence until it comes back.
+// A Bluetooth pad sleeps and a headset drops its hands-free link: a lost device is
+// reopened on this cadence until it comes back.
 const RETRY: Duration = Duration::from_secs(2);
 // rumble strength for the listening pulses, of 255 (the test buzz was 192)
 const PULSE: u8 = 160;
@@ -69,9 +69,10 @@ pub static HOLDING: AtomicBool = AtomicBool::new(false);
 /// been handed on yet: a restart waits for none.
 pub static PENDING: AtomicUsize = AtomicUsize::new(0);
 
-/// Set by a restart: the voice loop closes the mic properly and returns, and only
-/// then does the next copy start. Abandoning a live hands-free stream (a killed
-/// process, an exit that skips destructors) is the likeliest way the link wedged.
+/// Set when the companion winds down (an exit, or a restart once the next copy
+/// listens): the voice loop closes the mic properly and returns. Abandoning a
+/// live hands-free stream (a killed process, an exit that skips destructors) is
+/// the likeliest way to wedge the link.
 pub static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 /// Set once the mic is closed after SHUTDOWN.
 pub static STOPPED: AtomicBool = AtomicBool::new(false);
@@ -83,7 +84,7 @@ pub static ALERT: AtomicBool = AtomicBool::new(false);
 pub static READY: AtomicBool = AtomicBool::new(false);
 /// Set by a companion handing over to a newer copy once that copy is listening:
 /// this one stops reading the pad, so a press is never handled twice, while its
-/// requests in flight finish (two copies answering one clip, measured 2026-11-10).
+/// requests in flight finish.
 pub static DEAF: AtomicBool = AtomicBool::new(false);
 /// Paused by the player (the tray's "Pause listening"): the talk button does
 /// nothing until resumed. Its own flag, so a resume can never undo a hand-over's
@@ -291,7 +292,7 @@ pub fn listen(
     // Feedback is rumble by default. Cues in a Bluetooth headset play over its
     // hands-free link (8 kHz, the only one this PC negotiates with AirPods Max),
     // which hisses whenever anything plays; the pad's rumble is instant, silent and
-    // in the player's hands (the player's choice). `feedback=beep` or `both`.
+    // in the player's hands. `feedback=beep` or `both`.
     let feedback = option(options, "feedback").unwrap_or("rumble");
     let rumbles = feedback == "rumble" || feedback == "both";
     let beeps = feedback == "beep" || feedback == "both";
@@ -369,7 +370,7 @@ pub fn listen(
             PENDING.fetch_sub(1, Ordering::SeqCst);
         }
         if SHUTDOWN.load(Ordering::SeqCst) {
-            // close the mic properly before the next copy opens its own
+            // close the mic properly: an abandoned stream can wedge the link
             drop(microphone.take());
             STOPPED.store(true, Ordering::SeqCst);
             return Ok(());
@@ -492,7 +493,7 @@ pub fn listen(
                     cue(cue_device.clone(), cue_volume, &CUE_SHUT);
                 }
                 if rumbles && pulsed {
-                    // one softer, shorter pulse: got it (the player found two too much);
+                    // one softer, shorter pulse, not two: got it;
                     // none after a tap, which never got the opening pulse either
                     rumbler.play(&[(0, PULSE_SOFT, PULSE_SOFT), (80, 0, 0)]);
                 }
@@ -508,9 +509,9 @@ pub fn listen(
                         "I got only {seconds:.1}s of audio from that press, so nothing was sent. If you spoke, the mic may not be sending."
                     )));
                 } else {
-                    // Every clip goes to the engine; none is judged by volume. A
-                    // filter on level dropped a real, quiet sentence (0.0024, the
-                    // first press after a restart) without a word to the player.
+                    // Every clip goes to the engine; none is judged by volume: a
+                    // floor on level would drop a real, quiet sentence without a
+                    // word to the player.
                     let level = loudness(&clip);
                     // said at once, before the engine has the text: the player sees
                     // the clip arrived instead of wondering whether it was dropped

@@ -1,13 +1,12 @@
-//! Modules live in git (the player, 2026-11-10).
+//! Modules live in git.
 //!
-//! A module is Lua the agent wants run at every login. It used to live only in
-//! the addon's SavedVariables, which the game writes at a reload or logout: no
-//! history, lost in a crash, and invisible to the agents until the next export.
-//! Now each one is `modules/<Name>.lua` in this repository, the source of truth.
+//! A module is Lua the agent wants run at every login. Each one is
+//! `modules/<Name>.lua` in this repository, the source of truth: the addon's
+//! SavedVariables, written only at a reload or logout, keep no history, are lost
+//! in a crash, and reach the agents only at the next export.
 //! Every change regenerates `addon/WowCompanion_Agent/Modules.lua` (listed in the .toc,
-//! so a /reload rereads it; only a *new* file in a .toc needs a game restart) and
-//! copies it into the installed addon. The `module` step is still sent too, so a
-//! change runs at once without waiting for a reload.
+//! so a /reload rereads it) and copies it into the installed addon. The `module`
+//! step is sent too, so a change runs at once without waiting for a reload.
 
 use std::{
     fs, io,

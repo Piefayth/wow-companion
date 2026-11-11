@@ -243,7 +243,7 @@ mod tests {
     fn a_save_parses_and_each_kind_of_break_is_caught() {
         let good = "\nWowCompanionDB = {\n[\"log\"] = {\n{\n[\"who\"] = \"claude\",\n[\"text\"] = \"a \\\"quoted\\\" (line) }\\n\",\n}, -- [1]\n},\n}\nOtherDB = nil\n";
         assert!(crate::savedvars::globals(good).is_ok());
-        // the 2026-11-11 break: a raw newline inside a string
+        // a raw newline inside a string
         assert!(crate::savedvars::globals("x = {\n[\"text\"] = \"one\ntwo\",\n}\n").unwrap_err().contains("string is not closed"));
         assert!(crate::savedvars::globals("x = {\n1, 2\n").unwrap_err().contains("table is not closed"));
         // a save holds assignments only

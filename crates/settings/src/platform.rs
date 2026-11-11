@@ -5,8 +5,7 @@
 //!
 //! Windows is implemented; anything else answers "not supported yet" (or none,
 //! for questions) rather than scattering platform checks through the callers,
-//! so a macOS version can fill this file in (the player wants the platforms WoW
-//! runs on, Windows and macOS).
+//! so a macOS version (WoW runs on both) can fill this file in.
 
 use std::{io, path::Path, process::Command};
 
@@ -19,7 +18,7 @@ pub struct Lock {
 
 /// A running process, held open: whether it still runs and when it started are
 /// asked of its handle, in microseconds, where finding it walks every process
-/// on the machine (about 50 ms, measured 2026-11-11, twice per send until then).
+/// on the machine (about 50 ms).
 pub struct Process {
     handle: isize,
     started: u64,
@@ -331,7 +330,7 @@ pub fn process_count(image: &str) -> usize {
 
 /// How many processes of `image` have a window open: a game that is closing
 /// has dropped its window but still runs while it saves, and is not a client
-/// any more (counted as two beside the new one at a restart, 2026-11-11).
+/// any more (at a restart it would count as a second client beside the new one).
 pub fn windowed_count(image: &str) -> usize {
     imp::windowed_count(image)
 }

@@ -9,7 +9,7 @@
 //! on/off. Guide is only in the undocumented `XInputGetStateEx` (ordinal 100 of
 //! xinput1_4.dll), which every Xbox overlay uses.
 //!
-//! Measured 2026-11-11 with switch2connect in Xbox mode: home = Guide (0x0400),
+//! Measured with switch2connect in Xbox mode: home = Guide (0x0400),
 //! minus = View (0x0020), plus = Menu (0x0010), the d-pad as four buttons, L/R =
 //! LB/RB, ZL/ZR = triggers at 0 or 255, and rumble through XInputSetState is felt.
 

@@ -1,22 +1,21 @@
 //! The strip's corner, read through DXGI Desktop Duplication in the colours the
 //! game drew, whatever the display's mode.
 //!
-//! Why not GDI: a BitBlt of the desktop made the compositor wait on the game
-//! (7.8 ms a look, p95 15.8, max 287, twice a second: the stutter the player felt
-//! at every data read). Duplication hands over the frame the compositor already
-//! made: 1.5 ms a look.
+//! Why not GDI: a BitBlt of the desktop makes the compositor wait on the game
+//! (7.8 ms a look, p95 15.8, max 287: the game stutters at every read).
+//! Duplication hands over the frame the compositor already made: 1.5 ms a look.
 //!
 //! Why the mode matters: on an HDR desktop Windows composes SDR content (the
 //! game's UI) in scRGB, linear, with sRGB white raised to the display's SDR
 //! white level. The legacy `DuplicateOutput` hands that back as 8 bits without
 //! undoing the raise: the strip's 12 34 56 read as 25 5A 90 (3x in linear, the
-//! 240-nit white level), C0 FF EE clipped to FF FF FF (measured 2026-11-11). So
+//! 240-nit white level), C0 FF EE clipped to FF FF FF (measured). So
 //! frames are taken in whichever format the desktop is in (`DuplicateOutput1`
 //! offering FP16 and BGRA8): an 8-bit SDR frame is the game's bytes as they are;
 //! an FP16 scRGB frame is divided by the SDR white level (scRGB 1.0 = 80 nits),
 //! sRGB-encoded and rounded back to the byte the game drew. Proven against GDI
 //! on strips of 16 to 6000 bytes on an HDR10 desktop at 240 nits: every cell
-//! exact (2026-11-11).
+//! exact.
 
 use crate::strip::{CELL, COLS, FULL_HEIGHT, Shot};
 use std::{io, sync::Mutex};

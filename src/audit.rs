@@ -1,8 +1,8 @@
-//! The audit trail (the player, 2026-11-10: "how can we audit it?"): one line
-//! per thing that happened to a request, in order, so a confusing moment in
-//! the game can be read back exactly instead of guessed at. Every job state
-//! change (from the ledger itself, src/jobs.rs), every clip's words, every
-//! message sent to the game and every command the game drew are written to
+//! The audit trail: one line per thing that happened to a request, in order,
+//! so a confusing moment in the game can be read back exactly instead of
+//! guessed at. Every job state change (from the ledger itself, src/jobs.rs),
+//! every clip's words, every message sent to the game and every command the
+//! game drew are written to
 //! `%LOCALAPPDATA%\wow-companion\audit.log`. `tools/audit.py` prints it merged
 //! with the game's own record (WowCompanionAgentDB.audit, after a reload).
 

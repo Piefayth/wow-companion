@@ -239,7 +239,7 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
     // a queued request already showed its words; now it only starts thinking.
     // The agent is already running: an announcement that can't go out (the game
     // closed) must not end the request, or the agent works on unheard and its
-    // reply is lost (L1's, 2026-11-11)
+    // reply is lost
     let announced = if shown {
         // a `started` progress is never dropped on a busy channel: it is what
         // ends the queued mark on the request's line
@@ -282,8 +282,8 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         };
         // A request that runs out of steps carries on by itself, a few times: the
         // work so far stands, and the turn just ended early. Without this, a long
-        // job (L1's addon split, 2026-11-10) stopped dead until someone said
-        // "continue". The step limit still bounds each round.
+        // job stops dead until someone says "continue". The step limit still
+        // bounds each round.
         let mut waiting = waiting;
         let mut round = 0;
         let answer = loop {

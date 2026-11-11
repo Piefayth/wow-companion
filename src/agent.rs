@@ -1,22 +1,23 @@
-//! Turning what you said into one command the addon will accept.
+//! Turning what you said into what the addon will do.
 //!
 //! Routed through headless `claude -p` rather than the API: no key to manage, it
 //! draws on the signed-in subscription, and its file tools suit a channel that is
 //! already files. The cost is process startup per utterance: seconds, not
 //! milliseconds, so this is a deliberate trade, not an oversight.
 //!
-//! The answer is constrained by `--json-schema` to one of the shapes the addon's
-//! dispatch table accepts, and anything outside that is rejected here. One of those
-//! shapes is Lua: the agent may write code, which the addon runs in a sandboxed
-//! environment out of combat, with a taint check after. The client's own security
-//! is the real fence there: insecure code cannot cast, target or move.
+//! The answer is constrained by `--json-schema` to `say` plus steps, each one of
+//! the shapes the addon's dispatch table accepts, and anything outside that is
+//! rejected here. One of those shapes is Lua: the agent may write code, which
+//! the addon runs in a sandboxed environment out of combat, with a taint check
+//! after. The client's own security is the real fence there: insecure code
+//! cannot cast, target or move.
 //!
-//! The agent is Claude Code with every tool and no permission prompts, at the
-//! player's request: an agent walled off from the shell could not install an
-//! addon or restart the game, so we wrote code to do it for it, which is the code
-//! Claude Code already is. It runs from the repository root, so it reads the docs,
-//! this code and the addon, and can change them. What it reads from the web or
-//! from chat can steer it; the player accepted that trade.
+//! The agent is Claude Code with every tool and no permission prompts: walled off
+//! from the shell, it could not install an addon or restart the game, and code of
+//! ours would have to do it for it, which is the code Claude Code already is. It
+//! runs from the repository root, so it reads the docs, this code and the addon,
+//! and can change them. What it reads from the web or from chat can steer it; the
+//! player accepted that trade.
 
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
@@ -27,8 +28,8 @@ use std::{
 use serde_json::Value;
 use crate::message::Msg;
 
-// Opus by default: Sonnet was quick and got chords, bars and multi-step requests
-// wrong often enough that the player noticed. `run ... agent=sonnet` trades back.
+// Opus by default: Sonnet is quicker and gets chords, bars and multi-step requests
+// wrong too often. `run ... agent=sonnet` trades back.
 pub const DEFAULT_MODEL: &str = "opus";
 
 /// The quick conversation (L2+R2 with the talk button): chat, links, profession
@@ -206,8 +207,8 @@ The player said: {transcript}"
         // the repository root: docs, this code, the addon, and its CLAUDE.md
         claude.current_dir(crate::home());
         claude
-            // every tool, no prompts: the player's choice, and nothing should ever
-            // block on a prompt nobody is at the keyboard to answer
+            // every tool, no prompts: nothing should ever block on a prompt nobody
+            // is at the keyboard to answer
             .arg("--dangerously-skip-permissions")
             // streamed, so the player sees what it is doing; the last event is
             // the same result the plain json format would have printed
@@ -312,8 +313,8 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
             }
             // The first result is the answer to the player. A turn can wake again
             // after it: a background command the agent started finishes, and the
-            // reply to that ("No change from my last message...") came last and
-            // replaced the real answer twice (2026-11-10). Later ones are logged.
+            // reply to that ("No change from my last message...") would replace the
+            // real answer. Later ones are logged.
             Some("result") if envelope.is_none() => envelope = Some(event),
             Some("result") => {
                 let later = event.get("result").and_then(Value::as_str).unwrap_or("");

@@ -45,9 +45,9 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     let signals = addons.join(LINK).join("Signals");
     fs::create_dir_all(&signals)?;
     // Install runs while the game plays (the agent installs its own changes), so it
-    // only creates what is missing. Emptying every inbox and bell here wiped
-    // messages the addon had not read yet: "Inbox.lua is empty", "slot 4 failed:
-    // nil" (2026-11-10). Bells and inboxes belong to the sender alone.
+    // only creates what is missing: emptying an inbox or bell here would wipe a
+    // message the addon has not read yet. Bells and inboxes belong to the sender
+    // alone.
     let missing = |path: &Path| !path.exists();
     // every bell exists before the game can ask for it: one it asked for while
     // missing is never heard (bells.rs, rule 3)
@@ -177,7 +177,7 @@ mod tests {
     use wow_companion_settings::changes::Changes;
 
     /// The release script runs only when a release is made, so a mistake in it
-    /// waits there unseen (a `"$Exe:"` stopped it parsing, 2026-11-11): parse it.
+    /// waits there unseen: parse it.
     #[cfg(windows)]
     #[test]
     fn the_release_script_parses() {

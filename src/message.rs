@@ -3,10 +3,8 @@
 //! and kept by the ledger (src/ledger.rs) until a save shows the game holds it.
 //! Everything else (progress, steps, a stop's answer) is a `Msg` about now.
 //!
-//! Before this, messages were Lua text built by `format!`, edited with
-//! `replacen` and told apart by their prefix; a field added in front broke a
-//! reader elsewhere and lost every reply made while the game was closed
-//! (2026-11-11). A message is now built once, read by its fields.
+//! A message is built once and read by its fields, never edited as text or told
+//! apart by its prefix: a field added in front would break a reader elsewhere.
 
 use crate::jobs::State;
 use crate::lua_string;

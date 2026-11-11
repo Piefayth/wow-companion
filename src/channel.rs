@@ -5,8 +5,8 @@ use crate::message::{Line, Msg, Out};
 use wow_companion_settings::platform::Process;
 
 pub(crate) const PROGRESS_STOP: u32 = 14;
-// 512, not 64: a session spent all 64 (progress lines were nearly half) and every
-// later reply was lost. New folders need one full game restart to be seen.
+// 512, not 64: one session can spend 64 (progress lines nearly half), and a reply
+// past the last slot is lost. New folders need one full game restart to be seen.
 pub(crate) const SLOTS: u32 = 512;
 /// A slot's .toc. Each slot is its own group in a category of its own, so the
 /// AddOns list folds all of them under one collapsible line (Blizzard_AddOnList:
@@ -25,8 +25,8 @@ pub(crate) const SLOT_XML: &str = "<Ui xmlns=\"http://www.blizzard.com/wow/ui/\"
 pub(crate) const STATE: &str = "helper-state.txt";
 
 /// The game, held while it runs: asking the held process costs microseconds,
-/// where finding it walks every process (about 50 ms, twice per send until
-/// 2026-11-11), so the walk happens only when no game is held or it has exited.
+/// where finding it walks every process (about 50 ms), so the walk happens only
+/// when no game is held or it has exited.
 static GAME: Mutex<Option<Process>> = Mutex::new(None);
 
 /// When the running game started, or None when it does not run.
@@ -98,8 +98,7 @@ fn queue() -> std::sync::MutexGuard<'static, Queue> {
 
 /// Everything goes through one sender thread (one per process), which takes
 /// all that is waiting when it is free: one slot and one bell per batch, not
-/// per message (the player, 2026-11-11: "the messaging performance is
-/// important to me").
+/// per message.
 fn enqueue(addons: &Path, item: Pending) {
     let mut queue = queue();
     queue.waiting.push(item);
@@ -183,7 +182,7 @@ fn supersede(batch: Vec<Pending>) -> Vec<Pending> {
 
 /// What could not go out: a line is in the mailbox already; the changes a
 /// reply carried run only as it arrives live, so an error line says they did
-/// not (the player, 2026-11-11), and they never run later.
+/// not, and they never run later.
 fn set_aside(addons: &Path, items: Vec<Pending>, why: &str) {
     for item in items {
         match item {
@@ -292,7 +291,7 @@ pub(crate) fn next_slot(addons: &Path) -> io::Result<u32> {
         // The other sets are emptied as they go idle (tend_slot_bells), but a
         // ring that reached this set while it was idle (a send across a
         // reload) would be taken as a message before it was written, the old
-        // inbox read in its place and the real one never read (2026-11-11).
+        // inbox read in its place and the real one never read.
         let set = current_set(addons);
         let signals = addons.join(LINK).join("Signals");
         for slot in 1..=SLOTS {
@@ -328,8 +327,8 @@ pub(crate) fn slots_used(addons: &Path) -> u32 {
 /// What identifies the game's UI session for the slot cursor: the last save
 /// (written at every /reload and logout) and when the running Wow.exe started.
 /// The second matters: a freshly launched game starts its own cursor at 1 before
-/// it has saved anything, and messages counted against the old session sent the
-/// fresh addon waiting on a slot that had already rung (2026-11-10).
+/// it has saved anything, and messages counted against the old session would
+/// leave the fresh addon waiting on a slot that has already rung.
 pub(crate) fn saved_variables_stamp(addons: &Path) -> Option<String> {
     let saved = session_began(addons).map(|millis| millis.to_string())?;
     Some(format!("{saved}|{}", game_started().unwrap_or_default()))
@@ -362,8 +361,8 @@ pub(crate) fn session_began(addons: &Path) -> Option<u128> {
 /// timestamps can, because that same ordering makes the save mark where the current
 /// session began. Addon newer than that means the session predates it.
 ///
-/// Worth the check: twice this cost us a stuck chat box and a half-dead controller,
-/// because a retired handler was still live and still opening the chat box.
+/// Worth the check: a retired handler stays live in the game until a reload, and
+/// goes on doing what it was retired for.
 pub(crate) fn addon_is_stale(addons: &Path) -> io::Result<bool> {
     let addon = modified_millis(&addons.join(LINK).join("Link.lua"));
     Ok(match (addon, session_began(addons)) {
@@ -434,11 +433,10 @@ pub(crate) fn slot_name(slot: u32) -> String {
     format!("{ADDON}_S{slot:03}")
 }
 
-// The slot bells (docs/proposals/slot-bells.md), the channel's bells since
-// 2026-11-11: a bell per slot, never emptied while its session runs, so a ring
-// means that slot and nothing has to change while the game holds it; a set per
-// session, so a ring never outlives its session. The game asks the next slot's
-// every 0.1 s.
+// The slot bells (docs/proposals/slot-bells.md), the channel's bells: a bell per
+// slot, never emptied while its session runs, so a ring means that slot and
+// nothing has to change while the game holds it; a set per session, so a ring
+// never outlives its session. The game asks the next slot's every 0.1 s.
 pub(crate) const SETS: u64 = 3;
 
 pub(crate) fn slot_bell_name(set: u64, slot: u32) -> String {

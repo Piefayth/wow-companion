@@ -520,6 +520,20 @@ History that sat in the addon's comments; the comments now say only what is true
 - Link: bells asked every frame made the game hold its sound files; at 0.1 s it never did, and 0.5 s was the earlier rate.
 - Offer: the click edge was measured one variable at a time: "AnyUp" ran PreClick and PostClick but not the macro, which read like a permissions refusal.
 
+### The companion's comments (src/, crates/, 2026-11-10/11)
+- Bells: a small bell polled constantly was locked for good (the window bell); a bell deleted while polled and made again was never heard (223 polls, 0 heard, 2026-11-10); the quiet bell, 10 ms of sound padded to size, could not be emptied once polled; a retry that gave up quietly made a stuck bell look like nothing.
+- Slots: a session spent all 64 (progress lines nearly half) and every later reply was lost; there are 512. After a relaunch, messages were counted against the old session and the fresh addon waited on a slot that had already rung (2026-11-10): the cursor's stamp holds the game's start. A ring that reached an idle set across a reload was taken before its slot was written, the old inbox read and the real one never (2026-11-11).
+- Twice a retired handler still live in the game kept opening the chat box: a stuck chat box and a half-dead controller. Hence `addon_is_stale`.
+- Install emptied every inbox and bell and wiped messages the addon had not read ("Inbox.lua is empty", "slot 4 failed: nil", 2026-11-10). A `"$Exe:"` stopped the release script parsing, unseen until a release (2026-11-11); a test parses it now.
+- Messages were Lua text built by `format!`, edited with `replacen` and told apart by their prefix; a field added in front broke a reader elsewhere and lost every reply made while the game was closed (2026-11-11).
+- Jobs: while every clip let go during another's hearing joined it, an 11 s transcription swallowed the two messages after it (2026-11-10). A cancel hit the message after the one meant, and a cancelled message the agent had seen was answered as if said (2026-11-10).
+- Requests: L1's addon split ran out of steps and stopped dead until someone said "continue" (2026-11-10). An L1 request ended when its announcement failed (the game had closed) while its agent worked on, and the reply was lost (2026-11-11). A background command finishing after a turn woke it again, and its "No change from my last message..." replaced the real answer twice (2026-11-10).
+- The voice loop: sending from it froze the buttons and the cues whenever an agent was talking (measured with a request made while another ran). Making a slot's conversation locked the main one, held for a whole request: the voice loop waited minutes, the pad and the rumble dead (2026-11-10).
+- Restart: closing the mic before the next copy opened its own let Windows drop the hands-free link, and the first press after every restart recorded silence (seen twice). Both copies read the pad and answered one clip twice (2026-11-10). A game still saving after its window closed counted as a second client beside the new one (2026-11-11).
+- Mic: a floor on level dropped a real, quiet sentence (0.0024, the first press after a restart) without a word to the player. The resampler before the sinc doubled each sample of an 8 kHz mic, mirroring the voice into 4-8 kHz, and let half of what a 48 kHz mic heard above 8 kHz fold back into the voice.
+- Strip: three `strip --send` reads in a row each returned the one before (2026-11-11); each read names a fresh id.
+- Saves: an edit of ours put a raw newline inside a string and broke a save file for minutes (2026-11-11). We no longer edit saves, and every save the game writes is copied.
+
 ## The frame bell trial (2026-11-11)
 
 The player asked for the game to check for messages every frame instead of every

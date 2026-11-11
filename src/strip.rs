@@ -119,8 +119,7 @@ fn is_command(payload: &[u8]) -> bool {
 
 /// What a read's strip opens with. Every read names a fresh id and takes only
 /// the strip that opens with it: a strip stays up for seconds, and the one an
-/// earlier read drew is otherwise taken for this one (measured 2026-11-11: three
-/// `strip --send` reads in a row each returned the one before).
+/// earlier read drew is otherwise taken for this one.
 fn request_prefix(id: &str) -> String {
     format!("WCREQ {id}\n")
 }

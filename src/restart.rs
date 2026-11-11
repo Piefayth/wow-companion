@@ -110,12 +110,11 @@ pub(crate) fn watch_for_restart(args: Vec<String>) {
         };
         let _ = fs::remove_file(&request);
         println!("restarting onto the new build");
-        // Overlap, never a gap. Closing the mic before the next copy opened its own
-        // left the headset's hands-free link with no stream, Windows dropped it, and
-        // the first press after every restart recorded silence (measured twice). So
-        // the next copy starts while this one keeps working, opens its mic, loads,
-        // and raises a flag; only then does this one close its mic properly (an
-        // abandoned stream can wedge the link), lower the flag, and exit.
+        // Overlap, never a gap: with no stream open, Windows drops the headset's
+        // hands-free link and the next press records silence. So the next copy
+        // starts while this one keeps working, opens its mic, loads, and raises a
+        // flag; only then does this one close its mic properly (an abandoned
+        // stream can wedge the link), lower the flag, and exit.
         let Ok(dir) = companion_dir() else { continue };
         let flag = dir.join(format!("ready-{}.flag", std::process::id()));
         let _ = fs::remove_file(&flag);
@@ -141,7 +140,7 @@ pub(crate) fn watch_for_restart(args: Vec<String>) {
         }
         // not mid-press, then deaf: the new copy takes the pad from here (it stops
         // waiting for this one after 15 s), and this one only finishes its work.
-        // Both reading the pad answered one clip twice (measured 2026-11-10).
+        // Two copies reading the pad would both answer one clip.
         while voice::HOLDING.load(Ordering::SeqCst) {
             thread::sleep(Duration::from_millis(100));
         }

@@ -2,30 +2,28 @@
 //!
 //! A bell is the only signal the PC can give the game: the addon plays a sound
 //! file and asks whether it is playing. The game's own handling of sound files
-//! decides what works, and each of these rules was learned by breaking it:
+//! decides what works, and each of these rules was learned by breaking it (the
+//! stories are in docs/history.md):
 //!
 //! 1. **The game holds a sound file open while it plays it**, a long one for its
-//!    whole length, streamed. A 10 s bell polled every second was never free:
-//!    it could not be replaced or deleted again (the first heartbeat, 2026-11-09).
-//!    So a bell is short: half a second.
-//! 2. **Below 174,762 bytes the game caches a sound** and holds the cached file.
-//!    An empty bell polled constantly was locked for good (the window bell). So a
-//!    bell is never small: 192,044 bytes, at 96 kHz stereo.
+//!    whole length, streamed: a long bell polled every second is never free to
+//!    replace or delete. So a bell is short: half a second.
+//! 2. **Below 174,762 bytes the game caches a sound** and holds the cached file:
+//!    a small bell polled constantly is locked for good. So a bell is never
+//!    small: 192,044 bytes, at 96 kHz stereo.
 //! 3. **Never delete a bell the game polls**: it remembers a missing sound, so a
-//!    bell created later was never heard (223 polls, 0 heard, 2026-11-10).
-//! 3b. **A valid sound the game polls constantly is held open constantly.** The
-//!    quiet bell (10 ms of sound padded to size) could not be emptied again once
-//!    the addon polled it. An *empty* file fails to play at once and holds
-//!    nothing, which is why idle slot bells are empty.
+//!    bell created later is never heard.
+//! 3b. **A valid sound the game polls constantly is held open constantly**, a
+//!    short sound padded to size too: it cannot be emptied again. An *empty* file
+//!    fails to play at once and holds nothing, which is why idle slot bells are
+//!    empty.
 //! 4. **Every write and delete is retried and checked**, and a failure names the
-//!    file. A retry that gave up quietly is how a stuck bell looked like nothing.
+//!    file: a retry that gives up quietly makes a stuck bell look like nothing.
 //! 5. **A long sound is streamed, and not playing a frame after it starts**; the
-//!    half-second `bell` plays 2 ms after (measured 2026-11-11). Asked every
-//!    frame, the old ten-second message bell was never heard, so it was never let
-//!    go and could never be emptied (the frame bell trial, docs/history.md).
+//!    half-second `bell` plays 2 ms after. Asked every frame, a long bell is never
+//!    heard, so it is never let go and can never be emptied.
 //! 6. **Asked every frame, any bell makes the game hold its sound files**, an
-//!    empty one too: the heartbeat's and the message bells were held for seconds
-//!    (2026-11-11). At 10 asks a second they were not.
+//!    empty one too, for seconds. At 10 asks a second it does not.
 //!
 //! What this means in practice: the slot bells (docs/proposals/slot-bells.md)
 //! use `ring` / `empty`; the heartbeat's pulse bells `ring` / `silence`. See

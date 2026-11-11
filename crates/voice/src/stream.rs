@@ -3,8 +3,8 @@
 //! competes with the game for the GPU. Audio goes in while the button is held;
 //! its partial text stays on the PC (each message to the game costs one of 512
 //! slots); the final text at release goes the way Whisper's does. Less accurate
-//! than Whisper and much faster; the player keeps both (2026-11-11), and the
-//! setup window picks one.
+//! than Whisper and much faster; both are on trial, and the setup window picks
+//! one.
 
 use std::{
     fs, io,

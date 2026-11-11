@@ -1,6 +1,5 @@
 //! The request ledger: the one record of every request, and the only truth about
-//! where each one stands (the player, 2026-11-10: "the advanced distributed
-//! systems solution to the cancelling / message order thing").
+//! where each one stands.
 //!
 //! A request moves one way: hearing -> queued -> running -> one end (answered,
 //! cancelled or failed), and an end is final. Every change goes through this
@@ -196,9 +195,8 @@ pub(crate) fn create(slot: &str, text: &str, state: State) -> u64 {
 /// A clip was let go in this conversation. With `join`, a clip let go within
 /// JOIN of the one before, still being heard, joins it (you let go too early and
 /// went on); otherwise, and always for dictation (sent clip by clip), a new job
-/// starts. Joining every clip while one was still heard
-/// merged separate messages whenever Whisper was slow (the player, 2026-11-10:
-/// an 11 s transcription swallowed the two messages after it).
+/// starts. Only within JOIN: joining every clip while one is still heard would
+/// merge separate messages whenever Whisper is slow.
 /// Returns the job and whether it is new: a new job's first message to the
 /// game is `heard`, which names it, so a cancel of the clip names its job (an
 /// exact identity both sides share; docs/proposals/conversation-sync.md).
@@ -418,8 +416,8 @@ pub(crate) fn cancel(ids: &[u64]) -> Cancelled {
 }
 
 /// The words of requests in this conversation that the agent saw and you then
-/// cancelled, not yet told to it; each is told once (the player, 2026-11-10:
-/// a cancelled message was answered as if it had been said).
+/// cancelled, not yet told to it; each is told once, so a cancelled message is
+/// not answered as if it had been said.
 pub(crate) fn take_withdrawn(slot: &str) -> Vec<String> {
     with(|jobs| {
         jobs.values_mut()
@@ -462,8 +460,7 @@ mod tests {
 
     /// Two clips in flight, let go 1.6 s apart: separate jobs, each new one
     /// says so (its `heard` names it, so its cancel names its job), and each
-    /// clip's words go to its own job (the player, 2026-11-10: a cancel hit the
-    /// message after the one meant, and a slow transcription swallowed the next).
+    /// clip's words go to its own job.
     #[test]
     fn two_clips_in_flight_stay_two_and_a_cancel_names_its_own() {
         let (first, new) = hear("t-two", true);
