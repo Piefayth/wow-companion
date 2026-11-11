@@ -1285,16 +1285,9 @@ fn claude_version() -> String {
     }
 }
 
-/// Whether the companion is running: the lock it holds, or (a copy from
-/// before the lock) a companion-*.exe at the start of a line. Not a name search
-/// anywhere in the list: this window, wow-companion-setup.exe, matched it.
+/// Whether the companion is running: the lock it holds while it runs.
 fn companion_running() -> bool {
     platform::lock_exists(platform::COMPANION_LOCK)
-        || Command::new("tasklist")
-            .creation_flags(NO_WINDOW)
-            .output()
-            .map(|out| String::from_utf8_lossy(&out.stdout).lines().any(|line| line.to_lowercase().starts_with("companion-")))
-            .unwrap_or(false)
 }
 
 /// `wow-companion start`, with no window.

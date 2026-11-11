@@ -160,7 +160,6 @@ pub(crate) fn watch(addons: &Path) {
     let addons = addons.to_path_buf();
     thread::spawn(move || {
         let mut game_seen = false;
-        let mut gone_since: Option<Instant> = None;
         let mut told_clients = false;
         let mut last_clients_check = Instant::now() - Duration::from_secs(60);
         loop {
@@ -193,15 +192,11 @@ pub(crate) fn watch(addons: &Path) {
             }
             if clients > 0 {
                 game_seen = true;
-                gone_since = None;
-            } else if game_seen {
-                // a few seconds closed, and nothing in flight: the reply to a
-                // request still running is kept for the next login by the
-                // closed-game path, so wait for it to finish first
-                let since = *gone_since.get_or_insert_with(Instant::now);
-                if since.elapsed() >= Duration::from_secs(5) && idle() {
-                    leave("game closed");
-                }
+            } else if game_seen && idle() {
+                // the game closed and nothing is in flight (a request still
+                // running finishes first: its reply is kept for the next login);
+                // the watcher wakes the companion again with the game
+                leave("game closed");
             }
         }
     });

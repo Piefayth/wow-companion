@@ -10,14 +10,6 @@ use std::{
     time::Duration,
 };
 
-/// A companion copy (companion-<pid>.exe) by its image name, at a line's start.
-fn copy_running() -> bool {
-    Command::new("tasklist")
-        .output()
-        .map(|out| String::from_utf8_lossy(&out.stdout).lines().any(|line| line.to_lowercase().starts_with("companion-")))
-        .unwrap_or(false)
-}
-
 fn agent_busy() -> bool {
     Command::new("wmic")
         .args(["process", "where", "name='claude.exe'", "get", "CommandLine"])
@@ -38,9 +30,8 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
     if clients > 1 {
         line(false, "game clients", &format!("{clients} running: every message goes to all of them; one client per install for now"));
     }
-    // the lock the running companion holds (a name search matched the setup
-    // window, wow-companion-setup.exe, too); copies from before it by name
-    let companion = crate::lifecycle::running() || copy_running();
+    // the lock the running companion holds
+    let companion = crate::lifecycle::running();
     line(companion, "companion", if companion { "running" } else { "not running: start it with `start` (or `run`)" });
     let watcher = wow_companion_settings::platform::watcher_status();
     line(true, "watcher", &match watcher {
