@@ -212,9 +212,10 @@ goes to a detached process.
   Show/Hide in a fight. So keep the window itself **unprotected** and put
   bindings on a separate invisible `SecureHandlerShowHideTemplate` (`WCBagsPad`):
   its `_onshow` binds the pad with `SetBindingClick` by button name, `_onhide`
-  clears, and `CallMethod` shows or hides the window. Every open goes through
-  Blizzard's bags (our opener is a secure `type="click"` on their backpack button;
-  circle clicks their close button), and ours stands in. In a fight their invisible
+  clears, and `CallMethod` shows or hides the window. The opener is a
+  `SecureHandlerClickTemplate` (a secure `type="click"` on their backpack button
+  instead left their bags open invisibly with focus and ours never showed,
+  2026-11-10); circle also clicks their close button. In a fight their invisible
   frame keeps the native focus, and each of their pooled item buttons has a custom
   cursor anchor (`SmartNavigation_SetCustomCursorAnchorPointForFrame`, set out of
   combat) on a proxy frame of ours that we lay on our slot, so the native cursor

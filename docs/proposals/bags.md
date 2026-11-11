@@ -72,6 +72,6 @@ the cursor moves over and draws on our sectioned layout, and cross and square pr
 their own secure buttons: one focus, native, sorted. Their bag-bar cells are anchored
 to ours or marked ignored. Their buttons are pooled and re-acquired on every open, so
 each is anchored once to a proxy frame of ours, moved onto the right slot at each
-open (in combat too). Every open goes through their bags (our opener clicks their
-backpack button), and circle clicks their close. Not anchored yet (their first
+open (in combat too). Circle clicks their close. (Routing our opener through
+their backpack button broke opening, 2026-11-10: reverted.) Not anchored yet (their first
 open of a session in a fight): their own bags show. The old overlay is removed.

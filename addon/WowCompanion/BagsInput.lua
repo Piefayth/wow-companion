@@ -150,17 +150,24 @@ function WC.BagsInput.Build(f)
 		f:Paint()
 	end)
 
-	-- opening: the Bags macro (/click WCBagsToggle) and the bag keys (WCBagsKey)
-	-- click Blizzard's backpack button (a secure "click"), so every open goes
-	-- through their bags, which ours stands in for (BagsStandIn.lua): one path in
-	-- combat and out, and their buttons exist (and are anchored) before a fight.
+	-- opening: the Bags macro (/click WCBagsToggle) and the bag keys (WCBagsKey).
+	-- Secure, so in combat they show the pad's handler, whose show opens the window.
 	for _, name in ipairs({ "WCBagsToggle", "WCBagsKey" }) do
-		local t = CreateFrame("Button", name, UIParent, "SecureActionButtonTemplate")
+		local t = CreateFrame("Button", name, UIParent, "SecureHandlerClickTemplate")
 		if name == "WCBagsToggle" then t:RegisterForClicks("AnyUp", "AnyDown") else t:RegisterForClicks("AnyDown") end
-		if MainMenuBarBackpackButton then
-			t:SetAttribute("type", "click")
-			t:SetAttribute("clickbutton", MainMenuBarBackpackButton)
-		end
+		t:SetFrameRef("pad", pad)
+		t:SetAttribute("_onclick", [[
+			local pad = self:GetFrameRef("pad")
+			if PlayerInCombat() then
+				if pad:IsShown() then pad:Hide() else pad:Show() end
+			else pad:CallMethod("Toggle") end
+		]])
+	end
+	-- out of combat the window decides, not the pad: a pad left shown with the
+	-- window hidden (a reload, a close by plain code) made the first press a
+	-- Shut and the bags opened only on the second (the player, 2026-11-10)
+	function pad:Toggle()
+		if f:IsShown() and f:GetAlpha() > 0 then f:Shut() else f:Open() end
 	end
 	function pad:Open() f:Open() end
 	function pad:Shut() f:Shut() end
