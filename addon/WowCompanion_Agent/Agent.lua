@@ -353,7 +353,8 @@ function WowCompanion_Stop(slot, sendNow)
 	setPending("stopping", slot)
 end
 
-local function remember(who, text, continued, slot, job)
+-- `quiet`: not news (a notice about the player's own clip), so it lights nothing
+local function remember(who, text, continued, slot, job, quiet)
 	slot = slot or replySlot() or viewSlot
 	WowCompanionAgentDB.log = WowCompanionAgentDB.log or {}
 	local entries = WowCompanionAgentDB.log
@@ -405,7 +406,7 @@ local function remember(who, text, continued, slot, job)
 	-- news nobody has seen yet: a reply in another conversation, or in this one
 	-- while the window is closed (the player, 2026-11-10: replies waited unseen
 	-- unless they checked); the minimap button shows it (Status.lua)
-	if not continued and (who == "claude" or who == "error")
+	if not continued and not quiet and (who == "claude" or who == "error")
 		and (slot ~= viewSlot or not (logWindow and logWindow:IsShown())) then
 		unreadSet()[slot] = true
 		paintConversations()
@@ -563,21 +564,27 @@ function handlers.log(inbox)
 	-- already held, from a slot or the mailbox, is not applied again
 	local islot = inbox.slot or ""
 	if WC.Jobs and not WC.Jobs.Hold(islot, inbox.n) then return WC.Link.HELD end
-	-- a line without `pending` ends the waiting line before its words go in, so
-	-- a reply takes the work entry's place instead of landing under it
-	-- (its jobs' end applied first, so the entry knows it was answered)
+	-- An error about a clip that never ran (nothing heard, noise) is the
+	-- player's own news, not a reply: it lights no tab and leaves the work alone.
+	-- Read before its job's end is applied below.
+	local was = WC.Jobs and inbox.job and WC.Jobs.State(inbox.job)
+	local quiet = who == "error" and was ~= "running"
+	-- The waiting line follows the jobs (the ledger's truth): once this line's
+	-- job ends are applied, it ends when nothing of the conversation runs, before
+	-- the words go in, so a reply takes the work entry's place instead of
+	-- landing under it.
 	if inbox.slot and not inbox.pending and inbox.state ~= "queued" then
 		if WC.Jobs then pcall(WC.Jobs.Note, inbox) end
-		setPending(nil, islot)
+		if not (WC.Jobs and WC.Jobs.Running(islot)) then setPending(nil, islot) end
 	end
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
 	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-		remember(who, line, lines > 0, islot, lines == 0 and who == "you" and inbox.job or nil)
+		remember(who, line, lines > 0, islot, lines == 0 and who == "you" and inbox.job or nil, quiet)
 		lines = lines + 1
 	end
 	if lines == 0 then
-		remember(who, text, nil, islot, who == "you" and inbox.job or nil)
+		remember(who, text, nil, islot, who == "you" and inbox.job or nil, quiet)
 	end
 	-- the job's state, once its line is in the transcript to carry its controls
 	if WC.Jobs then pcall(WC.Jobs.Note, inbox) end

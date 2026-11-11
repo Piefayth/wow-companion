@@ -174,6 +174,7 @@ local function sendNow(job)
 end
 
 function WC.Jobs.Running(slot) return getModel() and model:Running(slot) or false end
+function WC.Jobs.State(id) local job = getModel() and model:Job(id) return job and job.state end
 function WC.Jobs.Hearing(slot) return getModel() and #model:Hearing(slot) > 0 or false end
 function WC.Jobs.Ended(id) return getModel() and model:Ended(id) or false end
 function WC.Jobs.Apply(inbox) if getModel() then model:Apply(inbox) end end
