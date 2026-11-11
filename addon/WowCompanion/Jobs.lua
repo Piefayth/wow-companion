@@ -216,7 +216,7 @@ local function mark(job) paint(job) end
 local function cancel(job)
 	if not job or not getModel() then return end
 	if job.placeholder then
-		model:CancelClip(job.slot)
+		model:CancelClip(job.slot, job.placeholder)
 	else
 		model:CancelJob(job.id)
 	end
@@ -245,7 +245,9 @@ end)
 
 -- the waiting line (hearing you / working) gets an X at its end; each queued
 -- message's own header line in the transcript gets a play and an X
-local statusX
+-- one X per clip being heard (the player, 2026-11-10: a second clip took
+-- the first one's X away)
+local hearXs = {}
 local pairsPool = {}
 
 function queuedRow(transcript, queueId)
@@ -270,13 +272,11 @@ refresh = function()
 		end
 	end
 	-- the waiting line: hearing first (the newest thing), else the running request
-	statusX = statusX or icon(frame, "cancel", CANCEL or "Cancel", cancel)
 	-- only a clip still being heard has no line of its own yet: its X sits
 	-- on the waiting line; a request being worked on has it on its own line
 	-- the clips being heard in view, oldest first; drop ones whose words never
 	-- came (the PC drops a clip that held nothing, without a word)
 	local heard = model:Clips(view)
-	local target
 	-- In the chat itself (the player, 2026-11-10): the states the footer line
 	-- used to carry are lines at the end of the conversation, where the reply
 	-- will appear: the agent working, then your next clip being heard.
@@ -324,7 +324,7 @@ refresh = function()
 			items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp .. "  " .. GOOD .. "cancelled|r", GREY .. "(cancelled while it was still being heard)|r" }
 		else
 			items[#items + 1] = { "|cff9ad5ffYou|r" .. stamp, ("hearing you%s  %ds"):format(dots, (nowMs() - p.release) / 1000), hearing = true }
-			target = { placeholder = p, slot = view }
+			items[#items].clip = p
 		end
 	end
 	local base = transcript0.height or 0
@@ -348,7 +348,7 @@ refresh = function()
 		if oy then insertY = -oy - (rows[afterIndex].gap or 0) - GHOST_H end
 	end
 	local y = base
-	local hearingLine
+	local hearingLines = {}
 	for i, g in ipairs(ghosts) do
 		local item = items[i]
 		if item then
@@ -383,7 +383,7 @@ refresh = function()
 			g.line:Show()
 			y = y + g.line:GetStringHeight()
 			end
-			if item.hearing then hearingLine = g.head end
+			if item.hearing then hearingLines[#hearingLines + 1] = { head = g.head, clip = item.clip } end
 		else
 			g.head:Hide()
 			g.line:Hide()
@@ -399,16 +399,21 @@ refresh = function()
 		scroll:UpdateScrollChildRect()
 		if following and y > base then scroll:SetVerticalScroll(scroll:GetVerticalScrollRange()) end
 	end
-	if target and hearingLine and hearingLine:IsShown() then
-		statusX.job = target
-		statusX:SetParent(transcript0.content)
-		statusX:ClearAllPoints()
-		statusX:SetPoint("TOPRIGHT", transcript0.content, "TOPLEFT", width - 4, -(hearingLine.y - 3))
-		statusX:SetFrameLevel(transcript0.content:GetFrameLevel() + 5)
-		statusX:Show()
-	else
-		statusX.job = nil
-		statusX:Hide()
+	for i, line in ipairs(hearingLines) do
+		local x = hearXs[i]
+		if not x then
+			x = icon(transcript0.content, "cancel", CANCEL or "Cancel", cancel)
+			hearXs[i] = x
+		end
+		x.job = { placeholder = line.clip, slot = view }
+		x:ClearAllPoints()
+		x:SetPoint("TOPRIGHT", transcript0.content, "TOPLEFT", width - 4, -(line.head.y - 3))
+		x:SetFrameLevel(transcript0.content:GetFrameLevel() + 5)
+		x:Show()
+	end
+	for i = #hearingLines + 1, #hearXs do
+		hearXs[i].job = nil
+		hearXs[i]:Hide()
 	end
 	-- queued messages, on their own lines
 	local transcript = frame.messages

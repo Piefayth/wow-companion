@@ -151,12 +151,12 @@ function M:DropHearing()
 	self:changed()
 end
 
--- cancel the newest clip still being heard in a conversation
-function M:CancelClip(slot)
+-- cancel a clip still being heard: `clip` itself (its own X), or the newest
+function M:CancelClip(slot, clip)
 	local list = self.clips[slot or ""] or {}
 	for i = #list, 1, -1 do
 		local c = list[i]
-		if not c.cancelled then
+		if not c.cancelled and (not clip or c == clip) then
 			c.cancelled, c.tries, c.sentAt = true, 1, self.deps.now()
 			self:audit("predict", slot, ("clip %.0f cancelled"):format(c.release))
 			-- Named by its release only once the clock is known; before that no

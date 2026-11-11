@@ -186,7 +186,11 @@ class Sim:
 
     # the player
     def cancel_clip(self, slot):
-        c = self.m.CancelClip(self.m, slot)
+        # any clip still heard, not only the newest: each has its own X
+        live = [c for c in self.m.Clips(self.m, slot).values() if not c.cancelled]
+        if not live:
+            return
+        c = self.m.CancelClip(self.m, slot, self.rng.choice(live))
         if c:
             self.cancelled_clips.append((slot, c.release))
 
