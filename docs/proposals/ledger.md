@@ -37,47 +37,57 @@ answered in the game without its reply text ever arriving.
    holds with none missing below it (`WowCompanionDB.lines[conversation]`).
    A line it already holds is ignored, so a line may arrive twice and still
    shows once.
-4. **The game says when it is listening.** When the addon has loaded, it draws
-   a one-off `WCCMD ready <loads>` on the data strip (the corner the companion
-   already watches for Stop and cancel). Until then, nothing is sent; after it,
-   the PC sends **one bundle**: every line the game might not have (all lines
-   not yet confirmed), oldest first, in one message, then one board.
+4. **A mailbox the game reads at every load.** `WowCompanion_Mailbox`, a small
+   addon of ours that the game loads with Core at every login and reload (not
+   load-on-demand); its `Mail.lua` holds every line not yet confirmed and each
+   job's state, oldest first. The PC rewrites it whole (temporary then rename,
+   so the game reads the old file or the new, never half of one) whenever the
+   ledger changes, the game closed or running. At load the addon takes the
+   mailbox before the window draws, so lines made while the game was closed are
+   already there when it opens: no wait for a signal, no bundle sent later, no
+   bell. Within a session, lines go live through the bells as now; the mailbox
+   only matters at the next load.
 5. **A save confirms.** When the game writes its save (a reload, a logout), the
    PC reads each conversation's number and drops the lines at or below it from
    the ledger. Jobs whose end the save records are dropped the same way. No
    time windows decide what is kept.
 
-Lines made while the game is closed simply wait in the ledger, and arrive in
-the bundle seconds after the next login. The save file is never edited by us.
+Lines made while the game is closed wait in the ledger and the mailbox, and are
+in the window when it opens at the next login. The save file is never edited by
+us. (The player, 2026-11-11, asked why lines should arrive late at all; an
+earlier version of this design sent them after a "ready" signal, seconds after
+login. The mailbox removes the wait and the signal.)
 
 ## Guarantees
 
-- **Every line reaches the window exactly once, in order**: by the next
-  `ready` after it was made at the latest, live within a session through the
-  bells as now. Why: a line leaves the ledger only once a save shows the game
-  holds it, every `ready` sends all unconfirmed lines, and the game ignores
-  numbers it holds.
+- **Every line reaches the window exactly once, in order**: live within a
+  session through the bells as now, and at the latest at the next load, from
+  the mailbox. Why: a line leaves the ledger only once a save shows the game
+  holds it, the mailbox always holds every unconfirmed line, the game reads it
+  at every load, and it ignores numbers it holds.
 - **A crash loses nothing.** The ledger is on disk before a line is sent. A
   job still running at a crash is ended at the next start with a line saying
   so (the time, and `crash.log`). The game's own crash loses its unsaved lines,
   and its save then shows a lower number, so they are sent again. That is not a
   retry: it is what the save says the game lacks.
-- **No message is ever partially applied.** The bundle is one slot, read whole
-  by the addon, so the catch-up bells' gap at 8 behind cannot matter for it.
+- **No message is ever partially applied.** The mailbox is replaced whole, so
+  the game reads all of it or the previous whole one, and it uses no slot, so
+  neither the slot limit nor the catch-up bells' gap at 8 behind can matter for it.
 
 ## Failures, each reported, none retried in the dark
 
 | Failure | Report |
 |---|---|
 | The ledger cannot be written (disk full, permissions) | in the window and `doctor`: lines are not safe while the game is closed |
-| The save cannot be read at a confirmation | `doctor`; nothing is dropped, so the next `ready` sends those lines again and the game ignores what it holds |
-| The game is running but never draws `ready` (the addon broken or not loaded) | the tray and `doctor`: "the game has not said it is listening"; lines wait in the ledger |
-| Slots spent before the session ends | the pad buzz (as now); the lines wait for the next `ready` |
+| The mailbox cannot be written | in the window and `doctor`: the lines it should hold are named |
+| The save cannot be read at a confirmation | `doctor`; nothing is dropped, so the mailbox keeps those lines and the game ignores what it holds |
+| A save after a load still lacks lines the mailbox held (the mailbox addon disabled or broken) | the tray and `doctor`: "the game did not take its mailbox", with which lines |
+| Slots spent before the session ends | the pad buzz (as now); the lines are in the mailbox for the next load |
 
 ## What it deletes
 
-`REPLIES` and everything `resync` does except the one board after `ready` (the
-8 s sleep, the 10-minute window, the text match); `src/undelivered.rs` and
+`REPLIES` and everything `resync` does (the 8 s sleep, the 10-minute window,
+the text match, and its board: the mailbox carries the job states); `src/undelivered.rs` and
 `undelivered.txt`; `inflight.txt` and `crash.rs`'s handling of it (the ledger
 is the record); `src/offline.rs` and every edit of the player's save file;
 `jobs.rs`'s 30-minute `KEEP` (a save confirms instead); the `req` field.
@@ -92,16 +102,17 @@ message by its type, not by the text's prefix; every `replacen` and
 
 ## The game's part (Main builds it once approved)
 
-Draw `ready` at load; hold `WowCompanionDB.lines`; apply each line by its
-number and ignore one already held; take a bundle (a list of lines) as if each
-had arrived alone. Its state handling (forward-only per job) is unchanged.
+Hold `WowCompanionDB.lines`; at load, take the mailbox before the window draws;
+apply each line by its number and ignore one already held, whether it came
+from the mailbox or a slot. Its state handling (forward-only per job) is
+unchanged. The mailbox is a new addon folder: one game restart, which lands
+with the addon split's.
 
-## For the player to decide
+## Decided by the player (2026-11-11)
 
-1. **The save is never edited by us**: lines made while the game is closed
-   appear seconds after login, through the bundle, instead of already being in
-   the window when it opens. Yes?
-2. **A reply's changes (macros, bars, Lua) that arrive in a later session**:
-   today they are not run, and the line says so. Keep that, or run them?
-3. **The `ready` strip**: a corner flash of about two seconds at every login and
-   reload, as the Stop button's already is. Acceptable?
+1. Lines made while the game is closed are in the window when it opens (the
+   mailbox), never late, and the save file is never edited by us.
+2. A reply whose changes (macros, bars, Lua) could not run because the game was
+   closed: the changes do not run, and the line shows an error saying so.
+3. The data strip's corner flash is acceptable (this design no longer needs a
+   `ready` signal).
