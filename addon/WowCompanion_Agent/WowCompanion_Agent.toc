@@ -1,0 +1,21 @@
+## Interface: 16001
+## Title: WoW Companion: Agent
+## Notes: The agents' half: the Companion window, conversations, the export, agent code and modules.
+## Dependencies: WowCompanion_Link
+## SavedVariables: WowCompanionAgentDB
+## Group: WowCompanion
+
+Agent.lua
+Sandbox.lua
+Tests.lua
+Window.lua
+Transcript.lua
+JobsModel.lua
+Jobs.lua
+Chords.lua
+Probes.lua
+Export.lua
+FocusLog.lua
+ItemView.lua
+LinkCatcher.lua
+Modules.lua

@@ -1,4 +1,4 @@
-"""Property tests for the window's model (addon/WowCompanion/JobsModel.lua).
+"""Property tests for the window's model (addon/WowCompanion_Agent/JobsModel.lua).
 
     python tools/test_jobs.py [runs] [seed]      (needs `pip install lupa`)
 
@@ -24,7 +24,7 @@ import sys
 from lupa import luajit21
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MODEL = os.path.join(HERE, "..", "addon", "WowCompanion", "JobsModel.lua")
+MODEL = os.path.join(HERE, "..", "addon", "WowCompanion_Agent", "JobsModel.lua")
 RANK = {"hearing": 0, "queued": 1, "running": 2, "answered": 3, "cancelled": 3, "failed": 3}
 
 

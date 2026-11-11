@@ -97,8 +97,8 @@ The modern API, not Classic: `GetSpellInfo`, `GetSpecialization`, `GetNumSpellTa
 ## Minimap pins (measured working, 2026-11-09)
 
 The agent can mark places on the minimap: a dot plus a shaded area, at map
-coordinates from the conversation ("kill Outrunners at 72.5, 69.5"). Built into
-`Companion.lua` (`WCPins`), kept in `WowCompanionDB.pins`, so pins survive reloads.
+coordinates from the conversation ("kill Outrunners at 72.5, 69.5"). The
+WowCompanion_Pins addon (`WCPins`), kept in `WowCompanionPinsDB.pins`, so pins survive reloads.
 
 From a `lua` step:
 

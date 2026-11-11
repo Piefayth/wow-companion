@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: WoW Companion: Errands
+## Notes: Your to-do list, added by the agents, ticked off by the game.
+## Dependencies: WowCompanion_Agent
+## SavedVariables: WowCompanionErrandsDB
+## Group: WowCompanion
+
+Errands.lua

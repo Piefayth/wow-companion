@@ -34,23 +34,3 @@ WC.Provide("pins", "Polestar", {
 	end
 	return true
 end })
-
--- Built in: our own pins (Pins.lua), minimap and world map, each pin tagged with
--- its layer inside WowCompanionDB.pins so other pins stay.
-local function builtinSet(layer, points)
-	if not (WCPins and WCPins.Set) then return nil end
-	local keep = {}
-	for _, p in ipairs(WowCompanionDB.pins or {}) do
-		if p.layer ~= layer then keep[#keep + 1] = p end
-	end
-	for _, pt in ipairs(points or {}) do
-		keep[#keep + 1] = { map = pt.map, x = pt.x, y = pt.y, r = pt.r or 25, label = pt.label,
-			color = pt.color or GOLD, layer = layer }
-	end
-	WCPins.Set(keep)
-	return true
-end
-WC.Provide("pins", "builtin", {
-	set = builtinSet,
-	clear = function(layer) return builtinSet(layer, {}) end,
-}, { rank = 0 })

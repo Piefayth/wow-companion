@@ -1,5 +1,8 @@
--- What this file needs from Companion.lua comes
--- through its named functions (WC.Companion.<verb>); what Companion.lua calls here is WC.Board.
+-- The board (Core): a notice, or rows of what is going on, at the top left.
+--   WC.Board.toast(text, r, g, b, hold)     a notice; nil text hides it
+--   WC.Board.toastBoard(rows, hint)         rows { { label, state, detail, r, g, b } }
+--   WC.Board.Post(slot, text, opts)         a line for the player: the agents' rows
+--                                           when WowCompanion_Agent set a poster, else a notice
 
 
 -- A one-line notice at the top of the screen, instead of opening the window:
@@ -76,7 +79,6 @@ local function buildToast()
 	frame.title:SetText("Companion")
 	frame.hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	frame.hint:SetPoint("TOPRIGHT", -PAD - 4, -PAD - 1)
-	frame.hint:SetText(("tap %s to read"):format(WowCompanion_Glyph(WowCompanion_TalkKey)))
 	frame.rule = frame:CreateTexture(nil, "ARTWORK")
 	frame.rule:SetColorTexture(1, 0.82, 0, 0.35)
 	frame.rule:SetHeight(1)
@@ -158,13 +160,12 @@ local function toast(text, r, g, b, hold)
 end
 
 -- The agents at work: rows = { { label, state, detail, r, g, b }, ... }
--- for the other files (Style.lua's destroy dialog)
-function WC.Toast(...) return toast(...) end
 
-local function toastBoard(rows)
+local function toastBoard(rows, hint)
 	toastFrame = toastFrame or buildToast()
 	placeToast(toastFrame)
 	boardMode(toastFrame, true)
+	toastFrame.hint:SetText(hint or "")
 	for i, item in ipairs(rows) do
 		local row = toastRow(toastFrame, i)
 		local label, state, detail, r, g, b = unpack(item)
@@ -204,3 +205,8 @@ WC.Board = WC.Board or {}
 WC.Board.toast = toast
 WC.Board.toastBoard = toastBoard
 WC.Board.toastIdleShown = toastIdleShown
+-- poster(slot, text, opts): set by WowCompanion_Agent (its conversation rows)
+function WC.Board.Post(slot, text, opts)
+	if WC.Board.poster then return WC.Board.poster(slot, text, opts) end
+	if text then toast(text, 0.9, 0.9, 0.9, 10) end
+end

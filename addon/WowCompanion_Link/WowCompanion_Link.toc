@@ -1,0 +1,17 @@
+## Interface: 16001
+## Title: WoW Companion: Link
+## Notes: The bridge to the companion on your PC: its messages, dictation into the chat box, the data strip, the minimap status.
+## Dependencies: WowCompanion
+## SavedVariables: WowCompanionLinkDB
+## Group: WowCompanion
+## AddonCompartmentFunc: WowCompanion_OnCompartmentClick
+## AddonCompartmentFuncOnEnter: WowCompanion_OnCompartmentEnter
+## AddonCompartmentFuncOnLeave: WowCompanion_OnCompartmentLeave
+
+Pad.lua
+Link.lua
+Strip.lua
+Chat.lua
+ChatWheel.lua
+BridgeProbe.lua
+Status.lua

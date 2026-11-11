@@ -28,21 +28,13 @@ on its command line means one is). Two writers on one file is how replies got lo
 Lessons from ElvUI-style packs: one engine table, modules with a lifecycle, a
 message bus, per-module settings, then smaller files.
 
-1. **Engine `WC`** (done 2026-11-10, Companion.lua top): `WC.Module` registry
-   with Enable/Disable and `after` order, replace-safe; `M:Event`, `M:On`,
-   `WC.Send`; `WC.Settings`; `WC.AfterCombat`; helpers under `WC.Board`, `WC.Chat`,
-   `WC.Items`, `WC.Pins`, `WC.Strip`, `WC.Style`. Old global names stay.
-2. **Small modules moved** (done 2026-11-10): ExtraButtons, LinkCatcher, MakeRoom,
-   BuffGlow. They send LINK_CAUGHT, TRADE_LINK_CAUGHT, BAGS_FULL.
-3. ~~Bags onto the engine~~: Bags left modules/ for the addon's own files (a
-   controller-managed window must not run as a module: taint).
-4. **Split Companion.lua** (done 2026-11-10): Engine, Style, Companion (channel and
-   core), Pins, Strip, Bags, and since then the files CLAUDE.md lists. Checked: no file uses another's locals
-   (tools/addon_locals.py). Companion keeps fallbacks so the channel stands alone.
-   Further splits (board, log window) need their shared locals turned
-   into WC fields first.
-5. Later: move saved data (links, tradeLinks, pins) under
-   `WowCompanionDB.mods.<Name>` with a one-time copy; until then keep the old keys.
+1. **Engine `WC`** (done 2026-11-10): `WC.Module` registry with Enable/Disable
+   and `after` order, replace-safe; `M:Event`, `M:On`, `WC.Send`; `WC.Settings`;
+   `WC.AfterCombat`; the focus helpers.
+2. **The addon split** (built 2026-11-11, docs/proposals/addon-split.md): Core,
+   Link, Agent and standalone extras, each with its own saved table, the
+   player's settings moved once. Waits on the PC side (the Rust changes listed
+   there) before the next login.
 
 ### 1. Make the loop tight
 

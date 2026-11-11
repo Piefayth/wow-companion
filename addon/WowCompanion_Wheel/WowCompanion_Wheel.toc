@@ -1,6 +1,8 @@
 ## Interface: 16001
 ## Title: WoW Companion: Wheel
 ## Notes: Radial wheels of your own, opened from a bar slot. Ring adapted from Improved Forever (markg, MIT).
+## Dependencies: WowCompanion
 ## SavedVariablesPerCharacter: WowCompanionWheelDB
+## Group: WowCompanion
 
 Wheel.lua

@@ -1,16 +1,9 @@
 -- The nav capability (see Engine.lua, Capabilities): aim(map, x, y, label),
 -- nearest(kind), clear(). x and y are the 0-100 map coordinates players quote.
 
--- Built in: a pin on the minimap (Pins.lua). No arrow, no service lookup.
+-- Built in: positions from the game alone (aiming is a pins addon's or
+-- Polestar's).
 WC.Provide("nav", "builtin", {
-	aim = function(map, x, y, label)
-		if not (WCPins and WCPins.Add and map and x and y) then return nil end
-		WCPins.Add({ map = map, x = x, y = y, label = label })
-		return true
-	end,
-	clear = function()
-		if WCPins and WCPins.Clear then WCPins.Clear() return true end
-	end,
 	-- world(map, x, y, f) -> continent, a, b in yards; here() -> the player's
 	-- the same way. Only compare points from the same provider.
 	world = function(map, x, y)

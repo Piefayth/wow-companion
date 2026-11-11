@@ -10,7 +10,7 @@ string and what is a comment, then checks the two things that have actually gone
 wrong. It will not catch a misspelled function name or a bad argument; `luac -p`
 would, and if Lua is ever on the PATH that is the better check.
 
-    python -I tools/luacheck.py addon/WowCompanion/Companion.lua
+    python -I tools/luacheck.py addon/WowCompanion_Link/Link.lua
 """
 
 import re

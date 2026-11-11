@@ -1,0 +1,14 @@
+## Interface: 16001
+## Title: WoW Companion: Bags
+## Notes: A bag window for the controller, the same in combat and out: sections, verdicts, sell all, bag swap.
+## Dependencies: WowCompanion
+## SavedVariables: WowCompanionBagsDB
+## Group: WowCompanion
+
+BagsEvaluate.lua
+BagsInput.lua
+BagsMenu.lua
+Bags.lua
+BagsStandIn.lua
+BagSwap.lua
+MakeRoom.lua

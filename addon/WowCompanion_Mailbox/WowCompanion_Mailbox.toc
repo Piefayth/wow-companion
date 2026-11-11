@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: WoW Companion: Mailbox
 ## Notes: Conversation lines the game has not saved yet, written by the companion (src/ledger.rs). Read at every load.
-## Dependencies: WowCompanion
+## Dependencies: WowCompanion_Link
 ## Group: WowCompanion
 
 Mail.lua

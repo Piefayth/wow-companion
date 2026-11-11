@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: WoW Companion: Fonts
+## Notes: Interface fonts and text size, switched live.
+## Dependencies: WowCompanion
+## SavedVariables: WowCompanionFontsDB
+## Group: WowCompanion
+
+Fonts.lua

@@ -21,6 +21,7 @@
 -- A slot { rule = "items" } or { rule = "quest" } fills itself from the bags.
 
 WCWheel = WCWheel or {}
+WC.Wheel = WCWheel
 local W = WCWheel
 
 local MAX_SLOTS = 8

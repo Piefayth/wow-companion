@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: WoW Companion: Interact
+## Notes: One key loots the nearest corpse or interacts with the nearest thing, in combat too.
+## Dependencies: WowCompanion
+## SavedVariables: WowCompanionInteractDB
+## Group: WowCompanion
+
+Interact.lua

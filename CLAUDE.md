@@ -62,34 +62,50 @@ yes; don't reinvent what Claude Code has.
   `crash.rs` (crash.log, a panicked request ends failed), `logfile.rs`
   (companion.log). What the OS gives (locks, processes, autostart) is behind
   `crates/settings/src/platform.rs`, Windows only for now.
-- `addon/WowCompanion/`: the in-game half, one job per file, in .toc order
-  (split 2026-11-10 so conversations stop editing the same file; a change goes in
-  the file that owns it):
-  - `Engine.lua` `WC`, the module engine. `Style.lua` Blizzard look, glyphs,
-    destroy dialog.
-  - `Companion.lua` the core: the channel (slots, bells, polling, `receive`), the
-    message handlers' dispatch, conversations and the waiting line, the offered
-    button, `/wc`, events. It publishes what the others need as `WC.Core.<name>`
-    (at the end of the file); the others hand back functions as `WC.<File>.<name>`,
-    with one-line wrappers left in Companion.lua.
-  - `Sandbox.lua` agent code (`lua`, `module` steps, the sandbox, taint measuring).
-    `Tests.lua` taint and PlaceAction tests. `Window.lua` the Companion window and
-    its tabs. `Transcript.lua` its text (lines only append). `Board.lua` the toast
-    and agents' board. `JobsModel.lua` the window's model of your messages, pure and property-tested (`python tools/test_jobs.py`, needs `lupa`); `Jobs.lua` draws it.
-    `Chat.lua` whisper lookup, the chat line (a line goes into the chat box the player opened, or waits for the next one; nothing opens it), item viewer. `ChatWheel.lua` spoken
-    chat without the agent (L1+R1). `Chords.lua` name lookups, the pad, chord
-    learning. `Probes.lua` probes and API dumps. `Export.lua` the context export
-    (bag contents too). `BuffWatch.lua` the character's watched buffs
-    (`WowCompanionCharDB`, per character, empty by default). **Nothing class- or
-    player-specific ships** (no default wheels, buffs or layouts): it is made per
-    character on request or read from the game. `Pins.lua`, `Strip.lua`. The bag window: `BagsInput.lua`
-    (the secure pad), `BagsMenu.lua` (triangle), `Bags.lua`, `BagsStandIn.lua`
-    (over Blizzard's). `Interact.lua` combat loot/interact key. `Fonts.lua` live
-    interface fonts. `Status.lua` (minimap button). `Providers/` capabilities
-    (price, nav, gear, itemSource, guide). `Modules.lua` (generated).
-  - Files share nothing local. `tools/split_addon.py` moves a block out of
-    Companion.lua as a pure move (anchored by text, refuses if the file changes
-    under it). `addon/WowCompanion_Wheel/`: the wheels.
+- `addon/`: the in-game half, **one addon per job** (docs/proposals/addon-split.md),
+  all under one collapsible entry in the AddOns list (`## Group: WowCompanion`,
+  the 512 slots too). One file per job inside each; files share nothing local
+  and talk through globals (`WC`, `WowCompanion_*`) and the bus (`WC.Send`, `M:On`).
+  Each addon owns its saved table, made by `WC.Saved` at its load; settings from
+  before the split move in once (`WC.MoveSaved`, to remove once every
+  character has loaded). **Nothing class- or player-specific ships** (no default
+  wheels, buffs or layouts): it is made per character on request or read from
+  the game.
+  - `WowCompanion` (Core, needs nothing of the PC): `Engine.lua` (`WC`: modules,
+    bus, settings, `WC.AfterCombat`, the focus helpers, capabilities, `WC.Saved`),
+    `Style.lua` (Blizzard look, glyphs, destroy dialog), `Board.lua` (the toast
+    and board; `WC.Board.Post`), `Providers/` (price, nav, gear, itemSource,
+    guide, Polestar's pins). Saved: `WowCompanionDB` (module settings).
+  - `WowCompanion_Link` (needs Core): the PC bridge. `Link.lua` the channel
+    (slots, bells, polling, the mailbox, dispatch to handlers registered with
+    `WC.Link.Handle`), the talk button (TALK_TAP, TALK_HELD on the bus), `/wc`
+    (`WC.Link.Slash`). `Pad.lua` the pad's state and `WowCompanion_PadSlot`.
+    `Chat.lua` whisper lookup and the chat line (a line goes into the chat box the
+    player opened, or waits for the next one; nothing opens it), the `chat` and
+    `send` kinds. `ChatWheel.lua` dictation without the agent (L1+R1).
+    `Strip.lua`, `BridgeProbe.lua`, `Status.lua` (minimap status). `Signals/`
+    the bells. Saved: `WowCompanionLinkDB`. Core and Link with the agents off is
+    the dictation product.
+  - `WowCompanion_Agent` (needs Link): `Agent.lua` the Companion window's
+    conversations, the waiting lines and board rows, the offered button, the
+    agents' kinds, `/wc`'s agent commands (`WC.Companion` for the files beside
+    it). `Sandbox.lua` agent code (`lua`, `module` steps, taint measuring).
+    `Tests.lua`, `Window.lua` (the window and its tabs), `Transcript.lua` (lines
+    only append), `JobsModel.lua` (pure, property-tested: `python
+    tools/test_jobs.py`, needs `lupa`) and `Jobs.lua` (draws it), `Chords.lua`
+    (name lookups, chord learning), `Probes.lua`, `Export.lua` (the context
+    export, bag contents too), `FocusLog.lua`, `ItemView.lua`, `LinkCatcher.lua`
+    (links caught for the agents), `Modules.lua` (generated). Saved:
+    `WowCompanionAgentDB`.
+  - Extras, standalone (need Core only): `WowCompanion_Bags` (the bag window:
+    `BagsInput.lua` the secure pad, `BagsMenu.lua`, `Bags.lua`, `BagsStandIn.lua`
+    over Blizzard's, `BagsEvaluate.lua`, `BagSwap.lua`, `MakeRoom.lua`),
+    `WowCompanion_Interact` (combat loot/interact key), `WowCompanion_Fonts`
+    (live interface fonts, `Fonts/`), `WowCompanion_Wheel` (the wheels),
+    `WowCompanion_Pins` (minimap and map pins; the builtin pins and nav),
+    `WowCompanion_Buffs` (watched buffs per character, the glow). And
+    `WowCompanion_Errands` (needs the Agent: agents add errands).
+    `WowCompanion_Mailbox` (needs Link) is the ledger's, written by the PC.
 - `modules/`: the agent's modules, one `<Name>.lua` each, in git. A `module` step
   writes the file (`src/modules.rs`), which regenerates the addon's `Modules.lua`
   (gitignored, reread at every /reload) and also runs it at once. The save file's
@@ -256,7 +272,7 @@ goes to a detached process.
   **SmartNavigation's `SecureHelper` wraps `FrameHidden` and `MarkFrame*`**: an
   addon calling one in a fight gets "Interface action failed" with no
   `ADDON_ACTION_BLOCKED`. Use `WC.FrameHidden(frame)`, which waits for the fight's
-  end, and mark frames out of combat. `WowCompanionDB.blockedNotices` records
+  end, and mark frames out of combat. `WowCompanionAgentDB.blockedNotices` records
   every such notice with our calling line.
 - **Look before calling.** `docs/api-surface.md` and `.tsv` give every one of the
   10,957 names a tier and its terms (protected, press only, out of combat, secret

@@ -1,6 +1,6 @@
 -- Part of WowCompanion; loaded by the .toc in order: Engine, Style, Companion,
 -- Pins, Strip, Bags, Status, Modules. A file shares nothing local with another:
--- they talk through globals (WC, WowCompanion_*, WCPins, WCBags).
+-- they talk through globals (WC, WowCompanion_*).
 
 -- Destroying an item. Agent
 -- code cannot delete (DeleteCursorItem is refused in its sandbox), but it may
@@ -15,9 +15,8 @@
 -- plain art if a template is missing.
 WowCompanion_Style = WowCompanion_Style or {}
 
--- The talk button as the game sees it. On this setup the companion's talk button
--- (minus on a Switch pad in DS5 mode) reaches the game as the DualSense Create
--- button, PADSOCIAL; the tap that opens the window is bound to it (bindTap).
+-- The talk button as the game sees it, for prompts that name it; WowCompanion_Link
+-- learns the player's own (/wc talkkey) and sets it.
 WowCompanion_TalkKey = "PADSOCIAL"
 
 -- A controller button drawn as the game draws it for the pad in use: the same
@@ -129,12 +128,12 @@ function WowCompanion_ConfirmDestroy(bag, slot, onClose)
 				local kind, id = GetCursorInfo()
 				if kind == "item" and id == f.itemID then
 					DeleteCursorItem()
-					WC.Toast("|cffffd100Destroyed|r " .. (f.link or ""), 0.8, 0.8, 0.8, 3)
+					WC.Board.toast("|cffffd100Destroyed|r " .. (f.link or ""), 0.8, 0.8, 0.8, 3)
 				else
 					ClearCursor()
 				end
 			else
-				WC.Toast("Not destroyed: the item moved", 1, 0.5, 0.5, 3)
+				WC.Board.toast("Not destroyed: the item moved", 1, 0.5, 0.5, 3)
 			end
 			f:Hide()
 		end)
@@ -171,3 +170,5 @@ function WowCompanion_ConfirmDestroy(bag, slot, onClose)
 	SetOverrideBindingClick(f, true, "PAD2", "WowCompanionDestroyNo")
 	return true
 end
+
+WC.Style = WowCompanion_Style

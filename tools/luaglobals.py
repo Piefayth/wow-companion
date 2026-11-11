@@ -201,6 +201,12 @@ def main(args):
     targets = [os.path.abspath(a) for a in args] or every
     parsed = {}
     defined = set()
+    # the saved-variable tables each .toc declares (the game makes them)
+    for toc in glob.glob(os.path.join(ROOT, "addon", "*", "*.toc")):
+        for line in open(toc, encoding="utf-8", errors="replace"):
+            m = re.match(r"##\s*SavedVariables(?:PerCharacter)?\s*:\s*(.+)", line)
+            if m:
+                defined.update(n.strip() for n in m.group(1).split(","))
     for path in set(every) | set(targets):
         code, _ = strip(open(path, encoding="utf-8").read())
         parsed[path] = analyse(code)

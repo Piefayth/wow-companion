@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: WoW Companion: Pins
+## Notes: Pins on the minimap and the world map.
+## Dependencies: WowCompanion
+## SavedVariables: WowCompanionPinsDB
+## Group: WowCompanion
+
+Pins.lua
+Provider.lua

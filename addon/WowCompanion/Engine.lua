@@ -1,6 +1,6 @@
--- Part of WowCompanion; loaded by the .toc in order: Engine, Style, Companion,
--- Pins, Strip, Bags, Status, Modules. A file shares nothing local with another:
--- they talk through globals (WC, WowCompanion_*, WCPins, WCBags).
+-- WowCompanion (Core): the shared code every WoW Companion addon depends on
+-- (## Dependencies: WowCompanion). Nothing here needs the PC. Files share
+-- nothing local: they talk through globals (WC, WowCompanion_*).
 
 ---------------------------------------------------------------------------
 -- WC, the engine modules hang off (the shape of the
@@ -391,21 +391,49 @@ do
 		return out
 	end
 
-	-- one place for what agent code may call, each wrapping its global
-	-- (looked up at call time: some are defined further down this file)
-	WC.Board = { Post = function(...) return WowCompanion_Recent(...) end }
-	WC.Chat = {
-		Line = function(...) return WowCompanion_ChatLine(...) end,
-		ResolveWhisper = function(...) return WowCompanion_ResolveWhisper(...) end,
-	}
-	WC.Items = {
-		Show = function(...) return WowCompanion_ShowItem(...) end,
-		ConfirmDestroy = function(...) return WowCompanion_ConfirmDestroy(...) end,
-	}
-	setmetatable(WC, { __index = function(_, k)
-		if k == "Pins" then return WCPins end
-		if k == "Strip" then return WowCompanion_Strip end
-		if k == "Style" then return WowCompanion_Style end
-		if k == "Wheel" then return WCWheel end
-	end })
+	-- Settings moving to an addon's own saved table (the player, 2026-11-11):
+	-- keys still in WowCompanionDB (the save before the split) move into the
+	-- addon's table once, at its first load, and leave WowCompanionDB (used by
+	-- WC.Saved's move functions; remove once every character has loaded).
+	function WC.MoveSaved(into, keys, from)
+		from = from or WowCompanionDB
+		if type(from) ~= "table" then return into end
+		for _, k in ipairs(keys) do
+			if from[k] ~= nil then
+				if into[k] == nil then into[k] = from[k] end
+				from[k] = nil
+			end
+		end
+		return into
+	end
+	-- An addon's own saved table: WC.Saved("WowCompanion_Pins", "WowCompanionPinsDB",
+	-- move) makes _G.WowCompanionPinsDB at that addon's ADDON_LOADED (its saved
+	-- variables are read just before), before the addon's own handlers run, then
+	-- calls move(db) to take what the save before the split kept elsewhere.
+	local saved = {}
+	local loader = CreateFrame("Frame")
+	loader:RegisterEvent("ADDON_LOADED")
+	-- Which of our addons loaded this session, written to WowCompanionDB.addons:
+	-- the PC learns what is running from this (never from the game's AddOns.txt,
+	-- which says what is enabled), shows options and gives agents rules only
+	-- for these. The slots are left out.
+	local loaded = {}
+	loader:RegisterEvent("PLAYER_LOGOUT")
+	loader:SetScript("OnEvent", function(_, event, name)
+		if event == "PLAYER_LOGOUT" then
+			WowCompanionDB = WowCompanionDB or {}
+			table.sort(loaded)
+			WowCompanionDB.addons = loaded
+			return
+		end
+		if name:find("^WowCompanion") and not name:find("^WowCompanion_S%d+$") then loaded[#loaded + 1] = name end
+		local s = saved[name]
+		if not s then return end
+		saved[name] = nil
+		_G[s.global] = _G[s.global] or {}
+		if s.move then pcall(s.move, _G[s.global]) end
+	end)
+	function WC.Saved(addon, global, move)
+		saved[addon] = { global = global, move = move }
+	end
 end

@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: WoW Companion: Buffs
+## Notes: Buffs you ask to watch: the bar button that casts one glows while it is missing.
+## Dependencies: WowCompanion
+## SavedVariablesPerCharacter: WowCompanionBuffsDB
+## Group: WowCompanion
+
+BuffWatch.lua
+BuffGlow.lua

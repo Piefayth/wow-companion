@@ -1,46 +1,17 @@
 ## Interface: 16001
 ## Title: WoW Companion
-## Notes: Takes commands from the companion helper running on your PC.
+## Notes: The shared engine of the WoW Companion addons: modules, settings, the Blizzard look, the controller's focus helpers, capabilities, the board.
 ## SavedVariables: WowCompanionDB
 ## SavedVariablesPerCharacter: WowCompanionCharDB
 ## IconTexture: Interface\Icons\UI_Chat
-## AddonCompartmentFunc: WowCompanion_OnCompartmentClick
-## AddonCompartmentFuncOnEnter: WowCompanion_OnCompartmentEnter
-## AddonCompartmentFuncOnLeave: WowCompanion_OnCompartmentLeave
+## Group: WowCompanion
 
 Engine.lua
+Style.lua
+Board.lua
 Providers\Price.lua
 Providers\Nav.lua
 Providers\Gear.lua
 Providers\ItemSource.lua
 Providers\Guide.lua
 Providers\Pins.lua
-Style.lua
-Companion.lua
-Sandbox.lua
-Tests.lua
-Window.lua
-Transcript.lua
-Board.lua
-JobsModel.lua
-Jobs.lua
-Chat.lua
-ChatWheel.lua
-Chords.lua
-Probes.lua
-BuffWatch.lua
-Export.lua
-Pins.lua
-Errands.lua
-Strip.lua
-BridgeProbe.lua
-BagsEvaluate.lua
-BagsInput.lua
-BagsMenu.lua
-Bags.lua
-BagsStandIn.lua
-Interact.lua
-Fonts.lua
-Status.lua
-FocusLog.lua
-Modules.lua
