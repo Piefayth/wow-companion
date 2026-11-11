@@ -38,7 +38,8 @@ function M.new(deps)
 		if type(id) ~= "number" or id < cutoff or type(e) ~= "table" or not RANK[e.state] then
 			store.jobs[id] = nil
 		else
-			m.jobs[id] = { id = id, slot = e.slot or "", state = e.state, asked = e.asked, at = deps.now() }
+			m.jobs[id] = { id = id, slot = e.slot or "", state = e.state, asked = e.asked, at = deps.now(),
+				since = e.since, text = e.text }
 		end
 	end
 	return m
@@ -48,7 +49,8 @@ function M:audit(what, slot, detail) if self.deps.audit then self.deps.audit(wha
 function M:changed() if self.deps.changed then self.deps.changed() end end
 
 function M:save(job)
-	self.store.jobs[job.id] = { slot = job.slot, state = job.state, asked = job.asked or nil }
+	self.store.jobs[job.id] = { slot = job.slot, state = job.state, asked = job.asked or nil,
+		since = job.since, text = job.text }
 end
 
 -- the one way a job's state changes
@@ -61,6 +63,8 @@ function M:advance(id, slot, state)
 		self.jobs[id] = job
 	end
 	job.state = state
+	-- when it began being heard, or worked on (wall ms): the board's seconds
+	if state == "hearing" or state == "running" then job.since = self.deps.wall() end
 	if RANK[state] == 3 then
 		job.cancel, job.sending = nil, nil
 		job.endedAt = self.deps.now()
@@ -97,12 +101,22 @@ end
 
 -- messages ------------------------------------------------------------------
 
--- any message about jobs: its own `job` and `state`, and any `list`
+-- any message about jobs: its own `job` and `state`, and any `list`; what a
+-- running job is doing (a `progress` text, a line's `pending`), and for how
+-- long (`since`: seconds it has already run, retold after a reload)
 function M:Apply(inbox)
 	local slot = inbox.slot
-	if inbox.job and inbox.state then self:advance(tonumber(inbox.job), slot, inbox.state) end
+	local id = tonumber(inbox.job)
+	if id and inbox.state then self:advance(id, slot, inbox.state) end
 	for _, e in ipairs(type(inbox.list) == "table" and inbox.list or {}) do
 		if type(e) == "table" and tonumber(e.job) then self:advance(tonumber(e.job), e.slot or slot, e.state) end
+	end
+	local job = id and self.jobs[id]
+	local doing = inbox.kind == "progress" and inbox.text or inbox.pending
+	if job and RANK[job.state] < 3 and doing then
+		job.text = tostring(doing)
+		if tonumber(inbox.since) then job.since = self.deps.wall() - tonumber(inbox.since) * 1000 end
+		self:save(job)
 	end
 	self:changed()
 end
@@ -213,6 +227,44 @@ function M:Hearing(slot)
 		if job.slot == (slot or "") and job.state == "hearing" then list[#list + 1] = job end
 	end
 	return list
+end
+
+-- What a conversation is doing, for the board, the list and the work line:
+-- the clip being heard longest (a job), and the work: { since, text, ids }
+-- over its running jobs (one run takes the queued ones together), or nil.
+function M:Work(slot)
+	slot = slot or ""
+	local hearing = self:Hearing(slot)[1]
+	local work
+	for _, job in ipairs(self:Ordered()) do
+		if job.slot == slot and job.state == "running" then
+			work = work or { ids = {} }
+			work.ids[#work.ids + 1] = job.id
+			if not work.since or (job.since or 0) < work.since then work.since = job.since end
+			if job.text then work.text = job.text end
+		end
+	end
+	if work then work.text = work.text or "thinking" end
+	return hearing, work
+end
+
+-- How a run that has stopped running ended, from its jobs (Work's ids):
+-- "cancelled", "too late" (answered after you cancelled it), "answered",
+-- "failed", or nil while one still runs (Send now keeps the run's job running).
+function M:EndOf(ids)
+	local seen = {}
+	for _, id in ipairs(ids or {}) do
+		local job = self.jobs[id]
+		if job and RANK[job.state] < 3 then return nil end
+		if job then
+			local word = job.state
+			if job.asked == "running" and word == "answered" then word = "too late" end
+			seen[word] = true
+		end
+	end
+	for _, word in ipairs({ "cancelled", "too late", "failed", "answered" }) do
+		if seen[word] then return word end
+	end
 end
 
 -- What a message's header says, from its job alone: "cancelled" (and grey),

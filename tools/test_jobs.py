@@ -5,8 +5,10 @@
 The model runs under Lua 5.1 (LuaJIT, as the game's). A simulated PC plays the
 companion's rules (src/jobs.rs, docs/proposals/ledger.md): a clip let go is a
 job at once, named to the game by `heard`; clips let go within 1.5 s join;
-Whisper takes 0.3-12 s; one request runs per conversation and queued ones run
-together; cancels race replies; every conversation line is numbered. The
+Whisper takes 0.3-12 s; a clip that held nothing fails its job with an error
+line; one request runs per conversation and queued ones run together; Send now
+interrupts the run (its jobs stay running and join the next run, with the
+queued ones); cancels race replies; every conversation line is numbered. The
 channel to the game delays (0.3-4 s), reorders and repeats every message; the
 strip back to the PC delays and drops commands.
 
@@ -17,6 +19,8 @@ After each random schedule runs to quiet, these must hold:
      cancelled
   4. each numbered line is applied exactly once, also across a reload: a new
      model on the same saved tables, the mailbox replaying every line
+  5. shown working exactly while the PC runs a job of the conversation, and a
+     finished run's end word is the PC's: answered, failed or cancelled
 """
 import os
 import random
@@ -99,7 +103,8 @@ class Sim:
         self.m.Apply(self.m, t)
 
     def new_id(self):
-        self.next_id = max(self.next_id + 1, int(self.t))
+        # ids are wall-clock ms, as the PC's are: a reload keeps a day of them
+        self.next_id = max(self.next_id + 1, int(1.79e12 + self.t))
         return self.next_id
 
     def speak(self, slot):
@@ -125,6 +130,11 @@ class Sim:
     def gathered(self, job):
         if job["state"] != "hearing" or job["clips"] > 0:
             return
+        if self.rng.random() < 0.15:
+            # the clip held nothing: its job fails, with why (src/main.rs)
+            job["state"] = "failed"
+            self.line(job["slot"], who="error", text="nothing heard", job=job["id"], state="failed")
+            return
         running = any(j["state"] == "running" and j["slot"] == job["slot"] for j in self.jobs.values())
         job["state"] = "queued" if running else "running"
         self.line(job["slot"], who="you", job=job["id"], state=job["state"])
@@ -132,13 +142,19 @@ class Sim:
             self.start([job])
 
     def start(self, batch):
+        self.runs = getattr(self, "runs", 0) + 1
+        run = self.runs
         for j in batch:
             j["state"] = "running"
-            self.send({"kind": "progress", "slot": j["slot"], "job": j["id"], "state": "running"})
-        self.later(self.rng.uniform(2000, 15000), lambda: self.answer(batch[0]["slot"], [j["id"] for j in batch]))
+            j["run"] = run
+            j.pop("interrupted", None)
+            self.send({"kind": "progress", "slot": j["slot"], "job": j["id"], "state": "running",
+                       "started": True, "text": "thinking"})
+        self.later(self.rng.uniform(2000, 15000), lambda: self.answer(batch[0]["slot"], [j["id"] for j in batch], run))
 
-    def answer(self, slot, ids):
-        live = [i for i in ids if self.jobs[i]["state"] == "running"]
+    def answer(self, slot, ids, run):
+        # an interrupted run ends without a word: the next run took its jobs
+        live = [i for i in ids if self.jobs[i]["state"] == "running" and self.jobs[i].get("run") == run]
         for i in live:
             self.jobs[i]["state"] = "answered"
         if live:
@@ -148,12 +164,24 @@ class Sim:
 
     def next_run(self, slot):
         queued = [j for j in self.jobs.values() if j["slot"] == slot and j["state"] == "queued"]
-        if queued and not any(j["state"] == "running" and j["slot"] == slot for j in self.jobs.values()):
-            self.start(sorted(queued, key=lambda j: j["id"]))
+        held = [j for j in self.jobs.values() if j["slot"] == slot and j["state"] == "running"]
+        if queued and all(j.get("interrupted") for j in held):
+            self.start(sorted(held + queued, key=lambda j: j["id"]))
 
     def pc_command(self, verb, slot, ident):
         job = self.jobs.get(ident)
-        if verb != "cancel" or not job:
+        if not job:
+            return
+        if verb == "now":
+            # src/requests.rs cancel_request: only a queued job's press counts
+            if job["state"] == "queued":
+                for j in self.jobs.values():
+                    if j["slot"] == slot and j["state"] == "running":
+                        j["interrupted"] = True
+                self.send({"kind": "ack", "verb": "now", "slot": slot, "job": ident})
+                self.later(self.rng.uniform(100, 800), lambda: self.next_run(slot))
+            else:
+                self.send({"kind": "stopped", "slot": slot, "list": [{"job": ident, "slot": slot, "state": job["state"]}]})
             return
         if RANK[job["state"]] < 3:
             job["state"] = "cancelled"
@@ -169,6 +197,21 @@ class Sim:
         j = self.rng.choice(live)
         self.asked.add(int(j.id))
         self.m.CancelJob(self.m, j.id)
+
+    # the player presses Send now on a queued message the window offers it for
+    def press_now(self):
+        offered = [j for j in self.m.Ordered(self.m).values() if j.state == "queued" and not j.cancel
+                   and not j.sending and self.m.Running(self.m, j.slot)]
+        if offered:
+            self.m.SendNow(self.m, self.rng.choice(offered).id)
+
+    # what the window shows working, sampled while it runs, against the PC
+    def watch(self):
+        for slot in ("", "l1"):
+            _, work = self.m.Work(self.m, slot)
+            if work:
+                key = frozenset(int(i) for i in work.ids.values())
+                self.shown.setdefault(slot, set()).add(key)
 
     def check(self):
         p = self.problems
@@ -190,6 +233,17 @@ class Sim:
             for n in range(1, top + 1):
                 if (slot, n) not in self.applied:
                     p.append(f"4 line {(slot, n)} never applied")
+        for slot in ("", "l1"):
+            _, work = self.m.Work(self.m, slot)
+            pc = any(j["slot"] == slot and j["state"] == "running" for j in self.jobs.values())
+            if (work is not None) != pc:
+                p.append(f"5 {slot or 'main'}: window working={work is not None}, PC running={pc}")
+            for ids in getattr(self, "shown", {}).get(slot, ()):
+                word = self.m.EndOf(self.m, self.lua.table_from(list(ids)))
+                states = {self.jobs[i]["state"] for i in ids if i in self.jobs}
+                want = {"answered": {"answered", "too late"}, "failed": {"failed"}, "cancelled": {"cancelled"}}
+                if word is None or not any(word in want[s] for s in states if s in want):
+                    p.append(f"5 {slot or 'main'}: a run of {sorted(ids)} ended {word}, PC {sorted(states)}")
         return p
 
 
@@ -203,11 +257,15 @@ def one(seed):
         s.later(t - s.t, lambda slot=slot: s.speak(slot))
         if rng.random() < 0.5:
             s.later(t - s.t + rng.uniform(100, 6000), s.press_cancel)
+        for _ in range(3):
+            s.later(t - s.t + rng.uniform(100, 15000), s.press_now)
+    s.shown = {}
     step = 0.0
     while step < t + 90000:
         step += 200
         s.run(step)
         s.m.Tick(s.m)
+        s.watch()
     s.reload()
     return s.check()
 
