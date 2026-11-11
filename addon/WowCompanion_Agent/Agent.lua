@@ -216,6 +216,12 @@ local function setTranscribing(slot, on)
 	end
 	if renderPending then renderPending() end
 end
+-- "transcribing" lasts while a clip of the conversation is still being heard:
+-- it gives way to the working line in the same message, never a gap between
+-- (the player, 2026-11-11: the board flickered)
+local function settleTranscribing(slot)
+	if not (WC.Jobs and WC.Jobs.Hearing(slot)) then setTranscribing(slot, false) end
+end
 -- `age`: seconds the work has already run, when the companion retells it after a
 -- reload, so the board shows the real time instead of starting over at 0
 local function setPending(text, slot, age)
@@ -562,7 +568,6 @@ function handlers.log(inbox)
 	-- already held, from a slot or the mailbox, is not applied again
 	local islot = inbox.slot or ""
 	if WC.Jobs and not WC.Jobs.Hold(islot, inbox.n) then return WC.Link.HELD end
-	if who == "you" then setTranscribing(islot, false) end
 	-- a reply arrives as one message but reads as many lines, and AddMessage takes
 	-- one line at a time; blank lines are kept because they carry the paragraphs
 	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
@@ -579,6 +584,7 @@ function handlers.log(inbox)
 	-- starts this conversation's waiting line, a line without it ends it, and a
 	-- queued request leaves the running one's alone
 	if (inbox.slot or inbox.pending) and inbox.state ~= "queued" then setPending(inbox.pending, islot) end
+	settleTranscribing(islot)
 	-- reveal, not Show: ShowUIPanel returns at once for a frame already shown, so a
 	-- window opened by a plain Show never becomes a panel and the controller's
 	-- window toggle cannot reach it until it is closed and opened again
@@ -635,8 +641,8 @@ end
 -- A clip let go, named by the job the PC made for it (src/jobs.rs): the
 -- hearing line is drawn from it and its X cancels that job.
 function handlers.heard(inbox)
-	setTranscribing(inbox.slot or "", false)
 	if WC.Jobs then WC.Jobs.Apply(inbox) end
+	setTranscribing(inbox.slot or "", true)
 	return "heard"
 end
 
@@ -657,6 +663,7 @@ end
 function handlers.stopped(inbox)
 	local slot = inbox.slot or ""
 	if WC.Jobs then WC.Jobs.Apply(inbox) end
+	settleTranscribing(slot)
 	-- the conversation works while a job of it runs (the ledger says)
 	if WC.Jobs and WC.Jobs.Running and not WC.Jobs.Running(slot) then setPending(nil, slot) end
 	-- a cancel shows on the message itself; only an interrupt or a stop says more
