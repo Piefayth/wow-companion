@@ -205,17 +205,9 @@ pub(crate) fn live_chat(addons: &Path) -> Option<String> {
     if !channel::game_running().unwrap_or(false) {
         return None;
     }
-    let out = std::env::temp_dir().join(format!("wc_chat_{}.txt", std::process::id()));
-    let _ = fs::remove_file(&out);
     channel::send_inbox(addons, "{ kind = \"lua\", code = \"if WCChatStrip then WCChatStrip() end\" }").ok()?;
-    let status = std::process::Command::new("python")
-        .args(["-I", &crate::home().join("tools").join("strip.py").to_string_lossy(), "--watch", "5"])
-        .arg(&out)
-        .status()
-        .ok()?;
-    let text = fs::read_to_string(&out).ok()?;
-    let _ = fs::remove_file(&out);
-    (status.success() && !text.starts_with("STRIP FAILED")).then_some(text)
+    let payload = crate::strip::watch(5.0).ok()?;
+    Some(String::from_utf8_lossy(&payload).into_owned())
 }
 
 /// The player's profile. A release ships only `profile.template.md`, so unzipping

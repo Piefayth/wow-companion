@@ -5,7 +5,7 @@
 -- The data strip (the player, 2026-11-10): game-to-PC without a reload. Bytes
 -- drawn as solid colour cells, three bytes a cell, in the very bottom-right
 -- corner, shown only for a moment and then gone; the PC screenshots that corner
--- and decodes it (tools/strip.py). Pixel-exact: the frame ignores the UI scale
+-- and decodes it (src/strip.rs). Pixel-exact: the frame ignores the UI scale
 -- and is scaled so one unit is one screen pixel.
 --   cell 0, 1: magic C0FFEE, 123456   cell 2: byte length
 --   cell 3: sum of bytes, cell 4: sum of running sums (both mod 2^24)

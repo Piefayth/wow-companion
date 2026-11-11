@@ -247,58 +247,30 @@ pub(crate) fn run_queued(addons: &Path, slot: &str, lead: u64) -> Option<String>
     Some(out)
 }
 
-/// The game's commands, read off the data strip by `tools/strip.py --serve`, a
-/// child that ends when we do (its stdin is ours). "WCCMD <nonce> stop <slot>".
+/// The game's commands, read off the data strip in this process (src/strip.rs,
+/// no Python). "WCCMD <nonce> stop <slot>".
 pub(crate) fn watch_commands(addons: &Path) {
-    use std::io::BufRead;
-    loop {
-        let script = crate::home().join("tools").join("strip.py");
-        let mut command = std::process::Command::new("python");
-        command
-            .args(["-I", &script.to_string_lossy(), "--serve"])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x0800_0000);
+    crate::strip::serve(|line| {
+        if line.starts_with("WCCMD") {
+            crate::audit::note("cmd", "", &line);
         }
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(err) => {
-                eprintln!("  command watcher did not start: {err}");
-                thread::sleep(Duration::from_secs(60));
-                continue;
-            }
-        };
-        let _keep = child.stdin.take();
-        if let Some(out) = child.stdout.take() {
-            for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
-                if line.starts_with("WCCMD") {
-                    crate::audit::note("cmd", "", &line);
-                }
-                let words: Vec<&str> = line.split_whitespace().collect();
-                let main = |slot: &str| if slot == "main" { String::new() } else { slot.to_string() };
-                match words.as_slice() {
-                    ["WCCMD", _nonce, verb @ ("cancel" | "now"), slot, req, ..] => {
-                        if let Ok(req) = req.parse::<u64>() {
-                            cancel_request(addons, &main(slot), req, *verb == "now");
-                        }
-                    }
-                    ["WCCMD", _nonce, "hear", slot, release] => {
-                        if let Ok(release) = release.parse::<u128>() {
-                            cancel_clip(addons, &main(slot), release);
-                        }
-                    }
-                    ["WCCMD", _nonce, verb @ ("stop" | "now"), slot] => stop(addons, &main(slot), *verb == "stop"),
-                    _ => {}
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let main = |slot: &str| if slot == "main" { String::new() } else { slot.to_string() };
+        match words.as_slice() {
+            ["WCCMD", _nonce, verb @ ("cancel" | "now"), slot, req, ..] => {
+                if let Ok(req) = req.parse::<u64>() {
+                    cancel_request(addons, &main(slot), req, *verb == "now");
                 }
             }
+            ["WCCMD", _nonce, "hear", slot, release] => {
+                if let Ok(release) = release.parse::<u128>() {
+                    cancel_clip(addons, &main(slot), release);
+                }
+            }
+            ["WCCMD", _nonce, verb @ ("stop" | "now"), slot] => stop(addons, &main(slot), *verb == "stop"),
+            _ => {}
         }
-        let _ = child.wait();
-        thread::sleep(Duration::from_secs(10));
-    }
+    })
 }
 
 /// A request that failed: its job ends failed and the game is told, unless a

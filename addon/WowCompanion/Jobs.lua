@@ -8,7 +8,7 @@
 --   working: Cancel (ends the agent)
 -- The game cannot write to the PC while it runs, so a button draws a command on
 -- the data strip ("WCCMD <nonce> <verb> <slot> [job]"), which the companion
--- watches (tools/strip.py --serve, src/requests.rs watch_commands).
+-- watches (src/strip.rs serve, src/requests.rs watch_commands).
 --
 -- The PC's ledger (src/jobs.rs) is the truth: every request is a job whose id
 -- never repeats, moving one way, hearing -> queued -> running -> answered |

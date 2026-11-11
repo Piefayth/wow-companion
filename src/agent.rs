@@ -158,9 +158,10 @@ one-off `lua` step may still call an integration directly, guarded.
 Reading the game live, no reload (the data strip, measured working 2026-11-10:
 7.8 KB in one shot): add a `lua` step that builds a text and calls
 `WowCompanion_Strip.Send(text, 30)` (bottom-right corner, 30 s), and before you
-answer start a detached reader: tools/strip.py --watch 240 <out file>, launched
-hidden with PowerShell Start-Process (python -I) so it outlives your turn.
-Add `--then <your conversation>` (main, l1, l2, r1, r2 or quick, from the [..]
+answer start a detached reader, the companion's own (no Python), so it outlives
+your turn: in PowerShell, `Start-Process -WindowStyle Hidden -FilePath
+$env:WOW_COMPANION_EXE -ArgumentList 'strip','--watch','240','<out file>'`.
+Add `'--then','<your conversation>'` (main, l1, l2, r1, r2 or quick, from the [..]
 mark on the request; none is main): when the text lands in the out file you are
 asked to carry on by yourself, so finish the job then; never ask the player to
 prompt you. Never send Lua from a second process (it races the channel).
@@ -481,6 +482,11 @@ The player said: {transcript}"
         };
         self.offered = fresh;
         let mut claude = Command::new("claude");
+        // the companion's own exe, for the strip reader the rules have the agent
+        // start: this running copy, so a reader never locks the build itself
+        if let Ok(exe) = std::env::current_exe() {
+            claude.env("WOW_COMPANION_EXE", exe);
+        }
         // the message goes on stdin: with the character export in it, it is past
         // Windows' 32,767-character limit for a whole command line
         claude.arg("--print");

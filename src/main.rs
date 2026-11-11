@@ -16,6 +16,7 @@ mod install;
 mod offline;
 mod jobs;
 mod audit;
+mod strip;
 use channel::*;
 use requests::*;
 use context::*;
@@ -129,6 +130,9 @@ fn main() {
 -- vocabulary: {}", vocabulary(addons).join(", "));
             Ok(())
         }
+        // the data strip: what it shows now, or `--watch <s> <file> [--then <conv>]`,
+        // the agents' detached reader (src/strip.rs)
+        [command, rest @ ..] if command == "strip" => strip::command(rest),
         [command] if command == "pads" => pad::list(),
         [command] if command == "buzz" => pad::buzz(),
         [command] if command == "reconnect" => voice::reconnect(),

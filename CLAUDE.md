@@ -143,7 +143,7 @@ reaches the game with two tricks, and the game reaches the PC only at a reload.
   nothing else reaches disk while playing). The export carries character, bars,
   chords, macros, spellbook, reach, code runs, Lua errors from non-Blizzard addons,
   and the channel's counts. The agent's `look` offers a Reload and resumes after
-  it. Data our code draws on screen may be read by screenshot to skip a reload (the player's rule, 2026-11-10). **The data strip** does it for kilobytes: `WowCompanion_Strip.Send(text)` draws colour cells in the bottom-right corner, `tools/strip.py --watch <s> <file>` decodes them (DPI-aware). Measured 7.8 KB in one shot.
+  it. Data our code draws on screen may be read by screenshot to skip a reload (the player's rule, 2026-11-10). **The data strip** does it for kilobytes: `WowCompanion_Strip.Send(text)` draws colour cells in the bottom-right corner, and the companion itself decodes them (`src/strip.rs`, DPI-aware, no Python; an agent's reader is `wow-companion strip --watch <s> <file>`). Measured 7.8 KB in one shot.
 - **The heartbeat**: while the voice loop can hear, one of two `pulse` bells exists
   and swaps every 4 s; `Status.lua` shows the minimap button in colour on a swap
   seen recently, grey with a red edge otherwise.

@@ -1,5 +1,9 @@
 """Read the game's data strip (WowCompanion_Strip.Send) off the screen.
 
+A dev tool only: the companion reads the strip itself (src/strip.rs; an agent's
+reader is `wow-companion strip --watch <s> <file>`), and nothing in the product
+needs Python. Kept for --send, which this one alone has.
+
 Usage:  python -I tools/strip.py            -> prints the payload, or why not
         python -I tools/strip.py --send "lua code that calls WowCompanion_Strip.Send(...)"
             sends the Lua through the companion's channel, waits, then reads.
@@ -12,7 +16,16 @@ import os, struct, subprocess, sys, tempfile, time
 CELL, COLS = 4, 256
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-ADDONS = r"S:/World of Warcraft/_forever_/Interface/AddOns"
+
+
+def addons_folder():
+    """The AddOns folder from this PC's settings (the setup window writes it)."""
+    path = os.path.join(os.environ.get("LOCALAPPDATA", ""), "wow-companion", "settings.toml")
+    for line in open(path, encoding="utf-8"):
+        key, _, value = line.partition("=")
+        if key.strip() == "addons":
+            return value.strip().strip('"').replace(chr(92) * 2, chr(92))
+    raise SystemExit("no AddOns folder in " + path + ": run wow-companion-setup")
 
 
 def capture_gdi(height=256, width=CELL * COLS):
@@ -110,7 +123,9 @@ def read(height=256, tries=3, wait=0.4):
 
 def send_lua(code):
     exe = os.path.join(ROOT, "target", "debug", "wow-companion.exe")
-    subprocess.run([exe, "send", ADDONS, "lua", code], check=True,
+    if not os.path.exists(exe):
+        exe = os.path.join(ROOT, "wow-companion.exe")  # an unzipped release
+    subprocess.run([exe, "send", addons_folder(), "lua", code], check=True,
                    stdout=subprocess.DEVNULL)
 
 

@@ -407,7 +407,7 @@ paintHook = paintConversations
 
 -- Asks the companion to stop a conversation (the player, 2026-11-10). The game
 -- cannot write to the PC while it runs, so the request is drawn on the data
--- strip, which the companion watches (strip.py --serve); it ends the agent,
+-- strip, which the companion watches (src/strip.rs serve); it ends the agent,
 -- drops what was queued, and answers with a `stopped` message.
 -- `sendNow`: end only the running request; the next queued one starts at once.
 function WowCompanion_Stop(slot, sendNow)
