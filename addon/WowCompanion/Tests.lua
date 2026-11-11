@@ -266,11 +266,16 @@ if hooksecurefunc and DisplayInterfaceActionBlockedMessage then
 		local stack = debugstack and debugstack(2, 8, 0) or ""
 		local ours = stack:match("(WowCompanion[%w_]*[/%.%w_]*:%d+)")
 		table.insert(WowCompanionDB.blockedNotices, stamp .. (ours and (" " .. ours) or ""))
+		-- the whole stack, kept apart: the caller is often Blizzard code run for us
+		WowCompanionDB.blockedStacks = WowCompanionDB.blockedStacks or {}
+		table.insert(WowCompanionDB.blockedStacks, stamp .. " " .. (stack:gsub("\n", " | ")):sub(1, 600))
+		while #WowCompanionDB.blockedStacks > 10 do table.remove(WowCompanionDB.blockedStacks, 1) end
 		while #WowCompanionDB.blockedNotices > 40 do table.remove(WowCompanionDB.blockedNotices, 1) end
 		if placeEntry then
 			placeEntry.notices = (placeEntry.notices or 0) + 1
 		end
-		remember("probe", "interface action failed notice at " .. stamp
+		-- the window's log must never break this hook (a Transcript error, 2026-11-10)
+		pcall(remember, "probe", "interface action failed notice at " .. stamp
 			.. (placeEntry and (" during place " .. placeEntry.variant) or ""))
 	end)
 end

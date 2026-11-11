@@ -91,7 +91,7 @@ function WC.BagsInput.Build(f)
 		self:SetBindingClick(true, "PADDDOWN", "WCBagsDown")
 		self:SetBindingClick(true, "PADDLEFT", "WCBagsLeft")
 		self:SetBindingClick(true, "PADDRIGHT", "WCBagsRight")
-		self:SetBindingClick(true, "PAD2", "WCBagsClose")
+		self:SetBindingClick(true, "PAD2", self:GetAttribute("closekey") or "WCBagsClose")
 		self:SetBindingClick(true, "PAD4", "WCBagsMore")
 		self:SetBindingClick(true, "PADLSHOULDER", "WCBagsPrevBag")
 		self:SetBindingClick(true, "PADRSHOULDER", "WCBagsNextBag")
@@ -120,12 +120,29 @@ function WC.BagsInput.Build(f)
 	close:SetFrameRef("pad", pad)
 	close:SetAttribute("_onclick", [[ self:GetFrameRef("pad"):Hide() ]])
 	close:HookScript("PreClick", function() if CursorHasItem() then ClearCursor() end end)
+	-- circle closes Blizzard's bags too. Ours stands in for theirs, which stay
+	-- open but unseen; left open, the next bag press in a fight closed them, and
+	-- the bags opened only on the second press (the player, 2026-11-10). Their
+	-- own close button, clicked by a secure button of ours (type "click"), is
+	-- their trusted code; the wrap hides the pad first, as WCBagsClose does.
+	local closeTheirs = CreateFrame("Button", "WCBagsCloseTheirs", UIParent, "SecureActionButtonTemplate")
+	closeTheirs:RegisterForClicks("AnyDown")
+	local theirClose = ContainerFrameCombinedBags and ContainerFrameCombinedBags.CloseButton
+	WC.BagsInput.closeKey = "WCBagsClose"
+	if theirClose and SecureHandlerWrapScript then
+		closeTheirs:SetAttribute("type", "click")
+		closeTheirs:SetAttribute("clickbutton", theirClose)
+		SecureHandlerWrapScript(closeTheirs, "OnClick", pad, [[ owner:Hide() ]])
+		closeTheirs:HookScript("PreClick", function() if CursorHasItem() then ClearCursor() end end)
+		WC.BagsInput.closeKey = "WCBagsCloseTheirs"
+		pad:SetAttribute("closekey", "WCBagsCloseTheirs")
+	end
 	-- holding an item out of combat, circle only puts it back
 	local drop = CreateFrame("Button", "WCBagsDrop", UIParent)
 	drop:RegisterForClicks("AnyDown")
 	local function holdBindings()
 		if InCombatLockdown() or not pad:IsShown() then return end
-		SetOverrideBindingClick(pad, true, "PAD2", CursorHasItem() and "WCBagsDrop" or "WCBagsClose")
+		SetOverrideBindingClick(pad, true, "PAD2", CursorHasItem() and "WCBagsDrop" or WC.BagsInput.closeKey)
 	end
 	drop:SetScript("OnClick", function()
 		ClearCursor()

@@ -137,52 +137,68 @@ do
 			if ok and bag then WCBags:FocusOn(bag, button:GetID()) end
 		end, "WowCompanionMirror")
 	end
-	-- Combat, sorted (docs/proposals/bags.md): out of combat each of their slot
-	-- buttons gets a custom cursor anchor on our slot for the same bag and slot
-	-- (SmartNavigation_SetCustomCursorAnchorPointForFrame, Blizzard's own setter;
-	-- SecureHelper takes it from addons out of combat and stores it securely).
-	-- The controller cursor then measures and draws their buttons where ours are,
-	-- so in a fight, with their frame focused, it moves over our layout and the
-	-- presses are their own buttons'. Their bag-bar cells are left out of it.
-	local anchored = {}
+	-- Combat, sorted (docs/proposals/bags.md): each of their slot buttons gets a
+	-- custom cursor anchor (SmartNavigation_SetCustomCursorAnchorPointForFrame,
+	-- Blizzard's own setter; SecureHelper takes it from addons out of combat and
+	-- stores it securely). The controller cursor then measures and draws their
+	-- buttons where the anchor is, so with their frame focused in a fight it moves
+	-- over our layout and the presses are their own buttons'.
+	-- Their buttons come from a pool that is released and re-acquired on every
+	-- open (ContainerFrame UpdateItemSlots), so a button is not tied to a slot:
+	-- each is anchored once to a proxy frame of ours, and the proxies (ours, free
+	-- to move in combat) are laid on our slot for whatever bag and slot the button
+	-- holds right now.
+	local proxies = {}
+	local ignored = {}
+	local function eachButton(blizz, fn)
+		local pool = blizz.itemButtonPool
+		if pool and pool.EnumerateActive then
+			for b in pool:EnumerateActive() do fn(b) end
+			if pool.EnumerateInactive then for _, b in pool:EnumerateInactive() do if type(b) == "table" then fn(b) end end end
+		elseif blizz.EnumerateValidItems then
+			for _, b in blizz:EnumerateValidItems() do if b then fn(b) end end
+		end
+	end
 	local function anchorTheirs()
 		if InCombatLockdown() or not on() then return end
 		if not (SmartNavigation_SetCustomCursorAnchorPointForFrame and CreateAnchor) then return end
 		local blizz = theirs()
-		if not (blizz and blizz.EnumerateValidItems and WCBags.SlotFor) then return end
-		-- their item pool can be shorter than the bag size before they first draw
-		-- (a nil button, 2026-11-10): skip those
-		for _, b in blizz:EnumerateValidItems() do
-			local ok, bag = false, nil
-			if b then ok, bag = pcall(b.GetBagID, b) end
-			local ours = ok and bag and WCBags:SlotFor(bag, b:GetID())
-			if ours and anchored[b] ~= ours then
-				if pcall(SmartNavigation_SetCustomCursorAnchorPointForFrame, b, CreateAnchor("CENTER", ours, "CENTER")) then
-					anchored[b] = ours
-				end
+		if not blizz then return end
+		eachButton(blizz, function(b)
+			if proxies[b] then return end
+			local p = CreateFrame("Frame", nil, UIParent)
+			p:SetSize(1, 1)
+			p:SetPoint("CENTER")
+			if pcall(SmartNavigation_SetCustomCursorAnchorPointForFrame, b, CreateAnchor("CENTER", p, "CENTER")) then
+				proxies[b] = p
 			end
-		end
+		end)
 		if GamepadBagBar and GamepadBagBar.GetBagButton and SmartNavigation_MarkFrameIgnored then
 			for bag = 0, 4 do
 				local ok, btn = pcall(GamepadBagBar.GetBagButton, GamepadBagBar, bag)
-				if ok and btn and not anchored[btn] then
-					if pcall(SmartNavigation_MarkFrameIgnored, btn) then anchored[btn] = true end
+				if ok and btn and not ignored[btn] then
+					if pcall(SmartNavigation_MarkFrameIgnored, btn) then ignored[btn] = true end
 				end
 			end
 		end
 	end
-	-- every shown slot of theirs anchored on ours: else the old overlay
+	-- lay each shown button's proxy on our slot for its bag and slot; true when
+	-- every shown one has a proxy (else the old overlay)
 	local function anchoredTo(blizz)
-		if not blizz.EnumerateValidItems then return false end
-		local any = false
-		for _, b in blizz:EnumerateValidItems() do
-			if b and b:IsShown() then
-				local ok, bag = pcall(b.GetBagID, b)
-				if not (ok and bag and anchored[b] and anchored[b] == WCBags:SlotFor(bag, b:GetID())) then return false end
-				any = true
-			end
-		end
-		return any
+		local any, all = false, true
+		eachButton(blizz, function(b)
+			if not b:IsShown() then return end
+			local p = proxies[b]
+			local ok, bag = pcall(b.GetBagID, b)
+			local ours = ok and bag and WCBags:SlotFor(bag, b:GetID())
+			if not (p and ours) then all = false return end
+			p:ClearAllPoints()
+			p:SetAllPoints(ours)
+			any = true
+		end)
+		WCBags.anchorDiag = ("any=%s all=%s proxies=%d"):format(tostring(any), tostring(all),
+			(function() local n = 0 for _ in pairs(proxies) do n = n + 1 end return n end)())
+		return any and all
 	end
 	if WCBags then WCBags.AnchoredTo = anchoredTo end
 	local anchorer = CreateFrame("Frame")
