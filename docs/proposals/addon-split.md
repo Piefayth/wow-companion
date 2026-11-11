@@ -10,12 +10,12 @@ capability only optionally. One collapsible entry in the AddOns list.
 | Addon (folder) | What it is | Needs |
 |---|---|---|
 | `WowCompanion` (Core) | the message channel (slots, bells, polling, dispatch), the data strip, the board/toast, dictation into Blizzard's chat box (chat line, whisper lookup, ChatWheel), the item viewer, the minimap button | the PC (it is the PC's half); WCLib |
-| `WowCompanion_Agent` | the Companion window, conversations, jobs, transcript, export, agent code (sandbox, modules), probes, tests, chord learning, focus log | Core |
+| `WowCompanion_Agent` | the Companion window, conversations, jobs, transcript, export, agent code (sandbox, modules), probes, tests, chord learning, focus log, LinkCatcher (item and profession links caught for the agents) | Core |
 | `WowCompanion_Bags` | the bag window, verdicts, sections, sell all, bag swap, make room | WCLib; prices optional |
 | `WowCompanion_Interact` | combat loot/interact key | WCLib |
 | `WowCompanion_Fonts` | live interface fonts and text size | nothing |
 | `WowCompanion_Wheel` | radial wheels (already standalone) | nothing |
-| `WowCompanion_Errands` | the to-do tracker | WCLib; nav, pins optional |
+| `WowCompanion_Errands` | the to-do tracker | WCLib; Agent (soft: agents add errands; without it none can be added), nav, pins optional |
 | `WowCompanion_Pins` | minimap and world map pins | WCLib |
 | `WowCompanion_Buffs` | watched buffs (per character) and the button glow | WCLib |
 | `WowCompanion_S001..512` | slots | Core (load on demand) |
@@ -68,12 +68,13 @@ fail without it.
   the talk key), `Providers/*.lua`.
 - **Core**: `Companion.lua` (the channel and dispatch only), `Board.lua`,
   `Chat.lua`, `ChatWheel.lua`, `Strip.lua`, `Status.lua`, the pad and name
-  lookups of `Chords.lua`, `modules/LinkCatcher.lua` (becomes a Core file:
-  links caught for the item viewer and profession links).
+  lookups of `Chords.lua`.
 - **Agent**: the conversation half of `Companion.lua` (conversations, the waiting
   line, the offered button, `/wc`), `Window.lua` (its conversation tabs),
   `Transcript.lua`, `JobsModel.lua`, `Jobs.lua`, `Export.lua`, `Sandbox.lua`,
   `Tests.lua`, `Probes.lua`, `FocusLog.lua`, chord learning from `Chords.lua`,
+  `modules/LinkCatcher.lua` (becomes an Agent file: catching works alone, but
+  every use of the links is an agent's),
   `Modules.lua` and `modules/` (the agent's own modules).
 - **Bags**: `Bags.lua`, `BagsEvaluate.lua`, `BagsInput.lua`, `BagsMenu.lua`,
   `BagsStandIn.lua`, and `modules/BagSwap.lua`, `modules/MakeRoom.lua` become
@@ -131,13 +132,26 @@ become optional (`if X then`, a capability, or a `WC.Send` message).
   window): the talk button only dictates into the chat box (the chat path that
   exists now), no `claude` is started, no export is read, the trigger slots are
   inert. Core alone then is the whole product.
+- **Which addons are running**: each addon announces itself when it loads (name,
+  version). The PC learns it live through C_Log if the bridge probe proves that
+  path, else from the next save. Never from the game's AddOns.txt (it says what is
+  enabled, not what loaded).
 - **Install and uninstall per addon**: `install <AddOns> [Core,Agent,Bags,...]`
   (default: all), `uninstall <AddOns> <name>`; WCLib is embedded into each one
   installed; `addons.json` records ours, as for third-party addons. The setup
-  window gets a checklist.
-- `context.rs` sends the agent only the sections of addons installed, as it does
-  for integrations; the agent rules name each extra's API only when present.
-- The packager stages each addon folder, with WCLib embedded.
+  window shows an addon's options only when it is installed.
+- **Agent rules per addon**: `context.rs` gives the agent the rules and API of
+  an addon only when it announced itself as loaded, as it does for integrations.
+- The packager stages each addon folder, with WCLib embedded. Published on
+  GitHub only for now (no CurseForge or Wago).
+
+## Moving the player's settings
+
+The player asked for their settings to move (2026-11-11). Each new addon copies
+its keys out of `WowCompanionDB` (and `WowCompanionCharDB.buffWatch`) into its own
+table once, at its first login, then deletes the old keys. The copy is the
+table's first write, so it never runs twice. Removed in the change after the
+player has logged in on every character they play.
 
 ## Cost
 
@@ -145,21 +159,18 @@ become optional (`if X then`, a capability, or a `WC.Send` message).
 reload. Everything lands in one change, so it is one restart, not one per
 addon.
 
-## Open questions for the player
+## Decided (the player, 2026-11-11)
 
-1. **Saved settings**: under rule 2 the split is a fresh start (each addon's new
-   table starts empty: fonts back to Default, the bag view to sections, pins and
-   errands gone, the Companion window's log and size reset). Moving them over is
-   a one-time copy at first login, only if you ask. Wheels and watched buffs
-   (already per character) are unaffected... except Buffs, whose table moves:
-   say if that one should be copied.
-2. **Names**: `WowCompanion_Bags` and so on, or shorter folder names for
-   publishing (e.g. `PadBags`)? The Group line needs only the Core folder name.
-3. **LinkCatcher**: Core (I propose: the item viewer and profession links work
-   without agents) or its own extra?
-4. **Pins**: its own extra (proposed), or part of Errands?
-5. **Publishing**: do you want the extras on CurseForge/Wago later? It only
-   changes licensing notes (the Wheel carries Improved Forever's MIT licence).
+1. **Settings**: moved, as above.
+2. **Names**: the long folder names as proposed (`WowCompanion_Bags`...): paths
+   stay far under Windows' limit and SavedVariables names are fine.
+3. **LinkCatcher**: Agent.
+4. **Errands**: soft dependency on the Agent for now.
+5. **Pins**: its own extra.
+6. **Publishing**: GitHub only.
+
+**Order**: the build starts after L2's `WC.Core` work lands and the player
+approves this proposal.
 
 ## Addendum: voice bindings in Core (the player, 2026-11-11)
 
