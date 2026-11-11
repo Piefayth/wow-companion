@@ -8,7 +8,7 @@ WC.Saved("WowCompanion_Agent", "WowCompanionAgentDB", function(db)
 	WC.MoveSaved(db, { "log", "unread", "board", "blocked", "blockedNotices", "blockedStacks",
 		"windowCombat", "modules", "runs", "taint", "context", "spellForms", "chords",
 		"chordStats", "chordMisses", "chordsFixed", "focusLog", "jobs", "jobModel", "lines", "audit",
-		"windowSize", "windowFontScale", "placeTests", "links", "tradeLinks", "api", "apidocs", "alive" })
+		"windowSize", "placeTests", "links", "tradeLinks", "api", "apidocs", "alive" })
 end)
 
 -- how much conversation to keep; it rides in SavedVariables, so not unbounded
@@ -924,7 +924,6 @@ end)
 bus:On("TOGGLE_WINDOW", function() toggleWindow() end)
 bus:On("LINK_STEP", function(step, ok, outcome) report(step, ok, outcome) end)
 bus:On("LINK_FAILED", function(text) remember("error", text) end)
-bus:On("FONT_CHANGED", function() if WC.Transcript and WC.Transcript.SetScale then WC.Transcript.SetScale() end end)
 -- the mailbox's jobs: the conversations at work are the ones with a job running
 bus:On("MAILBOX_JOBS", function(jobs)
 	if not WC.Jobs then return end

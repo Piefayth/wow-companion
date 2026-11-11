@@ -199,15 +199,10 @@ local function buildTabs(frame, messages, pending)
 			end,
 			function(value) return ("%d%%"):format(math.floor(value + 0.5)) end)
 	end
-	if WC.Transcript and WC.Transcript.SetScale then
-		slider("Window text", "This window's own text, on top of the size above.", 80, 200, 12,
-			function() return math.floor(WC.Transcript.Scale() * 100 + 0.5) end,
-			function(value)
-				local k = math.floor(value + 0.5) / 100
-				if math.abs(k - WC.Transcript.Scale()) > 0.001 then WC.Transcript.SetScale(k) end
-			end,
-			function(value) return ("%d%%"):format(math.floor(value + 0.5)) end)
-	end
+	slider("Window scale", "This window and everything in it, apart from the rest of the interface.", 80, 200, 12,
+		function() return math.floor((WowCompanionAgentDB.windowScale or 1) * 100 + 0.5) end,
+		function(value) frame.SetWindowScale(math.floor(value + 0.5) / 100) end,
+		function(value) return ("%d%%"):format(math.floor(value + 0.5)) end)
 
 	y = y + 8
 	heading("Actions")
@@ -689,6 +684,13 @@ local function buildLog()
 		applySize(index)
 	end
 	frame.SIZE_NAMES = { "Small", "Medium", "Large" }
+	-- The whole window, text and all, at its own scale (the player, 2026-11-11:
+	-- readable on a TV); the rest of the interface keeps its own.
+	function frame.SetWindowScale(k)
+		WowCompanionAgentDB.windowScale = k ~= 1 and k or nil
+		frame:SetScale(k)
+	end
+	frame:SetScale(WowCompanionAgentDB.windowScale or 1)
 	function frame.SetDefaultSize(index)
 		WowCompanionAgentDB.windowSize = index
 		applySize(index)

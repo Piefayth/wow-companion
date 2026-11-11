@@ -11,23 +11,8 @@ local LOG_KEEP = WC.Companion.LOG_KEEP
 -- cannot do any of that (one font, no hanging indent), so this is a scroll
 -- frame of font strings, one per line, stacked top to bottom.
 local TURN_GAP, PARA_GAP, LINE_SPACING = 14, 7, 2
--- The window's text has its own size (the player, 2026-11-10: "a specific
--- font size for the companion"): our own font objects, copied from the game's,
--- so the window scales apart from the rest of the interface, and still follows
--- the chosen font (Fonts.lua refreshes these after a font change).
-local OWN = {
-	body = { "WCTranscriptBody", ChatFontNormal and "ChatFontNormal" or "GameFontHighlight" },
-	note = { "WCTranscriptNote", "GameFontHighlightSmall" },
-	small = { "WCTranscriptSmall", "GameFontNormalSmall" },
-	heading = { "WCTranscriptHeading", "GameFontNormal" },
-	large = { "WCTranscriptLarge", "GameFontNormalLarge" },
-}
-for _, own in pairs(OWN) do
-	local f = CreateFont(own[1])
-	f:CopyFontObject(own[2])
-end
-local BODY_FONT, NOTE_FONT = OWN.body[1], OWN.note[1]
-local transcripts = {}
+local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
+local NOTE_FONT = "GameFontHighlightSmall"
 
 local function inline(text)
 	text = text:gsub("%*%*(.-)%*%*", "|cffffffff%1|r")
@@ -63,7 +48,6 @@ local function newTranscript(parent)
 	content:SetSize(1, 1)
 	scroll:SetScrollChild(content)
 	local t = setmetatable({ scroll = scroll, content = content, rows = {}, height = 0 }, Transcript)
-	transcripts[#transcripts + 1] = t
 	scroll:EnableMouseWheel(true)
 	scroll:SetScript("OnMouseWheel", function(self, delta)
 		local range = self:GetVerticalScrollRange()
@@ -193,7 +177,7 @@ function Transcript:Markdown(line, r, g, b)
 	end
 	local hashes, heading = line:match("^(#+)%s+(.+)$")
 	if heading then
-		self:Row(#hashes == 1 and OWN.large[1] or OWN.heading[1], inline(heading), 0,
+		self:Row(#hashes == 1 and "GameFontNormalLarge" or "GameFontNormal", inline(heading), 0,
 			PARA_GAP + 2)
 		self.gap = 3
 		return
@@ -224,7 +208,7 @@ function Transcript:Add(who, text, continued, at, job)
 		if voice then
 			local stamp = date("%H:%M", at or time())
 			local header = ("%s%s|r  |cff5c6370%s|r"):format(voice[2], voice[1], stamp)
-			local row = self:Row(OWN.small[1], header, 0, TURN_GAP)
+			local row = self:Row("GameFontNormalSmall", header, 0, TURN_GAP)
 			-- your own message's header carries its controls (Jobs.lua)
 			if who == "you" then row.you = true end
 			row.header = true
@@ -305,25 +289,3 @@ end
 WC.Transcript = WC.Transcript or {}
 WC.Transcript.newTranscript = newTranscript
 WC.Transcript.markRow = markRow
-
--- The window's text size, k times the game's (1 = the same). Each own font
--- takes its base's file and outline afresh, so a font change carries through,
--- and every transcript lays its lines out again for the new heights.
-function WC.Transcript.SetScale(k)
-	k = k or (WowCompanionAgentDB and WowCompanionAgentDB.windowFontScale) or 1
-	if WowCompanionAgentDB then WowCompanionAgentDB.windowFontScale = k end
-	for _, own in pairs(OWN) do
-		local base = _G[own[2]]
-		local ok, path, size, flags = pcall(function() return base:GetFont() end)
-		if ok and path and size then
-			pcall(_G[own[1]].SetFont, _G[own[1]], path, math.floor(size * k + 0.5), flags or "")
-		end
-	end
-	for _, t in ipairs(transcripts) do pcall(t.Layout, t) end
-end
-function WC.Transcript.Scale()
-	return (WowCompanionAgentDB and WowCompanionAgentDB.windowFontScale) or 1
-end
-local login = CreateFrame("Frame")
-login:RegisterEvent("PLAYER_LOGIN")
-login:SetScript("OnEvent", function() C_Timer.After(0, function() WC.Transcript.SetScale() end) end)
