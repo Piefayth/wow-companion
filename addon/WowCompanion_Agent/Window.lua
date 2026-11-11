@@ -4,12 +4,17 @@
 local effectiveModules = WC.Companion.modules
 local function newTranscript(...) return WC.Transcript.newTranscript(...) end
 
--- Tabs on the top edge: Blizzard's dark modern tabs (MinimalTabTemplate, the
--- settings panel's, gold underline on the picked one), which sit on dark stone
--- where the classic brown ones looked pasted on (the player, 2026-11-11).
--- Picked with the controller cursor. No shoulder buttons: L1 and R1 are
--- talk-button slots.
+-- Tabs down the window's right edge: Forever's own large side tabs, as its
+-- Collections, Professions and Inspect windows have them (LargeSideTabButtonTemplate;
+-- docs/proposals/companion-tabs.md, option A), coming out from under the metal
+-- border, the open one rimmed in gold. Top tabs never joined our dark panel
+-- (the player, 2026-11-11, five tries). Picked with the controller cursor. No
+-- shoulder buttons: L1 and R1 are talk-button slots.
 local TAB_NAMES = { "Chat", "Tools", "Status", "Errands" }
+local TAB_ICONS = {
+	[[Interface\Icons\UI_Chat]], [[Interface\ICONS\INV_MISC_WRENCH_01]],
+	[[Interface\Icons\INV_Misc_PocketWatch_01]], [[Interface\Icons\inv_misc_scrollunrolled01]],
+}
 local function buildTabs(frame, messages)
 	local pages = {}
 	-- Tools, Status and Errands stand in a page well of their own, an inset
@@ -306,7 +311,7 @@ local function buildTabs(frame, messages)
 	if not made or not well then well = CreateFrame("Frame", nil, frame) end
 	-- inside the panel where its own inset would be (ButtonFrameTemplate's
 	-- Inset: 4, -60 to -6, 26), the tabs standing on top
-	well:SetPoint("TOPRIGHT", -6, -60)
+	well:SetPoint("TOPRIGHT", -6, -24)
 	well:SetPoint("BOTTOMRIGHT", -6, 26)
 	well:SetWidth(WELL)
 	local back = well:CreateTexture(nil, "BACKGROUND", nil, 1)
@@ -320,7 +325,7 @@ local function buildTabs(frame, messages)
 	-- keeps only the waiting line.
 	local madeChat, chatWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not madeChat or not chatWell then chatWell = CreateFrame("Frame", nil, frame) end
-	chatWell:SetPoint("TOPLEFT", 4, -60)
+	chatWell:SetPoint("TOPLEFT", 4, -24)
 	chatWell:SetPoint("BOTTOMRIGHT", -(6 + WELL + 2), 26)
 	table.insert(frame.chatParts, chatWell)
 	messages.scroll:ClearAllPoints()
@@ -417,22 +422,24 @@ local function buildTabs(frame, messages)
 		p:SetPoint("BOTTOMRIGHT", -12, 10)
 	end
 
-	-- the tabs, standing on the wells' top edge inside the panel
+	-- the side tabs, stacked from the wells' top at Professions' spacing, at the
+	-- frame's own level so the border draws over their roots
 	local tabs = {}
 	for i, name in ipairs(TAB_NAMES) do
-		local made, tab = pcall(CreateFrame, "Button", nil, frame, "MinimalTabTemplate")
+		local made, tab = pcall(CreateFrame, "Button", nil, frame, "LargeSideTabButtonTemplate")
 		if not made or not tab then return end
+		if tab.OnLoad and not (tab:GetWidth() > 0) then tab:OnLoad() end
 		tab:SetID(i)
-		tab.Text:SetText(name)
-		tab:SetWidth(tab.Text:GetStringWidth() + 40)
+		tab.Icon:SetTexture(TAB_ICONS[i])
+		if tab.SetFillToInterior then tab:SetFillToInterior(true) end
+		tab.tooltipText = name
 		if i == 1 then
-			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 6, 0)
+			tab:SetPoint("TOPLEFT", frame, "TOPRIGHT", -2, -24)
 		else
-			tab:SetPoint("LEFT", tabs[i - 1], "RIGHT", 2, 0)
+			tab:SetPoint("TOPLEFT", tabs[i - 1], "BOTTOMLEFT", 0, -2)
 		end
+		tab:SetFrameLevel(frame:GetFrameLevel())
 		tab:SetScript("OnClick", function(self) frame.SelectTab(self:GetID()) end)
-		-- above the well's border and its top shadow
-		tab:SetFrameLevel(chatWell:GetFrameLevel() + 5)
 		WC.MarkFocusable(tab)
 		tabs[i] = tab
 	end
@@ -440,8 +447,10 @@ local function buildTabs(frame, messages)
 	function frame.SelectTab(id)
 		id = ((id - 1) % #TAB_NAMES) + 1
 		frame.currentTab = id
-		for i, tab in ipairs(tabs) do tab:SetSelected(i == id) end
+		for i, tab in ipairs(tabs) do tab:SetChecked(i == id) end
 		local chat = id == 1
+		-- the page's name in the title, as Collections does
+		if frame.SetTitle then frame:SetTitle(chat and "Companion" or TAB_NAMES[id]) end
 		messages.scroll:SetShown(chat)
 		for _, part in ipairs(frame.chatParts or {}) do part:SetShown(chat) end
 		pageWell:SetShown(not chat)
@@ -482,6 +491,8 @@ local function buildLog()
 	if ButtonFrameTemplate_HidePortrait and frame.PortraitContainer then ButtonFrameTemplate_HidePortrait(frame) end
 	-- our wells take the template's inset's place
 	if frame.Inset then frame.Inset:Hide() end
+	-- no tabs on top, so no attic: the wells rise to just under the title
+	if ButtonFrameTemplate_HideAttic then ButtonFrameTemplate_HideAttic(frame) end
 	if frame.SetTitle then frame:SetTitle("Companion") end
 	-- the controller's back button (circle) closes a focused window by
 	-- clicking its frame.CloseButton (SmartNavigation:AttemptClose)
