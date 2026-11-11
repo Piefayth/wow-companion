@@ -81,15 +81,16 @@ end
 -- The scan asks about some 265,000 variables, about 300 ms in one go: a frame the
 -- player sees freeze. So it is spread over frames, at most BUDGET_MS of each, and
 -- done(tainted, checked) is called when it has asked about every one. The names
--- are taken first (one pass over _G, and over a table's fields when it is reached),
--- since a table must not be walked across frames while others add to it.
+-- are taken first (one bare pass over _G, and over a table's fields when it is
+-- reached; the filtering is in the budgeted steps), since a table must not be
+-- walked across frames while others add to it.
 local BUDGET_MS = 2
 local scanner = CreateFrame("Frame")
 local scans = {}
 local function startScan(scan)
 	local names = {}
 	for name, value in pairs(_G) do
-		if type(name) == "string" and not ours(name) then names[#names + 1] = name end
+		if type(name) == "string" then names[#names + 1] = name end
 	end
 	scan.names, scan.at, scan.fields, scan.f = names, 0, nil, 0
 end
@@ -99,6 +100,7 @@ local function step(scan)
 	if fields and scan.f < #fields then
 		scan.f = scan.f + 1
 		local field = fields[scan.f]
+		if ours(field) then return true end
 		local ok, secure, by = pcall(issecurevariable, scan.table, field)
 		scan.checked = scan.checked + 1
 		if ok and not secure then scan.tainted[scan.name .. "." .. field] = tostring(by) end
@@ -107,6 +109,8 @@ local function step(scan)
 	scan.at = scan.at + 1
 	local name = scan.names[scan.at]
 	if not name then return false end
+	scan.fields = nil
+	if ours(name) then return true end
 	local ok, secure, by = pcall(issecurevariable, name)
 	scan.checked = scan.checked + 1
 	if ok and not secure then scan.tainted[name] = tostring(by) end
@@ -117,7 +121,7 @@ local function step(scan)
 		local list = {}
 		if pcall(function()
 			for field in pairs(value) do
-				if type(field) == "string" and not ours(field) then list[#list + 1] = field end
+				if type(field) == "string" then list[#list + 1] = field end
 			end
 		end) then
 			scan.fields, scan.table = list, value
