@@ -65,6 +65,9 @@ pub fn mark(what: &str) {
 /// True while the talk button is held: a restart waits for the release, so no
 /// clip is cut off halfway.
 pub static HOLDING: AtomicBool = AtomicBool::new(false);
+/// The chosen mic is open: false while it is gone (unplugged, or a headset
+/// taken by a phone) until it is back. The game shows it on its status mark.
+pub static MIC: AtomicBool = AtomicBool::new(false);
 /// Clips handed to the speech engine whose words (or why there are none) have not
 /// been handed on yet: a restart waits for none.
 pub static PENDING: AtomicUsize = AtomicUsize::new(0);
@@ -216,6 +219,7 @@ pub fn listen(
             None
         }
     };
+    MIC.store(microphone.is_some(), Ordering::Relaxed);
     // A Bluetooth headset holding HFP for the mic has its A2DP render endpoint
     // switched off, so the cue has to name the hands-free one or it plays into a
     // dead device. Nothing is audible and nothing errors.
@@ -408,6 +412,7 @@ pub fn listen(
                 microphone = Some(opened);
             }
         }
+        MIC.store(microphone.is_some(), Ordering::Relaxed);
         let Some(pad) = controller.as_mut() else {
             if Instant::now() >= retry_pad {
                 retry_pad = Instant::now() + RETRY;
