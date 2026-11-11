@@ -14,7 +14,7 @@ and streaming dictation.
 
 Download the [latest release](https://github.com/Piefayth/wow-companion/releases/latest), unzip, run `wow-companion-setup.exe`.
 
-## Setup
+## Settings
 
 * Game: Automatically detects your WoW folder, may need to correct manually.
   Once detected, can install the addons through here
@@ -39,7 +39,7 @@ Download the [latest release](https://github.com/Piefayth/wow-companion/releases
 
 ## Uninstall
 
-Setup window, Uninstall.
+Settings window (wow-companion-setup.exe), Uninstall.
 
 ## Note
 

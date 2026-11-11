@@ -1,4 +1,4 @@
-//! The setup window: everything `wow-companion run` needs on a new PC, picked by
+//! The companion's settings window: everything `wow-companion run` needs, picked by
 //! looking and pressing instead of typed as arguments. It writes the settings file
 //! (crates/settings) and can run `doctor` against it. Day to day the companion
 //! stays in the game; this is for the first run and for changing hardware.
@@ -48,11 +48,11 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([720.0, 860.0])
             .with_min_inner_size([560.0, 480.0])
-            .with_title(format!("WoW Companion setup ({})", wow_companion_settings::VERSION)),
+            .with_title(format!("WoW Companion settings ({})", wow_companion_settings::VERSION)),
         ..Default::default()
     };
     eframe::run_native(
-        "WoW Companion setup",
+        "WoW Companion settings",
         options,
         Box::new(|cc| {
             look::apply(&cc.egui_ctx);
@@ -220,7 +220,7 @@ impl Setup {
         *self.report.lock().unwrap() = match self.settings.save() {
             Ok(path) => {
                 self.saved = true;
-                format!("Saved to {}.\nNext: tick Start with Windows below (or press Start now).", path.display())
+                format!("Saved to {}.", path.display())
             }
             Err(err) => format!("Could not save: {err}"),
         };
@@ -308,7 +308,6 @@ impl Setup {
                     if ui.button("Install the addon into the game").clicked() {
                         self.install();
                     }
-                    ui.label(RichText::new("Then reload in game; it says when new folders need a full restart.").color(look::MUTED));
                 });
             }
         });
@@ -432,7 +431,7 @@ impl Setup {
             Talk::Listening(_) | Talk::Transcribing => Status::Busy("testing"),
             Talk::Idle if self.speech == "streaming" && !self.streaming_ready() => Status::Todo("needs a model"),
             Talk::Idle if self.speech != "streaming" && self.model.is_empty() => Status::Todo("needs a model"),
-            Talk::Idle => Status::Todo("try it"),
+            Talk::Idle => Status::Todo("untested"),
         };
         look::card(ui, 4, "Speech recognition", status, |ui| {
             ui.label(RichText::new("Engine").color(look::MUTED));
@@ -529,7 +528,7 @@ impl Setup {
     /// Hold to talk with the engine chosen above, what it heard, and (for
     /// Whisper) where it ran.
     fn try_it(&mut self, ui: &mut egui::Ui, talk: &Talk) {
-        ui.label(RichText::new("Try it").color(look::MUTED));
+        ui.label(RichText::new("Test").color(look::MUTED));
         let via_pad = !self.companion_running && !self.ask.is_empty();
         let hint = match (talk, via_pad) {
             (Talk::Listening(_), _) => "Listening... let go when you're done.".to_string(),

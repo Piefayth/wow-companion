@@ -1,7 +1,7 @@
 //! The watcher's icon in the notification area: green while the companion is
 //! listening, amber while paused, grey while it waits for WoW (or is starting),
 //! red after it gave up restarting a companion that kept stopping. Its menu:
-//! Pause/Resume listening, Open setup, Show log, Quit.
+//! Pause/Resume listening, Settings, Show log, Quit.
 //!
 //! Windows only for now, straight on the Win32 API (Shell_NotifyIconW, a hidden
 //! window for its messages, a popup menu), as src/strip.rs does for the
@@ -265,7 +265,7 @@ mod imp {
         let paused = state().look == Look::Paused;
         let items: [(usize, &str); 4] = [
             (1, if paused { "Resume listening" } else { "Pause listening" }),
-            (2, "Open setup"),
+            (2, "Settings"),
             (3, "Show log"),
             (4, "Quit"),
         ];

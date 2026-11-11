@@ -24,13 +24,21 @@ on one file is how replies got lost.
 
 ## Next, in order
 
-1. **No slash commands to set up a controller** (README, 2026-11-11). The game
-   learns push to talk (`/wc talkkey`) and the combat loot key (`/wci bind`) by
-   typing. Proposed, waiting on the player's yes to the feel: the setup window's
-   Controller card sets both, and one press teaches the PC and the running game
-   at once. Open first: whether WoW sees an Xbox pad's Xbox button at all; if not,
-   the PC has to open the Companion window on a tap (its `show` was removed as a
-   duplicate of the game's tap on 2026-11-11).
+1. **Settings screens, no slash commands, no tutorials** (the player,
+   2026-11-11: "there should just be a settings screen"; "fine for now, can
+   always evolve").
+   - Game: one settings page owned by Core (works without the Agent), in
+     Blizzard's look and the row rule (CLAUDE.md); the Companion window's tab
+     shows it, the minimap mark opens it, and Blizzard's AddOns panel has one row
+     that opens it. The Tools tab's settings move there; the wheel editor and the
+     buff picker live there later.
+   - Game bindings are addon keybindings in WoW's Keybindings screen (bound with
+     the pad): toggling the Companion window (a tap, told from a hold on
+     release) and combat loot. `/wc talkkey` and `/wci bind` go.
+   - PC: the setup window is the companion's settings window: titled so, no
+     "Next:" guidance.
+   - Open: whether WoW sees an Xbox pad's Xbox button; if not, an Xbox player
+     binds the window to another button.
 2. **rc2 for the friend** after an evening of play on 2026-11-11's changes.
 
 ## Later
