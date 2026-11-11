@@ -9,17 +9,14 @@ EventRegistry:TriggerEvent("UIParentPanelManager.ShowUIPanel", f) -- panel-event
 local b = CreateFrame("Button", "WCControlButton", UIParent, "SecureActionButtonTemplate")
 b:RegisterForClicks("AnyUp")                             -- click-edge
 local function onShow()
-	SmartNavigation_MarkFrameFocusable(f)                -- combat-focus (warn)
+	if InCombatLockdown() then return end
+	SmartNavigation_MarkFrameFocusable(f)                -- engine-only (a guard here does not make it fine)
 end
 local function fine()
-	if InCombatLockdown() then return end
-	SmartNavigation_MarkFrameFocusable(f)                -- guarded: not reported
+	WC.MarkFocusable(f)                                  -- Engine's helper: not reported
+	WCControl:SetPoint("CENTER")                         -- our own frame: not reported
+	WowCompanionDB.control = true                        -- our saved table: not reported
 	GameTooltip:Show()                                   -- shared tooltip: not reported
 	SlashCmdList.WCCONTROL = function() end              -- sanctioned: not reported
-end
-local function deferred()
-	if SmartNavigation_MarkFrameFocusable then
-		WC.AfterCombat(function() SmartNavigation_MarkFrameFocusable(f) end) -- after the fight: not reported
-	end
 end
 CloseAllBags() -- rules: ok (the control's accepted line: not reported)

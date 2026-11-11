@@ -97,9 +97,10 @@ libclang is in `C:\Program Files\LLVM`. No Lua here: check addon files with
 `python -I tools/luacheck.py <file>` (syntax) and `python -I tools/luaglobals.py`
 (globals nothing defines: a local used above its line, a misspelt API name), and
 `python -I tools/luarules.py` (the game-code rules below, checked in our code:
-opening or changing Blizzard's frames, focus calls with no combat check, the
-click-edge trap; an error fails it, a warning is a place to look; `rules: ok
-<why>` in a comment accepts a line; `--self-test` after changing a rule).
+opening or changing Blizzard's frames, any call Blizzard refuses to an addon in
+a fight made outside Engine.lua's helpers (`WC.MarkFocusable`, `WC.FrameHidden`...;
+the list is read from Blizzard's source), the click-edge trap; `rules: ok <why>`
+in a comment accepts a line; `--self-test` after changing a rule).
 Tests: `cargo test --workspace`.
 
 ## Running it

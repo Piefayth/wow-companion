@@ -19,11 +19,12 @@ files (it never runs in the game) and reports each place a rule is broken:
                          wrapper runs and the macro does not ("AnyDown")
   error  module-window   a controller-managed window in modules/ (modules run
                          force-tainted; such windows live in the addon's files)
-  warn   combat-focus    a SecureHelper-wrapped focus call (SmartNavigation_Mark*,
-                         FrameControlsManager, ShowUIPanel/HideUIPanel) with no
-                         InCombatLockdown check before it in its function, and
-                         not handed to WC.AfterCombat: in a fight it fails with
-                         "Interface action failed"
+  error  engine-only     a call Blizzard refuses to an addon in a fight, outside
+                         Engine.lua (whose helpers wait for the fight's end).
+                         The list is read from Blizzard's source for this
+                         build (locked_api): SecureHelper:SetSecureValue
+                         setters, SecureHelper:WrapFunction methods, and
+                         CheckProtectedFunctionsAllowed functions
 
 A line (or the line above it) holding `rules: ok <why>` in a comment is
 accepted: say why the rule does not apply there.
@@ -62,12 +63,44 @@ OPEN_BLIZZARD = ("ChatFrame_OpenChat|ChatFrameUtil%.OpenChat|ChatFrameUtil%.Acti
                  "CloseAllBags|OpenAllBags|ToggleAllBags|ToggleBackpack|ToggleBag|OpenBag|CloseBag|"
                  "ToggleBackpack_Combined|ToggleCharacter|ToggleSpellBook|ToggleFriendsFrame|"
                  "ToggleGameMenu|ToggleWorldMap|ToggleQuestLog|ToggleCollectionsJournal").replace("%.", r"\.")
-FOCUS_CALL = re.compile(r"\b(SmartNavigation_Mark\w*|FrameControlsManager\s*[:.]\s*\w+|ShowUIPanel|HideUIPanel)\s*\(?")
+ENGINE = "addon/WowCompanion/Engine.lua"
+UI_SOURCE = os.path.join(ROOT, "docs", "wow-ui-source", "Interface", "AddOns")
+
+
+def locked_api():
+    """The calls an addon may not make in a fight, read from Blizzard's own
+    source for this build (docs/wow-ui-source), not listed by hand:
+      - global functions whose body stores through SecureHelper:SetSecureValue
+        (the SmartNavigation_Mark*/Set* family);
+      - methods wrapped with SecureHelper:WrapFunction (FrameShown,
+        HandlePanelOpen...), refused to an insecure caller in combat;
+      - functions that check CheckProtectedFunctionsAllowed (ShowUIPanel...).
+    Returns (global names, method names)."""
+    if not os.path.isdir(UI_SOURCE):
+        sys.exit("docs/wow-ui-source is missing: git clone --depth 1 -b forever "
+                 "https://github.com/Gethe/wow-ui-source docs/wow-ui-source")
+    globals_, methods = set(), set()
+    for path in glob.glob(os.path.join(UI_SOURCE, "**", "*.lua"), recursive=True):
+        text = open(path, encoding="utf-8", errors="replace").read()
+        for m in re.finditer(r"(?m)^\w+\.(\w+)\s*=\s*SecureHelper:WrapFunction\(", text):
+            methods.add(m.group(1))
+        # top-level functions, each up to the `end` that closes it at column 0
+        for m in re.finditer(r"(?ms)^function ([A-Za-z_]\w*)\(.*?^end", text):
+            body = m.group(0)
+            if "SecureHelper:SetSecureValue" in body or "CheckProtectedFunctionsAllowed()" in body:
+                globals_.add(m.group(1))
+    return globals_, methods
 
 
 def ours_globals(files):
     """Global names our own files define (assigned at the top level)."""
     names = {"WC"}
+    # the saved-variable tables each .toc declares
+    for toc in glob.glob(os.path.join(ROOT, "addon", "*", "*.toc")):
+        for line in open(toc, encoding="utf-8", errors="replace"):
+            m = re.match(r"##\s*SavedVariables(?:PerCharacter)?\s*:\s*(.+)", line)
+            if m:
+                names.update(name.strip() for name in m.group(1).split(",") if name.strip())
     for path in files:
         code, _ = strip(open(path, encoding="utf-8", errors="replace").read())
         for m in re.finditer(r"(?m)^([A-Za-z_]\w*)\s*=(?!=)", code):
@@ -80,7 +113,7 @@ def ours_globals(files):
 
 
 def is_ours(name, ours):
-    return name in ours or name.startswith(("WC", "WowCompanion"))
+    return name in ours
 
 
 def accepted(raw_lines, index):
@@ -90,20 +123,7 @@ def accepted(raw_lines, index):
     return False
 
 
-def function_start(lines, index):
-    """The line where the function holding `index` begins (indentation-based)."""
-    here = len(lines[index]) - len(lines[index].lstrip())
-    for at in range(index, -1, -1):
-        line = lines[at]
-        indent = len(line) - len(line.lstrip())
-        if re.search(r"\bfunction\b", line) and (indent < here or at == index):
-            return at
-        if line.strip() and indent == 0 and at != index:
-            return at
-    return 0
-
-
-def check(path, ours):
+def check(path, ours, locked):
     raw = open(path, encoding="utf-8", errors="replace").read()
     code, _ = strip(raw)
     raw_lines, lines = raw.split("\n"), code.split("\n")
@@ -129,11 +149,11 @@ def check(path, ours):
         for m in re.finditer(r"(?<![\w.:])([A-Z][A-Za-z0-9_]*)\s*\.\s*([A-Za-z_]\w*)\s*=(?!=)", line):
             name = m.group(1)
             if not is_ours(name, ours) and name not in SANCTIONED_TABLES:
-                report(index, "error", "blizzard-write", f"sets {name}.{m.group(2)}, a field of Blizzard's")
+                report(index, "error", "blizzard-write", f"sets {name}.{m.group(2)}: a table our files don't define (Blizzard's, or left from an old version)")
         for m in re.finditer(r"(?<![\w.:])([A-Z][A-Za-z0-9_]*)\s*:\s*(" + FRAME_CHANGES + r")\s*\(", line):
             name = m.group(1)
             if not is_ours(name, ours) and name not in SANCTIONED_FRAMES:
-                report(index, "error", "blizzard-call", f"{name}:{m.group(2)}() changes Blizzard's frame")
+                report(index, "error", "blizzard-call", f"{name}:{m.group(2)}(): a frame our files don't define (Blizzard's, or left from an old version)")
         if re.search(r"\.\s*useCustomNavigation\s*=(?!=)", line) or re.search(r"[.:]\s*(FocusGamepad|UnfocusGamepad)\s*=(?!=)", line) \
                 or re.search(r"\bfunction\s+[\w.:]*[.:](FocusGamepad|UnfocusGamepad)\b", line):
             report(index, "error", "custom-nav", "useCustomNavigation/FocusGamepad/UnfocusGamepad on our frame taints the focus switch")
@@ -147,30 +167,24 @@ def check(path, ours):
             report(index, "error", "click-edge", "a secure action button on \"AnyUp\" alone: its macro never runs; register \"AnyDown\"")
         if in_module and re.search(r"\b(SmartNavigation_MarkFrameFocusable|ShowUIPanel)\s*\(|UIPanelWindows\s*\[", line):
             report(index, "error", "module-window", "a controller-managed window in a module (modules run force-tainted)")
-        m = FOCUS_CALL.search(line)
-        if m and not re.match(r"\s*(local\s+)?function\b", line) and "hooksecurefunc" not in line:
-            start = function_start(lines, index)
-            # WC.AfterCombat(fn) is the shared guard (Engine.lua): fn runs now
-            # out of combat, else when the fight ends. A call inside it, or an
-            # `if <name> then` whose next line hands it to it, is guarded.
-            guard = range(start, min(index + 2, len(lines)))
-            if not any("InCombatLockdown" in lines[at] or "AfterCombat" in lines[at] for at in guard):
-                report(index, "warn", "combat-focus", f"{m.group(1).replace(' ', '')} with no InCombatLockdown check before it in its function")
+        m = locked.search(line)
+        if m and rel != ENGINE and "hooksecurefunc" not in line:
+            report(index, "error", "engine-only", f"{m.group(1) or m.group(2)}() is refused to addons in a fight; outside Engine.lua: use its helpers")
     return found
 
 
-def self_test(ours):
+def self_test(ours, locked):
     """Every `-- <rule>` comment in the control must be reported on its line,
     and nothing else."""
     control = os.path.join(ROOT, "tools", "luarules_control.lua")
     rules = {"open-blizzard", "blizzard-write", "blizzard-call", "custom-nav", "panel-event",
-             "click-edge", "module-window", "combat-focus"}
+             "click-edge", "module-window", "engine-only"}
     want = set()
     for number, line in enumerate(open(control, encoding="utf-8").read().split("\n"), 1):
         m = re.search(r"--\s*([a-z-]+)", line)
         if m and m.group(1) in rules:
             want.add((number, m.group(1)))
-    got = {(line, rule) for _, line, _, rule, _ in check(control, ours)}
+    got = {(line, rule) for _, line, _, rule, _ in check(control, ours | ours_globals([control]), locked)}
     for line, rule in sorted(want - got):
         print(f"MISSED  line {line}: {rule}")
     for line, rule in sorted(got - want):
@@ -184,12 +198,15 @@ def main(argv):
                    + glob.glob(os.path.join(ROOT, "modules", "*.lua")))
     every = [p for p in every if not os.path.basename(p) == "Modules.lua" and "WowCompanion_S" not in p]
     ours = ours_globals(every)
+    names, methods = locked_api()
+    # a method on WC is one of Engine's helpers (WC.FrameHidden), never Blizzard's
+    locked = re.compile(r"(?<![\w.:])(" + "|".join(sorted(names)) + r")\s*\(|(?<!\bWC)[:.]\s*(" + "|".join(sorted(methods)) + r")\s*\(")
     if argv == ["--self-test"]:
-        return self_test(ours)
+        return self_test(ours, locked)
     targets = [os.path.abspath(a) for a in argv] or every
     found = []
     for path in targets:
-        found += check(path, ours)
+        found += check(path, ours, locked)
     for rel, line, severity, rule, text in found:
         print(f"{rel}:{line}: {severity} {rule}: {text}")
     errors = sum(1 for f in found if f[2] == "error")
