@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// The last chat line sent to the send preview, and when: "edit that, ..." is
+/// The last chat line sent to the chat box, and when: "edit that, ..." is
 /// handed to the agent with it, so the player can reword a line by voice.
 pub(crate) static LAST_CHAT: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 // Spoken channel names, and the slash command each stands for. Whisper will never
@@ -106,7 +106,7 @@ pub(crate) fn dictation_inbox(raw: &str, routed: &str) -> String {
     )
 }
 
-/// Dictation from the L1+R1 chord: for the send preview, never the agent. `wheel`
+/// Dictation from the L1+R1 chord: for the chat box, never the agent. `wheel`
 /// asks the addon to put the chat wheel's channel on a line that names none.
 pub(crate) fn say_inbox(raw: &str, routed: &str) -> String {
     format!(

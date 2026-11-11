@@ -404,8 +404,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 Ok(())
             }
             // L1+R1: dictation, no agent. Sent at once (no gathering): the line
-            // goes to the send preview, on the channel it opens with, else on
-            // the one picked on the chat wheel (the addon adds it)
+            // goes into the chat box (or waits for it), on the channel it opens
+            // with, else on the one picked on the chat wheel (the addon adds it)
             "ask@say" => {
                 if discards(text) {
                     return deliver("{ kind = \"chat\", clear = true }".to_string());
@@ -414,7 +414,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 *LAST_CHAT.lock().unwrap() = Some((routed.clone(), Instant::now()));
                 println!("  dictated: {routed}");
                 // no line in a conversation (the player: agents need not see
-                // every dictation); the preview itself shows it
+                // every dictation); the chat box itself shows it
                 deliver(say_inbox(text, &routed))
             }
             r if r == "ask" || r.starts_with("ask@") => {
@@ -485,7 +485,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         return;
                     }
                     // "edit ..." / "change ..." soon after a chat line: the agent gets
-                    // the line, rewrites it and puts it back in the send preview
+                    // the line, rewrites it and sends it back to the chat box
                     let lowered = text.trim_start().to_lowercase();
                     let text = match LAST_CHAT.lock().unwrap().as_ref() {
                         Some((line, at)) if at.elapsed() < Duration::from_secs(300)
@@ -494,7 +494,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         {
                             format!("{text}
 
-(Editing the chat line still in the send preview: `{line}`. Rewrite it as asked, keep the slash command, and show it again with a lua step calling WowCompanion_Preview(line, heading, shownText).)")
+(Editing the last chat line: `{line}`. Rewrite it as asked, keep the slash command, and give it as a `send` step. It goes into the chat box if that is open and empty; else it waits for the next time they open chat, so if the old line is still in the box, tell them to clear it with circle and open chat again.)")
                         }
                         _ => text,
                     };

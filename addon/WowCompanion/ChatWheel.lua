@@ -1,6 +1,7 @@
 -- Talking to people without an agent in the loop (the player, 2026-11-10).
 -- Hold minus with L1 and R1 together and speak: the PC sends the words straight
--- here (no agent) and they open in the send preview, one press to send.
+-- here (no agent) and they go into the chat box (Chat.lua's chat line): the one
+-- the player has open, or the next one they open. Cross sends.
 -- The channel is picked on the same hold (the player: "combine the speaking
 -- trigger and the channel selection"): while the chord is held a small ring of
 -- channels shows, and the right stick points at one. Let go: that channel is
@@ -177,20 +178,15 @@ do
 		end)
 	end
 
-	-- From letting go of minus until the line is in the send preview: the tag
-	-- says it is on its way (the player, 2026-11-10: a slow line popped up
-	-- after they had given up and spoken another). Shown out of turn of the
-	-- Say-only rule; gone when the preview opens, a clip is dropped, or after 6 s.
+	-- From letting go of minus until the line has arrived (in the chat box, or
+	-- waiting for it): the tag says it is on its way (the player, 2026-11-10: a
+	-- slow line popped up after they had given up and spoken another). Shown out
+	-- of turn of the Say-only rule; gone when the line arrives, a clip is
+	-- dropped, or after 6 s.
 	local waiting = _G["WCChatWaiting"] or CreateFrame("Frame", "WCChatWaiting")
 	waiting:Hide()
 	waiting:SetScript("OnUpdate", function(self, elapsed)
 		self.t = self.t + elapsed
-		local preview = _G["WowCompanionPreview"]
-		if preview and preview:IsShown() and self.t > 0.1 then
-			self:Hide()
-			showTag()
-			return
-		end
 		local dots = ("."):rep(math.floor(self.t * 2) % 4)
 		-- transcription takes about a second; past 6 s nothing is coming (the
 		-- player, 2026-11-10: a 30 s wait looked stuck)
@@ -232,15 +228,13 @@ do
 			while #d.chatBoxTrace > 30 do table.remove(d.chatBoxTrace, 1) end
 		end)
 	end
-	-- the line landed (in the chat box, or the preview): the wait is over
+	-- the line landed (in the chat box, or waiting for it): the wait is over
 	WC.ChatChannel.Arrived = function()
 		if not waiting:IsShown() then return end
 		waiting:Hide()
 		showTag()
 	end
 	WC.ChatChannel.Waiting = function()
-		-- a waiting line is never hidden from here: new lines stack in the
-		-- preview, and only its own (Blizzard) buttons close it
 		waiting.t = 0
 		waiting:Show()
 	end

@@ -66,7 +66,7 @@ yes; don't reinvent what Claude Code has.
     `Tests.lua` taint and PlaceAction tests. `Window.lua` the Companion window and
     its tabs. `Transcript.lua` its text (lines only append). `Board.lua` the toast
     and agents' board. `JobsModel.lua` the window's model of your messages, pure and property-tested (`python tools/test_jobs.py`, needs `lupa`); `Jobs.lua` draws it.
-    `Chat.lua` whisper lookup, send preview, item viewer. `ChatWheel.lua` spoken
+    `Chat.lua` whisper lookup, the chat line (a line goes into the chat box the player opened, or waits for the next one; nothing opens it), item viewer. `ChatWheel.lua` spoken
     chat without the agent (L1+R1). `Chords.lua` name lookups, the pad, chord
     learning. `Probes.lua` probes and API dumps. `Export.lua` the context export
     (bag contents too). `BuffWatch.lua` the character's watched buffs

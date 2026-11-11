@@ -39,7 +39,7 @@ message bus, per-module settings, then smaller files.
 4. **Split Companion.lua** (done 2026-11-10): Engine, Style, Companion (channel and
    core), Pins, Strip, Bags, and since then the files CLAUDE.md lists. Checked: no file uses another's locals
    (tools/addon_locals.py). Companion keeps fallbacks so the channel stands alone.
-   Further splits (board, log window, preview) need their shared locals turned
+   Further splits (board, log window) need their shared locals turned
    into WC fields first.
 5. Later: move saved data (links, tradeLinks, pins) under
    `WowCompanionDB.mods.<Name>` with a one-time copy; until then keep the old keys.

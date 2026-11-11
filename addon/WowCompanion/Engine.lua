@@ -303,7 +303,7 @@ do
 	-- (looked up at call time: some are defined further down this file)
 	WC.Board = { Post = function(...) return WowCompanion_Recent(...) end }
 	WC.Chat = {
-		Preview = function(...) return WowCompanion_Preview(...) end,
+		Line = function(...) return WowCompanion_ChatLine(...) end,
 		ResolveWhisper = function(...) return WowCompanion_ResolveWhisper(...) end,
 	}
 	WC.Items = {

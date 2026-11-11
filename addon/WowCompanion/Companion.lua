@@ -259,13 +259,19 @@ local pendingSince
 -- and start time; the toast shows a labelled line for every one at work, and
 -- the window's line shows the conversation in view.
 local working = {}
-local SLOT_ORDER = { "", "l1", "l2", "r1", "r2", "quick" }
-local function slotLabel(slot) return slot == "" and "Main" or slot == "quick" and "Quick" or slot:upper() end
+-- "chat" is not a conversation: its row says a line is waiting for the chat box
+local SLOT_ORDER = { "", "l1", "l2", "r1", "r2", "quick", "chat" }
+local function slotLabel(slot)
+	return slot == "" and "Main" or slot == "quick" and "Quick" or slot == "chat" and "Chat" or slot:upper()
+end
 local renderPending
 -- the last reply or error per conversation, shown in its row for a while
 local recent, RECENT_FOR = {}, 30
-function WowCompanion_Recent(slot, text)
-	recent[slot or ""] = { text = text, at = GetTime() }
+-- opts (optional): state = the word shown instead of replied, keep = no expiry.
+-- No text clears the row.
+function WowCompanion_Recent(slot, text, opts)
+	opts = type(opts) == "table" and opts or {}
+	recent[slot or ""] = text and { text = text, at = GetTime(), state = opts.state, keep = opts.keep } or nil
 	if renderPending then renderPending() end
 end
 local paintHook -- the conversation list's painter, set once it exists
@@ -321,7 +327,7 @@ renderPending = function()
 	for _, slot in ipairs(SLOT_ORDER) do
 		local entry = working[slot]
 		local done = recent[slot]
-		if done and now - done.at > RECENT_FOR then recent[slot] = nil done = nil end
+		if done and not done.keep and now - done.at > RECENT_FOR then recent[slot] = nil done = nil end
 		local heard = transcribing[slot]
 		if heard and now - heard > TRANSCRIBE_FOR then transcribing[slot] = nil heard = nil end
 		local line
@@ -331,7 +337,8 @@ renderPending = function()
 			line = row(slot, "ffd100", ("working %ds"):format(now - entry.since), entry.text .. dots)
 		elseif done then
 			local bad = done.text:find("ff7777", 1, true)
-			line = row(slot, bad and "ff6060" or "40ff40", bad and "problem" or "replied", done.text)
+			line = row(slot, bad and "ff6060" or done.state and "ffd100" or "40ff40",
+				bad and "problem" or done.state or "replied", done.text)
 		end
 		if line then
 			lines[#lines + 1] = line
@@ -631,40 +638,13 @@ local onDictated
 -- A box the player opened was activated by real hardware input, so the secure path
 -- stays intact and we only set text on it. Refuses rather than opening one, because
 -- opening one is the thing that broke the controller.
--- channel slash commands as said aloud, for the send preview and the chat line
-local CHANNEL_NAMES = {
-	["/p"] = "party", ["/g"] = "guild", ["/o"] = "officer", ["/raid"] = "raid",
-	["/rw"] = "raid warning", ["/i"] = "instance", ["/s"] = "say", ["/y"] = "yell",
-	["/r"] = "your last whisper", ["/e"] = "emote",
-	["/1"] = "General", ["/2"] = "Trade", ["/4"] = "Looking For Group",
-}
-
--- moved to Chat.lua
-local function showPreview(...) return WC.Chat.showPreview(...) end
--- A slash line into the send preview, a whisper's name resolved first. Returns
--- the outcome, or nil when the line is not one for the preview.
-local function previewLine(text, heading)
-	local slash, rest = text:match("^(/%w+)%s*(.*)$")
-	if not slash then return nil end
-	local line, shown = text, rest ~= "" and rest or text
-	heading = heading or ("Send to " .. (CHANNEL_NAMES[slash] or slash))
-	if slash == "/w" or slash == "/whisper" then
-		local target, message, label = WowCompanion_ResolveWhisper(rest)
-		if not target then
-			remember("error", "Whisper not ready: " .. message .. ".")
-			return "refused: " .. message
-		end
-		line, shown = "/w " .. target .. " " .. message, message
-		if heading:sub(1, 8) == "Send to " then heading = "Whisper to " .. label end
-	end
-	if #line <= 255 and showPreview(line, heading, shown) then
-		return ("preview: %q"):format(line)
-	end
-end
--- the agent's `send` step: a chat line for the player to send, by the preview.
+-- moved to Chat.lua: a slash line into the chat box the player opened, or
+-- waiting for the next one they open (whisper names resolved there)
+local function chatLine(...) return WC.Chat.chatLine(...) end
+-- the agent's `send` step: a chat line for the player to send from the chat box.
 -- Not agent code, so it is not refused in combat as a lua step is.
 function handlers.send(inbox)
-	return previewLine(inbox.text or "", inbox.label) or "refused: not a line the preview can send"
+	return chatLine(inbox.text or "")
 end
 function handlers.chat(inbox)
 	-- The controller's cancel unfocuses the box but keeps its text, and dictation
@@ -679,55 +659,19 @@ function handlers.chat(inbox)
 		end
 		return "refused: no chat box to clear"
 	end
-	-- a line spoken with a channel goes to the send preview, chat box or not,
-	-- in combat too (the preview has nothing secure in it)
-	if inbox.raw and inbox.raw ~= (inbox.text or "") then
-		local result = previewLine(inbox.text or "")
-		if result then return result end
+	-- a line spoken with a channel goes to the chat box, or waits for it
+	if inbox.raw and inbox.raw ~= (inbox.text or "") and (inbox.text or ""):find("^/%w+") then
+		return chatLine(inbox.text or "")
 	end
-	-- L1+R1 dictation (ChatWheel.lua). The words go where the focus is (the
-	-- player, 2026-11-11): into Blizzard's chat box when the player opened it
-	-- and it has focus, else into the send preview. In the box the line keeps
-	-- its slash prefix ("/p words") and Blizzard parses it on send (cross);
-	-- circle deletes it and closes the box (the focus-lost hook below). Our code
-	-- only sets the text of a box the player opened, never its chat type.
+	-- L1+R1 dictation (ChatWheel.lua): into the chat box the player opened, its
+	-- words added to a draft there; with no box open it waits for one. Cross
+	-- sends it, Blizzard parsing the slash prefix; circle deletes it and closes
+	-- the box (the focus-lost hook below).
 	if inbox.wheel and WC.ChatChannel then
 		local words = (inbox.text or ""):gsub("^%s+", "")
-		local line = WC.ChatChannel.Line(words)
-		local box = activeEditBox()
-		local boxFocused = box and box.HasFocus and box:HasFocus() and box:IsVisible()
-		if boxFocused then
-			local rest = line:match("^/w%s+(.+)") or line:match("^/whisper%s+(.+)")
-			if rest then
-				local target, message = WowCompanion_ResolveWhisper(rest)
-				if not target then
-					remember("error", "Whisper not written: " .. message .. ".")
-					WC.ChatChannel.Arrived()
-					return "refused: " .. message
-				end
-				line = "/w " .. target .. " " .. message
-			end
-			-- an empty box takes the whole line; one with a draft gets the words added
-			local had = box:GetText() or ""
-			local text = had == "" and line or (had .. " " .. words)
-			WC.Sandbox.measureOnce("dictation into chat box", function() box:SetText(text) end)
-			WC.ChatChannel.Arrived()
-			if WC.ChatChannel.Trace then WC.ChatChannel.Trace("into chat box", box) end
-			return ("chat box holds %q"):format(box:GetText())
-		end
-		local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
-		if not (focused and focused.IsVisible and focused:IsVisible()) then
-			local result
-			if line ~= words then
-				if showPreview(line, "Send to " .. WC.ChatChannel.Name(), words, words) then
-					result = ("preview: %q"):format(line)
-				end
-			else
-				result = previewLine(line)
-			end
-			if WC.ChatChannel.Trace then WC.ChatChannel.Trace("into preview", box) end
-			if result then return result end
-		end
+		local result = chatLine(WC.ChatChannel.Line(words), words)
+		WC.ChatChannel.Arrived()
+		return result
 	end
 	-- Any text box the player put the cursor in takes dictation: the auction
 	-- house search, a mail recipient, a search field. They focused it, so setting
