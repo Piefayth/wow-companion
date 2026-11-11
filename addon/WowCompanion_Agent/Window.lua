@@ -529,10 +529,28 @@ local function buildLog()
 		track:SetPoint("TOP", arrows[1], "BOTTOM", 0, -2)
 		track:SetPoint("BOTTOM", arrows[2], "TOP", 0, 2)
 		track:SetWidth(arrows[1]:GetWidth() > 0 and arrows[1]:GetWidth() or 16)
-		local groove = track:CreateTexture(nil, "BACKGROUND")
-		groove:SetPoint("TOPLEFT", 3, 0)
-		groove:SetPoint("BOTTOMRIGHT", -3, 0)
-		groove:SetColorTexture(0, 0, 0, 0.45)
+		-- The trough behind arrows and thumb: Blizzard's classic scroll bar
+		-- background (UI-Character-ScrollBar, as ScenarioFinder.xml lays it):
+		-- the top piece and the bottom cap at their own heights, the top
+		-- piece's middle filling between, so the gutter is never a bare void.
+		local TROUGH = [[Interface\PaperDollInfoFrame\UI-Character-ScrollBar]]
+		local function trough(l, r, t, b)
+			-- on the track, which draws above the inset and below the thumb
+			local tex = track:CreateTexture(nil, "BACKGROUND")
+			tex:SetTexture(TROUGH)
+			tex:SetTexCoord(l, r, t, b)
+			tex:SetWidth(31)
+			return tex
+		end
+		local top = trough(0, 0.484375, 0, 0.5)
+		top:SetPoint("TOP", arrows[1], "TOP", 1, 5)
+		top:SetHeight(128)
+		local bottom = trough(0.515625, 1, 0, 0.4140625)
+		bottom:SetPoint("BOTTOM", arrows[2], "BOTTOM", 1, -2)
+		bottom:SetHeight(106)
+		local middle = trough(0, 0.484375, 0.5, 0.8)
+		middle:SetPoint("TOP", top, "BOTTOM")
+		middle:SetPoint("BOTTOM", bottom, "TOP")
 		-- Nothing is stretched. The thumb is drawn as
 		-- Blizzard's WowTrimScrollBar thumb is (TrimScrollBar.xml and .lua): the
 		-- round end caps at their own size, and the centre *tiled*: its texture

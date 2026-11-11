@@ -17,32 +17,30 @@ local PAD_L, PAD_R, PAD_TOP = 10, 28, 6
 local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 local NOTE_FONT = "GameFontHighlightSmall"
 
--- Two native backings by owner, both at full strength (a dimmed texture
--- reads as a flat box): replies on Blizzard's marble, as Guild News uses it
--- (the player, 2026-11-11: plain black "made me appreciate the marble");
--- the player's turns on its rock, as behind the achievement list. Turns
--- parted by the quest log's divider.
-local BACKING = {
-	you = [[Interface\FrameGeneral\UI-Background-Rock]],
-	claude = [[Interface\FrameGeneral\UI-Background-Marble]],
-}
+-- Every turn on Blizzard's marble, as Guild News uses it (the player,
+-- 2026-11-11: plain black "made me appreciate the marble"; the rock read as
+-- flat grey). Marble is near black at full strength, so the same texture is
+-- added over itself, which lifts its veining without flattening it. The two
+-- owners differ by tint alone: the player's turns warm, replies neutral.
+-- Turns parted by the quest log's divider.
+local MARBLE = [[Interface\FrameGeneral\UI-Background-Marble]]
+local TINT = { you = { 1, 0.8, 0.55 }, claude = { 1, 1, 1 } }
+local function marble(content, sublevel, tint)
+	local t = content:CreateTexture(nil, "BACKGROUND", nil, sublevel)
+	t:SetTexture(MARBLE, "REPEAT", "REPEAT")
+	t:SetHorizTile(true)
+	t:SetVertTile(true)
+	t:SetVertexColor(tint[1], tint[2], tint[3])
+	return t
+end
 local function turnBand(content, owner)
-	local band = content:CreateTexture(nil, "BACKGROUND", nil, -1)
-	band:SetTexture(BACKING[owner] or BACKING.claude, "REPEAT", "REPEAT")
-	band:SetHorizTile(true)
-	band:SetVertTile(true)
-	-- the marble is near black at full strength: the same texture added over
-	-- itself lifts its veining without flattening it (Blizzard's own art only)
-	if owner ~= "you" then
-		local lift = content:CreateTexture(nil, "BACKGROUND", nil, 0)
-		lift:SetTexture(BACKING.claude, "REPEAT", "REPEAT")
-		lift:SetHorizTile(true)
-		lift:SetVertTile(true)
-		lift:SetBlendMode("ADD")
-		lift:SetAlpha(0.6)
-		lift:SetAllPoints(band)
-		band.lift = lift
-	end
+	local tint = TINT[owner] or TINT.claude
+	local band = marble(content, -1, tint)
+	local lift = marble(content, 0, tint)
+	lift:SetBlendMode("ADD")
+	lift:SetAlpha(0.6)
+	lift:SetAllPoints(band)
+	band.lift = lift
 	local divider = content:CreateTexture(nil, "ARTWORK")
 	divider:SetAtlas("QuestLog-frame-devider")
 	divider:SetAlpha(0.8)
@@ -306,7 +304,7 @@ function Transcript:Add(who, text, continued, at, job)
 			row.fs:Hide()
 			if row.marker then row.marker:Hide() end
 			if row.band then row.band:Hide() end
-			if row.turn then row.turn:Hide() if row.turn.lift then row.turn.lift:Hide() end end
+			if row.turn then row.turn:Hide() row.turn.lift:Hide() end
 			if row.divider then row.divider:Hide() end
 		end
 		self:Layout()
@@ -332,7 +330,7 @@ function Transcript:EndLive(live, text, answered)
 	if answered and self.rows[n] == live.line and self.rows[n - 1] == live.head then
 		live.head.fs:Hide()
 		live.head.turn:Hide()
-		if live.head.turn.lift then live.head.turn.lift:Hide() end
+		live.head.turn.lift:Hide()
 		live.head.divider:Hide()
 		live.line.fs:Hide()
 		self.rows[n] = nil
@@ -357,7 +355,7 @@ function Transcript:Clear()
 		row.fs:Hide()
 		if row.marker then row.marker:Hide() end
 		if row.band then row.band:Hide() end
-		if row.turn then row.turn:Hide() if row.turn.lift then row.turn.lift:Hide() end end
+		if row.turn then row.turn:Hide() row.turn.lift:Hide() end
 		if row.divider then row.divider:Hide() end
 	end
 	self.turnBand = nil
