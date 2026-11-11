@@ -19,7 +19,6 @@
 -- Everything shown (queued marks, the running X, tombstones) derives from it.
 -- A cancel is a pending intent on top, resolved by whatever end the job reaches.
 
-local core = WC.Core
 local jobs = {} -- the model's jobs (JobsModel.lua), once it is made
 local made = {} -- every icon button, for marking after a fight
 
@@ -81,11 +80,10 @@ local function getModel()
 		now = nowMs,
 		command = function(verb, slot, id) command(verb, slot, id) end,
 		remember = function(text, slot, job, who)
-			if not core.remember then return end
 			if job then
-				core.remember("you", "|cff9d9d9d" .. text .. "|r", nil, slot, nil, job)
+				WC.Companion.remember("you", "|cff9d9d9d" .. text .. "|r", nil, slot, nil, job)
 			else
-				core.remember(who or "note", text, nil, slot)
+				WC.Companion.remember(who or "note", text, nil, slot)
 			end
 		end,
 		audit = audit,
@@ -156,7 +154,7 @@ end
 local RETRY_EVERY, TRIES = 4, 3
 local GREY, GOOD, BAD = "|cff9d9d9d", "|cff7fd27f", "|cffff7777"
 local function transcriptNow()
-	local frame = core.logFrame and core.logFrame()
+	local frame = WC.Companion.window()
 	return frame and frame.messages
 end
 local function rowOf(job)
@@ -231,11 +229,10 @@ local pairsPool = {}
 
 
 refresh = function()
-	local frame = core.logFrame and core.logFrame()
+	local frame = WC.Companion.window()
 	if not frame or not frame.messages or not frame.pending then return end
 	local now = GetTime()
 	local view = WowCompanion_ViewSlot and WowCompanion_ViewSlot() or ""
-	local working = core.working or {}
 	if not getModel() then return end
 	-- every message line's status comes from its job
 	for _, row in ipairs(frame.messages.rows or {}) do
@@ -276,7 +273,7 @@ refresh = function()
 	local items = {}
 	local dots = ("."):rep(math.floor(now * 2) % 4)
 	local stamp = "  |cff5c6370" .. date("%H:%M") .. "|r"
-	local entry = working[view]
+	local entry = WC.Companion.working(view)
 	-- a run whose every message is being cancelled shows no working line: the
 	-- cancel is already the answer (the player, 2026-11-10)
 	if entry then
@@ -532,13 +529,13 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	elapsed = elapsed + dt
 	-- a tab change redraws at once, in step with the tab (the player,
 	-- 2026-11-10: the legend lagged a beat behind); otherwise five times a second
-	local frame = core.logFrame and core.logFrame()
+	local frame = WC.Companion.window()
 	local tab = frame and frame:IsShown() and frame.currentTab or 0
 	if elapsed < 0.2 and tab == lastTab then return end
 	lastTab = tab
 	elapsed = 0
 	if InCombatLockdown() then return end
-	local window = core.logFrame and core.logFrame()
+	local window = WC.Companion.window()
 	local focused = window and WC.IsFocused(window) or false
 	-- only on the Chat tab, where the messages they act on are (the player,
 	-- 2026-11-10: on Errands, "square to cancel, cancel what?")
@@ -589,7 +586,7 @@ end)
 -- set only out of combat (Utility.lua: "may be set without causing taint").
 local chained = ""
 function WC.Jobs.Chain()
-	local frame = core.logFrame and core.logFrame()
+	local frame = WC.Companion.window()
 	if not frame or not frame.chatParts then return end
 	local arrows = {}
 	for _, part in ipairs(frame.chatParts) do
