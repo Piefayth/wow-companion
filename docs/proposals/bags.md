@@ -32,9 +32,19 @@ player agrees how it feels (profile: no new bindings unasked, one focus).
 6. **Later**: bank in the same window, alts' bags offline, quick mail and auction
    posting (the posting press is theirs).
 
-## To agree before building
+## Agreed (the player, 2026-11-10)
 
-- Where verdicts show (corner glyph, tint, or only in sections).
-- Whether the sell list opens itself at a vendor (profile: nothing of ours opens
-  itself) or waits for a word or a menu entry.
-- Sections on by default, or a toggle on the triangle menu.
+- **Views, not storage**: the window draws items in any order, apart from where they
+  are stored. Sections is one view, **on by default**; storage order and others are
+  settings. Out of combat the view rearranges freely. In combat it freezes (the pad's
+  grid is attributes of a protected frame): items stay usable, new loot shows where
+  it lands, and the view catches up when the fight ends. Opened by Blizzard's radial
+  in combat, ours mirrors their slots, so it shows storage order until then.
+- **Verdicts**: the template's junk coin, recoloured per verdict (vendor, auction,
+  equip); no new corner mark.
+- **The vendor**: the bag already opens at a merchant. The sell list is part of it:
+  a Sell section, and a "Sell all" entry the player presses (Buyback undoes).
+
+## Still open
+
+- Colours for the verdicts; which views besides sections and storage order.
