@@ -41,6 +41,8 @@ yes; don't reinvent what Claude Code has.
 - `src/`: the helper, one job per file: `main.rs` (command dispatch, `run`'s
   wiring of the voice loop), `channel.rs` (slots, the cursor, sending, bells),
   `requests.rs` (asking the agent, progress, auto-continue, re-sync, `tell`),
+  `jobs.rs` (the request ledger: each request's one state, forward only; cancels
+  and replies race there, and every message about a request carries `job` and `state`),
   `context.rs` (the export, profile and integrations the agent gets), `chat.rs`
   (spoken chat lines), `restart.rs`, `install.rs`, `agent.rs` (the agent and its
   rules), `bells.rs`, `heartbeat.rs`, `doctor.rs`, `modules.rs`.

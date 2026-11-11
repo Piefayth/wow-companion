@@ -14,6 +14,7 @@ mod restart;
 mod chat;
 mod install;
 mod offline;
+mod jobs;
 use channel::*;
 use requests::*;
 use context::*;
@@ -90,7 +91,7 @@ fn main() {
         // without a game to send into
         [command, addons, spoken] if command == "think" => think(Path::new(addons), spoken),
         [command, addons, spoken] if command == "ask" => {
-            ask(Path::new(addons), &mut agent::Session::default(), spoken, false).map(|_| ())
+            ask(Path::new(addons), &mut agent::Session::default(), spoken, false, None).map(|_| ())
         }
         // everything from this PC's settings file (the setup window writes it)
         [command] if command == "run" => {
@@ -255,8 +256,6 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     let deliver = |inbox: String| {
         courier.send(inbox).map_err(|_| io::Error::other("the courier thread has stopped"))
     };
-    // the request being gathered: its words so far, and when the last clip came
-    let gathering: Arc<Mutex<Option<(String, Instant, String)>>> = Arc::new(Mutex::new(None));
     // One conversation per trigger slot (L1, L2, R1, R2), each its own thread,
     // made on first use; "" is the main one. Different slots run side by side.
     let slots: Arc<Mutex<std::collections::HashMap<String, Arc<Mutex<agent::Session>>>>> = {
@@ -317,17 +316,28 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     if slot.is_empty() {
                         *looking.lock().unwrap() = None;
                     }
+                    let job = jobs::create(&slot, &text, jobs::State::Queued);
                     let (mut held, queued) = match session.try_lock() {
                         Ok(guard) => (guard, false),
                         Err(std::sync::TryLockError::Poisoned(poisoned)) => (poisoned.into_inner(), false),
                         Err(std::sync::TryLockError::WouldBlock) => {
-                            let _ = courier.send(log_inbox_in(Some(&slot), "you", &text, Some("waiting for the request before this one"), None));
+                            let line = log_inbox_in(Some(&slot), "you", &text, None, None)
+                                .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\", queued = true{}", jobs::fields(job, jobs::State::Queued)), 1);
+                            let _ = courier.send(line);
                             (session.lock().unwrap_or_else(|poisoned| poisoned.into_inner()), true)
                         }
                     };
+                    let text = if queued {
+                        match run_queued(&addons, &slot, job) {
+                            Some(all) => all,
+                            None => return,
+                        }
+                    } else {
+                        text
+                    };
                     IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
                     let _done = InFlight;
-                    match ask(&addons, &mut held, &text, queued) {
+                    match ask(&addons, &mut held, &text, queued, Some(job)) {
                         Ok(true) if slot.is_empty() => *looking.lock().unwrap() = Some(session_began(&addons)),
                         Ok(_) => {}
                         Err(err) => {
@@ -353,21 +363,29 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             "notice" => deliver(log_inbox("error", text, None, None)),
             // a clip's own notice ("nothing was sent") goes to the conversation it
             // was for, not whichever one the window shows ("ask@r2 notice")
-            r if r.ends_with(" notice") => {
-                let role = r.trim_end_matches(" notice");
+            r if r.ends_with(" notice") || r.ends_with(" unheard") => {
+                let role = r.trim_end_matches(" notice").trim_end_matches(" unheard");
                 let slot = match role {
                     "ask" => Some(""),
                     _ => role.strip_prefix("ask@").filter(|slot| *slot != "say"),
                 };
+                // a transcript that came back empty: its clip is back (a clip too
+                // short for Whisper, " unheard", never left)
+                if let (Some(slot), true) = (slot, r.ends_with(" notice")) {
+                    jobs::words(slot, "");
+                }
                 deliver(log_inbox_in(slot, "error", text, None, None))
             }
             _ if role.ends_with(" tap") => Ok(()),
             r if r.starts_with("ask") && r.ends_with(" heard") => {
                 *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
-                note_release();
-                // a second clip on its way to Whisper keeps the gather window open
-                if let Some((_, last, _)) = gathering.lock().unwrap().as_mut() {
-                    *last = Instant::now();
+                // the clip is a job from the moment it is let go (src/jobs.rs):
+                // a cancel pressed while it is heard ends that job, and its words
+                // are dropped when they come back; a clip let go while one is
+                // still being gathered joins it
+                let role = r.trim_end_matches(" heard");
+                if role == "ask" || (role.starts_with("ask@") && role != "ask@say") {
+                    jobs::hear(role.strip_prefix("ask@").unwrap_or(""));
                 }
                 // Not sent any more (2026-11-10): the addon hears minus come up
                 // and shows "transcribing" itself, at once. Sending it held the
@@ -378,7 +396,6 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             }
             _ if role.ends_with(" heard") => {
                 *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
-                note_release();
                 Ok(())
             }
             // L1+R1: dictation, no agent. Sent at once (no gathering): the line
@@ -397,57 +414,48 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             }
             r if r == "ask" || r.starts_with("ask@") => {
                 let slot = r.strip_prefix("ask@").unwrap_or("").to_string();
-                // Cancel pressed on the "hearing" panel while Whisper had the clip
-                if hearing_cancelled(&slot, *LAST_RELEASE.lock().unwrap()) {
-                    println!("  dropped: cancelled while being heard");
-                    return Ok(());
-                }
                 // Gathered, not sent at once: the player often lets go before they
                 // are finished, and a second press within GATHER of the last clip
                 // adds to the same request instead of starting another (the
-                // player, 2026-11-10). The wait runs while minus is held, too.
-                let mut pending = gathering.lock().unwrap();
-                if let Some((words, last, _)) = pending.as_mut() {
-                    words.push(' ');
-                    words.push_str(text);
-                    *last = Instant::now();
+                // player, 2026-11-10). The job collects the words (src/jobs.rs).
+                let Some((job, first)) = jobs::words(&slot, text) else {
+                    println!("  dropped: cancelled while being heard");
+                    return Ok(());
+                };
+                if !first {
                     println!("  added to the request being gathered");
                     return Ok(());
                 }
-                *pending = Some((text.to_string(), Instant::now(), slot.clone()));
-                drop(pending);
                 // the session is found or made on the request's own thread: nothing
                 // the voice loop does may wait on a lock a request can hold
-                let (addons, find_session, looking, gathering, courier) = (
-                    addons.to_path_buf(),
-                    slot_session.clone(),
-                    Arc::clone(&looking),
-                    Arc::clone(&gathering),
-                    courier.clone(),
-                );
+                let (addons, find_session, looking, courier) =
+                    (addons.to_path_buf(), slot_session.clone(), Arc::clone(&looking), courier.clone());
                 thread::spawn(move || {
                     voice::mark("request thread up");
                     let session = find_session(&slot);
                     let text = loop {
                         thread::sleep(Duration::from_millis(100));
-                        let mut pending = gathering.lock().unwrap();
-                        let quiet = pending.as_ref().map(|(_, last, _)| last.elapsed() >= GATHER).unwrap_or(true);
-                        if quiet && !voice::HOLDING.load(Ordering::Relaxed) {
-                            break pending.take().map(|(words, _, _)| words).unwrap_or_default();
+                        match jobs::gathered(job, GATHER, voice::HOLDING.load(Ordering::Relaxed)) {
+                            None => continue,
+                            Some(Ok(words)) => break words,
+                            Some(Err(state)) => {
+                                println!("  dropped: {} while being gathered", state.name());
+                                return;
+                            }
                         }
                     };
                     voice::mark("gathered");
-                    if text.trim().is_empty() || hearing_cancelled(&slot, *LAST_RELEASE.lock().unwrap()) {
-                        println!("  dropped: cancelled while being gathered");
-                        return;
-                    }
-                    let req = new_request();
-                    note_request(&slot, req);
+                    // not a request for the agent (chat, clearing, starting over):
+                    // the job just ends
+                    let handled = || {
+                        jobs::finish(job, jobs::State::Answered);
+                    };
                     // One button for both: a line that opens with a channel ("party,
                     // pulling now", "whisper Sage, ...") is chat, not a request, and
                     // "scratch that" alone empties the box.
                     if discards(&text) {
                         println!("  clearing the chat box");
+                        handled();
                         let _ = courier.send("{ kind = \"chat\", clear = true }".to_string());
                         // a line without `pending` also clears "got it, transcribing"
                         let _ = courier.send(log_inbox("you", &text, None, None));
@@ -457,6 +465,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     // begins fresh (the Home chords for it were dropped, 2026-11-10)
                     let plain: String = text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>().to_lowercase();
                     if matches!(plain.trim(), "start over" | "new conversation" | "fresh start" | "reset conversation") {
+                        handled();
                         session.lock().map(|mut s| s.forget()).ok();
                         let _ = courier.send(log_inbox_in(Some(&slot), "you", "(started this conversation over)", None, None));
                         return;
@@ -464,6 +473,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     let routed = channeled(&text);
                     if routed != text.trim() {
                         println!("  chat line: {routed}");
+                        handled();
                         *LAST_CHAT.lock().unwrap() = Some((routed.clone(), Instant::now()));
                         let _ = courier.send(dictation_inbox(&text, &routed));
                         let _ = courier.send(log_inbox("you", &format!("(to chat) {routed}"), None, None));
@@ -504,17 +514,16 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                             // progress, which the waiting line used to overwrite
                             // (the player, 2026-11-10).
                             let line = log_inbox_in(Some(&slot), "you", &text, None, None)
-                                .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\", queued = true, req = {req}"), 1);
+                                .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\", queued = true{}", jobs::fields(job, jobs::State::Queued)), 1);
                             let _ = courier.send(line);
                             // waiting messages go together (the player, 2026-11-10:
                             // "it should send every queued message"): the first to get
-                            // the conversation takes all of them
-                            queue_message(&slot, req, &text);
+                            // the conversation takes all of them (jobs::take_queued)
                             (session.lock().unwrap_or_else(|poisoned| poisoned.into_inner()), true)
                         }
                     };
                     let text = if queued {
-                        match take_queued(&addons, &slot, req) {
+                        match run_queued(&addons, &slot, job) {
                             Some(all) => all,
                             // another waiting request already took this one
                             None => return,
@@ -524,7 +533,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     };
                     IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
                     let _done = InFlight;
-                    match ask(&addons, &mut held, &text, queued) {
+                    match ask(&addons, &mut held, &text, queued, Some(job)) {
                         // a look resumes the main conversation, so only the main one looks
                         Ok(true) if slot.is_empty() => *looking.lock().unwrap() = Some(session_began(&addons)),
                         Ok(true) => {}
@@ -640,18 +649,17 @@ mod tests {
     }
 
     #[test]
-    fn the_board_lists_every_working_conversation_and_is_sent_even_when_empty() {
-        assert_eq!(board_inbox(&[]), "{ kind = \"board\", resync = true, working = {  } }");
-        let working = vec![
-            (String::new(), "thinking".to_string(), Instant::now()),
-            ("l1".to_string(), "reading \"main.rs\"".to_string(), Instant::now()),
-        ];
-        let inbox = board_inbox(&working);
+    fn the_board_lists_every_working_conversation_and_every_recent_state() {
+        let running = jobs::create("t-board", "hi", jobs::State::Running);
+        jobs::set_doing(running, "reading \"main.rs\"");
+        let ended = jobs::create("t-board2", "bye", jobs::State::Running);
+        jobs::finish(ended, jobs::State::Answered);
+        let inbox = board_inbox();
         // never opens with its kind, or the send would treat it as droppable
-        assert!(inbox.starts_with("{ kind = \"board\""), "{inbox}");
-        assert!(!inbox.starts_with("{ kind = \"progress\""));
-        assert!(inbox.contains("{ slot = \"\", text = \"thinking\", since = 0 }"), "{inbox}");
-        assert!(inbox.contains("slot = \"l1\", text = \"reading \\\"main.rs\\\"\""), "{inbox}");
+        assert!(inbox.starts_with("{ kind = \"board\", resync = true, working = {"), "{inbox}");
+        assert!(inbox.contains("slot = \"t-board\", text = \"reading \\\"main.rs\\\"\""), "{inbox}");
+        assert!(!inbox.contains("slot = \"t-board2\", text"), "an answered one is not working: {inbox}");
+        assert!(inbox.contains(&format!("{{ job = {ended}, slot = \"t-board2\", state = \"answered\" }}")), "{inbox}");
     }
 
     #[test]

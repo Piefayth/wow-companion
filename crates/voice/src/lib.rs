@@ -377,7 +377,7 @@ pub fn listen(
                 } else if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
                     // held long enough to mean it, yet almost no audio arrived
                     println!("too short, ignored ({seconds:.2}s of audio)");
-                    let _ = heard(&format!("{role} notice"), &format!(
+                    let _ = heard(&format!("{role} unheard"), &format!(
                         "I got only {seconds:.1}s of audio from that press, so nothing was sent. If you spoke, the mic may not be sending."
                     ));
                 } else {

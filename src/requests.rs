@@ -52,7 +52,7 @@ pub(crate) fn watch_for_looks(addons: &Path, session: &Mutex<agent::Session>, lo
                     under code runs and the slots; carry on with what I asked.)";
         IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
         let _done = InFlight;
-        match ask(addons, &mut session.lock().unwrap(), note, false) {
+        match ask(addons, &mut session.lock().unwrap(), note, false, None) {
             Ok(true) => *looking.lock().unwrap() = Some(session_began(addons)),
             Ok(false) => {}
             Err(err) => {
@@ -63,34 +63,13 @@ pub(crate) fn watch_for_looks(addons: &Path, session: &Mutex<agent::Session>, lo
     }
 }
 
-/// What each conversation is doing ("" is the main one), with when it began. The
-/// game keeps its spinners and board only in memory, so a /reload wiped them while
-/// the agents worked on; `resync` tells the fresh UI session again.
-pub(crate) static WORKING: Mutex<Vec<(String, String, Instant)>> = Mutex::new(Vec::new());
-
-pub(crate) fn set_working(slot: &str, doing: &str) {
-    let mut working = WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    match working.iter_mut().find(|(at, _, _)| at == slot) {
-        Some(entry) => entry.1 = doing.to_string(),
-        None => working.push((slot.to_string(), doing.to_string(), Instant::now())),
-    }
-}
-
-/// Clears a conversation's entry in WORKING however its request ends.
-pub(crate) struct Working(String);
-impl Drop for Working {
-    fn drop(&mut self) {
-        WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|(at, _, _)| *at != self.0);
-    }
-}
-
 /// Replies sent lately: when, their first line, and the message itself. A reply
 /// sent while the game was reloading reached a UI session that was going away.
 pub(crate) static REPLIES: Mutex<Vec<(SystemTime, String, String)>> = Mutex::new(Vec::new());
 
 /// A new UI session began (the save file was just written). After the addon has
 /// loaded: send again every reply from the 10 minutes before the save that the
-/// save's log does not hold, then each conversation's current state.
+/// save's log does not hold, then where every request stands.
 pub(crate) fn resync(addons: &Path) {
     let addons = addons.to_path_buf();
     thread::spawn(move || {
@@ -113,10 +92,9 @@ pub(crate) fn resync(addons: &Path) {
             }
         }
         // One `board` message, always, even with nothing working: the addon shows
-        // the board it saved at the reload and this is what corrects it, so a
-        // conversation that finished during the loading screen stops spinning.
-        // read who is working only once the channel is ours (send_inbox_once):
-        // a list read here went out after replies that finished meanwhile
+        // the board it saved at the reload and this is what corrects it. Read when
+        // the channel is ours (send_inbox_once), so it is never older than a reply
+        // sent before it; and its job states only move the game's forward anyway.
         if let Err(err) = send_inbox(&addons, BOARD_NOW) {
             eprintln!("  resync: {err}");
         }
@@ -126,9 +104,11 @@ pub(crate) fn resync(addons: &Path) {
 /// Stands for the board as it is when the channel is free to send it.
 pub(crate) const BOARD_NOW: &str = "{ kind = \"board\", now = true }";
 
-/// Every conversation still working, for the addon's `board` handler.
-pub(crate) fn board_inbox(working: &[(String, String, Instant)]) -> String {
-    let entries: Vec<String> = working
+/// The board: each conversation's running request (`working`, what every addon
+/// reads) and every recent request's state (`list`, from the ledger, which the
+/// addon merges forward only).
+pub(crate) fn board_inbox() -> String {
+    let entries: Vec<String> = jobs::working()
         .iter()
         .map(|(slot, doing, since)| {
             format!(
@@ -139,92 +119,127 @@ pub(crate) fn board_inbox(working: &[(String, String, Instant)]) -> String {
             )
         })
         .collect();
-    format!("{{ kind = \"board\", resync = true, working = {{ {} }} }}", entries.join(", "))
+    format!(
+        "{{ kind = \"board\", resync = true, working = {{ {} }}, list = {{ {} }} }}",
+        entries.join(", "),
+        jobs::entries(&jobs::recent())
+    )
 }
 
-/// Stopping a conversation (the player, 2026-11-10: "manage jobs in progress,
-/// queued messages, things I want to cancel"). Stop in the Companion window
-/// draws a command on the data strip, `watch_commands` reads it, and here the
-/// running agent's process tree ends and what was queued behind it is dropped.
-/// Per conversation: the running agent's process id, and (stops so far, stops
-/// when its last request began), so a request queued before a stop is dropped.
-static RUNNING: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
-/// Each request's id (per message panels in the window): set on the request's
-/// own thread before it queues, read by `ask`, carried on its lines as `req`.
-static NEXT_REQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-thread_local! {
-    static REQ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
-}
-/// The running request of each conversation, and queued ones the player cancelled.
-static RUNNING_REQ: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
-static CANCELLED: Mutex<Vec<u64>> = Mutex::new(Vec::new());
-/// Cancels of a clip still being heard: (conversation, when). A clip released
-/// before the cancel is dropped when its words arrive.
-static HEARING_CANCELLED: Mutex<Vec<(String, u128)>> = Mutex::new(Vec::new());
-/// When the newest clip was let go, wall clock (unix ms): the game stamps its
-/// cancel with its own clock, and a cancel read late off the strip must not
-/// reach a clip let go after the press (the player, 2026-11-10: a cancel
-/// dropped the message after the one meant).
-static RELEASE_WALL: Mutex<u128> = Mutex::new(0);
-
-fn now_ms() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default()
-}
-
-pub(crate) fn note_release() {
-    *RELEASE_WALL.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = now_ms();
-}
-
-/// Messages waiting for their conversation: (conversation, request id, words).
-static WAITING: Mutex<Vec<(String, u64, String)>> = Mutex::new(Vec::new());
-
-pub(crate) fn queue_message(slot: &str, req: u64, text: &str) {
-    WAITING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((slot.to_string(), req, text.to_string()));
-}
-
-/// Every message still waiting in this conversation, as one request, once the
-/// conversation is free; None when another waiting request took them already.
-/// Cancelled ones are left out; the others' lines are marked started.
-pub(crate) fn take_queued(addons: &Path, slot: &str, req: u64) -> Option<String> {
-    let taken: Vec<(u64, String)> = {
-        let mut waiting = WAITING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if !waiting.iter().any(|(at, id, _)| at == slot && *id == req) {
-            return None;
+/// End agent processes (each with its whole tree: its shell commands too,
+/// never the companion).
+fn end_processes(pids: &[u32]) {
+    for pid in pids {
+        let mut kill = std::process::Command::new("taskkill");
+        kill.args(["/T", "/F", "/PID", &pid.to_string()]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            kill.creation_flags(0x0800_0000);
         }
-        let mut taken = Vec::new();
-        waiting.retain(|(at, id, text)| {
-            if at == slot {
-                taken.push((*id, text.clone()));
-                false
+        let _ = kill.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+    }
+}
+
+/// Tell the game where these jobs stand now, after a cancel, whether or not it
+/// changed anything: the game waits on this to resolve its "cancelling...".
+/// `older` keeps the fields addons before the ledger read.
+fn tell_states(addons: &Path, slot: &str, ids: &[u64], older: &str) {
+    let message = format!(
+        "{{ kind = \"stopped\", slot = {}{older}, list = {{ {} }} }}",
+        lua_string(slot),
+        jobs::entries(&jobs::get(ids))
+    );
+    if let Err(err) = send_inbox(addons, &message) {
+        eprintln!("  telling the game failed: {err}");
+    }
+}
+
+/// One message's Cancel or Send now (the game names the job). Cancel ends it
+/// wherever it is; on a running one, the run it shares. Send now on a queued
+/// message ends the run in front of it, so the queue goes on at once. Both are
+/// idempotent: the game may repeat them until it sees the job end.
+pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool) {
+    let before = jobs::state(req);
+    println!(
+        "{} [{}] request {req} ({})",
+        if send_now { "send now" } else { "cancel" },
+        if slot.is_empty() { "main" } else { slot },
+        before.map_or("unknown", jobs::State::name)
+    );
+    if send_now {
+        if before != Some(jobs::State::Queued) {
+            println!("  send now: request {req} is not waiting; nothing to end");
+            tell_states(addons, slot, &[req], "");
+            return;
+        }
+        let running = jobs::live(slot, Some(jobs::State::Running));
+        let done = jobs::cancel(&running);
+        end_processes(&done.pids);
+        let lead = running.first().copied().unwrap_or_default();
+        tell_states(addons, slot, &running, &format!(", req = {lead}, dropped = false, sendNow = true"));
+        return;
+    }
+    let done = jobs::cancel(&[req]);
+    end_processes(&done.pids);
+    let older = match before {
+        Some(jobs::State::Running) => format!(", req = {req}, dropped = false"),
+        Some(state) if !state.ended() => format!(", req = {req}, wasQueued = true"),
+        _ => {
+            println!("  request {req} had already ended: too late");
+            format!(", req = {req}, wasQueued = true, tooLate = true")
+        }
+    };
+    let mut ids = vec![req];
+    ids.extend(done.ended.iter().map(|job| job.id).filter(|id| *id != req));
+    tell_states(addons, slot, &ids, &older);
+}
+
+/// Cancel pressed on a conversation's "hearing" line, before the game knew the
+/// job. `press`: when, by the game's clock (unix ms, to the second). It meant
+/// the clip let go by then: still being heard, its words are dropped; already a
+/// request, that request is cancelled, never a later one.
+pub(crate) fn cancel_hearing(addons: &Path, slot: &str, press: u128) {
+    println!("cancel hearing [{}]", if slot.is_empty() { "main" } else { slot });
+    match jobs::pressed_for(slot, press) {
+        Some(id) if jobs::state(id).is_some_and(|state| !state.ended()) => {
+            if jobs::state(id) == Some(jobs::State::Hearing) {
+                jobs::cancel(&[id]);
+                tell_states(addons, slot, &[id], ", hearing = true");
             } else {
-                true
+                println!("  the clip already became request {id}: cancelling that");
+                cancel_request(addons, slot, id, false);
             }
-        });
-        taken
-    };
-    let taken: Vec<(u64, String)> = {
-        let mut cancelled = CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        taken
-            .into_iter()
-            .filter(|(id, _)| {
-                match cancelled.iter().position(|c| c == id) {
-                    Some(at) => {
-                        cancelled.remove(at);
-                        false
-                    }
-                    None => true,
-                }
-            })
-            .collect()
-    };
-    // the others' lines leave the queue too: their request starts with this one
-    for (id, _) in &taken {
-        if *id != req {
-            let _ = send_inbox(addons, &format!("{{ started = true, kind = \"progress\", text = \"thinking\", slot = {}, req = {id} }}", lua_string(slot)));
+        }
+        found => {
+            println!("  nothing to cancel for that press");
+            tell_states(addons, slot, &found.into_iter().collect::<Vec<_>>(), ", hearing = true, nothing = true");
         }
     }
-    if taken.is_empty() {
-        return None;
+}
+
+/// Stop: end the running request; `drop_queue` drops everything waiting too
+/// (Send now on the conversation ends only the running one).
+pub(crate) fn stop(addons: &Path, slot: &str, drop_queue: bool) {
+    let ids = jobs::live(slot, if drop_queue { None } else { Some(jobs::State::Running) });
+    let done = jobs::cancel(&ids);
+    println!("stop [{}]: {} ended", if slot.is_empty() { "main" } else { slot }, done.ended.len());
+    end_processes(&done.pids);
+    tell_states(addons, slot, &ids, &format!(", dropped = {drop_queue}"));
+}
+
+/// Every queued request of this conversation, taken as one run led by `lead`,
+/// as the words to ask; None when another run took `lead`, or it was cancelled.
+pub(crate) fn run_queued(addons: &Path, slot: &str, lead: u64) -> Option<String> {
+    let taken = jobs::take_queued(slot, lead)?;
+    // the others' lines leave the queue too: their request starts with this one
+    for (id, _) in &taken {
+        if *id != lead {
+            let _ = send_inbox(
+                addons,
+                &format!("{{ started = true, kind = \"progress\", text = \"thinking\", slot = {}{} }}", lua_string(slot), jobs::fields(*id, jobs::State::Running)),
+            );
+        }
     }
     if taken.len() == 1 {
         return taken.into_iter().next().map(|(_, text)| text);
@@ -234,220 +249,6 @@ pub(crate) fn take_queued(addons: &Path, slot: &str, req: u64) -> Option<String>
         out.push_str(&format!("\n{}. {}", i + 1, text));
     }
     Some(out)
-}
-
-/// A new request on this thread: its id, for its lines and for cancelling it.
-pub(crate) fn new_request() -> u64 {
-    let id = NEXT_REQ.fetch_add(1, Ordering::SeqCst);
-    REQ.with(|req| req.set(id));
-    id
-}
-
-/// `released`: when the clip whose words just arrived was let go.
-/// Words just arrived for this conversation: drop them when a Cancel was
-/// pressed after their clip was let go. `_released` is kept for the callers.
-pub(crate) fn hearing_cancelled(slot: &str, _released: Option<Instant>) -> bool {
-    let released = *RELEASE_WALL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut all = HEARING_CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let now = now_ms();
-    all.retain(|(_, press)| now.saturating_sub(*press) < 30_000);
-    let hit = all.iter().position(|(at, press)| at == slot && released <= *press + 1000);
-    hit.map(|i| all.remove(i)).is_some()
-}
-
-fn running_req(slot: &str) -> Option<u64> {
-    RUNNING_REQ.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter().find(|(at, _)| at == slot).map(|(_, req)| *req)
-}
-
-fn end_running(slot: &str) {
-    {
-        let mut all = INTERRUPTS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        match all.iter_mut().find(|(at, _)| at == slot) {
-            Some(entry) => entry.1 += 1,
-            None => all.push((slot.to_string(), 1)),
-        }
-    }
-    let pid = RUNNING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter().find(|(at, _)| at == slot).map(|(_, pid)| *pid);
-    if let Some(pid) = pid {
-        let mut kill = std::process::Command::new("taskkill");
-        kill.args(["/T", "/F", "/PID", &pid.to_string()]);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            kill.creation_flags(0x0800_0000);
-        }
-        let _ = kill.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
-    }
-}
-
-/// One message's Cancel or Send now. Cancel on the running request ends it;
-/// on a queued one, drops just that one. Send now ends the running request so
-/// the queued ones go on.
-pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool) {
-    let running = running_req(slot);
-    println!("{} [{}] request {req} (running: {running:?})", if send_now { "send now" } else { "cancel" }, if slot.is_empty() { "main" } else { slot });
-    let message = if send_now {
-        // Send now on a message no longer waiting (taken by a batch that is
-        // already running) must not end that batch: several presses in a row
-        // ended each new request in turn (the player, 2026-11-10)
-        let still_waiting = WAITING
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .iter()
-            .any(|(at, id, _)| at == slot && *id == req);
-        if !still_waiting {
-            println!("  send now: request {req} already started; nothing to end");
-            return;
-        }
-        if running.is_some() {
-            let running = running.unwrap_or_default();
-            end_running(slot);
-            format!("{{ kind = \"stopped\", slot = {}, req = {running}, dropped = false, sendNow = true }}", lua_string(slot))
-        } else {
-            return;
-        }
-    } else if running == Some(req) {
-        end_running(slot);
-        format!("{{ kind = \"stopped\", slot = {}, req = {req}, dropped = false }}", lua_string(slot))
-    } else {
-        let waiting = WAITING
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .iter()
-            .any(|(at, id, _)| at == slot && *id == req);
-        // kept either way: a request just starting is dropped when it gets there
-        CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push(req);
-        if waiting {
-            format!("{{ kind = \"stopped\", slot = {}, req = {req}, wasQueued = true }}", lua_string(slot))
-        } else {
-            // neither waiting nor running: most likely answered already, and the
-            // game must say so rather than claim it cancelled (the player, 2026-11-10)
-            println!("  request {req} is neither waiting nor running: too late");
-            format!("{{ kind = \"stopped\", slot = {}, req = {req}, wasQueued = true, tooLate = true }}", lua_string(slot))
-        }
-    };
-    if let Err(err) = send_inbox(addons, &message) {
-        eprintln!("  telling the game failed: {err}");
-    }
-}
-
-/// The newest request each conversation made from a clip, and when.
-static LAST_REQ: Mutex<Vec<(String, u64, u128)>> = Mutex::new(Vec::new());
-
-pub(crate) fn note_request(slot: &str, req: u64) {
-    let released = *RELEASE_WALL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut all = LAST_REQ.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    all.retain(|(at, _, _)| at != slot);
-    all.push((slot.to_string(), req, released));
-}
-
-/// `press`: when the X was pressed, by the game's clock (unix ms, to the second).
-pub(crate) fn cancel_hearing(addons: &Path, slot: &str, press: u128) {
-    println!("cancel hearing [{}]", if slot.is_empty() { "main" } else { slot });
-    let latest = *RELEASE_WALL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let newest = LAST_REQ
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .iter()
-        .find(|(at, _, _)| at == slot)
-        .map(|(_, req, released)| (*req, *released));
-    let slack = 1000; // the game's clock is to the second
-    // a clip let go before the press and not yet a request: drop its words
-    let transcribing = latest <= press + slack && newest.is_none_or(|(_, released)| latest > released);
-    if transcribing {
-        HEARING_CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((slot.to_string(), press));
-        let _ = send_inbox(addons, &format!("{{ kind = \"stopped\", slot = {}, hearing = true }}", lua_string(slot)));
-        return;
-    }
-    // too late to drop the words (the player, 2026-11-10): the clip it meant
-    // became a request, so cancel that request, never a later one
-    if let Some((req, released)) = newest {
-        if released <= press + slack && now_ms().saturating_sub(released) < 120_000 {
-            println!("  the clip already became request {req}: cancelling that");
-            cancel_request(addons, slot, req, false);
-            return;
-        }
-    }
-    println!("  nothing to cancel for that press");
-    let _ = send_inbox(addons, &format!("{{ kind = \"stopped\", slot = {}, hearing = true, nothing = true }}", lua_string(slot)));
-}
-static STOPS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::new());
-/// Per conversation, how many times its running request was ended (by Stop or
-/// by Send now), so the request knows not to report a failure.
-static INTERRUPTS: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
-
-fn interrupts(slot: &str) -> u64 {
-    INTERRUPTS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter().find(|(at, _)| at == slot).map_or(0, |(_, n)| *n)
-}
-
-fn stops(slot: &str) -> (u64, u64) {
-    let all = STOPS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    all.iter().find(|(at, _, _)| at == slot).map(|(_, count, began)| (*count, *began)).unwrap_or((0, 0))
-}
-
-fn set_stops(slot: &str, count: Option<u64>, began: Option<u64>) {
-    let mut all = STOPS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if !all.iter().any(|(at, _, _)| at == slot) {
-        all.push((slot.to_string(), 0, 0));
-    }
-    if let Some(entry) = all.iter_mut().find(|(at, _, _)| at == slot) {
-        if let Some(count) = count {
-            entry.1 = count;
-        }
-        if let Some(began) = began {
-            entry.2 = began;
-        }
-    }
-}
-
-fn set_running(slot: &str, pid: Option<u32>) {
-    let mut running = RUNNING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    running.retain(|(at, _)| at != slot);
-    if let Some(pid) = pid {
-        running.push((slot.to_string(), pid));
-    }
-}
-
-/// `drop_queue`: Stop ends the running request and drops the queue; Send now
-/// (false) ends only the running one, so the next queued request starts at once.
-pub(crate) fn stop(addons: &Path, slot: &str, drop_queue: bool) {
-    if drop_queue {
-        let (count, _) = stops(slot);
-        set_stops(slot, Some(count + 1), None);
-    }
-    {
-        let mut all = INTERRUPTS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        match all.iter_mut().find(|(at, _)| at == slot) {
-            Some(entry) => entry.1 += 1,
-            None => all.push((slot.to_string(), 1)),
-        }
-    }
-    let pid = RUNNING
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .iter()
-        .find(|(at, _)| at == slot)
-        .map(|(_, pid)| *pid);
-    println!(
-        "stop [{}]: {}",
-        if slot.is_empty() { "main" } else { slot },
-        pid.map_or("nothing running".to_string(), |pid| format!("ending agent {pid}"))
-    );
-    if let Some(pid) = pid {
-        // the agent's whole tree (its shell commands too), never the companion
-        let mut kill = std::process::Command::new("taskkill");
-        kill.args(["/T", "/F", "/PID", &pid.to_string()]);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            kill.creation_flags(0x0800_0000);
-        }
-        let _ = kill.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
-    }
-    let message = format!("{{ kind = \"stopped\", slot = {}, dropped = {} }}", lua_string(slot), drop_queue);
-    if let Err(err) = send_inbox(addons, &message) {
-        eprintln!("  telling the game it stopped failed: {err}");
-    }
 }
 
 /// The game's commands, read off the data strip by `tools/strip.py --serve`, a
@@ -489,7 +290,7 @@ pub(crate) fn watch_commands(addons: &Path) {
                     ["WCCMD", nonce, "hear", slot, ..] => {
                         // the nonce opens with the game's time() in seconds
                         let press = nonce.get(..10).and_then(|secs| secs.parse::<u128>().ok()).map(|secs| secs * 1000 + 999);
-                        cancel_hearing(addons, &main(slot), press.unwrap_or_else(now_ms));
+                        cancel_hearing(addons, &main(slot), press.unwrap_or_else(jobs::now_ms));
                     }
                     ["WCCMD", _nonce, verb @ ("stop" | "now"), slot] => stop(addons, &main(slot), *verb == "stop"),
                     _ => {}
@@ -501,41 +302,38 @@ pub(crate) fn watch_commands(addons: &Path) {
     }
 }
 
-/// Returns whether the agent wants to look at the results before it is done.
-pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool) -> io::Result<bool> {
-    println!("asking: {spoken}");
-    // a request that waited behind one the player stopped was dropped with it
-    let (stopped_before, began) = stops(&session.slot);
-    if shown && stopped_before > began {
-        println!("  dropped: queued behind a request that was stopped");
+/// A request that failed: its job ends failed and the game is told, unless a
+/// cancel ended it first (then the failure is only the kill, and is dropped).
+fn failed(addons: &Path, slot: &str, group: u64, err: io::Error) -> io::Result<bool> {
+    if !jobs::finish(group, jobs::State::Failed) {
+        println!("  ended by a cancel");
         return Ok(false);
     }
-    set_stops(&session.slot, None, Some(stopped_before));
-    let interrupted_before = interrupts(&session.slot);
-    let was_stopped = |slot: &str| interrupts(slot) != interrupted_before;
-    let req = REQ.with(|req| req.get());
-    if req != 0 {
-        let mut cancelled = CANCELLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(at) = cancelled.iter().position(|id| *id == req) {
-            cancelled.remove(at);
-            println!("  dropped: cancelled while queued");
-            return Ok(false);
-        }
-        drop(cancelled);
-        let mut running = RUNNING_REQ.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        running.retain(|(at, _)| at != &session.slot);
-        running.push((session.slot.clone(), req));
+    eprintln!("  not delivered: {err}");
+    let line = log_inbox_in(Some(slot), "error", &format!("That request failed: {err}"), None, None)
+        .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{}", jobs::fields(group, jobs::State::Failed)), 1);
+    send_inbox(addons, &line)?;
+    Ok(false)
+}
+
+/// Returns whether the agent wants to look at the results before it is done.
+/// `job`: the request's job, queued or already running (a run taken from the
+/// queue); None makes one (a resumed look).
+pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool, job: Option<u64>) -> io::Result<bool> {
+    println!("asking: {spoken}");
+    let group = job.unwrap_or_else(|| jobs::create(&session.slot, spoken, jobs::State::Queued));
+    if let Err(state) = jobs::advance(group, jobs::State::Running) {
+        println!("  dropped: {} before it started", state.name());
+        return Ok(false);
     }
-    let req_field = if req != 0 { format!(", req = {req}") } else { String::new() };
-    let _working = Working(session.slot.clone());
-    WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|(at, _, _)| *at != session.slot);
-    set_working(&session.slot, "thinking");
+    let req_field = jobs::fields(group, jobs::State::Running);
+    jobs::set_doing(group, "thinking");
     // start the agent before announcing ourselves: the announcement costs a bell
     // wait, the agent costs several seconds, and they may as well run together
     voice::mark(&format!("agent starting [{}]", session.slot));
     let mut context = agent_context_for(addons, &session.slot);
     if wants_chat(spoken) {
-        set_working(&session.slot, "reading chat");
+        jobs::set_doing(group, "reading chat");
         if let Some(chat) = live_chat(addons) {
             context = Some(format!("{}
 == live chat ==
@@ -543,8 +341,16 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
 {chat}", context.unwrap_or_default()));
         }
     }
-    let waiting = session.start(spoken, context)?;
-    set_running(&session.slot, Some(waiting.id()));
+    let waiting = match session.start(spoken, context) {
+        Ok(waiting) => waiting,
+        Err(err) => return failed(addons, &session.slot, group, err),
+    };
+    // cancelled before its process existed: end it now
+    if !jobs::set_pid(group, waiting.id()) {
+        end_processes(&[waiting.id()]);
+        println!("  cancelled before it started");
+        return Ok(false);
+    }
     // a queued request already showed its words; now it only starts thinking
     if shown {
         // `started` first, so this one is not advisory: it is what ends the queued
@@ -571,7 +377,7 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
                         latest = newer;
                     }
                     if sent < PROGRESS_LIMIT {
-                        let inbox = format!("{{ kind = \"progress\", text = {}, slot = {} }}", lua_string(&latest), lua_string(&slot));
+                        let inbox = format!("{{ kind = \"progress\", text = {}, slot = {}, job = {group} }}", lua_string(&latest), lua_string(&slot));
                         if send_inbox(&addons, &inbox).is_ok() {
                             sent += 1;
                         }
@@ -583,7 +389,7 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         let mut progress = |doing: &str| {
             voice::mark(&format!("agent: {}", doing.chars().take(60).collect::<String>()));
             println!("  ... {doing}");
-            set_working(&slot, doing);
+            jobs::set_doing(group, doing);
             let _ = tell.send(doing.to_string());
         };
         // A request that runs out of steps carries on by itself, a few times: the
@@ -594,7 +400,7 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         let mut round = 0;
         let answer = loop {
             let finished = session.finish(waiting, &mut progress);
-            if was_stopped(&slot) {
+            if jobs::state(group).is_some_and(jobs::State::ended) {
                 break Err(io::Error::other("stopped"));
             }
             let answer = match finished {
@@ -618,22 +424,21 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
                 None,
             ) {
                 Ok(next) => {
-                    set_running(&slot, Some(next.id()));
+                    if !jobs::set_pid(group, next.id()) {
+                        end_processes(&[next.id()]);
+                        break Err(io::Error::other("stopped"));
+                    }
                     next
                 }
                 Err(err) => break Err(err),
             };
         };
-        set_running(&slot, None);
-        RUNNING_REQ.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|(at, _)| at != &slot);
         drop(tell);
         let _ = courier.join();
-        if was_stopped(&slot) {
-            // the game already said so (the `stopped` message)
-            println!("  stopped by the player");
-            return Ok(false);
+        match answer {
+            Ok(answer) => answer,
+            Err(err) => return failed(addons, &slot, group, err),
         }
-        answer?
     };
     voice::mark("agent answered");
     println!("claude: {}", answer.say);
@@ -663,19 +468,20 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
             eprintln!("  module {name} not saved to modules/: {err}");
         }
     }
-    let reply = log_inbox_in(Some(&session.slot), "claude", &say, None, answer.inbox.as_deref());
+    // the race with a cancel is decided here, once: whichever ended the job
+    // first stands, and a reply that lost is dropped (the game shows cancelled)
+    if !jobs::finish(group, jobs::State::Answered) {
+        println!("  cancelled while answering: reply dropped");
+        return Ok(false);
+    }
+    let reply = log_inbox_in(Some(&session.slot), "claude", &say, None, answer.inbox.as_deref())
+        .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{}", jobs::fields(group, jobs::State::Answered)), 1);
     {
         let first = say.lines().find(|line| !line.trim().is_empty()).unwrap_or_default().to_string();
         let mut replies = REPLIES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         replies.push((SystemTime::now(), first, reply.clone()));
         let excess = replies.len().saturating_sub(20);
         replies.drain(..excess);
-    }
-    // done before the reply goes out, so a board sent after it can't say
-    // "thinking" again (a resync's board landed just after L1's reply and kept
-    // it spinning, 2026-11-10); a `look` keeps working until after the reload
-    if !answer.look {
-        WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|(at, _, _)| *at != session.slot);
     }
     send_inbox(addons, &reply)?;
     if answer.look {
@@ -689,7 +495,6 @@ pub(crate) fn think(addons: &Path, spoken: &str) -> io::Result<()> {
     let started = Instant::now();
     let mut context = agent_context_for(addons, &session.slot);
     if wants_chat(spoken) {
-        set_working(&session.slot, "reading chat");
         if let Some(chat) = live_chat(addons) {
             context = Some(format!("{}
 == live chat ==

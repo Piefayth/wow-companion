@@ -84,7 +84,7 @@ pub(crate) fn send_inbox_once(addons: &Path, inbox: &str) -> io::Result<()> {
     // waited for it can be undone by an older list
     let board;
     let inbox = if inbox == BOARD_NOW {
-        board = board_inbox(&WORKING.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone());
+        board = board_inbox();
         board.as_str()
     } else {
         inbox
