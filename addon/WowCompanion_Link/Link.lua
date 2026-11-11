@@ -49,11 +49,6 @@ local function catchUpPath(n)
 	return SIGNALS .. "c" .. ((n - 1) % BELLS + 1) .. ".wav"
 end
 
--- frame bells, on trial beside the message bells: see ring_frame_bell in src/channel.rs
-local function frameBellPath(n)
-	return SIGNALS .. "f" .. ((n - 1) % BELLS + 1) .. ".wav"
-end
-
 -- when this UI session began, to tell this session's messages from a slot's old one
 local sessionStart = time()
 
@@ -257,14 +252,68 @@ end
 -- What the poll has seen, saved at every reload, so a stuck channel can be read
 -- from the save file instead of guessed at.
 local channel = { polls = 0, heard = 0, caughtUp = 0 }
--- which path took each slot first: frame, message or catchUp (a slot is taken once)
+-- The slot bells (docs/proposals/slot-bells.md), on trial beside the message
+-- bells: a bell per slot, a set per session (loads % 3), all made empty by the
+-- PC. Watched only: a ring is noted and never takes a slot (the frame bells
+-- broke delivery by taking them, 2026-11-11). Its own cursor, `watch`, one play
+-- in flight, asked the next frame. Off with `/wc slotbells off` (saved).
+local slotBells = { plays = 0, heard = 0, leads = 0, leadMs = 0, neverRung = 0, highestHeard = 0 }
+channel.slotBells = slotBells
+local heardAt = {}
+local watch, watchHandle = 1, nil
+local function slotBellPath(n)
+	return SIGNALS .. ("g%d-%03d.wav"):format(WowCompanionLinkDB.loads % 3, n)
+end
+local function watchSlotBells()
+	if watchHandle then
+		local playing = C_Sound.IsPlaying(watchHandle)
+		StopSound(watchHandle)
+		watchHandle = nil
+		if playing then
+			heardAt[watch] = GetTime()
+			slotBells.heard = slotBells.heard + 1
+			slotBells.highestHeard = math.max(slotBells.highestHeard, watch)
+			watch = watch + 1
+		end
+	end
+	if WowCompanionLinkDB.slotBells == false then return end
+	watch = math.max(watch, nextSlot)
+	slotBells.plays = slotBells.plays + 1
+	local _, handle = PlaySoundFile(slotBellPath(watch), "Master")
+	watchHandle = handle
+end
+
+-- which path took each slot: message or catchUp (a slot is taken once); and how
+-- long before that its slot bell rang, if it did
 local function take(path, catchingUp)
+	local slot = nextSlot
 	local taken = receive(catchingUp)
 	if taken ~= false then
 		channel.took = channel.took or {}
 		channel.took[path] = (channel.took[path] or 0) + 1
+		local rang = heardAt[slot]
+		if rang then
+			local lead = math.floor((GetTime() - rang) * 1000)
+			slotBells.leads = slotBells.leads + 1
+			slotBells.leadMs = slotBells.leadMs + lead
+			slotBells.leadMin = math.min(slotBells.leadMin or lead, lead)
+			slotBells.leadMax = math.max(slotBells.leadMax or lead, lead)
+		else
+			slotBells.neverRung = slotBells.neverRung + 1
+		end
 	end
 	return taken
+end
+
+-- the counts in words: heard ahead of what the message path took is either in
+-- flight or a false ring, and none should stay
+local function slotBellText()
+	local b = slotBells
+	local ahead = math.max(0, b.highestHeard - (nextSlot - 1))
+	return ("slot bells %s (set %d): plays %d, heard %d; rang before taken %d (lead avg %d ms, min %s, max %s); taken but never rung %d; heard ahead of the message path %d"):format(
+		WowCompanionLinkDB.slotBells == false and "off" or "on", WowCompanionLinkDB.loads % 3,
+		b.plays, b.heard, b.leads, b.leads > 0 and math.floor(b.leadMs / b.leads) or 0,
+		tostring(b.leadMin or "-"), tostring(b.leadMax or "-"), b.neverRung, ahead)
 end
 local loadedAt = GetTime()
 local catchUpTurn = 0
@@ -312,41 +361,6 @@ local function poll()
 	end
 end
 
--- The frame bell trial (the player's yes, 2026-11-11): the next slot's f bell,
--- played one frame and asked the next (IsPlaying says yes 2 ms after a ringing
--- bell starts; a check costs about a microsecond). One play in flight at a time.
--- A ring takes the slot with the catch-up path's session check. Off with
--- `/wc frames off` (saved), if the companion cannot write a bell the game holds.
-local frameHandle, frameSlot, framePlayedAt
-local function frameCheck()
-	if frameHandle then
-		local playing = C_Sound.IsPlaying(frameHandle)
-		StopSound(frameHandle)
-		if playing then
-			if nextSlot == frameSlot then
-				local lag = (GetTime() - framePlayedAt) * 1000
-				local taken = take("frame", true)
-				if taken == false then
-					channel.frameEmpty = (channel.frameEmpty or 0) + 1
-				else
-					channel.frameHeard = (channel.frameHeard or 0) + 1
-					channel.frameLagMs = (channel.frameLagMs or 0) + lag
-					channel.frameLagMaxMs = math.max(channel.frameLagMaxMs or 0, math.floor(lag))
-				end
-			else
-				-- rang for a slot another path took already
-				channel.frameLate = (channel.frameLate or 0) + 1
-			end
-		end
-	end
-	frameHandle = nil
-	if WowCompanionLinkDB.frameBells == false then return end
-	channel.framePolls = (channel.framePolls or 0) + 1
-	frameSlot, framePlayedAt = nextSlot, GetTime()
-	local _, handle = PlaySoundFile(frameBellPath(frameSlot), "Master")
-	frameHandle = handle
-end
-
 -- Polled from OnUpdate, which WoW keeps calling whatever happened the frame
 -- before, rather than a C_Timer ticker, which a callback error may cancel for good.
 local pollFrame = CreateFrame("Frame")
@@ -355,7 +369,7 @@ local function setPolling(on)
 	polling = on
 	local since = 0
 	pollFrame:SetScript("OnUpdate", on and function(_, elapsed)
-		safely("frame bell", frameCheck)
+		safely("slot bells", watchSlotBells)
 		since = since + elapsed
 		if since >= 0.5 then
 			since = 0
@@ -366,6 +380,17 @@ end
 
 -- /wc: subcommands registered by Link and the Agent
 local slash = {}
+-- the slot bell trial's counts, said and drawn on the strip (read without a reload)
+slash.slotbells = function(rest)
+	if rest == "off" or rest == "on" then
+		WowCompanionLinkDB.slotBells = rest == "on"
+		say("slot bells " .. rest)
+		return
+	end
+	local text = slotBellText()
+	say(text)
+	if WowCompanion_Strip and WowCompanion_Strip.Send then WowCompanion_Strip.Send(text, 15) end
+end
 SLASH_WOWCOMPANION1 = "/wc"
 SlashCmdList.WOWCOMPANION = function(command)
 	local word, rest = command:match("^(%S*)%s*(.-)$")
@@ -377,21 +402,6 @@ SlashCmdList.WOWCOMPANION = function(command)
 	say(table.concat(words, ", "))
 end
 slash.talkkey = learnTalkKey
--- the frame bell trial's counts, said and drawn on the strip (read without a reload)
-slash.frames = function(rest)
-	if rest == "off" or rest == "on" then
-		WowCompanionLinkDB.frameBells = rest == "on"
-		say("frame bells " .. rest)
-		return
-	end
-	local c, t = channel, channel.took or {}
-	local text = ("frame bells %s: polls %d, heard %d, rang for a slot taken already %d, empty or stale %d, lag avg %.0f ms max %d ms; slots taken by frame %d, message %d, catch-up %d; message polls %d"):format(
-		WowCompanionLinkDB.frameBells == false and "off" or "on", c.framePolls or 0, c.frameHeard or 0,
-		c.frameLate or 0, c.frameEmpty or 0, (c.frameLagMs or 0) / math.max(1, c.frameHeard or 0),
-		c.frameLagMaxMs or 0, t.frame or 0, t.message or 0, t.catchUp or 0, c.polls)
-	say(text)
-	if WowCompanion_Strip and WowCompanion_Strip.Send then WowCompanion_Strip.Send(text, 15) end
-end
 -- the bell poll is the only thing the bridge does continuously
 slash.quiet = function()
 	setPolling(false)
@@ -401,7 +411,6 @@ slash.listen = function()
 	if not polling then setPolling(true) end
 	say("bell poll running")
 end
-
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
@@ -414,6 +423,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- loads of this save, counted here only: 1 after a higher count means the
 		-- save was lost and the addon loaded empty (read by src/backups.rs)
 		db.loads = (db.loads or 0) + 1
+		db.frameBells = nil -- the frame bell trial's switch; remove this line next session
 		-- the game saves before it reloads, so hold on to the session just read
 		db.previous = db.probe
 		db.probe = {}
@@ -457,6 +467,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
 			end
 			WowCompanionLinkDB.slotCount = seen
 		end)
+		slotBells.aheadAtReload = math.max(0, slotBells.highestHeard - (nextSlot - 1))
+		slotBells.summary = slotBellText()
 		WowCompanionLinkDB.channel = channel
 		WowCompanionLinkDB.leftAt = time()
 	end
