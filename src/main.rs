@@ -515,6 +515,14 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                             Some(Ok(words)) => break words,
                             Some(Err(state)) => {
                                 println!("  dropped: {} while being gathered", state.name());
+                                // cancelled while heard: what was said stays in the
+                                // conversation, marked cancelled (the window draws
+                                // only what the PC numbers, so this is its line)
+                                if state == jobs::State::Cancelled {
+                                    let said = jobs::get(&[job]).first().map(|j| j.text.trim().to_string()).unwrap_or_default();
+                                    let said = if said.is_empty() { "(cancelled while it was still being heard)".to_string() } else { said };
+                                    let _ = courier.send(Out::Line(Line::new(&slot, "you", &said).job(job, jobs::State::Cancelled)));
+                                }
                                 return;
                             }
                         }
