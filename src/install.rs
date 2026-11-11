@@ -1,14 +1,7 @@
-//! Install, and the probe and bridge tools.
+//! Install, and `send`: one message to the game from another process.
 
 use super::*;
 use crate::message::Msg;
-
-pub(crate) const PROBE_MESSAGES: u32 = 10;
-pub(crate) const PROBE_SPACING: Duration = Duration::from_secs(3);
-pub(crate) const PROBE_COUNTDOWN: Duration = Duration::from_secs(8);
-// generous: the question is whether the client flushes chat to disk at all, and on
-// what cadence, so give a slow flush room to show itself before calling it dead
-pub(crate) const BRIDGE_PATIENCE: Duration = Duration::from_secs(20);
 
 pub(crate) fn install(addons: &Path) -> io::Result<()> {
     let source = crate::home().join("addon").join(ADDON);
@@ -99,7 +92,6 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
 fn generated(addon: &str) -> &'static [&'static str] {
     match addon {
         LINK => &["Signals", "helper-state.txt"],
-        ADDON => &["Probe"],
         "WowCompanion_Mailbox" => &["Mail.lua"],
         _ => &[],
     }
@@ -137,35 +129,6 @@ fn remove_stale(source: &Path, installed: &Path, keep: &[&str]) -> io::Result<()
     walk(source, installed, true, keep)
 }
 
-pub(crate) fn probe(addons: &Path) -> io::Result<()> {
-    // a closed client swallows a whole run in silence, which looks identical to a broken channel
-    if !game_running() {
-        return Err(io::Error::other(
-            "Wow.exe isn't running: log in first, or the probe writes into a dead client",
-        ));
-    }
-    println!("log in to a character, game sound on and the window focused, then press Enter");
-    if io::stdin().read_line(&mut String::new())? == 0 {
-        // no console attached, so nobody can press Enter: leave time to focus the game
-        println!("no stdin, starting in {:?}", PROBE_COUNTDOWN);
-        thread::sleep(PROBE_COUNTDOWN);
-    }
-    // take slots from the shared cursor, so a second run works without a /reload
-    // instead of rewriting slots the addon has already loaded and cached
-    for n in 1..=PROBE_MESSAGES {
-        let sent = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        let slot = next_slot(addons)?;
-        deliver(addons, slot, &Msg::new("probe").int("n", n).int("sent", sent))?;
-        println!("sent message {n} in slot {slot}");
-        thread::sleep(PROBE_SPACING);
-    }
-    if !game_running() {
-        println!("warning: the game closed partway through, so the run is incomplete");
-    }
-    println!("done: the game should have printed messages 1 to {PROBE_MESSAGES}");
-    Ok(())
-}
-
 pub(crate) fn send_command(addons: &Path, args: &[String]) -> io::Result<()> {
     // conversation lines go through the running companion (`tell`): only it
     // numbers them (src/ledger.rs)
@@ -197,46 +160,4 @@ pub(crate) fn send_command(addons: &Path, args: &[String]) -> io::Result<()> {
     // this process ends here: its one message goes out first
     crate::channel::flush();
     Ok(())
-}
-
-/// Round-trip probe: PC to game through the slot channel, game back to PC through
-/// the client's own chat log. If this works there is a bidirectional bridge that
-/// does not involve reading pixels off the screen.
-pub(crate) fn bridge(addons: &Path) -> io::Result<()> {
-    let root = addons
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| io::Error::other("cannot find the client folder above AddOns"))?;
-    let chat_log = root.join("Logs").join("WoWChatLog.txt");
-    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
-    // only read what arrives after we ask, so an old marker cannot be mistaken for a new one
-    let already = fs::metadata(&chat_log).map(|meta| meta.len()).unwrap_or(0);
-    println!("chat log: {} ({already} bytes so far)", chat_log.display());
-
-    let sent = Instant::now();
-    send(addons, &Msg::new("bridge").int("nonce", nonce as i128))?;
-    println!("waiting for {nonce} to reach the log");
-
-    let nonce = nonce.to_string();
-    while sent.elapsed() < BRIDGE_PATIENCE {
-        if let Ok(tail) = fs::read(&chat_log) {
-            if tail.len() as u64 > already {
-                let fresh = String::from_utf8_lossy(&tail[already as usize..]);
-                if let Some(line) = fresh.lines().find(|line| line.contains(&nonce)) {
-                    println!(
-                        "round trip in {:.1}s via: {}",
-                        sent.elapsed().as_secs_f32(),
-                        line.trim()
-                    );
-                    return Ok(());
-                }
-            }
-        }
-        thread::sleep(Duration::from_millis(200));
-    }
-    Err(io::Error::other(format!(
-        "nothing carrying {nonce} reached {} within {BRIDGE_PATIENCE:?}; the log may only \
-         keep server chat events, or may not flush until logout",
-        chat_log.display()
-    )))
 }

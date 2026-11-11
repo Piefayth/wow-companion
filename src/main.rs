@@ -1,6 +1,6 @@
 //! The PC half of WoW Companion. `install` lays the addon and its slots into the
-//! game's AddOns folder, `send` delivers one command through a slot and a bell,
-//! and `probe` sends numbered messages so we can watch the channel work.
+//! game's AddOns folder, `send` delivers one message through a slot and its bell,
+//! `run` is the companion itself.
 
 mod agent;
 mod bells;
@@ -102,7 +102,6 @@ fn main() {
         // a request typed into a conversation (main, l1, l2, r1, r2), taken by the
         // running companion as if spoken there
         [command, slot, words @ ..] if command == "tell" && !words.is_empty() => tell(slot, &words.join(" ")),
-        [command, addons] if command == "probe" => probe(Path::new(addons)),
         [command, addons, rest @ ..] if command == "send" => send_command(Path::new(addons), rest),
         // the agent's answer, printed and never delivered: for trying the agent
         // without a game to send into
@@ -126,7 +125,6 @@ fn main() {
             all.extend(Settings::load().options());
             run(Path::new(addons), Path::new(model), &all)
         }
-        [command, addons] if command == "bridge" => bridge(Path::new(addons)),
         [command, addons, out] if command == "api" => pull(Path::new(addons), "api", Path::new(out)),
         [command, addons, out] if command == "alive" => {
             pull(Path::new(addons), "alive", Path::new(out))
@@ -191,7 +189,7 @@ fn main() {
         _ => {
             eprintln!("usage: wow-companion <command> [args]");
             eprintln!("  install <AddOns>                 lay down the addon and its slots");
-            eprintln!("  probe <AddOns>                   send numbered messages, end to end");
+            eprintln!("  send <AddOns> probe <n>          a test message the game counts");
             eprintln!("  send <AddOns> chat <text>        put text in the chat box");
             eprintln!("  send <AddOns> macro <name> <body>  create or edit a macro");
             eprintln!("  send <AddOns> reload             reload the game's UI");
