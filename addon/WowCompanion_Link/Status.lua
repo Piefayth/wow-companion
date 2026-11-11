@@ -131,7 +131,8 @@ end)
 function WowCompanion_IsUp() return up end
 
 local function show(isUp)
-	if up and not isUp and WC.Link and WC.Link.HeartbeatStale then WC.Link.HeartbeatStale() end
+	-- the channel slows down while the game may be holding sound files (Link.lua)
+	if (up and not isUp) or (up == false and isUp) then WC.Link.Heartbeat(isUp) end
 	up = isUp
 	icon:SetDesaturated(not isUp)
 	if isUp then

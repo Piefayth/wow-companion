@@ -1,5 +1,11 @@
 # Slot bells: a bell per slot, a set per session
 
+**The channel since 2026-11-11** (the player's yes, after a clean trial: 66 of 66
+messages rang their slot bell before the old message path took them, 288 ms
+sooner on average; none taken without a ring, none heard ahead; ten minutes at
+10 checks a second with no held bells). The message bells, the catch-up bells,
+the half-second poll and the session check are gone.
+
 The player, 2026-11-11: "let's get that robust design going", after the frame
 bell trial broke delivery for an evening (docs/history.md, 2026-11-11).
 
@@ -45,23 +51,28 @@ milder form, which is why they need the catch-up bells and a 2 s wait per send.
   the PC sees either (it watches the save's time 4 times a second; a reload takes
   seconds). When the game exits, all three sets are emptied; and a crashed
   session's set, used again by the next one, is emptied then too.
-- **The game**: every frame, the next slot's bell of this session's set, asked
-  the next frame. A ring takes the slot. Nothing else: no session check, no
-  catch-up, no half-second poll.
+- **The game** (`WowCompanion_Link/Link.lua`): every 0.1 s, the next slot's bell
+  of this session's set, asked 20 ms later. A ring takes the slot, and the slot
+  after it is asked at once, so a burst drains a message per check. Nothing
+  else: no session check, no catch-up, no half-second poll. Asked every frame,
+  bells made the game hold its sound files (the heartbeat's and the message
+  bells', 2026-11-11); at 0.1 s it never did. While Status.lua judges the
+  heartbeat stale, which is what held files look like, it asks every 0.5 s and
+  says so once in the window. Counts saved at every reload in
+  `WowCompanionLinkDB.channel`: plays, taken, slowed.
 - **Every file exists before the game can ask for it**: `install` makes all
   1,536, empty.
 
-## How it is proven (CLAUDE.md, "Changing the channel")
+## How it was proven (CLAUDE.md, "Changing the channel")
 
-Beside the message bells, **watching only**: the game asks the slot bells every
-frame and records when it heard each slot's ring against when the message path
-took that slot, but never takes a slot itself, so the cursor stays the message
-path's. Counts readable without a reload (`/wc slotbells`): rings heard, how much
-earlier than the message path, slots the message path took that never rang,
-and frame times. The PC logs any bell it could not write.
+Beside the message bells, **watching only**: the game asked the slot bells every
+0.1 s (every frame held the game's sound files) and recorded when it heard each slot's ring against when the message path
+took that slot, but never took a slot itself, so the cursor stayed the message
+path's. The counts: rings heard, how much earlier than the message path, slots
+the message path took that never rang. The PC logged any bell it could not write.
 
-After a session of clean counts and the player's yes, the slot bells take the
-slots, and the replacement removes what it replaces: the message bells, the
+After clean counts and the player's yes, the slot bells took the slots, and the
+replacement removed what it replaced: the message bells, the
 catch-up bells, the half-second poll, the session check on taking, the PC's
 2 s wait per send and `BELL_LINGER`.
 

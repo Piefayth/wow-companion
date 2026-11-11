@@ -13,11 +13,10 @@
 -- LINK_FAILED(text), MAILBOX_JOBS(jobs).
 
 local SLOTS_PREFIX = "WowCompanion"
-local BELLS = 8
 local SIGNALS = "Interface\\AddOns\\WowCompanion_Link\\Signals\\"
 
 WC.Saved("WowCompanion_Link", "WowCompanionLinkDB", function(db)
-	WC.MoveSaved(db, { "loads", "leftAt", "slotCount", "channel", "talkKey", "chatChannel",
+	WC.MoveSaved(db, { "loads", "slotCount", "channel", "talkKey", "chatChannel",
 		"chatBoxTrace", "minimapAngle", "keepChatDraft", "probe", "previous" })
 end)
 
@@ -38,19 +37,6 @@ end
 local function slotName(n)
 	return ("%s_S%03d"):format(SLOTS_PREFIX, n)
 end
-
--- "m" names: see bell_name in src/main.rs
-local function bellPath(n)
-	return SIGNALS .. "m" .. ((n - 1) % BELLS + 1) .. ".wav"
-end
-
--- catch-up bells: see catch_up_name in src/main.rs
-local function catchUpPath(n)
-	return SIGNALS .. "c" .. ((n - 1) % BELLS + 1) .. ".wav"
-end
-
--- when this UI session began, to tell this session's messages from a slot's old one
-local sessionStart = time()
 
 -- PlaySoundFile claims every file will play, even empty ones, so only IsPlaying counts
 local function listen(path, heard)
@@ -204,24 +190,16 @@ local function dispatch(inbox, label)
 	current = nil
 end
 
--- `catchingUp`: the slot was taken on a catch-up bell, so it must have been
--- written this session; one left from an earlier session is skipped, not run.
--- Returns false when the slot was not taken.
-local function receive(catchingUp)
+-- The next slot, loaded and its messages handled.
+local function receive()
 	local slot = nextSlot
 	nextSlot = nextSlot + 1
 	local loaded, reason = C_AddOns.LoadAddOn(slotName(slot))
 	local inbox = WowCompanion_Inbox
-	local sent = WowCompanion_Sent
 	WowCompanion_Inbox = nil
-	WowCompanion_Sent = nil
 	if not loaded or not inbox then
 		record("slot " .. slot, "failed: " .. tostring(reason))
-		return false
-	end
-	if catchingUp and (type(sent) ~= "number" or sent < sessionStart - 5) then
-		record("slot " .. slot, "catch-up found an earlier session's message; skipped")
-		return false
+		return
 	end
 	if inbox.kind ~= "list" or type(inbox.messages) ~= "table" then
 		record("slot " .. slot, "not a list: " .. tostring(inbox.kind))
@@ -249,161 +227,64 @@ local function safely(label, fn, ...)
 	end
 end
 
--- What the poll has seen, saved at every reload, so a stuck channel can be read
--- from the save file instead of guessed at.
-local channel = { polls = 0, heard = 0, caughtUp = 0 }
--- The slot bells (docs/proposals/slot-bells.md), on trial beside the message
--- bells: a bell per slot, a set per session (loads % 3), all made empty by the
--- PC. Watched only: a ring is noted and never takes a slot (the frame bells
--- broke delivery by taking them, 2026-11-11). Its own cursor, `watch`, one play
--- in flight: played every 0.1 s and asked 20 ms later (the short bell plays
--- within 2 ms). Played every frame, it made the game hold its sound files, the
--- heartbeat's and the message bells' among them (2026-11-11). The saved switch
--- WowCompanionLinkDB.slotBellWatch (nil is on) is set by the PC's `slotbells`
--- message, and turned off here when the heartbeat goes stale (Status.lua):
--- that is what held files look like from the game.
-local SLOT_BELL_EVERY, SLOT_BELL_ASK = 0.1, 0.02
-local slotBells = { plays = 0, heard = 0, leads = 0, leadMs = 0, neverRung = 0, highestHeard = 0 }
-channel.slotBells = slotBells
-local heardAt = {}
-local watch, watchHandle, watchClock, watchSince = 1, nil, 0, GetTime()
-local function slotBellPath(n)
-	return SIGNALS .. ("g%d-%03d.wav"):format(WowCompanionLinkDB.loads % 3, n)
+-- The slot bells (docs/proposals/slot-bells.md): a bell per slot, a set per
+-- session (loads % 3), each empty until the PC writes that slot, never emptied
+-- while its session runs. Every 0.1 s the next slot's bell is played and asked
+-- 20 ms later (the short bell plays within 2 ms); a ring takes the slot, and the
+-- slot after it is asked at once, so a burst drains a message per check.
+-- Played every frame, bells made the game hold its sound files (2026-11-11); at
+-- 0.1 s it never did. While the heartbeat is stale (Status.lua), which is what
+-- held files look like, it asks every 0.5 s, the old rate. Polled from
+-- OnUpdate, which WoW keeps calling whatever happened the frame before, rather
+-- than a C_Timer ticker, which a callback error may cancel for good.
+-- The counts are saved at every reload.
+local EVERY, SLOW, ASK = 0.1, 0.5, 0.02
+local channel = { plays = 0, taken = 0, slowed = 0 }
+local set -- this session's set, from ADDON_LOADED
+local every = EVERY
+local clock, handle = 0, nil
+local function bellPath(n)
+	return SIGNALS .. ("g%d-%03d.wav"):format(set, n)
 end
-local function watchSlotBells(elapsed)
-	watchClock = watchClock + elapsed
-	if watchHandle then
-		if watchClock < SLOT_BELL_ASK then return end
-		local playing = C_Sound.IsPlaying(watchHandle)
-		StopSound(watchHandle)
-		watchHandle = nil
+local function check(elapsed)
+	clock = clock + elapsed
+	if handle then
+		if clock < ASK then return end
+		local playing = C_Sound.IsPlaying(handle)
+		StopSound(handle)
+		handle = nil
 		if playing then
-			heardAt[watch] = GetTime()
-			slotBells.heard = slotBells.heard + 1
-			slotBells.highestHeard = math.max(slotBells.highestHeard, watch)
-			watch = watch + 1
+			channel.taken = channel.taken + 1
+			safely("a message from the companion", receive)
+			clock = every -- the next slot at once
 		end
 	end
-	if watchClock < SLOT_BELL_EVERY or WowCompanionLinkDB.slotBellWatch == false then return end
-	watchClock = 0
-	watch = math.max(watch, nextSlot)
-	slotBells.plays = slotBells.plays + 1
-	local _, handle = PlaySoundFile(slotBellPath(watch), "Master")
-	watchHandle = handle
+	if clock < every then return end
+	clock = 0
+	channel.plays = channel.plays + 1
+	local _, played = PlaySoundFile(bellPath(nextSlot), "Master")
+	handle = played
 end
-local function setSlotBells(on, why)
-	local was = WowCompanionLinkDB.slotBellWatch ~= false
-	WowCompanionLinkDB.slotBellWatch = (not on) and false or nil
-	if was ~= on then
-		watchSince = GetTime()
-		WC.Send("LINK_FAILED", ("slot bell watcher %s: %s"):format(on and "on" or "off", why))
+local function heartbeat(fresh)
+	local was = every
+	every = fresh and EVERY or SLOW
+	if not fresh and was ~= SLOW then
+		channel.slowed = channel.slowed + 1
+		WC.Send("LINK_FAILED", "the heartbeat went stale, so the game may be holding sound files: checking for messages every 0.5 s until it is back")
 	end
 end
 
--- which path took each slot: message or catchUp (a slot is taken once); and how
--- long before that its slot bell rang, if it did
-local function take(path, catchingUp)
-	local slot = nextSlot
-	local taken = receive(catchingUp)
-	if taken ~= false then
-		channel.took = channel.took or {}
-		channel.took[path] = (channel.took[path] or 0) + 1
-		local rang = heardAt[slot]
-		if rang then
-			local lead = math.floor((GetTime() - rang) * 1000)
-			slotBells.leads = slotBells.leads + 1
-			slotBells.leadMs = slotBells.leadMs + lead
-			slotBells.leadMin = math.min(slotBells.leadMin or lead, lead)
-			slotBells.leadMax = math.max(slotBells.leadMax or lead, lead)
-		else
-			slotBells.neverRung = slotBells.neverRung + 1
-		end
-	end
-	return taken
-end
-
--- the counts in words: heard ahead of what the message path took is either in
--- flight or a false ring, and none should stay
-local function slotBellText()
-	local b = slotBells
-	local ahead = math.max(0, b.highestHeard - (nextSlot - 1))
-	return ("slot bells %s (set %d): plays %d (%.1f a second), heard %d; rang before taken %d (lead avg %d ms, min %s, max %s); taken but never rung %d; heard ahead of the message path %d"):format(
-		WowCompanionLinkDB.slotBellWatch == false and "off" or "on", WowCompanionLinkDB.loads % 3,
-		b.plays, b.plays / math.max(1, GetTime() - watchSince), b.heard, b.leads, b.leads > 0 and math.floor(b.leadMs / b.leads) or 0,
-		tostring(b.leadMin or "-"), tostring(b.leadMax or "-"), b.neverRung, ahead)
-end
-local loadedAt = GetTime()
-local catchUpTurn = 0
-
--- The message bell: one at a time, the next slot's, as on 2026-11-09. Polling
--- more message bells at once kept every bell file open in the game and the
--- companion could no longer write them (2026-11-10).
-local function poll()
-	channel.polls = channel.polls + 1
-	channel.lastPoll = time()
-	channel.waitingOn = nextSlot
-	local waiting = nextSlot
-	safely("bell poll", listen, bellPath(waiting), function(rang)
-		if rang and nextSlot == waiting then
-			channel.heard = channel.heard + 1
-			safely("a message from the companion", take, "message")
-		end
-	end)
-	-- The catch-up bells, beside the message bells: one per poll, in turn over
-	-- this slot and the next 6 (never the 8th, which is the bell of the slot just
-	-- taken, left ringing). Only after a message has been heard this session, or
-	-- 10 s after loading: messages sent during a loading screen often miss their
-	-- 2 s bell.
-	if channel.heard > 0 or GetTime() - loadedAt > 10 then
-		local ahead = catchUpTurn
-		catchUpTurn = (catchUpTurn + 1) % (BELLS - 1)
-		channel.catchUpPolls = (channel.catchUpPolls or 0) + 1
-		safely("catch-up poll", listen, catchUpPath(waiting + ahead), function(rang)
-			if rang then
-				channel.catchUpRang = (channel.catchUpRang or 0) + 1
-				channel.lastCatchUpRang = ("c%d while waiting on %d (next %d) at %s"):format(
-					(waiting + ahead - 1) % BELLS + 1, waiting, nextSlot, date("%H:%M:%S"))
-			end
-			if rang and nextSlot == waiting then
-				channel.caughtUp = channel.caughtUp + 1
-				channel.lastCaughtUp = ("waiting on slot %d, took %d at %s"):format(waiting, ahead + 1, date("%H:%M:%S"))
-				for _ = 0, ahead do
-					local ok, taken = pcall(take, "catchUp", true)
-					if not ok or taken == false then
-						break
-					end
-				end
-			end
-		end)
-	end
-end
-
--- Polled from OnUpdate, which WoW keeps calling whatever happened the frame
--- before, rather than a C_Timer ticker, which a callback error may cancel for good.
 local pollFrame = CreateFrame("Frame")
 local polling = false
 local function setPolling(on)
 	polling = on
-	local since = 0
 	pollFrame:SetScript("OnUpdate", on and function(_, elapsed)
-		safely("slot bells", watchSlotBells, elapsed)
-		since = since + elapsed
-		if since >= 0.5 then
-			since = 0
-			poll()
-		end
+		safely("slot bells", check, elapsed)
 	end or nil)
 end
 
 -- /wc: subcommands registered by Link and the Agent
 local slash = {}
--- the slot bell trial's counts, said and drawn on the strip (for agents, which
--- call it from a lua step; the player switches nothing by typing)
-slash.slotbells = function()
-	local text = slotBellText()
-	say(text)
-	if WowCompanion_Strip and WowCompanion_Strip.Send then WowCompanion_Strip.Send(text, 15) end
-end
 SLASH_WOWCOMPANION1 = "/wc"
 SlashCmdList.WOWCOMPANION = function(command)
 	local word, rest = command:match("^(%S*)%s*(.-)$")
@@ -436,18 +317,13 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- loads of this save, counted here only: 1 after a higher count means the
 		-- save was lost and the addon loaded empty (read by src/backups.rs)
 		db.loads = (db.loads or 0) + 1
-		-- the frame bell trial's switch, the slot bells' first typed one and the
-		-- bridge probe's data; remove next session
-		db.frameBells, db.slotBells, db.bridgeProbe = nil, nil, nil
+		-- the bell trials' switches, the bridge probe's data and the old session
+		-- boundary; remove next session
+		db.frameBells, db.slotBells, db.slotBellWatch, db.bridgeProbe, db.leftAt = nil, nil, nil, nil, nil
+		set = db.loads % 3
 		-- the game saves before it reloads, so hold on to the session just read
 		db.previous = db.probe
 		db.probe = {}
-		-- Messages sent during the loading screen belong to this session: its
-		-- boundary is the save the reload wrote, not when this file ran.
-		local left = tonumber(db.leftAt)
-		if left and left <= sessionStart and sessionStart - left < 300 then
-			sessionStart = left
-		end
 	elseif event == "PLAYER_LOGIN" then
 		if type(WowCompanionLinkDB.talkKey) == "string" then
 			WowCompanion_TalkKey = WowCompanionLinkDB.talkKey
@@ -482,26 +358,13 @@ frame:SetScript("OnEvent", function(_, event, ...)
 			end
 			WowCompanionLinkDB.slotCount = seen
 		end)
-		slotBells.aheadAtReload = math.max(0, slotBells.highestHeard - (nextSlot - 1))
-		slotBells.summary = slotBellText()
 		WowCompanionLinkDB.channel = channel
-		WowCompanionLinkDB.leftAt = time()
 	end
 end)
 
--- the PC's (or an agent's) switch for the slot bell watcher
-handlers.slotbells = function(inbox)
-	setSlotBells(inbox.on ~= false, "asked by the companion")
-	return "slot bells " .. (inbox.on ~= false and "on" or "off")
-end
-
 WC.Link = {
-	-- Status.lua: the heartbeat went stale, which is what held sound files look like
-	HeartbeatStale = function()
-		if WowCompanionLinkDB.slotBellWatch ~= false then
-			setSlotBells(false, "the heartbeat went stale, so the game may be holding sound files")
-		end
-	end,
+	-- Status.lua: the heartbeat went stale (false) or fresh again (true)
+	Heartbeat = heartbeat,
 	HELD = HELD,
 	Handle = function(kind, fn) handlers[kind] = fn end,
 	Run = function(step)

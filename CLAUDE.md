@@ -173,16 +173,17 @@ reaches the game with two tricks, and the game reaches the PC only at a reload.
   helper sends only as far as the addon says it can see (`slotCount`, recorded at
   every reload). About 4 slots per request; at 16 left the Reload button is
   offered once, and with none left the pad buzzes three times.
-- **Bells** say "a new message is waiting": the addon plays a bell and asks
-  `C_Sound.IsPlaying` 0.15 s later. **All bell files go through `src/bells.rs`,
-  which holds the rules the game forced on us**: a bell is half a second (the game
-  holds a playing sound open, a long one for its whole length), over 174,762
-  bytes (smaller sounds are cached and held), silenced by deleting it (an empty
-  polled file gets cached and locked for good), and every write and delete is
-  retried and reported. Never write a sound file the game reads any other way.
-- **The addon also checks the next slot's bell**, so a missed ring delays one
-  message instead of losing every one after it. Polling runs from `OnUpdate`
-  under `pcall`, never a ticker, and errors show once in the window.
+- **Slot bells** say "this slot is written" (docs/proposals/slot-bells.md): a bell
+  per slot, `Signals\g<set>-<slot>.wav`, a set per session (`loads % 3`), each
+  empty until the PC writes that slot and rings it, never emptied while its
+  session runs. The addon plays the next slot's bell every 0.1 s and asks
+  `C_Sound.IsPlaying` 20 ms later; a ring takes the slot, and the next is asked at
+  once. While the heartbeat is stale it asks every 0.5 s. **All bell files go
+  through `src/bells.rs`, which holds the rules the game forced on us** (a bell
+  over 174,762 bytes, a long sound streamed, never a missing file, every write
+  retried and reported). Never write a sound file the game reads any other way.
+  Polling runs from `OnUpdate` under `pcall`, never a ticker, and errors show
+  once in the window.
 - **Game to PC** is SavedVariables, written at `/reload` and logout only (measured:
   nothing else reaches disk while playing). The export carries character, bars,
   chords, macros, spellbook, reach, code runs, Lua errors from non-Blizzard addons,
@@ -198,21 +199,15 @@ reaches the game with two tricks, and the game reaches the PC only at a reload.
 changes in one night (shorter bells, deleting, quiet bells, polling more bells)
 each broke delivery in a new way, the player went most of the night without
 replies, and three sets of bell files had to be abandoned under new names
-because the game held them open. The message channel is the 2026-11-09 protocol
-(`bells::message_bell`, one bell polled at a time, emptied to silence, files
-`m1`..`m8`) until a replacement is proven. A replacement runs **beside** it, on
-its own files, and switches over only after the addon's channel counts show it
-delivering for a whole session. **Beside is not isolation**: a trial shares the
-game's sound system, and one that takes slots shares the message channel's
-cursor, so a trial watches and counts and never takes a slot (the frame bells
-broke delivery for an evening by taking them, 2026-11-11, docs/history.md). The
-**catch-up bells** (`c1`..`c8`, `ring_catch_up` in channel.rs) are such a
-replacement, beside it since 2026-11-10: the newest slot's rings until the next
-send, so a missed message bell is taken late instead of stalling the rest; their
-count is `channel.caughtUp`. The **slot bells** (docs/proposals/slot-bells.md,
-`g<set>-<slot>.wav`) are on trial beside it since 2026-11-11, the game only
-watching: a bell per slot, never emptied while its session runs, a set per
-session (`loads % 3`), asked every frame. Renaming files to escape a wedged one
+because the game held them open. A replacement runs **beside** the channel, on
+its own files, and switches over only after its counts show it delivering for a
+whole session. **Beside is not isolation**: a trial shares the game's sound
+system, and one that takes slots shares the channel's cursor, so a trial watches
+and counts and never takes a slot (the frame bells broke delivery for an evening
+by taking them, 2026-11-11, docs/history.md). Asking a sound every frame made the
+game hold its sound files. The slot bells were proven this way and became the
+channel on 2026-11-11, replacing the message bells (`m1`..`m8`, polled every
+0.5 s) and the catch-up bells. Renaming files to escape a wedged one
 is a sign the change should not have shipped, not a fix.
 
 ## The agent
