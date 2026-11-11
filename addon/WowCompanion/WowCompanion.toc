@@ -33,6 +33,7 @@ Export.lua
 Pins.lua
 Errands.lua
 Strip.lua
+BridgeProbe.lua
 BagsEvaluate.lua
 BagsInput.lua
 BagsMenu.lua
