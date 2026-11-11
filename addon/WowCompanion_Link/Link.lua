@@ -256,16 +256,24 @@ local channel = { polls = 0, heard = 0, caughtUp = 0 }
 -- bells: a bell per slot, a set per session (loads % 3), all made empty by the
 -- PC. Watched only: a ring is noted and never takes a slot (the frame bells
 -- broke delivery by taking them, 2026-11-11). Its own cursor, `watch`, one play
--- in flight, asked the next frame. Off with `/wc slotbells off` (saved).
+-- in flight: played every 0.1 s and asked 20 ms later (the short bell plays
+-- within 2 ms). Played every frame, it made the game hold its sound files, the
+-- heartbeat's and the message bells' among them (2026-11-11). The saved switch
+-- WowCompanionLinkDB.slotBellWatch (nil is on) is set by the PC's `slotbells`
+-- message, and turned off here when the heartbeat goes stale (Status.lua):
+-- that is what held files look like from the game.
+local SLOT_BELL_EVERY, SLOT_BELL_ASK = 0.1, 0.02
 local slotBells = { plays = 0, heard = 0, leads = 0, leadMs = 0, neverRung = 0, highestHeard = 0 }
 channel.slotBells = slotBells
 local heardAt = {}
-local watch, watchHandle = 1, nil
+local watch, watchHandle, watchClock, watchSince = 1, nil, 0, GetTime()
 local function slotBellPath(n)
 	return SIGNALS .. ("g%d-%03d.wav"):format(WowCompanionLinkDB.loads % 3, n)
 end
-local function watchSlotBells()
+local function watchSlotBells(elapsed)
+	watchClock = watchClock + elapsed
 	if watchHandle then
+		if watchClock < SLOT_BELL_ASK then return end
 		local playing = C_Sound.IsPlaying(watchHandle)
 		StopSound(watchHandle)
 		watchHandle = nil
@@ -276,11 +284,20 @@ local function watchSlotBells()
 			watch = watch + 1
 		end
 	end
-	if WowCompanionLinkDB.slotBells == false then return end
+	if watchClock < SLOT_BELL_EVERY or WowCompanionLinkDB.slotBellWatch == false then return end
+	watchClock = 0
 	watch = math.max(watch, nextSlot)
 	slotBells.plays = slotBells.plays + 1
 	local _, handle = PlaySoundFile(slotBellPath(watch), "Master")
 	watchHandle = handle
+end
+local function setSlotBells(on, why)
+	local was = WowCompanionLinkDB.slotBellWatch ~= false
+	WowCompanionLinkDB.slotBellWatch = (not on) and false or nil
+	if was ~= on then
+		watchSince = GetTime()
+		WC.Send("LINK_FAILED", ("slot bell watcher %s: %s"):format(on and "on" or "off", why))
+	end
 end
 
 -- which path took each slot: message or catchUp (a slot is taken once); and how
@@ -310,9 +327,9 @@ end
 local function slotBellText()
 	local b = slotBells
 	local ahead = math.max(0, b.highestHeard - (nextSlot - 1))
-	return ("slot bells %s (set %d): plays %d, heard %d; rang before taken %d (lead avg %d ms, min %s, max %s); taken but never rung %d; heard ahead of the message path %d"):format(
-		WowCompanionLinkDB.slotBells == false and "off" or "on", WowCompanionLinkDB.loads % 3,
-		b.plays, b.heard, b.leads, b.leads > 0 and math.floor(b.leadMs / b.leads) or 0,
+	return ("slot bells %s (set %d): plays %d (%.1f a second), heard %d; rang before taken %d (lead avg %d ms, min %s, max %s); taken but never rung %d; heard ahead of the message path %d"):format(
+		WowCompanionLinkDB.slotBellWatch == false and "off" or "on", WowCompanionLinkDB.loads % 3,
+		b.plays, b.plays / math.max(1, GetTime() - watchSince), b.heard, b.leads, b.leads > 0 and math.floor(b.leadMs / b.leads) or 0,
 		tostring(b.leadMin or "-"), tostring(b.leadMax or "-"), b.neverRung, ahead)
 end
 local loadedAt = GetTime()
@@ -369,7 +386,7 @@ local function setPolling(on)
 	polling = on
 	local since = 0
 	pollFrame:SetScript("OnUpdate", on and function(_, elapsed)
-		safely("slot bells", watchSlotBells)
+		safely("slot bells", watchSlotBells, elapsed)
 		since = since + elapsed
 		if since >= 0.5 then
 			since = 0
@@ -380,13 +397,9 @@ end
 
 -- /wc: subcommands registered by Link and the Agent
 local slash = {}
--- the slot bell trial's counts, said and drawn on the strip (read without a reload)
-slash.slotbells = function(rest)
-	if rest == "off" or rest == "on" then
-		WowCompanionLinkDB.slotBells = rest == "on"
-		say("slot bells " .. rest)
-		return
-	end
+-- the slot bell trial's counts, said and drawn on the strip (for agents, which
+-- call it from a lua step; the player switches nothing by typing)
+slash.slotbells = function()
 	local text = slotBellText()
 	say(text)
 	if WowCompanion_Strip and WowCompanion_Strip.Send then WowCompanion_Strip.Send(text, 15) end
@@ -423,7 +436,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- loads of this save, counted here only: 1 after a higher count means the
 		-- save was lost and the addon loaded empty (read by src/backups.rs)
 		db.loads = (db.loads or 0) + 1
-		db.frameBells = nil -- the frame bell trial's switch; remove this line next session
+		-- the frame bell trial's switch and the slot bells' first, typed one; remove next session
+		db.frameBells, db.slotBells = nil, nil
 		-- the game saves before it reloads, so hold on to the session just read
 		db.previous = db.probe
 		db.probe = {}
@@ -474,7 +488,19 @@ frame:SetScript("OnEvent", function(_, event, ...)
 	end
 end)
 
+-- the PC's (or an agent's) switch for the slot bell watcher
+handlers.slotbells = function(inbox)
+	setSlotBells(inbox.on ~= false, "asked by the companion")
+	return "slot bells " .. (inbox.on ~= false and "on" or "off")
+end
+
 WC.Link = {
+	-- Status.lua: the heartbeat went stale, which is what held sound files look like
+	HeartbeatStale = function()
+		if WowCompanionLinkDB.slotBellWatch ~= false then
+			setSlotBells(false, "the heartbeat went stale, so the game may be holding sound files")
+		end
+	end,
 	HELD = HELD,
 	Handle = function(kind, fn) handlers[kind] = fn end,
 	Run = function(step)

@@ -131,6 +131,7 @@ end)
 function WowCompanion_IsUp() return up end
 
 local function show(isUp)
+	if up and not isUp and WC.Link and WC.Link.HeartbeatStale then WC.Link.HeartbeatStale() end
 	up = isUp
 	icon:SetDesaturated(not isUp)
 	if isUp then
