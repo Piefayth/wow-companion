@@ -667,6 +667,7 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         let addons = root.join("Interface").join("AddOns");
         fs::create_dir_all(addons.join(ADDON)).unwrap();
+        fs::create_dir_all(addons.join(LINK)).unwrap();
         let saved_dir = root.join("WTF").join("Account").join("A").join("SavedVariables");
         fs::create_dir_all(&saved_dir).unwrap();
         // Core's save marks the session; Link's holds the slot count it can see
