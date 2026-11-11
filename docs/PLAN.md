@@ -26,7 +26,7 @@ on one file is how replies got lost.
 
 1. **Settings screens, no slash commands, no tutorials** (the player,
    2026-11-11: "there should just be a settings screen"; "fine for now, can
-   always evolve").
+   always evolve"). Built (PC c8dad13, game 5834a61); not yet tried in game.
    - Game: one settings page owned by Core (works without the Agent), in
      Blizzard's look and the row rule (CLAUDE.md); the Companion window's tab
      shows it, the minimap mark opens it, and Blizzard's AddOns panel has one row

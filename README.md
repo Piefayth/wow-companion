@@ -35,7 +35,12 @@ Download the [latest release](https://github.com/Piefayth/wow-companion/releases
 * Push to talk + L2+R2: quick agent (faster model, for chat and links)
 * Push to talk + L1+R1: dictation, no agent. Into the focused text box, else
   the chat box on the channel picked with the right stick
-* Tap push to talk: Companion window
+
+In WoW's Keybindings, under WoW Companion:
+
+* Toggle Companion window: bind it to your push to talk button to open the
+  window with a tap
+* Combat loot: loots the nearest corpse, in combat too
 
 ## Uninstall
 
