@@ -123,19 +123,11 @@ end
 local function toast(...) return WC.Board.toast(...) end
 local function toastBoard(...) return WC.Board.toastBoard(...) end
 local function toastIdleShown(...) return WC.Board.toastIdleShown(...) end
--- ShowUIPanel, so the window joins the controller's focus cycle (see buildLog).
--- It is refused in combat, where a plain Show at least puts the text in front of
--- them; the manager is not told, so nothing is left for it to forget.
-local shownInCombat = false
+-- a UI panel, so the window joins the controller's focus cycle (WC.ShowPanel:
+-- in a fight a plain Show, joining the cycle when it ends)
 local function reveal(frame)
 	toast(nil)
-	if not InCombatLockdown() and UIPanelWindows and UIPanelWindows["WowCompanionLog"] then
-		ShowUIPanel(frame)
-	end
-	if not frame:IsShown() then
-		frame:Show()
-		shownInCombat = InCombatLockdown() and true or false
-	end
+	WC.ShowPanel(frame)
 end
 
 -- The window in combat (the player, 2026-11-10: "randomly disappearing and
@@ -218,13 +210,6 @@ stowWatch:SetScript("OnEvent", function(_, event)
 	end
 	wipe(extraStowed)
 	noteCombat(false)
-	local frame = logWindow
-	if shownInCombat and frame and frame:IsShown() and UIPanelWindows and UIPanelWindows["WowCompanionLog"] then
-		-- a plain Show never joined the focus cycle; join it now, in one frame
-		frame:Hide()
-		ShowUIPanel(frame) -- rules: ok runs on PLAYER_REGEN_ENABLED, the fight is over
-	end
-	shownInCombat = false
 end)
 -- button: a secure button that lives in the window; restore(button) puts it back
 local function stow(button, restore)
@@ -555,18 +540,9 @@ local function buildActionButton()
 		actionButton:SetAttribute("type", "macro")
 		actionButton:RegisterForClicks("AnyDown")
 
-		-- make the cursor able to land on it, and tell SmartNavigation this frame is
-		-- where the window's focusable button lives
-		-- rules: ok buildActionButton's only caller, showOffer, returns in combat first
-		if SmartNavigation_MarkFrameFocusable then
-			pcall(SmartNavigation_MarkFrameFocusable, actionButton) -- rules: ok as above
-		end
-		if SmartNavigation_SetButtonFrame then
-			pcall(SmartNavigation_SetButtonFrame, actionButton)
-		end
-		if SmartNavigation_SetReturnFrameFocusButton then
-			pcall(SmartNavigation_SetReturnFrameFocusButton, frame, actionButton)
-		end
+		-- the cursor can land on it, and goes to it when the window takes focus
+		WC.MarkFocusable(actionButton)
+		WC.SetFocusButton(frame, actionButton)
 		actionButton:SetScript("PostClick", function(self)
 			if self.slot then offers[self.slot] = nil end
 			self:Hide()

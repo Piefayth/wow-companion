@@ -545,12 +545,6 @@ local C_BLUE, C_GREEN = "|cff71d5ff", "|cff1eff00"
 local list, detail, rows, selectedId = nil, nil, {}, nil
 local MAX_ROWS = 6
 local function atlasOK(name) return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil end
-local function focusable(b)
-	if SmartNavigation_MarkFrameFocusable and not InCombatLockdown() then
-		pcall(SmartNavigation_MarkFrameFocusable, b)
-		b.marked = true
-	end
-end
 local function inset(parent)
 	local made, f = pcall(CreateFrame, "Frame", nil, parent, "InsetFrameTemplate")
 	if not made or not f then f = CreateFrame("Frame", nil, parent) end
@@ -643,11 +637,8 @@ local function rowFor(i)
 	b:SetScript("OnEnter", function(self) self.hl:Show() if self.errand then choose(self.errand.id) end end)
 	b:SetScript("OnClick", function(self)
 		if self.errand then choose(self.errand.id) end
-		if detail.arrow and detail.arrow:IsEnabled() and SmartNavigation and SmartNavigation.SetCurrentButton then
-			pcall(SmartNavigation.SetCurrentButton, SmartNavigation, detail.arrow)
-		end
 	end)
-	focusable(b)
+	WC.MarkFocusable(b)
 	rows[i] = b
 	return b
 end
@@ -714,7 +705,7 @@ local function build(p)
 		b:SetPoint("BOTTOMLEFT", x, 10)
 		b:SetText(label)
 		b:SetScript("OnClick", function(self) pcall(onClick, self) end)
-		focusable(b)
+		WC.MarkFocusable(b)
 		return b
 	end
 	local function current()
@@ -769,7 +760,6 @@ drawPage = function()
 		local e = open[i]
 		if e and i <= MAX_ROWS then
 			local b = rowFor(i)
-			if not b.marked then focusable(b) end
 			b.errand = e
 			b.l1:SetText(e.text)
 			local band = 21
@@ -809,7 +799,7 @@ drawPage = function()
 	for _, r in ipairs({ detail.title, detail.added, detail.whenLabel, detail.when, detail.note, detail.noteLabel, detail.rule, detail.rule2 }) do r:SetShown(showing) end
 	for _, f in ipairs(detail.facts) do f.label:Hide() f.value:Hide() end
 	for _, b in ipairs({ detail.arrow, detail.pin, detail.remove }) do
-		if b then b:SetShown(showing) if not b.marked then focusable(b) end end
+		if b then b:SetShown(showing) end
 	end
 	detail.empty:SetShown(not showing)
 	detail.emptyHint:SetShown(not showing)

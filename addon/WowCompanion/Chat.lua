@@ -320,7 +320,7 @@ local function buildViewer()
 		local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 		b:SetSize(width, 24)
 		b:SetText(label)
-		if SmartNavigation_MarkFrameFocusable then WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, b) end) end
+		WC.MarkFocusable(b)
 		return b
 	end
 	frame.closeButton = button("Close", 90)
@@ -333,7 +333,7 @@ local function buildViewer()
 	frame.prevButton:SetPoint("RIGHT", frame.nextButton, "LEFT", -8, 0)
 	frame.prevButton:SetScript("OnClick", function() WowCompanion_ShowItem((frame.index or 1) - 1) end)
 
-	if SmartNavigation_MarkFrameFocusable then WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, frame) end) end
+	WC.MarkFocusable(frame)
 	if UIPanelWindows then
 		UIPanelWindows["WowCompanionItemView"] = { area = "center", pushable = 0, whileDead = 1, allowOtherPanels = 1 }
 	end
@@ -373,10 +373,7 @@ function WowCompanion_ShowItem(what)
 	tip:Show()
 	-- the window wraps the tooltip, with room for the caption and the buttons
 	viewer:SetSize(math.max(300, tip:GetWidth() + 28), tip:GetHeight() + 34 + 52)
-	if not InCombatLockdown() and UIPanelWindows and UIPanelWindows["WowCompanionItemView"] then
-		ShowUIPanel(viewer)
-	end
-	if not viewer:IsShown() then viewer:Show() end
+	WC.ShowPanel(viewer)
 	return true
 end
 

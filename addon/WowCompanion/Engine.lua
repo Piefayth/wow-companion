@@ -15,6 +15,9 @@
 --   M.db = WC.Settings("Name", { defaults })   -- WowCompanionDB.mods.Name, defaults filled
 --   WC.Send("MSG", ...)              -- to every listener, each under pcall
 --   WC.AfterCombat(fn)               -- now, or when the fight ends
+--   WC.MarkFocusable(f), WC.MarkIgnored(f), WC.MarkTextScroll(s),
+--   WC.SetFocusButton(f, b), WC.SetVerticalNav(b, up, down), WC.ShowPanel(f),
+--   WC.FrameHidden(f), WC.IsFocused(f): the controller's focus API, safe in a fight
 --
 -- Re-registering a name (a module step replacing its code) disables the old
 -- one first, so its listeners and events go away instead of doubling up.
@@ -47,18 +50,107 @@ do
 		if InCombatLockdown() then afterCombat[#afterCombat + 1] = fn else fn() end
 	end
 
-	-- Tell the controller's manager a window of ours closed. FrameHidden is
-	-- wrapped by SmartNavigation's SecureHelper: called by addon code in a fight
-	-- it does nothing and shows "Interface action failed" (bag close, 2026-11-10).
-	-- So in a fight it waits for the fight's end, if the frame is still hidden.
-	function WC.FrameHidden(frame)
-		local m = GamepadMode and GamepadMode.FrameControlsManager
-		if not m or not (InputUtil and InputUtil.IsGamepadUIEnabled()) then return end
-		if InCombatLockdown() then
-			WC.AfterCombat(function() if not frame:IsShown() then pcall(m.FrameHidden, m, frame) end end)
-		else
-			pcall(m.FrameHidden, m, frame)
+	-- The controller's focus API, for the whole addon. SmartNavigation's
+	-- SecureHelper wraps these: called by addon code in a fight they do nothing
+	-- and show "Interface action failed", which pcall does not stop (40 notices
+	-- on 2026-11-10). So nothing outside this block calls them: each helper runs
+	-- its call now out of combat, and in a fight keeps the latest call per frame
+	-- and makes it when the fight ends. tools/luarules.py holds the rest of the
+	-- addon to that.
+	local owed = {} -- key -> fn, the latest deferred call for that frame and kind
+	local owedOrder = {}
+	local function later(key, fn)
+		if not InCombatLockdown() then
+			owed[key] = nil
+			return pcall(fn)
 		end
+		if not owed[key] then owedOrder[#owedOrder + 1] = key end
+		owed[key] = fn
+	end
+	local regen = CreateFrame("Frame")
+	regen:RegisterEvent("PLAYER_REGEN_ENABLED")
+	regen:SetScript("OnEvent", function()
+		local keys = owedOrder
+		owedOrder = {}
+		for _, key in ipairs(keys) do
+			local fn = owed[key]
+			owed[key] = nil
+			if fn then pcall(fn) end
+		end
+	end)
+	local function key(kind, frame) return kind .. tostring(frame) end
+	local function manager()
+		local m = GamepadMode and GamepadMode.FrameControlsManager
+		if m and InputUtil and InputUtil.IsGamepadUIEnabled() then return m end
+	end
+
+	-- the controller's cursor may land on frame
+	function WC.MarkFocusable(frame)
+		if not (frame and SmartNavigation_MarkFrameFocusable) then return end
+		later(key("focusable", frame), function() SmartNavigation_MarkFrameFocusable(frame) end)
+	end
+	-- the controller's cursor skips frame (and its children)
+	function WC.MarkIgnored(frame)
+		if not (frame and SmartNavigation_MarkFrameIgnored) then return end
+		later(key("ignored", frame), function() SmartNavigation_MarkFrameIgnored(frame) end)
+	end
+	-- a scroll frame of text: scrolling it keeps the cursor where it was
+	-- (Blizzard's flag for "message text", MaintainPreviousButtonOnScroll)
+	function WC.MarkTextScroll(scroll)
+		if not (scroll and SmartNavigation_MarkScrollFrameMaintainPreviousButtonOnScroll) then return end
+		later(key("text", scroll), function() SmartNavigation_MarkScrollFrameMaintainPreviousButtonOnScroll(scroll) end)
+	end
+	-- button is the one the cursor goes to when frame takes the focus
+	function WC.SetFocusButton(frame, button)
+		later(key("button", frame), function()
+			if SmartNavigation_SetButtonFrame then SmartNavigation_SetButtonFrame(button) end
+			if SmartNavigation_SetReturnFrameFocusButton then SmartNavigation_SetReturnFrameFocusButton(frame, button) end
+		end)
+	end
+	-- up and down from button go to these (nil: the cursor chooses)
+	function WC.SetVerticalNav(button, up, down)
+		if not (button and SmartNavigation_AddJumpNavigationOverride) then return end
+		later(key("nav", button), function()
+			local D = SMART_NAV_INPUT_DIRECTION
+			SmartNavigation_ClearJumpNavigationOverridesInDirection(button, D.UP)
+			SmartNavigation_ClearJumpNavigationOverridesInDirection(button, D.DOWN)
+			if up then SmartNavigation_AddJumpNavigationOverride(button, D.UP, up) end
+			if down then SmartNavigation_AddJumpNavigationOverride(button, D.DOWN, down) end
+		end)
+	end
+	-- Show a window of ours as a UI panel, so the controller's focus cycle
+	-- reaches it. In a fight it is shown plainly and joins the cycle when the
+	-- fight ends, if still shown.
+	function WC.ShowPanel(frame)
+		local name = frame:GetName()
+		local panel = name and UIPanelWindows and UIPanelWindows[name]
+		if panel and not InCombatLockdown() then
+			ShowUIPanel(frame)
+		end
+		if frame:IsShown() then return end
+		frame:Show()
+		if panel then
+			later(key("panel", frame), function()
+				if frame:IsShown() then
+					frame:Hide()
+					ShowUIPanel(frame)
+				end
+			end)
+		end
+	end
+	-- Tell the controller's manager a window of ours closed; in a fight, when
+	-- the fight ends, if it is still hidden.
+	function WC.FrameHidden(frame)
+		local m = manager()
+		if not m then return end
+		later(key("hidden", frame), function()
+			if not frame:IsShown() then m:FrameHidden(frame) end
+		end)
+	end
+	-- read only: whether the controller's focus is on frame now
+	function WC.IsFocused(frame)
+		local m = manager()
+		return m and m.isUIFocused and m.focusedFrame == frame and frame:IsShown() or false
 	end
 
 	function WC.Send(msg, ...)

@@ -141,10 +141,7 @@ local function icon(parent, kind, tip, onClick)
 	end
 	b.Show = function(self) self.stale = false self:SetAlpha(1) orig.Show(self) end
 	b.SetShown = function(self, on) if on then self:Show() else self:Hide() end end
-	-- made in a fight, it is marked for the cursor when the fight ends
-	if SmartNavigation_MarkFrameFocusable then
-		WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, b) end)
-	end
+	WC.MarkFocusable(b)
 	b:Hide()
 	made[#made + 1] = b
 	return b
@@ -541,9 +538,8 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	lastTab = tab
 	elapsed = 0
 	if InCombatLockdown() then return end
-	local mgr = GamepadMode and GamepadMode.FrameControlsManager
 	local window = core.logFrame and core.logFrame()
-	local focused = mgr and mgr.isUIFocused and window and mgr.focusedFrame == window and window:IsShown() or false
+	local focused = window and WC.IsFocused(window) or false
 	-- only on the Chat tab, where the messages they act on are (the player,
 	-- 2026-11-10: on Errands, "square to cancel, cancel what?")
 	if window and (window.currentTab or 1) ~= 1 then focused = false end
@@ -593,7 +589,6 @@ end)
 -- set only out of combat (Utility.lua: "may be set without causing taint").
 local chained = ""
 function WC.Jobs.Chain()
-	if InCombatLockdown() or not SmartNavigation_AddJumpNavigationOverride then return end
 	local frame = core.logFrame and core.logFrame()
 	if not frame or not frame.chatParts then return end
 	local arrows = {}
@@ -613,19 +608,12 @@ function WC.Jobs.Chain()
 	key = table.concat(key, ",")
 	if key == chained then return end
 	chained = key
-	local D = SMART_NAV_INPUT_DIRECTION
+	-- nothing between the arrows: no links, the cursor chooses as before
 	local column = { top }
 	for _, b in ipairs(icons) do column[#column + 1] = b end
 	column[#column + 1] = bottom
+	local linked = #icons > 0
 	for i, b in ipairs(column) do
-		pcall(SmartNavigation_ClearJumpNavigationOverridesInDirection, b, D.UP)
-		pcall(SmartNavigation_ClearJumpNavigationOverridesInDirection, b, D.DOWN)
-		if i > 1 then pcall(SmartNavigation_AddJumpNavigationOverride, b, D.UP, column[i - 1]) end
-		if i < #column then pcall(SmartNavigation_AddJumpNavigationOverride, b, D.DOWN, column[i + 1]) end
-	end
-	-- nothing between the arrows: let the cursor choose as before
-	if #icons == 0 then
-		pcall(SmartNavigation_ClearJumpNavigationOverridesInDirection, top, D.DOWN)
-		pcall(SmartNavigation_ClearJumpNavigationOverridesInDirection, bottom, D.UP)
+		WC.SetVerticalNav(b, linked and column[i - 1] or nil, linked and column[i + 1] or nil)
 	end
 end

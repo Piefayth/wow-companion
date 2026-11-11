@@ -35,12 +35,7 @@ local function buildTabs(frame, messages, pending)
 	local y = 0
 	local LABEL_W, CONTROL_W = 110, 190
 	local function focusable(f)
-		-- SecureHelper-wrapped: in a fight it fails with "Interface action failed",
-		-- so a control made in combat (a dropdown list opened mid-fight) is marked
-		-- when the fight ends
-		if f and SmartNavigation_MarkFrameFocusable then
-			WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, f) end)
-		end
+		WC.MarkFocusable(f)
 	end
 	local function heading(text)
 		local fs = tools:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -387,7 +382,7 @@ local function buildTabs(frame, messages, pending)
 			b:SetText(LABELS[key])
 		end
 		b:SetScript("OnClick", function() WowCompanion_SetConversation(key) end)
-		if SmartNavigation_MarkFrameFocusable then WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, b) end) end
+		WC.MarkFocusable(b)
 		frame.convButtons[key] = b
 	end
 	frame.convButtons[""].selected:Show()
@@ -407,7 +402,7 @@ local function buildTabs(frame, messages, pending)
 			tab:SetPoint("TOPLEFT", frame.Tabs[i - 1], "TOPRIGHT", 3, 0)
 		end
 		tab:SetScript("OnClick", function(self) frame.SelectTab(self:GetID()) end)
-		if SmartNavigation_MarkFrameFocusable then WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, tab) end) end
+		WC.MarkFocusable(tab)
 	end
 	PanelTemplates_SetNumTabs(frame, #TAB_NAMES)
 
@@ -604,11 +599,7 @@ local function buildLog()
 	-- 1.60.1 added a SmartNavigation API for exactly this: an addon can mark its own
 	-- frames focusable by the gamepad cursor, so the window is reachable on a
 	-- controller instead of needing a mouse.
-	-- The window is built on first use, which can be mid-fight; marking is
-	-- SecureHelper-wrapped and fails in combat, so it waits for the fight's end.
-	if SmartNavigation_MarkFrameFocusable then
-		WC.AfterCombat(function() pcall(SmartNavigation_MarkFrameFocusable, frame) end)
-	end
+	WC.MarkFocusable(frame)
 	-- A real UI panel, so the controller's focus-cycle button reaches it like any
 	-- of the game's own windows: that cycle walks the panels FrameControlsManager
 	-- was told about, and ShowUIPanel is what tells it.
@@ -630,27 +621,14 @@ local function buildLog()
 			allowOtherPanels = 1,
 		}
 	end
-	-- The right stick scrolls a panel's text once SmartNavigation is told which
-	-- scroll frame belongs to it, as the chat frame and Blizzard's own dialogs do
-	-- (FloatingChatFrame.lua, SocialContract.lua). It is SecureHelper-wrapped for
-	-- such callers. Deferred a tick, so the panel is registered first.
 	-- The transcript is text, no buttons: without this flag a right-stick
 	-- scroll went looking for a button inside it, found none, and left the
 	-- cursor drawn on the close button while nothing was selected
-	-- (UpdateScrollSelection; the flag is Blizzard's, for "message text").
-	-- It is a value kept on the scroll frame, so it is set once, not on every
-	-- show: set from OnShow it ran in fights, where SecureHelper refuses it
-	-- with "Interface action failed" (40 notices on 2026-11-10, Window.lua's
-	-- OnShow named as the caller). Out of combat, or when the fight ends.
-	-- (Not handed to SmartNavigation as a scroll frame: that gave it the right
-	-- stick and took the camera away while the window had focus.)
-	-- a tick later, once buildTabs below has set frame.messages
+	-- (UpdateScrollSelection). Set once; a tick later, once buildTabs below has
+	-- set frame.messages. (Not handed to SmartNavigation as a scroll frame: that
+	-- gave it the right stick and took the camera away.)
 	C_Timer.After(0, function()
-		WC.AfterCombat(function()
-			if SmartNavigation_MarkScrollFrameMaintainPreviousButtonOnScroll and frame.messages then
-				pcall(SmartNavigation_MarkScrollFrameMaintainPreviousButtonOnScroll, frame.messages.scroll)
-			end
-		end)
+		if frame.messages then WC.MarkTextScroll(frame.messages.scroll) end
 	end)
 	frame:SetScript("OnHide", function(self)
 		WC.FrameHidden(self)
