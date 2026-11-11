@@ -151,7 +151,7 @@ Other things of ours agent code can call (all globals):
   `.Remove(idOrText)`, `.Edit(idOrText, {text,note,place})`, `.List()`; the export's
   `== errands ==` lists them. Pins go through `WC.Use('pins').set(layer, points)`.
 - `WowCompanion_SetFont(name)`: the interface font, live (Fonts.lua; the Tools tab
-  button steps through them). Names in `WC.Fonts.list`; `Default` restores Blizzard's.
+  has its dropdown and a text size slider, `WC.Fonts.SetScale(k)`). Names in `WC.Fonts.list`; `Default` restores Blizzard's.
 Other addons are integrations, used only when installed. The request's
 `== integrations ==` section lists the ones in the player's AddOns folder now, each
 with its API; anything not listed is not installed, so never assume one (another
