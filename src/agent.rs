@@ -34,7 +34,7 @@ pub const DEFAULT_MODEL: &str = "opus";
 /// The quick conversation (L2+R2 with the talk button): chat, links, profession
 /// links, a button to press. A faster model at low effort, few turns, a trimmed
 /// export, and agent/quick.md on top of the rules.
-pub const QUICK_SLOT: &str = "quick";
+pub const QUICK_SLOT: &str = crate::voice::Slot::Quick.key();
 const QUICK_MODEL: &str = "sonnet";
 const QUICK_TURNS: &str = "12";
 

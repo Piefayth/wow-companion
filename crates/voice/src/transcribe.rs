@@ -70,14 +70,14 @@ pub(crate) fn phantom(text: &str) -> bool {
 
 /// A clip for the Whisper thread, and what it made of one.
 pub(crate) struct Job {
-    pub(crate) role: String,
+    pub(crate) slot: crate::Slot,
     pub(crate) clip: Vec<f32>,
     pub(crate) prompt: String,
     pub(crate) level: f32,
     pub(crate) seconds: f32,
 }
 pub(crate) struct Done {
-    pub(crate) role: String,
+    pub(crate) slot: crate::Slot,
     pub(crate) level: f32,
     pub(crate) seconds: f32,
     pub(crate) result: io::Result<String>,

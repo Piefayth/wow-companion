@@ -39,7 +39,7 @@ pub(crate) enum Feed {
     /// Audio captured since the last piece, mono, at the utterance's rate.
     Audio(Vec<f32>),
     /// The button came up on a real clip: finish and report it.
-    Finish { role: String, level: f32, seconds: f32 },
+    Finish { slot: crate::Slot, level: f32, seconds: f32 },
     /// The press was a tap, too short, or cut off: forget it.
     Drop,
 }
@@ -124,7 +124,7 @@ pub(crate) fn run(recognizer: OnlineRecognizer, feed: Receiver<Feed>, done: Send
                     partial = text;
                 }
             }
-            Feed::Finish { role, level, seconds } => {
+            Feed::Finish { slot, level, seconds } => {
                 // every Finish is answered: its clip was announced to the player
                 let result = match utterance.take() {
                     Some((stream, rate)) => {
@@ -135,7 +135,7 @@ pub(crate) fn run(recognizer: OnlineRecognizer, feed: Receiver<Feed>, done: Send
                     }
                     None => Err(io::Error::other("the streaming engine was told to finish a clip it never started")),
                 };
-                if done.send(Done { role, level, seconds, result }).is_err() {
+                if done.send(Done { slot, level, seconds, result }).is_err() {
                     break;
                 }
             }

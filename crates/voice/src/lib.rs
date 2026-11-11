@@ -116,9 +116,69 @@ impl Engine {
     }
 }
 
-/// Hold the talk button, speak, release. `heard` is given the clip's role ("ask",
-/// or "ask@<slot>" with a trigger held) and what was said, plus the clip's events
-/// as roles with a suffix (" heard", " notice", " unheard").
+/// Which conversation a clip is for: the triggers held with the talk button.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slot {
+    /// no trigger
+    Main,
+    L1,
+    L2,
+    R1,
+    R2,
+    /// L2 and R2 together: the fast agent
+    Quick,
+    /// L1 and R1 together: the words go straight to the chat box, no agent
+    Dictation,
+}
+
+impl Slot {
+    /// The conversations a request can be typed into (`tell`): all but dictation.
+    pub const CONVERSATIONS: [Slot; 6] = [Slot::Main, Slot::L1, Slot::L2, Slot::R1, Slot::R2, Slot::Quick];
+
+    /// The conversation's name everywhere else ("" is the main one).
+    pub const fn key(self) -> &'static str {
+        match self {
+            Slot::Main => "",
+            Slot::L1 => "l1",
+            Slot::L2 => "l2",
+            Slot::R1 => "r1",
+            Slot::R2 => "r2",
+            Slot::Quick => "quick",
+            Slot::Dictation => "say",
+        }
+    }
+}
+
+/// What the voice loop tells the companion, in the order it happens to a clip.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Event<'a> {
+    /// A clip was let go and is at the speech engine; its words follow.
+    Released(Slot),
+    /// What was said in a released clip.
+    Words(Slot, &'a str),
+    /// A released clip came back with no words: why, for the player.
+    Empty(Slot, &'a str),
+    /// A press too short in audio to transcribe, never released: why.
+    Unheard(Slot, &'a str),
+    /// The loop's own news (a reconnected headset).
+    Notice(&'a str),
+}
+
+impl Event<'_> {
+    /// The same event for another conversation (the agents off: every clip is
+    /// dictation's).
+    pub fn for_slot(self, slot: Slot) -> Self {
+        match self {
+            Event::Released(_) => Event::Released(slot),
+            Event::Words(_, text) => Event::Words(slot, text),
+            Event::Empty(_, why) => Event::Empty(slot, why),
+            Event::Unheard(_, why) => Event::Unheard(slot, why),
+            Event::Notice(text) => Event::Notice(text),
+        }
+    }
+}
+
+/// Hold the talk button, speak, release; `heard` is told each clip's events.
 ///
 /// The talk button defaults to one WoW ignores (minus; Guide on an Xbox pad): we
 /// cannot consume the input, so anything the game binds would fire twice.
@@ -129,7 +189,7 @@ pub fn listen(
     model: &Path,
     options: &[String],
     vocabulary: impl Fn() -> Vec<String>,
-    mut heard: impl FnMut(&str, &str) -> io::Result<()>,
+    mut heard: impl FnMut(Event) -> io::Result<()>,
 ) -> io::Result<()> {
     // the pad: `pad=vid:pid` or `pad=xinput` (the setup window picks it), else
     // this setup's own; button names mean different bits on an Xbox pad
@@ -182,7 +242,7 @@ pub fn listen(
                     mark(&format!("whisper start ({:.1}s of audio, prompt {} chars)", job.seconds, job.prompt.len()));
                     let result = transcribe(&whisper, &job.clip, &job.prompt);
                     mark("whisper done");
-                    let done = Done { role: job.role, level: job.level, seconds: job.seconds, result };
+                    let done = Done { slot: job.slot, level: job.level, seconds: job.seconds, result };
                     if outbox.send(done).is_err() {
                         break;
                     }
@@ -240,14 +300,16 @@ pub fn listen(
     let beeps = feedback == "beep" || feedback == "both";
     // its own handle and thread, so a pulse keeps time while this loop transcribes
     let rumbler = pad::Rumbler::new(vid, pid);
-    let mut holding: Option<&str> = None;
-    // Conversation slots (the player, 2026-11-10): a trigger held with the talk
-    // button picks one; none is the main conversation.
-    let slots: Vec<(&str, pad::Press)> = ["l1", "l2", "r1", "r2"]
+    let mut holding = false;
+    // Conversation slots: a trigger held with the talk button picks one; none is
+    // the main conversation.
+    let triggers: Vec<(Slot, pad::Press)> = [(Slot::L1, "l1"), (Slot::L2, "l2"), (Slot::R1, "r1"), (Slot::R2, "r2")]
         .iter()
-        .map(|name| pad::press_for(name, vid, pid).map(|press| (*name, press)))
+        .map(|(slot, name)| pad::press_for(name, vid, pid).map(|press| (*slot, press)))
         .collect::<io::Result<_>>()?;
-    let mut slot: Option<&str> = None;
+    let trigger = |slot: Slot| &triggers.iter().find(|(each, _)| *each == slot).expect("every trigger has a press").1;
+    // None until a trigger is pulled during the press
+    let mut slot: Option<Slot> = None;
     let mut pressed_at = Instant::now();
     // the opening pulse waits until a press has outlasted a tap: a tap (which
     // the game handles itself, opening the window) stays silent, and feeling
@@ -270,12 +332,11 @@ pub fn listen(
                     break;
                 }
             };
-            let Done { role, level, seconds, result } = done;
-            let role = role.as_str();
+            let Done { slot, level, seconds, result } = done;
             match result {
                         Ok(text) if text.is_empty() => {
                             println!("heard nothing (level {level:.4})");
-                            let _ = heard(&format!("{role} notice"), "I heard nothing in that clip, so nothing was sent.");
+                            let _ = heard(Event::Empty(slot, "I heard nothing in that clip, so nothing was sent."));
                         }
                         // Whisper filling silence with its own prompt: nothing but the
                         // echo, or an echo in a clip too quiet to hold speech (a dead
@@ -283,29 +344,29 @@ pub fn listen(
                         Ok(text) if without_echo(&text).is_empty()
                             || (level < SILENCE && without_echo(&text) != text.trim()) => {
                             println!("heard only the prompt echoed (level {level:.4}); ignored {text:?}");
-                            let _ = heard(&format!("{role} notice"), "That clip held no words I could make out, so nothing was sent.");
+                            let _ = heard(Event::Empty(slot, "That clip held no words I could make out, so nothing was sent."));
                         }
                         Ok(text) if level < SILENCE && phantom(&text) => {
                             println!("heard only silence (level {level:.4}); ignored {text:?}");
-                            let _ = heard(&format!("{role} notice"), &format!(
+                            let _ = heard(Event::Empty(slot, &format!(
                                 "That clip sounded like silence (I made out only {text:?}), so nothing was sent."
-                            ));
+                            )));
                         }
                         Ok(text) => {
                             mark("transcript reached the voice loop");
                             // Whisper sometimes glues its prompt onto real speech
                             // ("Commands: and, uh, ..."): keep the speech
                             let text = without_echo(&text);
-                            println!("heard ({seconds:.1}s, {role}, level {level:.4}): {text}");
+                            println!("heard ({seconds:.1}s, {slot:?}, level {level:.4}): {text}");
                             // a failed delivery must not kill the loop: the game may
                             // be closed, or every slot spent until the next reload
-                            if let Err(err) = heard(role, &text) {
+                            if let Err(err) = heard(Event::Words(slot, &text)) {
                                 eprintln!("  not delivered: {err}");
                             }
                         }
                         Err(err) => {
                             eprintln!("transcribe failed: {err}");
-                            let _ = heard(&format!("{role} notice"), &format!("I could not transcribe that clip ({err}), so nothing was sent."));
+                            let _ = heard(Event::Empty(slot, &format!("I could not transcribe that clip ({err}), so nothing was sent.")));
                         }
             }
             PENDING.fetch_sub(1, Ordering::SeqCst);
@@ -329,13 +390,12 @@ pub fn listen(
             eprintln!("  reconnect sent to {reconnected} endpoint(s)");
             thread::sleep(Duration::from_millis(1500));
             microphone = Microphone::open_quietly(wanted_mic, true).ok();
-            let _ = heard(
-                "notice",
+            let _ = heard(Event::Notice(
                 "The headset's mic stopped sending audio, so I reconnected its voice link. If I still cannot hear you, reconnect the headset.",
-            );
+            ));
         }
         // a dead stream is replaced between presses, never during one
-        if holding.is_none() && microphone.as_ref().is_some_and(Microphone::broken) {
+        if !holding && microphone.as_ref().is_some_and(Microphone::broken) {
             eprintln!("microphone lost; waiting for it to come back");
             microphone = None;
             retry_mic = Instant::now();
@@ -363,7 +423,7 @@ pub fn listen(
             controller = None;
             retry_pad = Instant::now() + RETRY;
             // a clip cut off by the pad vanishing is not a request
-            if holding.take().is_some() {
+            if std::mem::take(&mut holding) {
                 if let Some(mic) = &microphone {
                     mic.stop();
                 }
@@ -373,7 +433,7 @@ pub fn listen(
             continue;
         }
         if DEAF.load(Ordering::SeqCst) || PAUSED.load(Ordering::SeqCst) {
-            if holding.take().is_some() {
+            if std::mem::take(&mut holding) {
                 if let Some(mic) = &microphone {
                     mic.stop();
                 }
@@ -386,32 +446,32 @@ pub fn listen(
         if ALERT.swap(false, Ordering::SeqCst) && rumbles {
             rumbler.play(&[(0, PULSE, PULSE), (60, 0, 0), (120, PULSE, PULSE), (180, 0, 0), (240, PULSE, PULSE), (300, 0, 0)]);
         }
-        let held = pad.held(&talk).then_some("ask");
+        let held = pad.held(&talk);
         // L2 and R2 together are the quick conversation: a fast agent for chat,
         // links and buttons. L1 and R1 together are dictation: the words go
         // straight to the chat box on the channel picked on the chat wheel, with
         // no agent in the way
-        let modifier = if pad.held(&slots[1].1) && pad.held(&slots[3].1) {
-            Some("quick")
-        } else if pad.held(&slots[0].1) && pad.held(&slots[2].1) {
-            Some("say")
+        let modifier = if pad.held(trigger(Slot::L2)) && pad.held(trigger(Slot::R2)) {
+            Some(Slot::Quick)
+        } else if pad.held(trigger(Slot::L1)) && pad.held(trigger(Slot::R1)) {
+            Some(Slot::Dictation)
         } else {
-            slots.iter().find(|(_, press)| pad.held(press)).map(|(name, _)| *name)
+            triggers.iter().find(|(_, press)| pad.held(press)).map(|(slot, _)| *slot)
         };
         let Some(mic) = &microphone else {
-            if held.is_some() && holding.is_none() {
+            if held && !holding {
                 println!("no microphone yet; still waiting for it");
             }
             holding = held;
-            HOLDING.store(held.is_some(), Ordering::Relaxed);
+            HOLDING.store(held, Ordering::Relaxed);
             thread::sleep(POLL);
             continue;
         };
 
         match (held, holding) {
-            (Some(role), None) => {
+            (true, false) => {
                 pressed_at = Instant::now();
-                slot = if role == "ask" { modifier } else { None };
+                slot = modifier;
                 mic.start();
                 if let Engine::Streaming(feed) = &engine {
                     let _ = feed.send(stream::Feed::Start { hotwords: stream::hotwords(&vocabulary()), rate: mic.rate });
@@ -420,10 +480,11 @@ pub fn listen(
                     cue(cue_device.clone(), cue_volume, &CUE_OPEN);
                 }
                 pulsed = false;
-                println!("listening for {role}");
+                println!("listening");
             }
-            (None, Some(role)) => {
-                mark(&format!("released {role}"));
+            (false, true) => {
+                let slot = slot.unwrap_or(Slot::Main);
+                mark(&format!("released {slot:?}"));
                 // the recording ends first, so the streaming engine's last piece
                 // is the last of the audio
                 mic.end();
@@ -441,14 +502,14 @@ pub fn listen(
                 let seconds = clip.len() as f32 / WHISPER_RATE as f32;
                 if pressed_at.elapsed() < TAP {
                     engine.drop_clip();
-                    println!("tap: {role}");
+                    println!("tap");
                 } else if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
                     // held long enough to mean it, yet almost no audio arrived
                     engine.drop_clip();
                     println!("too short, ignored ({seconds:.2}s of audio)");
-                    let _ = heard(&format!("{role} unheard"), &format!(
+                    let _ = heard(Event::Unheard(slot, &format!(
                         "I got only {seconds:.1}s of audio from that press, so nothing was sent. If you spoke, the mic may not be sending."
-                    ));
+                    )));
                 } else {
                     // Every clip goes to the engine; none is judged by volume. A
                     // filter on level dropped a real, quiet sentence (0.0024, the
@@ -456,44 +517,38 @@ pub fn listen(
                     let level = loudness(&clip);
                     // said at once, before the engine has the text: the player sees
                     // the clip arrived instead of wondering whether it was dropped
-                    // the slot rides on the role: "ask@l2"
-                    let tagged = match slot {
-                        Some(name) if role == "ask" => format!("ask@{name}"),
-                        _ => role.to_string(),
-                    };
-                    let _ = heard(&format!("{tagged} heard"), "");
+                    let _ = heard(Event::Released(slot));
                     // The engine runs on its own thread, so the pad and mic stay
                     // live: slipping back onto the button while this clip is
-                    // transcribed starts the next one at once (the player,
-                    // 2026-11-10). Results come back in order, below.
-                    // a notice, not "unheard": the clip was already announced, so its job ends
-                    let notice = format!("{tagged} notice");
+                    // transcribed starts the next one at once. Results come back
+                    // in order, above.
                     let sent = match &engine {
                         Engine::Whisper(jobs) => {
                             let prompt = prompt(&vocabulary());
                             mark("prompt built");
-                            jobs.send(Job { role: tagged, clip, prompt, level, seconds }).is_ok()
+                            jobs.send(Job { slot, clip, prompt, level, seconds }).is_ok()
                         }
-                        Engine::Streaming(feed) => feed.send(stream::Feed::Finish { role: tagged, level, seconds }).is_ok(),
+                        Engine::Streaming(feed) => feed.send(stream::Feed::Finish { slot, level, seconds }).is_ok(),
                     };
                     if sent {
                         PENDING.fetch_add(1, Ordering::SeqCst);
                     } else {
                         eprintln!("  the speech engine's thread has ended");
-                        let _ = heard(&notice, "The speech engine has stopped, so this was not transcribed: restart the companion.");
+                        // empty, not unheard: the clip was already released
+                        let _ = heard(Event::Empty(slot, "The speech engine has stopped, so this was not transcribed: restart the companion."));
                     }
                 }
             }
-            (Some(role), Some(_)) => {
+            (true, true) => {
                 // a trigger pulled just after the talk button still counts
-                if role == "ask" && slot.is_none() {
+                if slot.is_none() {
                     slot = modifier;
                 }
-                // the second trigger of L2+R2 pulled a moment after the first
-                if role == "ask" && modifier == Some("quick") && matches!(slot, Some("l2") | Some("r2")) {
+                // the second trigger of L2+R2 (or L1+R1) pulled a moment after the first
+                if modifier == Some(Slot::Quick) && matches!(slot, Some(Slot::L2 | Slot::R2)) {
                     slot = modifier;
                 }
-                if role == "ask" && modifier == Some("say") && matches!(slot, Some("l1") | Some("r1")) {
+                if modifier == Some(Slot::Dictation) && matches!(slot, Some(Slot::L1 | Slot::R1)) {
                     slot = modifier;
                 }
                 engine.feed(mic);
@@ -506,7 +561,7 @@ pub fn listen(
             _ => {}
         }
         holding = held;
-        HOLDING.store(held.is_some(), Ordering::Relaxed);
+        HOLDING.store(held, Ordering::Relaxed);
         thread::sleep(POLL);
     }
 }
@@ -516,6 +571,28 @@ pub fn listen(
 /// speech it sometimes starts with it ("Commands: and, uh, ..."): dropping every
 /// clip that began that way threw away real speech at normal volume. So the echo
 /// is cut and what is left is the clip; empty means there was nothing else.
+#[cfg(test)]
+mod slot_tests {
+    use super::{Event, Slot};
+
+    #[test]
+    fn every_slot_has_its_own_name_and_dictation_is_no_conversation() {
+        let all = [Slot::Main, Slot::L1, Slot::L2, Slot::R1, Slot::R2, Slot::Quick, Slot::Dictation];
+        let mut keys: Vec<&str> = all.iter().map(|slot| slot.key()).collect();
+        keys.sort();
+        keys.dedup();
+        assert_eq!(keys.len(), all.len());
+        assert!(!Slot::CONVERSATIONS.contains(&Slot::Dictation));
+        assert_eq!(Slot::Main.key(), "");
+    }
+
+    #[test]
+    fn an_event_moves_to_another_slot_whole() {
+        assert_eq!(Event::Words(Slot::L2, "hi").for_slot(Slot::Dictation), Event::Words(Slot::Dictation, "hi"));
+        assert_eq!(Event::Notice("n").for_slot(Slot::Dictation), Event::Notice("n"));
+    }
+}
+
 #[cfg(test)]
 mod echo_tests {
     use super::without_echo;

@@ -180,7 +180,7 @@ pub(crate) fn watch(id: &str, seconds: f64) -> Result<Vec<u8>, String> {
 
 /// Watch for read `id`, then write its text (or "STRIP FAILED: why") to `out`;
 /// with `then` (main, l1, l2, r1, r2, quick) that conversation is asked to carry
-/// on once the result is in (the player, 2026-11-10: the agent reminds itself).
+/// on once the result is in: the agent reminds itself.
 pub(crate) fn watch_to_file(id: &str, seconds: f64, out: &Path, then: Option<&str>) -> io::Result<bool> {
     let result = watch(id, seconds);
     match &result {
@@ -193,20 +193,14 @@ pub(crate) fn watch_to_file(id: &str, seconds: f64, out: &Path, then: Option<&st
     Ok(result.is_ok())
 }
 
-/// A typed request into `slot`'s conversation, as `tell` makes.
+/// A typed request into `slot`'s conversation (`tell`).
 fn follow_up(slot: &str, out: &Path, arrived: bool) -> io::Result<()> {
-    let dir = typed_dir().ok_or_else(|| io::Error::other("LOCALAPPDATA is not set"))?;
-    let slot = slot.to_lowercase();
-    let slot = if slot == "main" { "" } else { slot.as_str() };
     let text = format!(
         "(automatic: the data strip you started has {}, in {}. Read it and finish what was asked; the player has not said anything new.)",
         if arrived { "arrived" } else { "failed" },
         out.display()
     );
-    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_millis()).unwrap_or_default();
-    let part = dir.join(format!("{stamp}.part"));
-    fs::write(&part, format!("{slot}\n{text}\n"))?;
-    fs::rename(&part, dir.join(format!("{stamp}.txt")))
+    crate::requests::tell(slot, &text)
 }
 
 /// The Lua that has the game draw its recent chat and the profession links it

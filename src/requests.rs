@@ -404,13 +404,16 @@ pub(crate) fn typed_dir() -> Option<PathBuf> {
     Some(dir)
 }
 
+/// `tell <conversation> <words>` (and an agent's `strip --then`): a typed request
+/// for the running companion. The conversation is one of `voice::Slot`'s, by
+/// its name ("main" for the main one).
 pub(crate) fn tell(slot: &str, words: &str) -> io::Result<()> {
-    let slot = slot.to_lowercase();
-    let slot = match slot.as_str() {
-        "main" | "" => "",
-        "l1" | "l2" | "r1" | "r2" | agent::QUICK_SLOT => slot.as_str(),
-        other => return Err(io::Error::other(format!("no conversation {other:?}: main, l1, l2, r1, r2 or quick"))),
-    };
+    let named = slot.to_lowercase();
+    let slot = voice::Slot::CONVERSATIONS
+        .iter()
+        .map(|slot| slot.key())
+        .find(|key| *key == named || (key.is_empty() && named == "main"))
+        .ok_or_else(|| io::Error::other(format!("no conversation {named:?}: main, l1, l2, r1, r2 or quick")))?;
     let dir = typed_dir().ok_or_else(|| io::Error::other("LOCALAPPDATA is not set"))?;
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_millis()).unwrap_or_default();
     // written whole under another name, then renamed: never read half-written
