@@ -377,6 +377,22 @@ pub(crate) fn pressed_for(slot: &str, press: u128) -> Option<u64> {
     })
 }
 
+/// The job made from the clip let go at `release` (unix ms): its identity, as
+/// the game names it (the game and the PC both see the release; the game's
+/// clock is lined up to the ms). Nearest within RELEASE_MATCH, ended or not.
+/// Clips let go closer together than JOIN are one job, so the match is never
+/// ambiguous, unlike a press time, which named the newest clip and cancelled
+/// the message after the one meant (the player, 2026-11-10).
+pub(crate) const RELEASE_MATCH: u128 = 1200;
+pub(crate) fn heard_at(slot: &str, release: u128) -> Option<u64> {
+    with(|jobs| {
+        jobs.values()
+            .filter(|job| job.slot == slot && job.released.abs_diff(release) <= RELEASE_MATCH)
+            .min_by_key(|job| job.released.abs_diff(release))
+            .map(|job| job.id)
+    })
+}
+
 pub(crate) fn get(ids: &[u64]) -> Vec<Job> {
     with(|jobs| ids.iter().filter_map(|id| jobs.get(id).cloned()).collect())
 }
@@ -424,6 +440,31 @@ mod tests {
     use super::*;
 
     // the ledger is one static table, so each test uses its own conversation
+    /// Two clips in flight, let go 1.6 s apart: separate jobs, each cancel
+    /// names its own clip, and each clip's words go to its own job (the
+    /// player, 2026-11-10: a cancel hit the message after the one meant, and
+    /// a slow transcription swallowed the next message).
+    #[test]
+    fn two_clips_in_flight_stay_two_and_a_cancel_names_its_own() {
+        let first = hear("t-two");
+        assert_eq!(hear("t-two"), first, "a clip let go at once joins");
+        std::thread::sleep(Duration::from_millis(1600));
+        let second = hear("t-two");
+        assert_ne!(first, second, "a clip let go later is its own message");
+        // the game names a clip by its release, the PC matches the nearest
+        assert_eq!(heard_at("t-two", first as u128 + 40), Some(first));
+        assert_eq!(heard_at("t-two", second as u128 - 40), Some(second));
+        assert_eq!(heard_at("t-two", second as u128 + 5000), None);
+        // words come back in order: the first clip's (two clips) then the second's
+        assert_eq!(words("t-two", "one"), Some((first, true)));
+        assert_eq!(words("t-two", "more"), Some((first, false)));
+        assert_eq!(words("t-two", "two"), Some((second, true)));
+        // cancelling the first leaves the second alone
+        cancel(&[first]);
+        assert_eq!(state(first), Some(State::Cancelled));
+        assert_eq!(state(second), Some(State::Hearing));
+    }
+
     #[test]
     fn a_cancel_and_a_reply_racing_resolve_to_one() {
         let id = create("t-race", "hello", State::Running);

@@ -201,17 +201,11 @@ function Transcript:Row(font, text, indent, gap, r, g, b)
 	fs:SetText(text)
 	local row = { fs = fs, indent = indent or 0, gap = self.gap or gap or 0, key = self.curKey or 0 }
 	self.gap = nil
-	-- Rows stand in key order (the player, 2026-11-10: one chronology, shown
-	-- one way): your message by its job id, a reply right after the messages it
-	-- answers, anything else at the end. Equal keys keep their arrival order.
-	local at = #self.rows + 1
-	while at > 1 and (self.rows[at - 1].key or 0) > row.key do at = at - 1 end
-	table.insert(self.rows, at, row)
-	if at <= #self.rows - 1 then
-		-- placed among earlier rows: everything below moves
-		self.moved = true
-		return row
-	end
+	-- Confirmed lines are only ever appended (the player, 2026-11-10: the
+	-- view must be "predictable and non-disruptive"): a line placed among ones
+	-- already read made the conversation jump. What is still to come is shown
+	-- below, as the waiting lines (Jobs.lua), and replaced there in place.
+	self.rows[#self.rows + 1] = row
 	-- appended rows are placed alone; only a resize walks them all
 	local width = not self.holding and self:Width()
 	if width then

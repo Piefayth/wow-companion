@@ -78,7 +78,7 @@ WC.Jobs.NowMs = nowMs
 -- not to whatever comes next. As on the PC, clips let go while one is still
 -- being heard join it.
 local placeholders = {} -- slot -> { { since, releaseMs, cancelled, pressAt }, ... } oldest first
-local MATCH_MS, HEAR_FOR = 4000, 15
+local MATCH_MS, HEAR_FOR = 1200, 15 -- as the PC's RELEASE_MATCH (src/jobs.rs)
 
 -- the jobs in order (ids are clock-based, so oldest first)
 local function ordered()
@@ -261,7 +261,8 @@ local function cancel(job)
 		if p.cancelled then return end
 		p.cancelled, p.pressAt = true, time()
 		audit("predict", job.slot, ("hearing %.0f cancelled"):format(p.releaseMs))
-		command("hear", job.slot, nil, p.pressAt)
+		-- the clip is named by when you let go; the PC matches that, not a guess
+		command("hear", job.slot, p.releaseMs)
 		if core.setTranscribing then core.setTranscribing(job.slot, false) end
 		-- drawn again until the clip is resolved (the strip can be missed); the
 		-- PC takes the same press as one
@@ -273,7 +274,7 @@ local function cancel(job)
 			if not alive then return end
 			if tries < TRIES then
 				tries = tries + 1
-				command("hear", job.slot, nil, p.pressAt)
+				command("hear", job.slot, p.releaseMs)
 				C_Timer.After(RETRY_EVERY, again)
 			else
 				for i, q in ipairs(list) do if q == p then table.remove(list, i) break end end
@@ -585,23 +586,9 @@ refresh = function()
 	end
 	local base = transcript0.height or 0
 	local width = transcript0.Width and transcript0:Width() or 300
-	-- The working line stands exactly where its reply will: after the run's
-	-- newest message and what was already said for it (key run + 0.5, the
-	-- reply's anchor in Companion.lua), before anything later. Room is kept
-	-- open above the first row past that point.
 	local rows = transcript0.rows or {}
+	-- everything still to come stands at the end, where it will appear
 	local afterIndex
-	if entry then
-		local top
-		for _, job in pairs(jobs) do
-			if job.slot == view and job.state == "running" and (not top or job.id > top) then top = job.id end
-		end
-		if top then
-			for i, row in ipairs(rows) do
-				if (row.key or 0) > top + 0.5 then afterIndex = i break end
-			end
-		end
-	end
 	local GHOST_H = 46
 	local relayout = false
 	for i, row in ipairs(rows) do

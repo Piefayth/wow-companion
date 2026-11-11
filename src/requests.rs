@@ -218,6 +218,29 @@ pub(crate) fn cancel_hearing(addons: &Path, slot: &str, press: u128) {
     }
 }
 
+/// Cancel pressed on a clip still shown as being heard, named by when it was
+/// let go (`release`, unix ms). The clip itself is cancelled wherever it got
+/// to: dropped while heard, or cancelled as a request; an ended one is only
+/// reported, so the game shows what really happened.
+pub(crate) fn cancel_clip(addons: &Path, slot: &str, release: u128) {
+    println!("cancel clip [{}] let go at {release}", if slot.is_empty() { "main" } else { slot });
+    match jobs::heard_at(slot, release) {
+        Some(id) if jobs::state(id) == Some(jobs::State::Hearing) => {
+            jobs::cancel(&[id]);
+            tell_states(addons, slot, &[id], ", hearing = true");
+        }
+        Some(id) if jobs::state(id).is_some_and(|state| !state.ended()) => {
+            cancel_request(addons, slot, id, false);
+            // the game resolves its clip by this answer too
+            tell_states(addons, slot, &[id], ", hearing = true");
+        }
+        found => {
+            println!("  that clip had already ended, or none was let go then");
+            tell_states(addons, slot, &found.into_iter().collect::<Vec<_>>(), ", hearing = true, nothing = true");
+        }
+    }
+}
+
 /// Stop: end the running request; `drop_queue` drops everything waiting too
 /// (Send now on the conversation ends only the running one).
 pub(crate) fn stop(addons: &Path, slot: &str, drop_queue: bool) {
@@ -288,6 +311,11 @@ pub(crate) fn watch_commands(addons: &Path) {
                     ["WCCMD", _nonce, verb @ ("cancel" | "now"), slot, req, ..] => {
                         if let Ok(req) = req.parse::<u64>() {
                             cancel_request(addons, &main(slot), req, *verb == "now");
+                        }
+                    }
+                    ["WCCMD", _nonce, "hear", slot, release] => {
+                        if let Ok(release) = release.parse::<u128>() {
+                            cancel_clip(addons, &main(slot), release);
                         }
                     }
                     ["WCCMD", nonce, "hear", slot, ..] => {

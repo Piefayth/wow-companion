@@ -323,7 +323,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         Err(std::sync::TryLockError::Poisoned(poisoned)) => (poisoned.into_inner(), false),
                         Err(std::sync::TryLockError::WouldBlock) => {
                             let line = log_inbox_in(Some(&slot), "you", &text, None, None)
-                                .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\", queued = true{}", jobs::fields(job, jobs::State::Queued)), 1);
+                                .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\", queued = true{}", jobs::fields(job, jobs::state(job).unwrap_or(jobs::State::Queued))), 1);
                             let _ = courier.send(line);
                             (session.lock().unwrap_or_else(|poisoned| poisoned.into_inner()), true)
                         }
@@ -515,7 +515,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                             // progress, which the waiting line used to overwrite
                             // (the player, 2026-11-10).
                             let line = log_inbox_in(Some(&slot), "you", &text, None, None)
-                                .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\", queued = true{}", jobs::fields(job, jobs::State::Queued)), 1);
+                                .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\", queued = true{}", jobs::fields(job, jobs::state(job).unwrap_or(jobs::State::Queued))), 1);
                             let _ = courier.send(line);
                             // waiting messages go together (the player, 2026-11-10:
                             // "it should send every queued message"): the first to get
