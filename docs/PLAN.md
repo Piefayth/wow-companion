@@ -106,8 +106,6 @@ Start from the three things on screen that bother the player most.
 
 ### Waiting on the player
 
-- **Addons vetted, not picked**: Undying 0.28.3 (closed source), BuddiesQuestForever
-  1.0.32, GearedForever 1.0.1 (in `target/vet/`). UpQuest Forever rejected.
   Installed since: Polestar 0.3.5, GearQuest Forever (DRUID module), Auctionator.
 - **Old bell files**: none left in the installed Signals; doctor lists any that
   appear.
