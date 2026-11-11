@@ -557,6 +557,15 @@ local function buildLog()
 			table.insert(frame.chatParts, arrow)
 			arrow:SetPoint(spec[3], frame, spec[3], spec[4], spec[5])
 			arrow:SetScript("OnClick", function() scrollBy(spec[2]) end)
+			-- the same arrows, drawn from the modern atlas the trim scroll bar
+			-- uses (TrimScrollBar.xml:123) instead of the classic 32-px file
+			-- stretched, so they stay sharp at TV scale
+			local dir = spec[2] < 0 and "Up" or "Down"
+			for state, tex in pairs({ Up = arrow:GetNormalTexture(), Down = arrow:GetPushedTexture(),
+				Disabled = arrow:GetDisabledTexture(), Highlight = arrow:GetHighlightTexture() }) do
+				local atlas = "UI-ScrollBar-Scroll" .. dir .. "Button-" .. state
+				if tex and C_Texture.GetAtlasInfo(atlas) then tex:SetAtlas(atlas) end
+			end
 			arrows[#arrows + 1] = arrow
 		end
 	end
