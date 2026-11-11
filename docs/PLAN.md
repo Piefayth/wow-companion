@@ -24,11 +24,21 @@ on one file is how replies got lost.
 
 ## Next, in order
 
-1. **The tech debt review's fixes, once the player picks them**
-   (`docs/reviews/2026-11-11.md`, the first review, done 2026-11-11 by an agent
-   that did not write the code). Its three to do first: the window drawn from the
-   jobs model only; the agent's rules in Markdown, with `errands` in its context;
-   the old paths removed. Reviews recur (docs/review.md).
+1. **No slash commands to set up a controller** (README, 2026-11-11). The game
+   learns push to talk (`/wc talkkey`) and the combat loot key (`/wci bind`) by
+   typing. Proposed, waiting on the player's yes to the feel: the setup window's
+   Controller card sets both, and one press teaches the PC and the running game
+   at once. Open first: whether WoW sees an Xbox pad's Xbox button at all; if not,
+   the PC has to open the Companion window on a tap (its `show` was removed as a
+   duplicate of the game's tap on 2026-11-11).
+2. **rc2 for the friend** after an evening of play on 2026-11-11's changes.
+
+## Later
+
+- **The agent's permission level optional, and its permission requests shown
+  to the player** (the player, 2026-11-11: long term, not now).
+- Reviews recur (docs/review.md); the first one's fixes are all in
+  (`docs/reviews/2026-11-11.md`).
 
 ## Decided
 

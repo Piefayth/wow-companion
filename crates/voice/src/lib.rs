@@ -337,8 +337,9 @@ pub fn listen(
                             let _ = heard(Event::Empty(slot, "I heard nothing in that clip, so nothing was sent."));
                         }
                         // Whisper filling silence with its own prompt: nothing but the
-                        // echo, or an echo in a clip too quiet to hold speech (a dead
-                        // mic measured 0.0011; speech here is 0.016 and up)
+                        // echo, or an echo in a clip under SILENCE (a dead mic measured
+                        // 0.0011; quiet real speech has measured 0.0024, so the level
+                        // alone never drops a clip: only with the echo)
                         Ok(text) if without_echo(&text).is_empty()
                             || (level < SILENCE && without_echo(&text) != text.trim()) => {
                             println!("heard only the prompt echoed (level {level:.4}); ignored {text:?}");

@@ -45,7 +45,6 @@ foreach ($dir in "player", "modules", "models") {
 # only the template: unzipping an update over an install must not overwrite the
 # profile the agent keeps (the companion makes profile.md from it when missing)
 Copy-Item (Join-Path $PSScriptRoot "profile.template.md") (Join-Path $stage "player\profile.template.md")
-Copy-Item (Join-Path $PSScriptRoot "README.txt") $stage
 
 $zip = Join-Path $Out "$Name.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
