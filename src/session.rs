@@ -82,6 +82,9 @@ pub(crate) fn shadow(addons: &Path, stamp: &str, set: u64, known: u32) {
     }
     let key = session.key();
     let mut last = LAST.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if last.is_none() {
+        crate::audit::note("session", "", &format!("watching from {key} (stamp {stamp}, set {set}, {known} slots)"));
+    }
     if let Some((old_stamp, old_key)) = last.as_ref() {
         match (old_stamp != stamp, *old_key != key) {
             (true, true) => crate::audit::note("session", "", &format!("new session, both agree: {key} (stamp {stamp})")),
