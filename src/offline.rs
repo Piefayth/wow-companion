@@ -46,21 +46,35 @@ struct Line {
 }
 
 impl Line {
-    /// The fields of a `log_inbox_in` message, which writes them first and in
-    /// this order: kind, who, text, then slot.
+    /// The fields of a `log` message, in any order: the job ledger puts `job`,
+    /// `state` and `list` before `who` (a fixed order here dropped every job's
+    /// lines, its reply too, while the game was closed, 2026-11-11).
     fn parse(inbox: &str) -> Option<Line> {
-        let rest = inbox.strip_prefix("{ kind = \"log\", who = ")?;
-        let (who, rest) = lua_unquote(rest)?;
-        let rest = rest.strip_prefix(", text = ")?;
-        let (text, rest) = lua_unquote(rest)?;
-        let (slot, rest) = match rest.strip_prefix(", slot = ") {
-            Some(rest) => {
-                let (slot, rest) = lua_unquote(rest)?;
-                (Some(slot), rest)
+        let mut rest = inbox.strip_prefix("{ kind = \"log\"")?;
+        let (mut who, mut text, mut slot, mut steps) = (None, None, None, false);
+        while let Some(field) = rest.strip_prefix(", ") {
+            let (key, value) = field.split_once(" = ")?;
+            if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                return None;
             }
-            None => (None, rest),
-        };
-        Some(Line { who, text, slot, steps: rest.contains("andThen = ") })
+            let after = if value.starts_with('"') {
+                let (string, after) = lua_unquote(value)?;
+                match key {
+                    "who" => who = Some(string),
+                    "text" => text = Some(string),
+                    "slot" => slot = Some(string),
+                    _ => {}
+                }
+                after
+            } else {
+                let end = value_end(value)?;
+                &value[end..]
+            };
+            steps |= key == "andThen";
+            rest = after;
+        }
+        rest.trim_start().starts_with('}').then_some(())?;
+        Some(Line { who: who?, text: text?, slot, steps })
     }
 
     fn statement(&self, at: u64) -> String {
@@ -85,6 +99,29 @@ impl Line {
             "-- added by the companion while the game was closed\nif type(WowCompanionDB) == \"table\" then\n  WowCompanionDB.log = WowCompanionDB.log or {{}}\n  WowCompanionDB.log[#WowCompanionDB.log + 1] = {{ {entry} }}{unread}\nend\n"
         )
     }
+}
+
+/// Where a value that is not a string ends: a number, `true`, a `{ ... }` table
+/// (strings inside it skipped whole), up to the `, ` or ` }` after it.
+fn value_end(value: &str) -> Option<usize> {
+    let bytes = value.as_bytes();
+    let (mut depth, mut at) = (0usize, 0usize);
+    while at < bytes.len() {
+        match bytes[at] {
+            b'"' => {
+                let (_, after) = lua_unquote(&value[at..])?;
+                at = value.len() - after.len();
+                continue;
+            }
+            b'{' => depth += 1,
+            b'}' if depth == 0 => return Some(value[..at].trim_end().len()),
+            b'}' => depth -= 1,
+            b',' if depth == 0 => return Some(at),
+            _ => {}
+        }
+        at += 1;
+    }
+    None
 }
 
 /// A string `lua_string` wrote, and what follows it.
@@ -127,6 +164,21 @@ mod tests {
         let statement = line.statement(1);
         assert!(!statement.contains("slot ="));
         assert!(!statement.contains("unread"));
+    }
+
+    #[test]
+    fn a_job_line_is_kept_whatever_comes_before_who() {
+        let reply = requests::log_inbox_in(Some("l1"), "claude", "Done, reload", None, None).replacen(
+            "{ kind = \"log\"",
+            "{ kind = \"log\", job = 1794363312223, req = 1794363312223, state = \"answered\", list = { { job = 1794363312223, slot = \"l1\", state = \"answered\" } }",
+            1,
+        );
+        let line = Line::parse(&reply).unwrap();
+        assert_eq!((line.who.as_str(), line.text.as_str(), line.slot.as_deref()), ("claude", "Done, reload", Some("l1")));
+        let queued = requests::log_inbox_in(Some("l1"), "you", "a, \"b\" = c }", None, None)
+            .replacen("{ kind = \"log\"", "{ kind = \"log\", queued = true, job = 7, state = \"queued\"", 1);
+        let line = Line::parse(&queued).unwrap();
+        assert_eq!((line.who.as_str(), line.text.as_str()), ("you", "a, \"b\" = c }"));
     }
 
     #[test]

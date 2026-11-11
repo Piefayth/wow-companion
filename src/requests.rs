@@ -364,15 +364,21 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         println!("  cancelled before it started");
         return Ok(false);
     }
-    // a queued request already showed its words; now it only starts thinking
-    if shown {
+    // a queued request already showed its words; now it only starts thinking.
+    // The agent is already running: an announcement that can't go out (the game
+    // closed) must not end the request, or the agent works on unheard and its
+    // reply is lost (L1's, 2026-11-11)
+    let announced = if shown {
         // `started` first, so this one is not advisory: it is what ends the queued
         // mark on the request's line, and must not be dropped on a busy channel
-        send_inbox(addons, &format!("{{ started = true, kind = \"progress\", text = \"thinking\", slot = {}{req_field} }}", lua_string(&session.slot)))?;
+        send_inbox(addons, &format!("{{ started = true, kind = \"progress\", text = \"thinking\", slot = {}{req_field} }}", lua_string(&session.slot)))
     } else {
         let line = log_inbox_in(Some(&session.slot), "you", spoken, Some("thinking"), None)
             .replacen("{ kind = \"log\"", &format!("{{ kind = \"log\"{req_field}"), 1);
-        send_inbox(addons, &line)?;
+        send_inbox(addons, &line)
+    };
+    if let Err(err) = announced {
+        println!("  not announced ({err}); the request goes on");
     }
     let answer = {
         // Progress goes to the spinner, newest only, at most every few seconds: each
