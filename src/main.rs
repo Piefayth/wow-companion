@@ -24,6 +24,7 @@ mod tray;
 mod undelivered;
 mod watcher;
 mod backups;
+mod bridge_probe;
 use channel::*;
 use requests::*;
 use context::*;
@@ -144,6 +145,7 @@ fn main() {
         // the data strip: what it shows now, or `--watch <s> <file> [--then <conv>]`,
         // the agents' detached reader (src/strip.rs)
         [command, rest @ ..] if command == "strip" => strip::command(rest),
+        [command, rest @ ..] if command == "bridge-probe" => bridge_probe::command(rest),
         [command] if command == "pads" => pad::list(),
         [command] if command == "buzz" => pad::buzz(),
         [command] if command == "reconnect" => voice::reconnect(),
@@ -227,6 +229,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     lifecycle::hold()?;
     lifecycle::watch(addons);
     undelivered::watch(addons);
+    // docs/proposals/bridge-probe.md: measures while the game runs, changes nothing
+    bridge_probe::start(addons);
     crash::after_start(addons);
     {
         let args: Vec<String> = env::args().skip(1).collect();

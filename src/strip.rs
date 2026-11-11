@@ -89,9 +89,17 @@ pub(crate) fn decode(shot: &Shot) -> Result<Vec<u8>, String> {
 }
 
 /// The corner, `height` pixels tall and one strip (1024 px) wide, in real
-/// pixels whatever the display scaling.
-#[cfg(windows)]
+/// pixels whatever the display scaling; each grab is timed for the bridge probe
+/// (docs/proposals/bridge-probe.md, section 3).
 pub(crate) fn capture(height: usize) -> io::Result<Shot> {
+    let began = Instant::now();
+    let shot = grab(height);
+    crate::bridge_probe::note_capture(height, began.elapsed(), shot.is_ok());
+    shot
+}
+
+#[cfg(windows)]
+fn grab(height: usize) -> io::Result<Shot> {
     use std::ffi::c_void;
     type Handle = *mut c_void;
     #[repr(C)]
@@ -178,7 +186,7 @@ pub(crate) fn capture(height: usize) -> io::Result<Shot> {
 }
 
 #[cfg(not(windows))]
-pub(crate) fn capture(_height: usize) -> io::Result<Shot> {
+fn grab(_height: usize) -> io::Result<Shot> {
     Err(io::Error::other("the data strip is read on Windows only"))
 }
 

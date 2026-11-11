@@ -131,6 +131,9 @@ Tests: `cargo test --workspace`.
 - Also: `install <AddOns>`, `send <AddOns> …`, `think <AddOns> <text>` (the agent's
   answer, sent nowhere), `context <AddOns>` (what the agent and Whisper are given),
   `miccheck <mic>`, `reconnect`, `buzz`.
+- `bridge-probe report` reads back the bridge probe (docs/proposals/bridge-probe.md;
+  src/bridge_probe.rs runs it while the game does); `bridge-probe clean` deletes its
+  fonts and data, only when the player says so.
 - The conversation survives restarts (`%LOCALAPPDATA%\wow-companion\thread.txt`;
   delete it to start fresh). The agent's rules are sent on every request
   (`--system-prompt-snapshot off`), so an update applies at once.
