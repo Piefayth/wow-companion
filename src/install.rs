@@ -1,7 +1,6 @@
-//! Install, and `send`: one message to the game from another process.
+//! Install: the addons, the slots and the bells laid down in the game's folder.
 
 use super::*;
-use crate::message::Msg;
 
 pub(crate) fn install(addons: &Path) -> io::Result<()> {
     let source = crate::home().join("addon").join(ADDON);
@@ -150,39 +149,6 @@ fn remove_stale(source: &Path, installed: &Path, keep: &[&str]) -> io::Result<()
         Ok(())
     }
     walk(source, installed, true, keep)
-}
-
-pub(crate) fn send_command(addons: &Path, args: &[String]) -> io::Result<()> {
-    // conversation lines go through the running companion (`tell`): only it
-    // numbers them (src/ledger.rs)
-    let msg = match args {
-        [kind, text] if kind == "chat" => chat_inbox(text),
-        [kind, name, body] if kind == "macro" => Msg::new("macro").text("name", name).text("body", body),
-        [kind] if kind == "reload" => Msg::new("reload"),
-        // offer a secure button: the player presses it, so anything macro text can do
-        [kind, label, text] if kind == "press" => Msg::new("press").text("label", label).text("macro", text),
-        [kind, code] if kind == "lua" => Msg::new("lua").text("code", code),
-        // spell|macro|item|empty, as the agent would send it
-        [kind, slot, what, name] if kind == "bar" => Msg::new("bar")
-            .int("slot", slot.parse::<u32>().map_err(|_| io::Error::other("slot must be a number"))?)
-            .text("what", what)
-            .text("name", name),
-        // the PlaceAction taint test, delivered the way real bar edits would be
-        [kind, variant] if kind == "place" => Msg::new("place").text("variant", variant),
-        // a channel test message: the game counts it (WowCompanionLinkDB.probe.received)
-        [kind, n] if kind == "probe" => Msg::new("probe")
-            .int("n", n.parse::<i128>().map_err(|_| io::Error::other("probe wants a number"))?)
-            .int("sent", SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_secs() as i128).unwrap_or_default()),
-        _ => {
-            return Err(io::Error::other(
-                "usage: send chat <text> | send macro <name> <body> | send reload | send bar <slot> <spell|macro|item|empty> <name> | send place <variant> | send probe <n>",
-            ));
-        }
-    };
-    send(addons, &msg)?;
-    // this process ends here: its one message goes out first
-    crate::channel::flush();
-    Ok(())
 }
 
 #[cfg(test)]

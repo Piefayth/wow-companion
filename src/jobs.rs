@@ -416,18 +416,6 @@ pub(crate) fn cancel(ids: &[u64]) -> Cancelled {
     })
 }
 
-/// Jobs of a conversation that have not ended, oldest first, optionally only
-/// in one state.
-pub(crate) fn live(slot: &str, only: Option<State>) -> Vec<u64> {
-    with(|jobs| {
-        jobs.values()
-            .filter(|job| job.slot == slot && !job.state.ended() && only.is_none_or(|state| job.state == state))
-            .map(|job| job.id)
-            .collect()
-    })
-}
-
-
 /// The words of requests in this conversation that the agent saw and you then
 /// cancelled, not yet told to it; each is told once (the player, 2026-11-10:
 /// a cancelled message was answered as if it had been said).

@@ -67,13 +67,22 @@ fn home() -> PathBuf {
     }
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
-/// When the last clip was released. A request is not "in flight" until Whisper
-/// and the gather window are done with it, so a restart in those few seconds
-/// could cut a request off or, by the player's report, deliver it twice: the
-/// restart also waits until no clip has been released for a few seconds.
-static LAST_RELEASE: Mutex<Option<Instant>> = Mutex::new(None);
-fn recently_released() -> bool {
-    LAST_RELEASE.lock().unwrap().is_some_and(|at| at.elapsed() < Duration::from_secs(4))
+/// Messages handed to the courier thread and not yet sent: an exit waits for none
+/// (lifecycle::idle).
+pub(crate) static COURIER: AtomicUsize = AtomicUsize::new(0);
+/// The courier thread's mailbox; every message through it counts in COURIER
+/// until it is delivered.
+#[derive(Clone)]
+struct Courier(std::sync::mpsc::Sender<Out>);
+
+impl Courier {
+    fn send(&self, message: Out) -> io::Result<()> {
+        COURIER.fetch_add(1, Ordering::SeqCst);
+        self.0.send(message).map_err(|_| {
+            COURIER.fetch_sub(1, Ordering::SeqCst);
+            io::Error::other("the courier thread has stopped")
+        })
+    }
 }
 /// How long after the last clip a request waits for the player to add to it:
 /// long enough to slip off the button and back on, short enough not to be felt.
@@ -102,13 +111,9 @@ fn main() {
         // a request typed into a conversation (main, l1, l2, r1, r2), taken by the
         // running companion as if spoken there
         [command, slot, words @ ..] if command == "tell" && !words.is_empty() => tell(slot, &words.join(" ")),
-        [command, addons, rest @ ..] if command == "send" => send_command(Path::new(addons), rest),
         // the agent's answer, printed and never delivered: for trying the agent
         // without a game to send into
         [command, addons, spoken] if command == "think" => think(Path::new(addons), spoken),
-        [command, addons, spoken] if command == "ask" => {
-            ask(Path::new(addons), &mut agent::Session::default(), spoken, false, None).map(|_| ())
-        }
         // everything from this PC's settings file (the setup window writes it)
         [command] if command == "run" => {
             let settings = Settings::load();
@@ -124,13 +129,6 @@ fn main() {
             let mut all = options.to_vec();
             all.extend(Settings::load().options());
             run(Path::new(addons), Path::new(model), &all)
-        }
-        [command, addons, out] if command == "api" => pull(Path::new(addons), "api", Path::new(out)),
-        [command, addons, out] if command == "alive" => {
-            pull(Path::new(addons), "alive", Path::new(out))
-        }
-        [command, addons, out] if command == "apidocs" => {
-            pull(Path::new(addons), "apidocs", Path::new(out))
         }
         [command, addons, out] if command == "context" => {
             pull(Path::new(addons), "context", Path::new(out))
@@ -177,23 +175,11 @@ fn main() {
         [command, model, options @ ..] if command == "voice" => {
             voice::listen(Path::new(model), options, Vec::new, |_, _| Ok(()))
         }
-        [command, addons, model, options @ ..] if command == "dictate" => {
-            let addons = Path::new(addons);
-            voice::listen(Path::new(model), options, || vocabulary(addons), |role, text| {
-                if role.ends_with(" tap") {
-                    return Ok(());
-                }
-                send(addons, &chat_inbox(text))
-            })
-        }
         _ => {
             eprintln!("usage: wow-companion <command> [args]");
             eprintln!("  install <AddOns>                 lay down the addon and its slots");
-            eprintln!("  send <AddOns> probe <n>          a test message the game counts");
-            eprintln!("  send <AddOns> chat <text>        put text in the chat box");
-            eprintln!("  send <AddOns> macro <name> <body>  create or edit a macro");
-            eprintln!("  send <AddOns> reload             reload the game's UI");
-            eprintln!("  pads                             list HID devices");
+            eprintln!("  tell <conversation> <text>       a typed request to the running companion");
+            eprintln!("  pads                            list HID devices");
             eprintln!("  pads <vid:pid>                   watch one pad's raw reports");
             eprintln!("  mics                             list input devices");
             eprintln!("  speakers                         list output devices");
@@ -201,15 +187,10 @@ fn main() {
             eprintln!("  run <AddOns> <model> [options]   the whole thing");
             eprintln!("  start                            wake with WoW, hidden, with a tray icon");
             eprintln!("  stop                             end the companion (and the watcher) cleanly");
-            eprintln!("  dictate <AddOns> <model> [options]");
-            eprintln!("                                   speak into the open chat box");
-            eprintln!("  ask <AddOns> <text>              one question, no voice");
-            eprintln!("  api <AddOns> <out>               every callable in this build");
-            eprintln!("  apidocs <AddOns> <out>           signatures, if the client has them");
+            eprintln!("  think <AddOns> <text>            the agent's answer, sent nowhere");
             eprintln!("  context <AddOns> <out>           bars, bindings, macros, spellbook");
             eprintln!("  context <AddOns>                 what the agent and Whisper are given");
-            eprintln!("  alive <AddOns> <out>             which documented reads answer (/wc alive)");
-            eprintln!("    options: chat=home ask=minus mic=<name> cue=<name> volume=<0..1>");
+            eprintln!("    options: ask=minus mic=<name> cue=<name> volume=<0..1>");
             std::process::exit(2);
         }
     };
@@ -219,9 +200,9 @@ fn main() {
     }
 }
 
-/// The whole thing: controller, microphone, Whisper, the channel, and one
-/// continuing conversation with the agent. Hold one button to dictate into the chat
-/// box, the other to ask.
+/// The whole thing: controller, microphone, speech, the channel, and the
+/// conversations with the agent. One talk button: a trigger held with it picks the
+/// conversation, L1+R1 dictates, and a line opening with a channel word is chat.
 fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     // one companion at a time (src/lifecycle.rs)
     lifecycle::refuse_second()?;
@@ -286,7 +267,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         let (addons, session, looking) = (addons.to_path_buf(), Arc::clone(&session), Arc::clone(&looking));
         thread::spawn(move || watch_for_looks(&addons, &session, &looking));
     }
-    // Stop in the window: the game's commands, read off the data strip
+    // Cancel and Send now in the window: the game's commands, read off the data strip
     {
         let addons = addons.to_path_buf();
         thread::spawn(move || watch_commands(&addons));
@@ -311,13 +292,12 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 if let Err(err) = send_out(&addons, message) {
                     eprintln!("  not delivered: {err}");
                 }
+                COURIER.fetch_sub(1, Ordering::SeqCst);
             }
         });
-        out
+        Courier(out)
     };
-    let deliver = |message: Out| {
-        courier.send(message).map_err(|_| io::Error::other("the courier thread has stopped"))
-    };
+    let deliver = |message: Out| courier.send(message);
     // One conversation per trigger slot (L1, L2, R1, R2), each its own thread,
     // made on first use; "" is the main one. Different slots run side by side.
     let slots: Arc<Mutex<std::collections::HashMap<String, Arc<Mutex<agent::Session>>>>> = {
@@ -373,7 +353,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 println!("typed ({}): {text}", if slot.is_empty() { "main" } else { &slot });
                 let (addons, session, looking, courier) =
                     (addons.clone(), find_session(&slot), Arc::clone(&looking), courier.clone());
+                let in_flight = InFlight::start();
                 thread::spawn(move || {
+                    let _in_flight = in_flight;
                     let text = if slot.is_empty() { text } else { format!("[{}] {}", slot.to_uppercase(), text) };
                     if slot.is_empty() {
                         *looking.lock().unwrap() = None;
@@ -396,8 +378,6 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     } else {
                         text
                     };
-                    IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
-                    let _done = InFlight;
                     match ask(&addons, &mut held, &text, queued, Some(job)) {
                         Ok(true) if slot.is_empty() => *looking.lock().unwrap() = Some(session_began(&addons)),
                         Ok(_) => {}
@@ -425,11 +405,6 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             as_dictation.as_str()
         };
         match role {
-            // a tap of the ask button, too short to be speech: show the window
-            // a tap opens the window: one slot, of 512. A bell of its own (no slot)
-            // was tried and failed: the game holds a constantly polled bell open,
-            // so it could never be rung (measured: locked for 10 s straight)
-            "ask tap" => deliver(Out::Now(Msg::new("show"))),
             // the voice loop's own news (a reconnected headset), for the window
             "notice" => deliver(Out::Line(Line::new("", "error", text))),
             // a clip's own notice ("nothing was sent") goes to the conversation it
@@ -452,9 +427,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 }
                 deliver(Out::Line(line))
             }
-            _ if role.ends_with(" tap") => Ok(()),
-            r if r.starts_with("ask") && r.ends_with(" heard") => {
-                *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
+            r if r.ends_with(" heard") => {
                 // the clip is a job from the moment it is let go (src/jobs.rs):
                 // a cancel pressed while it is heard ends that job, and its words
                 // are dropped when they come back; a clip let go while one is
@@ -469,12 +442,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         return deliver(Out::Now(heard));
                     }
                 }
-                // Not sent: the addon hears minus come up and shows
-                // "transcribing" itself, at once.
-                Ok(())
-            }
-            _ if role.ends_with(" heard") => {
-                *LAST_RELEASE.lock().unwrap() = Some(Instant::now());
+                // dictation's clip, or one joining a request still being gathered:
+                // nothing new to name
                 Ok(())
             }
             // L1+R1: dictation, no agent. Sent at once (no gathering): the line
@@ -485,7 +454,6 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     return deliver(Out::Now(Msg::new("chat").flag("clear", true)));
                 }
                 let routed = channeled(text);
-                *LAST_CHAT.lock().unwrap() = Some((routed.clone(), Instant::now()));
                 println!("  dictated: {routed}");
                 // no line in a conversation (the player: agents need not see
                 // every dictation); the chat box itself shows it
@@ -509,7 +477,11 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 // the voice loop does may wait on a lock a request can hold
                 let (addons, find_session, looking, courier) =
                     (addons.to_path_buf(), slot_session.clone(), Arc::clone(&looking), courier.clone());
+                // counted from now, not from when the agent starts: gathering and
+                // queueing are part of the request
+                let in_flight = InFlight::start();
                 thread::spawn(move || {
+                    let _in_flight = in_flight;
                     voice::mark("request thread up");
                     let session = find_session(&slot);
                     let text = loop {
@@ -561,25 +533,10 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     if routed != text.trim() {
                         println!("  chat line: {routed}");
                         handled();
-                        *LAST_CHAT.lock().unwrap() = Some((routed.clone(), Instant::now()));
                         let _ = courier.send(Out::Now(dictation_inbox(&text, &routed)));
                         let _ = courier.send(Out::Line(Line::new(&slot, "you", &format!("(to chat) {routed}"))));
                         return;
                     }
-                    // "edit ..." / "change ..." soon after a chat line: the agent gets
-                    // the line, rewrites it and sends it back to the chat box
-                    let lowered = text.trim_start().to_lowercase();
-                    let text = match LAST_CHAT.lock().unwrap().as_ref() {
-                        Some((line, at)) if at.elapsed() < Duration::from_secs(300)
-                            && (lowered.starts_with("edit") || lowered.starts_with("change")
-                                || lowered.starts_with("reword") || lowered.starts_with("fix")) =>
-                        {
-                            format!("{text}
-
-(Editing the last chat line: `{line}`. Rewrite it as asked, keep the slash command, and give it as a `send` step. It goes into the chat box if that is open and empty; else it waits for the next time they open chat, so if the old line is still in the box, tell them to clear it with circle and open chat again.)")
-                        }
-                        _ => text,
-                    };
                     // a slot's request is marked with it, in the window and for the
                     // agent ("[L2] ..."), so both can tell the conversations apart
                     let text = if slot.is_empty() { text } else { format!("[{}] {}", slot.to_uppercase(), text) };
@@ -589,9 +546,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     // waiting: otherwise it appears only when it starts, and reads
                     // as dropped.
                     // Waiting means *this conversation's* lock is held: a request in
-                    // another slot (counted in IN_FLIGHT) is no reason to wait, and
-                    // marking R1 "waiting" for the main one sent that line after R1's
-                    // reply, so it read as stuck (2026-11-10).
+                    // another slot is no reason to wait.
                     let (mut held, queued) = match session.try_lock() {
                         Ok(guard) => (guard, false),
                         Err(std::sync::TryLockError::Poisoned(poisoned)) => (poisoned.into_inner(), false),
@@ -617,8 +572,6 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     } else {
                         text
                     };
-                    IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
-                    let _done = InFlight;
                     match ask(&addons, &mut held, &text, queued, Some(job)) {
                         // a look resumes the main conversation, so only the main one looks
                         Ok(true) if slot.is_empty() => *looking.lock().unwrap() = Some(session_began(&addons)),
@@ -632,16 +585,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 });
                 Ok(())
             }
-            _ if discards(text) => {
-                println!("  clearing the chat box");
-                deliver(Out::Now(Msg::new("chat").flag("clear", true)))
-            }
-            _ => {
-                let routed = channeled(text);
-                if routed != text {
-                    println!("  as: {routed}");
-                }
-                deliver(Out::Now(dictation_inbox(text, &routed)))
+            other => {
+                eprintln!("  a voice event nothing handles: {other}");
+                Ok(())
             }
         }},
     )?;

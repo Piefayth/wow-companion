@@ -183,8 +183,7 @@ asked to carry on by yourself, so finish the job then; never ask the player to
 prompt you. Within your turn, `& $env:WOW_COMPANION_EXE strip --send '<lua>'
 [seconds]` runs Lua that calls WowCompanion_Strip.Send and prints what it drew
 (the running companion puts it through its channel and adds the read's id
-to every Send the Lua makes, a timer's too; out of combat only); never
-run `wow-companion send` yourself (a second process races the channel).
+to every Send the Lua makes, a timer's too; out of combat only).
 Chat as it is now (what was said, who posted a link): `& $env:WOW_COMPANION_EXE
 strip --chat` prints the last 40 lines and the profession links caught (n for
 WCOpenTradeLink(n)), or why it could not; read it when the request needs it.

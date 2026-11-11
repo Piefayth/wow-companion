@@ -101,7 +101,7 @@ pub(crate) fn watch_for_restart(args: Vec<String>) {
     let (Ok(request), Some(source)) = (restart_request(), env::var_os(SOURCE_EXE)) else { return };
     loop {
         thread::sleep(Duration::from_secs(1));
-        if !request.exists() || IN_FLIGHT.load(Ordering::SeqCst) > 0 || voice::HOLDING.load(Ordering::Relaxed) || recently_released() {
+        if !request.exists() || !lifecycle::idle() {
             continue;
         }
         // copy the new build now; if it is mid-build the copy fails, so try again
@@ -142,20 +142,10 @@ pub(crate) fn watch_for_restart(args: Vec<String>) {
         // not mid-press, then deaf: the new copy takes the pad from here (it stops
         // waiting for this one after 15 s), and this one only finishes its work.
         // Both reading the pad answered one clip twice (measured 2026-11-10).
-        while voice::HOLDING.load(Ordering::Relaxed) || recently_released() {
+        while voice::HOLDING.load(Ordering::SeqCst) {
             thread::sleep(Duration::from_millis(100));
         }
-        voice::DEAF.store(true, Ordering::SeqCst);
-        while IN_FLIGHT.load(Ordering::SeqCst) > 0 {
-            thread::sleep(Duration::from_millis(100));
-        }
-        // what is queued for the game goes out first (lines are in the mailbox anyway)
-        crate::channel::flush();
-        voice::SHUTDOWN.store(true, Ordering::SeqCst);
-        let asked = Instant::now();
-        while !voice::STOPPED.load(Ordering::SeqCst) && asked.elapsed() < Duration::from_secs(3) {
-            thread::sleep(Duration::from_millis(20));
-        }
+        lifecycle::wind_down();
         let _ = fs::remove_file(&flag);
         println!("handed over to the new build");
         lifecycle::exited("handover");

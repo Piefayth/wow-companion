@@ -5,11 +5,7 @@ use super::*;
 use crate::message::{job_entry, Line, Msg};
 
 // how often the window hears what the agent is doing, and how many times per
-// request at most: every update spends one of the session's 64 slots
-// Measured: progress lines were 29 of a session's 64 slots, nearly half. The
-// window's seconds count already shows the agent is alive, so two will do.
-// a long turn (a build, a research run) went quiet after two lines and read as
-// stuck; with 512 slots a line every 15 s is affordable
+// request at most: every update spends one of the session's 512 slots
 pub(crate) const PROGRESS_EVERY: Duration = Duration::from_secs(15);
 pub(crate) const PROGRESS_LIMIT: u32 = 16;
 // how many times a request that ran out of steps carries on by itself
@@ -21,19 +17,27 @@ pub(crate) const SLOTS_OFFER_RELOAD: u32 = 16;
 pub(crate) const SLOTS_LOW: u32 = 8;
 // the UI session in which the Reload button was last offered for low slots
 pub(crate) static RELOAD_OFFERED: Mutex<String> = Mutex::new(String::new());
-// requests to the agent running right now; a restart waits for zero
+/// Request threads alive, from the words arriving (or typed) to the reply sent:
+/// an exit waits for none (lifecycle::idle). A thread, not a job: a job ends
+/// before its reply goes out, so the race with a cancel is decided once.
 pub(crate) static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
-/// Counts a request out of IN_FLIGHT however its thread ends.
+/// One request thread, counted in IN_FLIGHT from `start` until it is dropped,
+/// however the thread ends.
 pub(crate) struct InFlight;
+
+impl InFlight {
+    pub(crate) fn start() -> InFlight {
+        IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+        InFlight
+    }
+}
 
 impl Drop for InFlight {
     fn drop(&mut self) {
         IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
     }
 }
-/// Hand what was said to Claude, show its line in the companion window, and
-/// deliver whatever command it chose. The line goes first, so the player sees the
-/// reasoning before the game changes under them.
+
 /// The other half of looking. The agent ran something and asked to see what it
 /// did; the only way results reach disk is a reload, which the player was offered
 /// as a button. When the save lands, hand the agent the refreshed context and let
@@ -47,12 +51,11 @@ pub(crate) fn watch_for_looks(addons: &Path, session: &Mutex<agent::Session>, lo
             continue;
         }
         *looking.lock().unwrap() = None;
-        // the save lands before the UI is back; give the addon time to listen again
-        thread::sleep(Duration::from_secs(4));
+        // sent at once: a message made before the new UI polls waits on its rung
+        // bell for it (docs/proposals/slot-bells.md)
         let note = "(I reloaded so you can look. Your steps' results are in <character>, \
                     under code runs and the slots; carry on with what I asked.)";
-        IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
-        let _done = InFlight;
+        let _in_flight = InFlight::start();
         match ask(addons, &mut session.lock().unwrap(), note, false, None) {
             Ok(true) => *looking.lock().unwrap() = Some(session_began(addons)),
             Ok(false) => {}
@@ -81,12 +84,8 @@ fn end_processes(pids: &[u32]) {
 
 /// Tell the game where these jobs stand now, after a cancel, whether or not it
 /// changed anything: the game waits on this to resolve its "cancelling...".
-fn tell_states(addons: &Path, slot: &str, ids: &[u64], flags: &[(&'static str, bool)]) {
-    let mut message = Msg::new("stopped").text("slot", slot);
-    for (flag, on) in flags {
-        message = message.flag(flag, *on);
-    }
-    let message = message.list("list", jobs::get(ids).iter().map(|job| job_entry(job.id, &job.slot, job.state)).collect());
+fn tell_states(addons: &Path, slot: &str, ids: &[u64]) {
+    let message = Msg::new("stopped").text("slot", slot).list("list", jobs::get(ids).iter().map(|job| job_entry(job.id, &job.slot, job.state)).collect());
     if let Err(err) = send(addons, &message) {
         eprintln!("  telling the game failed: {err}");
     }
@@ -107,7 +106,7 @@ pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool
     if send_now {
         if before != Some(jobs::State::Queued) {
             println!("  send now: request {req} is not waiting; nothing to do");
-            tell_states(addons, slot, &[req], &[]);
+            tell_states(addons, slot, &[req]);
             return;
         }
         // the run in front is interrupted, not cancelled: its message joins the
@@ -129,23 +128,7 @@ pub(crate) fn cancel_request(addons: &Path, slot: &str, req: u64, send_now: bool
     // the list says each job's state; that is the whole answer
     let mut ids = vec![req];
     ids.extend(done.ended.iter().map(|job| job.id).filter(|id| *id != req));
-    tell_states(addons, slot, &ids, &[]);
-}
-
-
-/// Stop: end the running request and drop everything waiting; `drop_queue`
-/// false is Send now on the conversation: the running request is interrupted
-/// and joins the queued ones (cancel_request).
-pub(crate) fn stop(addons: &Path, slot: &str, drop_queue: bool) {
-    if !drop_queue {
-        end_processes(&jobs::interrupt(slot));
-        return;
-    }
-    let ids = jobs::live(slot, None);
-    let done = jobs::cancel(&ids);
-    println!("stop [{}]: {} ended", if slot.is_empty() { "main" } else { slot }, done.ended.len());
-    end_processes(&done.pids);
-    tell_states(addons, slot, &ids, &[("dropped", true)]);
+    tell_states(addons, slot, &ids);
 }
 
 /// Every queued request of this conversation, taken as one run led by `lead`,
@@ -172,8 +155,8 @@ pub(crate) fn run_queued(addons: &Path, slot: &str, lead: u64) -> Option<String>
     Some(out)
 }
 
-/// The game's commands, read off the data strip in this process (src/strip.rs,
-/// no Python). "WCCMD <nonce> stop <slot>".
+/// The game's commands, read off the data strip in this process (src/strip.rs):
+/// "WCCMD <nonce> cancel|now <slot> <job>", a message's Cancel or Send now.
 pub(crate) fn watch_commands(addons: &Path) {
     crate::strip::serve(|line| {
         if line.starts_with("WCCMD") {
@@ -187,7 +170,6 @@ pub(crate) fn watch_commands(addons: &Path) {
                     cancel_request(addons, &main(slot), req, *verb == "now");
                 }
             }
-            ["WCCMD", _nonce, verb @ ("stop" | "now"), slot] => stop(addons, &main(slot), *verb == "stop"),
             _ => {}
         }
     })
@@ -212,9 +194,11 @@ pub(crate) fn failed(addons: &Path, slot: &str, group: u64, err: io::Error) -> i
     Ok(false)
 }
 
-/// Returns whether the agent wants to look at the results before it is done.
-/// `job`: the request's job, queued or already running (a run taken from the
-/// queue); None makes one (a resumed look).
+/// Hand what was said to the agent, show its line in the window, and deliver
+/// what it chose, the reply and its steps in one message. Returns whether the
+/// agent wants to look at the results before it is done. `job`: the request's
+/// job, queued or already running (a run taken from the queue); None makes one
+/// (a resumed look).
 pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool, job: Option<u64>) -> io::Result<bool> {
     println!("asking: {spoken}");
     let group = job.unwrap_or_else(|| jobs::create(&session.slot, spoken, jobs::State::Queued));
@@ -267,9 +251,9 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         println!("  not announced ({err}); the request goes on");
     }
     let answer = {
-        // Progress goes to the spinner, newest only, at most every few seconds: each
-        // update costs a slot, and there are 64 per UI session. Its own thread, so
-        // the agent never waits on the game.
+        // Progress goes to the window, newest only, every PROGRESS_EVERY at most:
+        // each update costs a slot. Its own thread, so the agent never waits on
+        // the game.
         let (tell, heard) = std::sync::mpsc::channel::<String>();
         let courier = {
             let addons = addons.to_path_buf();
@@ -424,8 +408,8 @@ pub(crate) fn tell(slot: &str, words: &str) -> io::Result<()> {
     let slot = slot.to_lowercase();
     let slot = match slot.as_str() {
         "main" | "" => "",
-        "l1" | "l2" | "r1" | "r2" => slot.as_str(),
-        other => return Err(io::Error::other(format!("no conversation {other:?}: main, l1, l2, r1 or r2"))),
+        "l1" | "l2" | "r1" | "r2" | agent::QUICK_SLOT => slot.as_str(),
+        other => return Err(io::Error::other(format!("no conversation {other:?}: main, l1, l2, r1, r2 or quick"))),
     };
     let dir = typed_dir().ok_or_else(|| io::Error::other("LOCALAPPDATA is not set"))?;
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_millis()).unwrap_or_default();

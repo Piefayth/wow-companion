@@ -1,11 +1,7 @@
 //! Spoken chat lines: channel words, discards, the dictation inbox.
 
-use super::*;
 use crate::message::Msg;
 
-/// The last chat line sent to the chat box, and when: "edit that, ..." is
-/// handed to the agent with it, so the player can reword a line by voice.
-pub(crate) static LAST_CHAT: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 // Spoken channel names, and the slash command each stands for. Whisper will never
 // write "/p", and a controller cannot type it, so a clip that opens with "party"
 // (or "to party", or "slash p") becomes "/p ..." -- which the chat box routes when

@@ -209,15 +209,15 @@ fn deliver_batch(addons: &Path, batch: Vec<Pending>) {
     if slots_used(addons) + PROGRESS_STOP >= known_slots(addons) {
         batch.retain(|item| item.progress_of().is_none());
     }
-    // A line, a progress line, a reload, a show: read by handlers every version
-    // of the addon has, so a stale UI can still take them. Blocking those is how a
+    // A line, a progress line, a reload: read by handlers every version of the
+    // addon has, so a stale UI can still take them. Blocking those is how a
     // finished answer sat undelivered behind "reload first" while the window spun
     // "thinking". A reload is the cure for staleness itself.
     match addon_is_stale(addons) {
         Ok(true) => {
             let (keep, stale): (Vec<Pending>, Vec<Pending>) = batch
                 .into_iter()
-                .partition(|item| matches!(item.msg().kind(), Some("log" | "progress" | "reload" | "show")));
+                .partition(|item| matches!(item.msg().kind(), Some("log" | "progress" | "reload")));
             set_aside(addons, stale, "the addon on disk is newer than the running UI session: /reload in game first");
             batch = keep;
         }

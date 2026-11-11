@@ -106,14 +106,20 @@ pub(crate) fn last_exit(since: u128) -> Option<String> {
     Some(text.split_once(' ').map(|(_, reason)| reason.trim().to_string()).unwrap_or_default())
 }
 
-fn idle() -> bool {
-    IN_FLIGHT.load(Ordering::SeqCst) == 0 && !voice::HOLDING.load(Ordering::Relaxed) && !recently_released()
+/// Nothing the player said is unfinished: the talk button is up, no clip is at
+/// the speech engine, no request thread runs, and the courier holds nothing.
+pub(crate) fn idle() -> bool {
+    !voice::HOLDING.load(Ordering::SeqCst)
+        && voice::PENDING.load(Ordering::SeqCst) == 0
+        && IN_FLIGHT.load(Ordering::SeqCst) == 0
+        && crate::COURIER.load(Ordering::SeqCst) == 0
 }
 
-/// Close the mic properly and exit (the same order a restart uses).
-fn leave(reason: &str) -> ! {
+/// How every exit ends: deaf to the pad, then everything already said finished
+/// and sent, then the mic closed properly.
+pub(crate) fn wind_down() {
     voice::DEAF.store(true, Ordering::SeqCst);
-    while IN_FLIGHT.load(Ordering::SeqCst) > 0 {
+    while !idle() {
         thread::sleep(Duration::from_millis(100));
     }
     // what is queued for the game goes out first (lines are in the mailbox anyway)
@@ -123,6 +129,11 @@ fn leave(reason: &str) -> ! {
     while !voice::STOPPED.load(Ordering::SeqCst) && asked.elapsed() < Duration::from_secs(3) {
         thread::sleep(Duration::from_millis(20));
     }
+}
+
+/// Close the mic properly and exit.
+fn leave(reason: &str) -> ! {
+    wind_down();
     exited(reason);
     println!("exiting: {reason}");
     std::process::exit(0);

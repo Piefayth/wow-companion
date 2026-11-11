@@ -157,7 +157,7 @@ Tests: `cargo test --workspace`.
 - `wow-companion doctor <AddOns>` checks the whole chain in seconds: game,
   companion, restart, agent, slots, bells, heartbeat, mic. Run it first when
   something seems broken.
-- Also: `install <AddOns>`, `send <AddOns> …`, `think <AddOns> <text>` (the agent's
+- Also: `install <AddOns>`, `tell <conversation> <text>`, `think <AddOns> <text>` (the agent's
   answer, sent nowhere), `context <AddOns>` (what the agent and Whisper are given),
   `miccheck <mic>`, `reconnect`, `buzz`, `transcribe-stream <model folder> <clip.wav>`
   (the streaming engine on a clip at the pace of speech, with its time to final text).

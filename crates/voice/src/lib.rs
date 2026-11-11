@@ -7,7 +7,8 @@ use std::{
     io,
     path::Path,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc::TryRecvError,
         Arc, Mutex,
     },
     thread,
@@ -34,9 +35,8 @@ pub use transcribe::transcribe_file;
 pub use stream::transcribe_stream_file;
 
 const POLL: Duration = Duration::from_millis(16);
-/// A press released this quickly was a tap, not speech: it is reported as the
-/// role with " tap" appended and no text, so a button can do something on a tap
-/// (minus opens the Companion window) and still be push-to-talk when held.
+/// A press released this quickly was a tap, not speech, and is no clip: the
+/// game answers the talk button's tap itself (it opens the Companion window).
 const TAP: Duration = Duration::from_millis(350);
 // A Bluetooth pad sleeps and a headset drops its hands-free link; either used to end
 // the app. Now a lost device is reopened on this cadence until it comes back.
@@ -46,30 +46,28 @@ const PULSE: u8 = 160;
 // the closing pulse: softer than the opening one, so the two are told apart
 const PULSE_SOFT: u8 = 90;
 
-/// Hold a button, speak, release. `heard` is given which binding fired and what was
-/// said (a quick tap arrives as "<role> tap" with no text), so one loop can serve dictation on one button and the agent on another.
-///
-/// Both default to buttons WoW ignores — Home and minus. We cannot consume the input,
-/// so anything the game binds would fire twice: once for us, once in game.
-///
-/// `vocabulary` is asked afresh for every clip, so names learned at the last reload
-/// are in the prompt without restarting.
-/// True while a push-to-talk button is held: a restart waits for the release, so
-/// no clip is cut off halfway.
-/// One line in %LOCALAPPDATA%\wow-companion	iming.log: milliseconds since the
+/// One line in `%LOCALAPPDATA%\wow-companion\timing.log`: milliseconds since the
 /// epoch and what happened, so the gap from release to words on screen can be
-/// split into its parts (the player, 2026-11-10: "still takes four seconds").
+/// split into its parts. Past 8 MB it becomes timing.old.log, as audit.log does.
 pub fn mark(what: &str) {
     use std::io::Write;
     let Some(base) = std::env::var_os("LOCALAPPDATA") else { return };
     let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
     let path = std::path::PathBuf::from(base).join("wow-companion").join("timing.log");
+    if std::fs::metadata(&path).is_ok_and(|meta| meta.len() > 8 << 20) {
+        let _ = std::fs::rename(&path, path.with_extension("old.log"));
+    }
     if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(file, "{ms} {what}");
     }
 }
 
+/// True while the talk button is held: a restart waits for the release, so no
+/// clip is cut off halfway.
 pub static HOLDING: AtomicBool = AtomicBool::new(false);
+/// Clips handed to the speech engine whose words (or why there are none) have not
+/// been handed on yet: a restart waits for none.
+pub static PENDING: AtomicUsize = AtomicUsize::new(0);
 
 /// Set by a restart: the voice loop closes the mic properly and returns, and only
 /// then does the next copy start. Abandoning a live hands-free stream (a killed
@@ -118,31 +116,28 @@ impl Engine {
     }
 }
 
+/// Hold the talk button, speak, release. `heard` is given the clip's role ("ask",
+/// or "ask@<slot>" with a trigger held) and what was said, plus the clip's events
+/// as roles with a suffix (" heard", " notice", " unheard").
+///
+/// The talk button defaults to one WoW ignores (minus; Guide on an Xbox pad): we
+/// cannot consume the input, so anything the game binds would fire twice.
+///
+/// `vocabulary` is asked afresh for every clip, so names learned at the last reload
+/// are in the prompt without restarting.
 pub fn listen(
     model: &Path,
     options: &[String],
     vocabulary: impl Fn() -> Vec<String>,
     mut heard: impl FnMut(&str, &str) -> io::Result<()>,
 ) -> io::Result<()> {
-    // One talk button (the player, 2026-11-10): the ask button also takes chat
-    // lines, routed by their channel word, so the old dictation button (home) is
-    // free for something else. `chat=` is still read, but only `chat=on:<button>`
-    // brings the second button back.
-    let chat = option(options, "chat").and_then(|value| value.strip_prefix("on:"));
     // the pad: `pad=vid:pid` or `pad=xinput` (the setup window picks it), else
     // this setup's own; button names mean different bits on an Xbox pad
     let (vid, pid) = match option(options, "pad") {
         Some(id) => pad::split(id)?,
         None => DEFAULT_PAD,
     };
-    let mut bindings = vec![("ask", option(options, "ask").unwrap_or(pad::default_talk(vid, pid)))];
-    if let Some(button) = chat {
-        bindings.push(("chat", button));
-    }
-    let bindings: Vec<(&str, pad::Press)> = bindings
-        .iter()
-        .map(|(role, name)| pad::press_for(name, vid, pid).map(|press| (*role, press)))
-        .collect::<io::Result<_>>()?;
+    let talk = pad::press_for(option(options, "ask").unwrap_or(pad::default_talk(vid, pid)), vid, pid)?;
     let wanted_mic = option(options, "mic");
     // Neither has to be there at startup: the model loads either way, and each device
     // is picked up when it appears. A mistyped `mic=` looks exactly like an unplugged
@@ -222,9 +217,7 @@ pub fn listen(
         other => return Err(io::Error::other(format!("speech={other}: it is whisper or streaming"))),
     };
 
-    for (role, press) in &bindings {
-        println!("ready: hold {press} for {role}");
-    }
+    println!("ready: hold {talk} to talk");
     // Started by a restart: the mic is already open (above), so the headset's
     // hands-free link never dropped between copies. Say so, then wait for the old
     // copy to close its mic and step away (it deletes the flag) before reading the
@@ -267,7 +260,16 @@ pub fn listen(
         // transcripts finished by the engine's thread, delivered in order (the
         // echo and silence checks below are for Whisper's habits; streaming text
         // passes them unless a near-silent clip reads as one of Whisper's phrases)
-        while let Ok(done) = results.try_recv() {
+        loop {
+            let done = match results.try_recv() {
+                Ok(done) => done,
+                Err(TryRecvError::Empty) => break,
+                // the engine's thread is gone: no clip it held will come back
+                Err(TryRecvError::Disconnected) => {
+                    PENDING.store(0, Ordering::SeqCst);
+                    break;
+                }
+            };
             let Done { role, level, seconds, result } = done;
             let role = role.as_str();
             match result {
@@ -306,6 +308,7 @@ pub fn listen(
                             let _ = heard(&format!("{role} notice"), &format!("I could not transcribe that clip ({err}), so nothing was sent."));
                         }
             }
+            PENDING.fetch_sub(1, Ordering::SeqCst);
         }
         if SHUTDOWN.load(Ordering::SeqCst) {
             // close the mic properly before the next copy opens its own
@@ -383,16 +386,11 @@ pub fn listen(
         if ALERT.swap(false, Ordering::SeqCst) && rumbles {
             rumbler.play(&[(0, PULSE, PULSE), (60, 0, 0), (120, PULSE, PULSE), (180, 0, 0), (240, PULSE, PULSE), (300, 0, 0)]);
         }
-        // first match wins, so holding both does one thing rather than two
-        let held = bindings
-            .iter()
-            .find(|(_, press)| pad.held(press))
-            .map(|(role, _)| *role);
-        // L2 and R2 together are the quick conversation (the player, 2026-11-10):
-        // a fast agent for chat, links and buttons
-        // L1 and R1 together are dictation (the player, 2026-11-10): the words go
-        // straight to the send preview on the channel picked on the chat wheel,
-        // with no agent in the way
+        let held = pad.held(&talk).then_some("ask");
+        // L2 and R2 together are the quick conversation: a fast agent for chat,
+        // links and buttons. L1 and R1 together are dictation: the words go
+        // straight to the chat box on the channel picked on the chat wheel, with
+        // no agent in the way
         let modifier = if pad.held(&slots[1].1) && pad.held(&slots[3].1) {
             Some("quick")
         } else if pad.held(&slots[0].1) && pad.held(&slots[2].1) {
@@ -444,9 +442,6 @@ pub fn listen(
                 if pressed_at.elapsed() < TAP {
                     engine.drop_clip();
                     println!("tap: {role}");
-                    if let Err(err) = heard(&format!("{role} tap"), "") {
-                        eprintln!("  not delivered: {err}");
-                    }
                 } else if Duration::from_secs_f32(seconds) < MINIMUM_CLIP {
                     // held long enough to mean it, yet almost no audio arrived
                     engine.drop_clip();
@@ -481,7 +476,9 @@ pub fn listen(
                         }
                         Engine::Streaming(feed) => feed.send(stream::Feed::Finish { role: tagged, level, seconds }).is_ok(),
                     };
-                    if !sent {
+                    if sent {
+                        PENDING.fetch_add(1, Ordering::SeqCst);
+                    } else {
                         eprintln!("  the speech engine's thread has ended");
                         let _ = heard(&notice, "The speech engine has stopped, so this was not transcribed: restart the companion.");
                     }
