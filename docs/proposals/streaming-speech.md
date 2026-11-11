@@ -35,15 +35,59 @@ every engine; the player's own voice, in game, must confirm before anything ship
    Nemotron unbiased (8.0%) is near Whisper unbiased: **vocabulary biasing is the gap**,
    and sherpa-onnx has it (hotwords, below), untested.
 
-## What did not run, and what comes next
+## The deciding test: vocabulary biasing (2026-11-11)
 
-Claude Code stopped the benchmark when the PC ran critically low on memory (other
-programs and five agent sessions were running); not restarted. Not measured yet:
-hotwords on Nemotron (the decisive test: the spell and player names as biased
-words), Parakeet offline and Moonshine on all clips (one clip each: Parakeet 124 ms,
-Moonshine 55 ms on CPU, both missed "Orihime"), true real-time lag over the
-websocket client (script ready), and each engine's RAM. Next, with memory to spare:
-those, then the player's own voice in game. Measure RAM per engine before choosing.
+**Verdict: with the same vocabulary as Whisper, streaming Nemotron is within reach:
+better on noisy commands and clean dictation, behind on clean commands and noisy
+dictation, level overall.** Same 96 clips, one engine at a time, both engines given
+exactly the same words: Whisper as its prompt (the companion's own format,
+`transcribe::prompt`), Nemotron as hotwords (sherpa-onnx contextual biasing,
+modified beam search, score 3.0).
+
+The vocabulary: the character's 32 castable spells from the export's `reach`
+section, the 6 macros, and Whisper's command words (the export's spellbook
+section is empty, a bug for the in-game side; its `reach` section lists the same
+spells). "+ names" adds what the game knows and the companion should pass to
+either engine: friends and guild (Orihime, Cecil Sorrowheart), zones (Astranaar,
+Darnassus, Barrens), items (Wool Cloth, Deviate Hides), a profession (Skinning).
+The earlier run's hotword list had held those words too, which flattered
+streaming; here both engines get them or neither does.
+
+| Engine (same words) | Commands clean | Commands noisy | Dictation clean | Dictation noisy |
+|---|---|---|---|---|
+| Whisper, spells + macros | 3.0% | 5.7% | 2.0% | 3.1% |
+| Nemotron, spells + macros, hotwords 3.0 | 6.3% | 6.7% | 2.2% | 5.1% |
+| **Whisper, + names** | **3.0%** | 6.3% | 1.9% | **3.2%** |
+| **Nemotron, + names, hotwords 3.0** | 4.3% | **4.7%** | **1.4%** | 4.1% |
+| Nemotron, + names, no hotwords (beam search) | 7.3% | 11.3% | 3.1% | 4.9% |
+| Nemotron, spells + macros, hotwords 1.5 (default) | 8.7% | 10.0% | 2.2% | 4.4% |
+| Nemotron, spells + macros, hotwords 4.5 | 7.0% | 19.0% | 3.9% | 4.9% |
+
+- **The score matters and was chosen on these clips** (1.5 too weak: "ferry fire"
+  survives; 4.5 too strong: spells appear that were not said, "Swap" becomes
+  "Swipe"). 3.0 is the setting; the player's voice confirms it or moves it.
+- **Nemotron's remaining misses:** "R2" heard as "our two" a few times, "Moonglade"
+  as two words, and one "Bear Form" heard as "Therefore". Whisper's: "Orihime" and
+  "Moonglade" too.
+- **Parakeet streaming cannot be biased** in sherpa-onnx 2.0.1 (its streaming model
+  supports greedy decoding only: "Unsupported decoding method:
+  modified_beam_search"), and unbiased it was far behind (16% on commands). Out.
+- **Memory:** Nemotron with hotwords peaks at 748 MB of RAM on the longest clip
+  (14 s), on the CPU, against Whisper's ~1.6 GB of video memory beside the game.
+- **Not yet measured:** the lag of partial words behind the voice (the websocket
+  client prints its results only at the end, so the timing script read nothing);
+  measured inside the companion instead, with the integration.
+
+## Licences
+
+- **Nemotron streaming 0.6B and this Parakeet export: NVIDIA Open Model License.**
+  Free to use and redistribute, commercially too, provided a Notice file reads
+  "Licensed by NVIDIA Corporation under the NVIDIA Open Model License", a copy of
+  the agreement goes with it, use stays consistent with NVIDIA's Trustworthy AI
+  terms, its guardrails are not defeated, and NVIDIA is indemnified. When the
+  setup window downloads the model from its public source, as it does Whisper's,
+  we do not redistribute it; the window shows the licence before downloading.
+- sherpa-onnx: Apache-2.0. Zipformer: Apache-2.0. Moonshine: MIT. Whisper: MIT.
 
 ## Shape if it holds
 
