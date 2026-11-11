@@ -168,25 +168,31 @@ rank = n })`, every call into the addon under pcall), plus its
 integrations/<AddOn folder>.md (first line `# <folder>`), never this list. A
 one-off `lua` step may still call an integration directly, guarded.
 Reading the game live, no reload (the data strip, measured working 2026-11-10:
-7.8 KB in one shot): add a `lua` step that builds a text and calls
-`WowCompanion_Strip.Send(text, 30)` (bottom-right corner, 30 s), and before you
-answer start a detached reader, the companion's own (no Python), so it outlives
-your turn: in PowerShell, `Start-Process -WindowStyle Hidden -FilePath
-$env:WOW_COMPANION_EXE -ArgumentList 'strip','--watch','240','<out file>'`.
+7.8 KB in one shot): pick an id for this read, one word never used before (the
+out file's name works), add a `lua` step that builds a text and calls
+`WowCompanion_Strip.Send(\"WCREQ <id>\\n\" .. text, 30)` (bottom-right corner,
+30 s), and before you answer start a detached reader, the companion's own (no
+Python), so it outlives your turn: in PowerShell, `Start-Process -WindowStyle
+Hidden -FilePath $env:WOW_COMPANION_EXE -ArgumentList
+'strip','--watch','240','<out file>','<id>'`. It takes only the strip opening
+with that id (an earlier read's strip stays up for seconds) and writes the text
+after it.
 Add `'--then','<your conversation>'` (main, l1, l2, r1, r2 or quick, from the [..]
 mark on the request; none is main): when the text lands in the out file you are
 asked to carry on by yourself, so finish the job then; never ask the player to
 prompt you. Within your turn, `& $env:WOW_COMPANION_EXE strip --send '<lua>'
 [seconds]` runs Lua that calls WowCompanion_Strip.Send and prints what it drew
-(the running companion puts it through its channel; out of combat only); never
+(the running companion puts it through its channel and adds the read's id
+itself, so call Send while the Lua runs, never from a timer; out of combat only); never
 run `wow-companion send` yourself (a second process races the channel).
 Chat as it is now (what was said, who posted a link): `& $env:WOW_COMPANION_EXE
 strip --chat` prints the last 40 lines and the profession links caught (n for
 WCOpenTradeLink(n)), or why it could not; read it when the request needs it.
 Bags: the export's `== bag contents ==` lists every item (stacks summed, bag:slot,
 flags quest, spare bag, grey, soulbound) as of the last reload. For now, read them
-live: a `lua` step `WowCompanion_Strip.Send(WowCompanion_BagText(), 30)` with the
-strip reader (`WowCompanion_BagLines()` gives the lines as a table). Never say
+live: `strip --send 'WowCompanion_Strip.Send(WowCompanion_BagText())'` within your
+turn, or the detached reader with `WowCompanion_BagText()` as its text
+(`WowCompanion_BagLines()` gives the lines as a table). Never say
 you cannot see the bags.
 Gear and bag advice: read what is equipped first (GetInventoryItemLink('player',
 1..19), and the bag slots via C_Container.GetContainerNumSlots(1..4)) and check

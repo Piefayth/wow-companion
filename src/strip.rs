@@ -12,6 +12,8 @@
 //! "WCCMD ..." strips), asks from other processes (`serve_asks`: an agent's
 //! `strip --chat`, a developer's `strip --send <lua>`, put through this
 //! companion's channel), and the agents' detached readers (`strip --watch`).
+//! Every read names a fresh id its strip opens with (`WCREQ <id>`, a newline,
+//! then the text), and takes no other strip.
 
 use super::*;
 
@@ -119,17 +121,59 @@ fn is_command(payload: &[u8]) -> bool {
     payload.starts_with(b"WCCMD ")
 }
 
-/// Watch the corner for up to `seconds` for a strip of ours (not a command):
+/// What a read's strip opens with. Every read names a fresh id and takes only
+/// the strip that opens with it: a strip stays up for seconds, and the one an
+/// earlier read drew is otherwise taken for this one (measured 2026-11-11: three
+/// `strip --send` reads in a row each returned the one before).
+fn request_prefix(id: &str) -> String {
+    format!("WCREQ {id}\n")
+}
+
+/// The read's text, if `payload` is the strip drawn for read `id`.
+fn answer_for<'a>(payload: &'a [u8], id: &str) -> Option<&'a [u8]> {
+    payload.strip_prefix(request_prefix(id).as_bytes())
+}
+
+/// `lua`, with every `WowCompanion_Strip.Send` made while it runs (WCChatStrip's
+/// included) opening with read `id`'s prefix; Send is put back after, error or
+/// not. A strip drawn later, from a timer, carries no id and is not taken.
+fn tagged(lua: &str, id: &str) -> String {
+    let prefix = request_prefix(id).replace('\n', "\\n");
+    format!(
+        "local __wcreq_strip = WowCompanion_Strip\n\
+         if not (__wcreq_strip and __wcreq_strip.Send) then error(\"the data strip is not loaded (WowCompanion_Link)\", 0) end\n\
+         local __wcreq_send = __wcreq_strip.Send\n\
+         __wcreq_strip.Send = function(text, seconds) return __wcreq_send(\"{prefix}\" .. tostring(text or \"\"), seconds) end\n\
+         local __wcreq_ok, __wcreq_err = pcall(function(...)\n{lua}\nend)\n\
+         __wcreq_strip.Send = __wcreq_send\n\
+         if not __wcreq_ok then error(__wcreq_err, 0) end"
+    )
+}
+
+/// Why a strip on screen is not read `id`'s.
+fn not_ours(payload: &[u8]) -> &'static str {
+    if is_command(payload) {
+        "only a command strip showed"
+    } else if payload.starts_with(b"WCREQ ") {
+        "only another read's strip showed"
+    } else {
+        "only a strip without a read's id showed (the Lua must call WowCompanion_Strip.Send while it runs, not from a timer)"
+    }
+}
+
+/// Watch the corner for up to `seconds` for read `id`'s strip, and give its text:
 /// a look at the bottom row (1024x4) each second until the magic shows, then one
 /// capture as tall as a strip can be.
-pub(crate) fn watch(seconds: f64) -> Result<Vec<u8>, String> {
+pub(crate) fn watch(id: &str, seconds: f64) -> Result<Vec<u8>, String> {
     let end = Instant::now() + Duration::from_secs_f64(seconds.max(0.0));
     let mut why = String::from("nothing seen");
     while Instant::now() < end {
         match capture(CELL) {
             Ok(look) if look.magic_shows() => match capture(FULL_HEIGHT).map_err(|err| err.to_string()).and_then(|shot| decode(&shot)) {
-                Ok(payload) if is_command(&payload) => why = "a command strip, not ours".into(),
-                Ok(payload) => return Ok(payload),
+                Ok(payload) => match answer_for(&payload, id) {
+                    Some(text) => return Ok(text.to_vec()),
+                    None => why = not_ours(&payload).into(),
+                },
                 Err(err) => why = err,
             },
             Ok(_) => why = "nothing seen".into(),
@@ -140,11 +184,11 @@ pub(crate) fn watch(seconds: f64) -> Result<Vec<u8>, String> {
     Err(why)
 }
 
-/// Watch, then write the payload (or "STRIP FAILED: why") to `out`; with `then`
-/// (main, l1, l2, r1, r2, quick) that conversation is asked to carry on once the
-/// result is in (the player, 2026-11-10: the agent reminds itself).
-pub(crate) fn watch_to_file(seconds: f64, out: &Path, then: Option<&str>) -> io::Result<bool> {
-    let result = watch(seconds);
+/// Watch for read `id`, then write its text (or "STRIP FAILED: why") to `out`;
+/// with `then` (main, l1, l2, r1, r2, quick) that conversation is asked to carry
+/// on once the result is in (the player, 2026-11-10: the agent reminds itself).
+pub(crate) fn watch_to_file(id: &str, seconds: f64, out: &Path, then: Option<&str>) -> io::Result<bool> {
+    let result = watch(id, seconds);
     match &result {
         Ok(payload) => fs::write(out, payload)?,
         Err(why) => fs::write(out, format!("STRIP FAILED: {why}"))?,
@@ -266,9 +310,11 @@ fn serve_one(addons: &Path, lua: &str, seconds: f64) -> Result<Vec<u8>, String> 
     if !channel::game_running().map_err(|err| err.to_string())? {
         return Err("the game is closed".into());
     }
-    channel::send(addons, &crate::message::Msg::new("lua").text("code", lua))
+    // a fresh id per read; the serving thread takes one ask at a time
+    let id = SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_nanos()).unwrap_or_default().to_string();
+    channel::send(addons, &crate::message::Msg::new("lua").text("code", &tagged(lua, &id)))
         .map_err(|err| format!("the Lua could not be sent: {err}"))?;
-    watch(seconds).map_err(|why| {
+    watch(&id, seconds).map_err(|why| {
         format!("no strip in {seconds:.0} s ({why}); the game runs Lua from the companion out of combat only, and the code must call WowCompanion_Strip.Send")
     })
 }
@@ -312,8 +358,9 @@ fn print(payload: &[u8]) -> io::Result<()> {
 /// `wow-companion strip --chat`: the game's recent chat and caught links, now.
 /// `wow-companion strip --send <lua> [seconds]`: run Lua that draws a strip
 /// (through the running companion's channel) and print what it drew.
-/// `wow-companion strip --watch <seconds> <out file> [--then <conversation>]`:
-/// the agents' detached reader (src/agent.rs, "Reading the game live").
+/// `wow-companion strip --watch <seconds> <out file> <id> [--then <conversation>]`:
+/// the agents' detached reader (src/agent.rs, "Reading the game live"), for the
+/// strip the agent's own `lua` step draws opening with `WCREQ <id>` and a newline.
 pub(crate) fn command(args: &[String]) -> io::Result<()> {
     match args {
         [] => match read() {
@@ -326,20 +373,25 @@ pub(crate) fn command(args: &[String]) -> io::Result<()> {
             let seconds: f64 = seconds.parse().map_err(|_| io::Error::other("--send <lua> [seconds]"))?;
             print(&ask(lua, seconds)?)
         }
-        [flag, seconds, out, rest @ ..] if flag == "--watch" => {
-            let seconds: f64 = seconds.parse().map_err(|_| io::Error::other("--watch wants seconds, then the out file"))?;
+        [flag, seconds, out, id, rest @ ..] if flag == "--watch" => {
+            let seconds: f64 = seconds.parse().map_err(|_| io::Error::other("--watch wants seconds, then the out file, then the read's id"))?;
+            if id.is_empty() || id.starts_with("--") || id.contains(char::is_whitespace) {
+                return Err(io::Error::other("--watch wants the read's id after the out file: one word, the one the Lua's strip opens with"));
+            }
             let then = match rest {
                 [] => None,
                 [flag, slot] if flag == "--then" => Some(slot.as_str()),
-                _ => return Err(io::Error::other("after the out file only --then <conversation>")),
+                _ => return Err(io::Error::other("after the read's id only --then <conversation>")),
             };
-            if watch_to_file(seconds, Path::new(out), then)? {
+            if watch_to_file(id, seconds, Path::new(out), then)? {
                 Ok(())
             } else {
                 std::process::exit(1)
             }
         }
-        _ => Err(io::Error::other("strip [--chat | --send <lua> [seconds] | --watch <seconds> <out file> [--then <conversation>]]")),
+        _ => Err(io::Error::other(
+            "strip [--chat | --send <lua> [seconds] | --watch <seconds> <out file> <id> [--then <conversation>]]",
+        )),
     }
 }
 
@@ -435,6 +487,40 @@ mod tests {
         };
         assert!(bottom.magic_shows());
         assert_eq!(decode(&bottom).unwrap_err(), "strip taller than the capture");
+    }
+
+    #[test]
+    fn a_read_takes_only_the_strip_opening_with_its_own_id() {
+        let drawn_for = |text: &[u8]| decode(&drawn(text, FULL_HEIGHT, [0, 0, 0])).unwrap();
+        let ours = drawn_for(b"WCREQ 1794383554457\n[General] hi\n[Trade] wts");
+        assert_eq!(answer_for(&ours, "1794383554457"), Some(&b"[General] hi\n[Trade] wts"[..]));
+        // the strip an earlier read left up, and ids one is a prefix of
+        let earlier = drawn_for(b"WCREQ 1794383554456\nolder text");
+        assert_eq!(answer_for(&earlier, "1794383554457"), None);
+        assert_eq!(answer_for(&ours, "179438355445"), None);
+        assert_eq!(answer_for(&ours, "17943835544570"), None);
+        // an empty answer is still this read's
+        assert_eq!(answer_for(b"WCREQ 9\n", "9"), Some(&b""[..]));
+        assert_eq!(answer_for(b"WCREQ 9", "9"), None);
+        // what showed instead is said
+        assert_eq!(not_ours(b"WCCMD 42 stop l1"), "only a command strip showed");
+        assert_eq!(not_ours(&earlier), "only another read's strip showed");
+        assert!(not_ours(b"text drawn without an id").starts_with("only a strip without a read's id"));
+    }
+
+    #[test]
+    fn a_reads_lua_sends_with_its_id_while_it_runs_and_puts_send_back() {
+        let lua = "local t = {} t[1] = \"x\" WowCompanion_Strip.Send(table.concat(t), 8)";
+        let wrapped = tagged(lua, "42");
+        // the read's Lua runs unchanged inside, after Send opens with the id
+        let (before, after) = wrapped.split_once(&format!("\n{lua}\n")).expect("the Lua inside, on its own lines");
+        assert!(before.contains("__wcreq_send(\"WCREQ 42\\n\" .. tostring(text or \"\"), seconds)"), "{before}");
+        assert!(before.ends_with("pcall(function(...)"));
+        // put back after, whether the Lua failed or not, and its error passed on
+        let restore = after.find("__wcreq_strip.Send = __wcreq_send").expect("Send put back");
+        let rethrow = after.find("if not __wcreq_ok then error(__wcreq_err, 0) end").expect("the error passed on");
+        assert!(after.starts_with("end)") && restore < rethrow);
+        assert!(!wrapped.contains("WCREQ 42\n"), "the newline is a Lua escape, not a line break in a string");
     }
 
     #[test]
