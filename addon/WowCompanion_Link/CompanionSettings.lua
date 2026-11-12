@@ -159,8 +159,8 @@ valueRow("speech", 111, "Speech engine", "Whisper is more accurate; streaming is
 		local now = settings()
 		return now and type(now.engines) == "table" and now.engines or {}
 	end)
--- the mic list: asked for each time the page is shown (the row's menu is
--- built over and over, so asking from it would ask again at every answer)
+-- the mic list: asked for when the page is first shown (below), never from the
+-- row's menu, which is built over and over
 valueRow("mic", 112, "Microphone", "The input the companion listens on.",
 	function()
 		local list = {}
@@ -192,6 +192,12 @@ bus:On("COMPANION_STATUS", function(inbox)
 	refresh()
 end)
 bus:On("COMPANION_MICS", function() refresh() end)
+-- asked once a UI session: the companion answers once a session too, and the
+-- list it sent stays here (WC.Link.Mics)
+local askedMics
 WowCompanionSettingsPage:HookScript("OnShow", function()
-	if settings() then command("mics") end
+	if settings() and #WC.Link.Mics() == 0 and not askedMics then
+		askedMics = true
+		command("mics")
+	end
 end)
