@@ -19,6 +19,13 @@ none of this. When the player states a new preference or changes one, write it h
   maintainer checks; CurseForge and Wago are fine. Install only after a yes.
 - **All UI we build looks like Blizzard's** (2026-11-09): the game's own borders,
   backings, fonts and atlases, never flat colour boxes.
+- **The look: "a luxury World of Warcraft addon"** (2026-11-12). The reference is
+  the chat well: marbled navy slate turns, washed-out bronze (not Blizzard's
+  saturated gold), the medium vine dividers, the fleur-and-heartwood scroll bar.
+  A little more elevated than Blizzard's own, at the game's saturation and
+  contrast; everything else (the frame, other windows) is brought into that
+  palette. Painted detail at a scale that reads at TV distance: no fine grooves
+  or noise, no over-smoothing, no belts or accents across the middle of a piece.
 - **Nothing of ours opens itself** (2026-11-10). The Companion window opens only
   when they ask (minus tap, `/wc log`); news goes to the board/toast. No data cards
   left on screen: the data strip shows only for the moment of the shot.
