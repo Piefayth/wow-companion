@@ -308,27 +308,24 @@ def inset():
 # --- the tabs -------------------------------------------------------------------
 #
 # Window.lua's tab row (PanelTopTabButtonTemplate's Left, Middle and Right
-# pieces, each state): every tab a notch carved in the panel with the wells'
-# wall, its floor left clear for the stone Window.lua lays under it. The chosen
-# tab's notch and the well under it are one cavity: its side walls turn out
-# through a fillet into the well's top wall, its floor runs on into the well's.
-# So its art reaches INSET below the button's foot, over the well's wall, and
-# FLARE past each side, where the fillet and its blur have given way to the
-# plain wall again; the strip it lays over the well's wall is opaque, so the
-# wall under it never shows twice. Its lip carries an aged brass bead that wears
-# away as the walls turn into the well's. The other tabs are shorter and dimmer,
-# their notches open at the foot, the well's wall running on in front of them.
-# Tab-Opening is the mask Window.lua cuts the well's top shadow with under the
-# chosen tab: clear at its ends (clamped beyond them), the shadow fading out
-# across each side wall.
+# pieces, each state): every tab a raised stone plaque standing on the panel at
+# the well's brink, the inverse of the wells (cut down) so a tab reads as a
+# thing to press. Its top and sides are a rounded, worn bevel in the wells'
+# stone, lit from the top left, with a dark crease at its edge; its foot is cut
+# flat where it stands, so no bevel runs along the well. Its face is the
+# panel's stone, lifted toward the light on the chosen tab, which is also
+# taller; the others are shorter, their bevel dimmed. No coloured rim:
+# height, light and the face's stone say which is chosen.
 
-TAB_VERSION = 3
+TAB_VERSION = 4
 TAB_K = 40  # px a unit drawn: every edge below on a whole pixel
-TAB_W, TAB_GAP, TAB_H, TAB_ACTIVE_H, CAP, FLARE = 69.0, 3.0, 20.2, 25.6, 6.0, 2.5  # Window.lua's
-CORNER, FILLET = 2.0, 1.5  # the notch's top corners worn round; the turn into the well's wall
+TAB_W, TAB_GAP, TAB_H, TAB_ACTIVE_H, CAP = 69.0, 3.0, 20.2, 25.6, 6.0  # Window.lua's
+CORNER = 2.5  # the plaque's top corners worn round
+BEVEL = 2.4  # the bevel's width, where the face begins
 TAB_MID = 2.0  # the middle piece's width in units
-TAB_DIM = 0.8  # the unchosen tabs' walls
-UNDER = np.array((23, 24, 27.0))  # the stone's mean, under the flare's wall
+TAB_DIM = 0.8  # the unchosen tabs' bevel
+FACE = np.array((50, 46, 41.0))  # an unchosen tab's face: the panel's own stone
+FACE_ACTIVE = np.array((78, 72, 63.0))  # the chosen one's, lifted toward the light
 
 
 def edt(mask):
@@ -337,32 +334,33 @@ def edt(mask):
 
 def tab(active, w, k=TAB_K):
     """A whole tab on a button w units wide as premultiplied RGBA, over the
-    piece's bounds (the chosen tab's flare and the strip below its foot)."""
+    button's bounds."""
     h = TAB_ACTIVE_H if active else TAB_H
-    pad = 3.0  # more than FILLET, or the closing fills it
-    side = FLARE if active else 0
-    below = INSET if active else 0
-    xx, yy = grid(w + 2 * (side + pad), h + below + 2 * pad, k)
-    xx, yy = xx - side - pad, yy - h - pad  # units from the button's foot left, y down
-    cavity = (xx >= 0) & (xx <= w) & (yy >= -h)
-    if active:
-        cavity |= yy >= 0
-    r = CORNER * k  # the top corners round: an opening of the cavity
-    cavity = edt(~(edt(cavity) > r)) <= r
-    if active:  # the panel's corners at the turn round: a closing
-        f = FILLET * k
-        cavity = edt(~cavity) <= f
-        cavity = edt(cavity) > f
-    d = np.where(cavity, edt(cavity) - 0.5, 0.5 - edt(~cavity)) / k
-    if active:
-        pre = carve(d, k, brass=np.clip((-yy - 0.5) / 3.0, 0, 1))
-        # the flare's strip over the well's wall: the floor there opaque
-        # (below the wall's blurred top, and beside the floor's stone)
-        strip = ((yy > 1) & ((xx < 1) | (xx > w - 1)))[..., None]
-        under = np.concatenate([UNDER * strip, strip], -1)
-        pre = pre + under * (1 - pre[..., 3:])
-    else:
-        pre = carve(d, k)
+    pad = 3.0
+    xx, yy = grid(w + 2 * pad, h + 2 * pad, k)
+    xx, yy = xx - pad, yy - h - pad  # units from the button's foot left, y down
+    # the plaque, its foot running on below the piece so no bevel lies there
+    shape = (xx >= 0) & (xx <= w) & (yy >= -h)
+    r = CORNER * k  # the top corners round: an opening of the shape
+    shape = edt(~(edt(shape) > r)) <= r
+    d = np.where(shape, edt(shape) - 0.5, 0.5 - edt(~shape)) / k
+    # the bevel's height: the panel's level at the edge, rising round and worn
+    # to the face
+    t = np.clip(d / BEVEL, 0, 1)
+    hgt = 1.4 * (1 - (1 - t) ** 2)
+    lay = Layers(d.shape)
+    # the face: the panel's stone, lighter than the panel on the chosen tab,
+    # a little lighter toward its top as a lit, worn face is
+    face = (FACE_ACTIVE if active else FACE) * (1.08 - 0.16 * np.clip((yy + h) / h, 0, 1))[..., None]
+    lay.over(face, (d >= 0).astype(float))
+    bev = shade(ndimage.gaussian_filter(hgt, k * 0.15), STONE, k, gloss=0.1, power=10)
+    lay.over(bev, ((d >= 0) & (d < BEVEL + 0.3)).astype(float))
+    lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.15) / 0.3, 0, 1) * (d >= -0.2) * 0.95)
+    # a faint crease where the bevel meets the face
+    lay.over(LINE_IN, np.clip(1 - np.abs(d - BEVEL) / 0.25, 0, 1) * 0.35)
+    pre = lay.pre()
+    pre = np.stack([ndimage.gaussian_filter(pre[..., c], k * 0.22) for c in range(4)], -1)
+    if not active:
         pre[..., :3] *= TAB_DIM
     p = int(round(pad * k))
     return pre[p:-p, p:-p]
@@ -374,8 +372,8 @@ def tab_pieces():
     w = 2 * CAP + 2 * TAB_MID
     for active in (False, True):
         img = tab(active, w)
-        h = TAB_ACTIVE_H + INSET if active else TAB_H
-        cap = int(round((CAP + (FLARE if active else 0)) * k))
+        h = TAB_ACTIVE_H if active else TAB_H
+        cap = int(round(CAP * k))
         mid = int(round(TAB_MID * k))
         size = (64, 256)
         name = "Tab-%s" + ("-Active" if active else "")
@@ -384,14 +382,6 @@ def tab_pieces():
         c = img.shape[1] // 2
         out[name % "Middle"] = fit(img[:, c - mid // 2:c - mid // 2 + mid], (16, 256))
         assert img.shape[0] == int(round(h * k))
-    # the opening's mask: white, its alpha 1 at the ends and 0 between, fading
-    # out across each side wall (INSET of TAB_W)
-    u = (np.arange(128) + 0.5) / 128 * TAB_W
-    e = np.clip(np.minimum(u, TAB_W - u) / INSET, 0, 1)
-    a = 1 - e * e * (3 - 2 * e)
-    mask = np.ones((8, 128, 4)) * 255
-    mask[..., 3] = a * 255
-    out["Tab-Opening"] = mask
     return out
 
 
@@ -504,36 +494,26 @@ def mock(art, backdrop, chosen=0):
     m.put((20, 21, 24, 255), wells[0], top, wells[1], foot)
     m.tile("SlateLight", wells[0] + EDGE, top + EDGE, wells[1] - EDGE, foot - EDGE)
     m.put((34, 28, 24, 255), wells[2], top, wells[3], foot)
-    # the tabs' feet, left to right: the first FLARE in from the well's inner edge
-    xs = [wells[0] + EDGE + FLARE + i * (TAB_W + TAB_GAP) for i in range(len(LABELS))]
-    # the lip: the shadow down from the well's top wall, cut under the chosen
-    # tab by Tab-Opening's alpha (clamped past its ends)
+    # the tabs' feet, left to right, the first over the well's inner edge
+    xs = [wells[0] + EDGE + i * (TAB_W + TAB_GAP) for i in range(len(LABELS))]
+    # the lip: the shadow down from the well's top wall
     x0, x1 = wells[0] + EDGE, wells[1] - EDGE - 30
     a, b = m.px(x0, top + EDGE)
     c, d = m.px(x1, top + EDGE + 24)
     yu = (np.arange(d - b) + 0.5) / PX
-    xu = x0 + (np.arange(c - a) + 0.5) / PX
-    ma = art["Tab-Opening"][0, :, 3] / 255
-    cut = np.interp((xu - xs[chosen]) / TAB_W, (np.arange(128) + 0.5) / 128, ma)
     lip = np.zeros((d - b, c - a, 4))
-    lip[..., 3] = np.interp(yu, *LIP)[:, None] * cut[None, :] * 255
+    lip[..., 3] = np.interp(yu, *LIP)[:, None] * 255
     m.im.alpha_composite(Image.fromarray(lip.astype(np.uint8), "RGBA"), (a, b))
     m.nine(art, "Inset-", wells[0], top, wells[1], foot, INSET, INSET)
     m.nine(art, "Inset-", wells[2], top, wells[3], foot, INSET, INSET)
     labels = []
     for i, x in enumerate(xs):
         act = i == chosen
-        if act:
-            # the floor: the replies' stone, inside the walls' soft edge
-            m.tile("SlateLight", x + 1, top - TAB_ACTIVE_H + 1, x + TAB_W - 1, top + INSET)
-            y0, y1, out, sfx = top - TAB_ACTIVE_H, top + INSET, FLARE, "-Active"
-        else:
-            m.tile("Slate", x + 1, top - TAB_H + 1, x + TAB_W - 1, top)
-            y0, y1, out, sfx = top - TAB_H, top, 0, ""
-        cap = CAP + out
-        m.put(art["Tab-Left" + sfx], x - out, y0, x - out + cap, y1)
-        m.put(art["Tab-Middle" + sfx], x - out + cap, y0, x + TAB_W + out - cap, y1)
-        m.put(art["Tab-Right" + sfx], x + TAB_W + out - cap, y0, x + TAB_W + out, y1)
+        th = TAB_ACTIVE_H if act else TAB_H
+        sfx = "-Active" if act else ""
+        m.put(art["Tab-Left" + sfx], x, top - th, x + CAP, top)
+        m.put(art["Tab-Middle" + sfx], x + CAP, top - th, x + TAB_W - CAP, top)
+        m.put(art["Tab-Right" + sfx], x + TAB_W - CAP, top - th, x + TAB_W, top)
         # PanelTemplates_SelectTab and _DeselectTab: the label's centre 12 and
         # 8 units over the foot
         labels.append((x + TAB_W / 2, top - (12 if act else 8), LABELS[i], (255, 255, 255) if act else (255, 209, 0)))
@@ -585,7 +565,7 @@ def sheet(art):
         rows += [[crop], [up(crop, 3)]]
     for im, x in ((new, 0), (second, TAB_W + TAB_GAP)):
         for side in (0, TAB_W):
-            jx = ORIGIN[0] + (RIM + GAP + EDGE + FLARE + x + side) * PX
+            jx = ORIGIN[0] + (RIM + GAP + EDGE + x + side) * PX
             jy = ORIGIN[1] + WELL_TOP * PX
             rows.append([up(im.crop((int(jx) - 30, int(jy) - 40, int(jx) + 30, int(jy) + 30)), 8)])
     rows[-4:] = [sum(rows[-4:], [])]
