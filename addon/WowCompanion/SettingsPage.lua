@@ -160,8 +160,10 @@ local function dropdown(row)
 	control = CreateFrame("Frame", nil, r, "Metal2DropdownWithSteppersAndLabelTemplate")
 	local dd = control.Dropdown
 	-- the steppers either side, inside the control's width
-	dd:SetWidth(CONTROL_W - 50)
-	control:SetSize(CONTROL_W, 26)
+	-- as wide as a slider and its value together, so the left arrows of both
+	-- start at one line and both end at the edge
+	dd:SetWidth(CONTROL_W + VALUE_W - 50)
+	control:SetSize(CONTROL_W + VALUE_W, 26)
 	place(r, control)
 	dd:SetupMenu(function(_, root)
 		for _, name in ipairs(row.options()) do
