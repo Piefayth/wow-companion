@@ -1,16 +1,16 @@
--- Junction trials, temporary: the vine dividers' meetings side by side at real
--- size on the window's slate, while the player chooses (art:
--- tools/make_crest.py, tools/make_junction_trials.py). Goes with its art when
--- one is chosen.
+-- Junction trials, temporary: three directions for where the vine dividers
+-- meet, side by side at real size on the window's slate, while the player
+-- chooses (art: tools/make_junction_trials.py; the first is the settings
+-- page's). Goes with its art when one is chosen.
 local TRIALS = {
-	{ "Crest", "the fleur arrow's language: pincers clasp the trunk; two trunks add long sweeps and the arm through", 96 },
-	{ "Current", "the S-scroll on the settings page now", 64 },
-	{ "Graft", "the branch flares into the trunk, a long tendril off it", 64 },
-	{ "Tendril", "one long slow loop out along both vines", 64 },
+	{ "Fleur", "on the settings page: the arm runs through and opens into a fleur-de-lis; a branch's root splits into two S volutes" },
+	{ "Whiplash", "the arm forks and its branches run into the trunk; two trunks add a long lyre on the left" },
+	{ "Interlace", "the arm parts into two wires that pass behind the trunk and cross on its far side" },
 }
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Try-%s-%s-1]]
+local SIZE = { Big = 112, Small = 80 }
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Try-%s-%s-2]]
 local CELL, GAP = 150, 16
-local AT = -25 -- the trunk, left of the cell's centre so a crest stays inside it
+local AT = -25 -- the trunk, left of the cell's centre so a big one's left side stays inside it
 
 WC.Companion.AddTab("Junctions", function(page)
 	local built
@@ -52,7 +52,7 @@ WC.Companion.AddTab("Junctions", function(page)
 				join:SetAllPoints()
 				local t = join:CreateTexture(nil, "OVERLAY")
 				t:SetTexture(ART:format(trial[1], size))
-				t:SetSize(trial[3], trial[3])
+				t:SetSize(SIZE[size], SIZE[size])
 				t:SetPoint("CENTER", cell, "CENTER", AT, 0)
 				local tag = box:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 				tag:SetPoint("TOPLEFT", cell, "BOTTOMLEFT", 0, -2)

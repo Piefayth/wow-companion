@@ -233,15 +233,13 @@ WowCompanion_Style.STONE = {
 -- The vine dividers, every window's (tools/make_scrollbar_art.py, rule_pieces):
 -- three weights, "Thin", "" (medium, the chat's) and "Thick"; pieces Left,
 -- Mid (stretched), Right, 32 x 16 (Mid 64); Top, VMid (stretched), Bottom,
--- 16 x 32; the junctions, 64 square, centred where the runs meet, wire
--- scrollwork at three levels: Wisp (a long S in each corner), Scroll (and a
--- lyre on the far side), Filigree (tighter spirals, a C off each S):
--- Cross<level> and T<way><level> (TUp, TDown, TLeft, TRight, named for the arm
--- that leaves the straight run) where runs of one weight meet, and <weight>T<way>From
--- <Thin|Medium><level> where a lighter vine grows into a heavier run. The line
--- runs down each piece's middle; a round end sits 1.2 + its half-width in from
--- a cap's outer edge.
-local VINE_VERSION = 6 -- the generator's VINE_VERSION
+-- 16 x 32. The line runs down each piece's middle; a round end sits 1.2 + its
+-- half-width in from a cap's outer edge. Where the thick vine is met at a
+-- right angle, a junction (make_scrollbar_art.py, junction) forged as one
+-- piece with both vines: ThickTRightBig (two thick vines, a fleur-de-lis on
+-- the run's far side) and ThickTRightFromMedium (a medium vine growing out of
+-- the thick), each for a run going down and an arm leaving right.
+local VINE_VERSION = 7 -- the generator's VINE_VERSION
 function WowCompanion_Style.Vine(piece)
 	return ART .. "Vine-" .. piece .. "-" .. VINE_VERSION
 end
@@ -279,14 +277,14 @@ function WowCompanion_Style.VineLine(owner, weight, vertical, capStart, capEnd)
 	end
 	return made
 end
--- A junction (64 square: room for its work to spread; the crest, on trial in
--- the Junctions tab, 96) centred on a point of `owner`
-function WowCompanion_Style.VineJoin(owner, weight, kind, point, x, y)
+-- A junction centred on a point of `owner`, square at the size it was drawn
+-- for (the art's units), its own stretch of both vines inside it
+local JOIN_SIZE = { TRightBig = 112, TRightFromMedium = 80 }
+function WowCompanion_Style.VineJoin(owner, weight, kind, point)
 	local t = owner:CreateTexture(nil, "OVERLAY")
-	t:SetTexture(WowCompanion_Style.Vine((weight or "") .. kind))
-	local size = kind:find("Crest$") and 96 or 64
-	t:SetSize(size, size)
-	t:SetPoint("CENTER", owner, point or "CENTER", x or 0, y or 0)
+	t:SetTexture(WowCompanion_Style.Vine(weight .. kind))
+	t:SetSize(JOIN_SIZE[kind], JOIN_SIZE[kind])
+	t:SetPoint("CENTER", owner, point)
 	return t
 end
 

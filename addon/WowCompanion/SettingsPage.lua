@@ -151,7 +151,7 @@ across:SetHeight(16)
 across:SetPoint("LEFT", band, "TOPLEFT", -2 - SEAM / 2, SEAM / 2)
 across:SetPoint("RIGHT", band, "TOPRIGHT", 9, SEAM / 2)
 WC.Style.VineLine(across, "Thick", false, false, true)
-WC.Style.VineJoin(across, "Thick", "TRightCrest", "LEFT")
+WC.Style.VineJoin(across, "Thick", "TRightBig", "LEFT")
 
 -- One setting: a row from the names well to the right edge, its name at the left
 -- and its control at the edge; the row is the one stop, shaded white at 0.1
@@ -278,12 +278,13 @@ local function header(name)
 	h:SetWidth(SPINE - 24)
 	h:SetJustifyH("RIGHT")
 	h:SetText(name)
-	-- grown out of the thick spine between the wells, through a joint of the
-	-- vine's own (WC.Style.VineJoin), drawn over the spine as it scrolls past
+	-- grown out of the thick spine between the wells, forged into it
+	-- (WC.Style.VineJoin): the joint draws its own stretch of the spine, over
+	-- the spine as it scrolls past
 	h.divider = CreateFrame("Frame", nil, content)
 	h.divider:SetHeight(16)
 	WC.Style.VineLine(h.divider, "", false, false, true)
-	WC.Style.VineJoin(h.divider, "Thick", "TRightFromMediumCrest", "LEFT")
+	WC.Style.VineJoin(h.divider, "Thick", "TRightFromMedium", "LEFT")
 	headers[name] = h
 	return h
 end
@@ -300,7 +301,7 @@ local function orderOf(e) return e.row.order or 50 end
 local LIFT = 25
 local function lift()
 	local base = page:GetFrameLevel() + LIFT
-	-- the joints over the spine: each draws the spine through it, threaded
+	-- the joints over the spine: each draws its stretch of the spine
 	seams:SetFrameLevel(base)
 	down:SetFrameLevel(base)
 	across:SetFrameLevel(base + 1)

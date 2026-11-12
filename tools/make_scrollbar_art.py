@@ -21,7 +21,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 # the vine dividers are every window's (Style.lua's WC.Style.Vine), so Core's
 CORE_OUT = os.path.join(ROOT, "addon", "WowCompanion", "Art")
-VINE_VERSION = 6  # Style.lua's VINE_VERSION
+VINE_VERSION = 7  # Style.lua's VINE_VERSION
 LIGHT = np.array([-0.55, -0.75, 0.9]); LIGHT /= np.linalg.norm(LIGHT)
 HALF = LIGHT + np.array([0, 0, 1.0]); HALF /= np.linalg.norm(HALF)
 
@@ -439,7 +439,7 @@ def rule_pieces(weight):
     piece's middle. Horizontal, 16 tall:
     Left and Right (32 wide, a round end 1.2 + hw from the piece's outer edge)
     and Mid (64, stretched). Vertical, 16 wide: Top and Bottom (32 tall) and
-    VMid (64, stretched); and its junctions (junctions())."""
+    VMid (64, stretched)."""
     hw, pal = WEIGHTS[weight]
     e = 1.2 + hw
     far = -12, 44  # runs leave the piece, so a stretched Mid meets them seamlessly
@@ -462,152 +462,115 @@ def rule_pieces(weight):
         elif piece == "VMid":  # stretched lengthwise: the same in every row
             img = np.repeat(img.mean(0, keepdims=True), img.shape[0], 0)
         out[weight + piece] = img
-    out.update(junctions(weight))
     return out
 
 
-# --- where dividers meet. Each junction is drawn for TRight (a straight run
-# down x 16, the arm leaving to the right along y 16) and turned to the other
-# ways by moving its points, never its pixels, so its light stays the frame's.
-# No boss over the meeting (the player, 2026-11-12: curvy and wiry, elegant
-# without being too much; longer, curvier, decorative, never tool-like):
-# wire scrollwork in the vine's bark, three levels, for different places:
-#   Wisp      in each corner the arm makes with the run, a long S of wire
-#             leaving the arm, sweeping in and up the run to a spiral
-#   Scroll    and on the run's far side a lyre: two long S's parting from the
-#             meeting, each to a spiral turned away
-#   Filigree  the spirals tighter, and a small C curling off each corner's S
-# A lighter vine growing into a heavier one is the same work, its wire the
-# lighter vine's.
+# --- where the thick vine is met at right angles (the settings page): each
+# junction forged as one piece, the run, the arm and the ornament one metal
+# with one outline, never laid over the lines; drawn for the run down the
+# middle and the arm leaving right, square and centred where they meet, the
+# run and arm out past its edges so the vine pieces meet them seamlessly.
+# Built from the blacksmith's joints: the arm flares into the run with round
+# fillets (a forge weld, a branch's U-shaped crotch), and its ornament is the
+# arm's own end split and scrolled, in the fleur-de-lis arrow's language:
+#   Big       (Vine-ThickTRightBig) two thick vines: the arm runs through the
+#             run and opens on the far side into a fleur-de-lis lying on its
+#             side, its lance pointing away, a volute curling off each side
+#   FromMedium (Vine-ThickTRightFromMedium) a medium vine growing out of the
+#             thick: it flares into the run, its root split into two volutes
+#             curling away from it, the arm itself their fleur's lance
+# Mirrored halves are built by moving points, so the light stays the frame's.
 
-J = 64  # a junction's side, in units: room for the work to spread
-TURNS = {
-    "TRight": lambda x, y: (x, y),
-    "TLeft": lambda x, y: (J - x, y),
-    "TDown": lambda x, y: (y, x),
-    "TUp": lambda x, y: (y, J - x),
-}
-LEVELS = ("Wisp", "Scroll", "Filigree")
+JOIN_SIZE = {True: 112, False: 80}  # units square: Style.lua's VineJoin sizes
 
 
-def turned(f, pieces):
+def spline(pts, n=40):
+    """A smooth path through pts (Catmull-Rom), n points between each two."""
+    p = np.asarray(pts, float)
+    p = np.vstack([2 * p[0] - p[1], p, 2 * p[-1] - p[-2]])
     out = []
-    for p in pieces:
-        if isinstance(p, tuple) and len(p) == 3 and np.isscalar(p[2]):
-            x, y = f(p[0], p[1])
-            out.append((x, y, p[2]))
-        else:
-            out.append([f(x, y) for x, y in p])
-    return out
+    t = np.linspace(0, 1, n, endpoint=False)[:, None]
+    for i in range(1, len(p) - 2):
+        p0, p1, p2, p3 = p[i - 1], p[i], p[i + 1], p[i + 2]
+        out.append(0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t ** 2 + (3 * p1 - p0 - 3 * p2 + p3) * t ** 3))
+    out.append(p[-2][None])
+    return np.vstack(out)
 
 
-def wire(path, w, ends=0.55):
-    """A wire along path, tapering to `ends` of its width at both ends (no
-    further: a hairline end reads as fading into the dark)."""
-    n = len(path)
-    k = np.sin(np.linspace(0, np.pi, n)) ** 0.5
-    return [ribbon(path, w * (ends + (1 - ends) * k))]
+def fillet_arm(N, A, x_from, r):
+    """The arm along the middle from x_from out past the right edge, widened
+    where it meets each face of the run by a round fillet of radius r."""
+    m, R = N / 2, WEIGHTS["Thick"][0]
+    xs = np.arange(x_from, N + 12, 0.05)
+    d = np.minimum(np.where(xs >= m, xs - (m + R), np.inf), np.where(xs < m, (m - R) - xs, np.inf))
+    d = np.clip(d, 0, r)
+    hw = A + r - np.sqrt(np.maximum(r * r - (r - d) ** 2, 0))
+    return ribbon(np.stack([xs, np.full_like(xs, m)], 1), hw)
 
 
-def chain(*segments):
-    """Bezier segments (each four points) run end to end as one path."""
-    return np.vstack([bez(*seg, n=26)[(1 if i else 0):] for i, seg in enumerate(segments)])
+def forge(N, big, work=(), arm_from=None, fillets=True, behind=()):
+    """The junction as one piece: the run, the arm (from arm_from, the run's
+    middle by default) and `work` one metal. `behind`: groups of wire drawn
+    first, under it, in order. A medium arm is the thick vine's bark and
+    bevel at the run, the medium's from part way out, so it leaves the
+    texture as the medium vine."""
+    m = N / 2
+    R = WEIGHTS["Thick"][0]
+    A, apal = WEIGHTS["Thick" if big else ""]
+    x0 = m if arm_from is None else arm_from
+    arm = fillet_arm(N, A, x0, 3.2 if big else 2.6) if fillets else ribbon([(x0, m), (N + 12, m)], A)
+    body = [ribbon([(m, -12), (m, N + 12)], R), arm] + list(work)
+
+    def paint(hw, pal):
+        c = ucanvas(N, N)
+        pen = Pen(c, N)
+        for group in behind:
+            raised(pen, group, pal, bevel=0.5 * hw / 0.55, cast=0.4, grain=False)
+        raised(pen, body, pal, bevel=0.5 * hw / 0.55, cast=0.4, grain=False)
+        return c.final()
+
+    img = paint(R, WEIGHTS["Thick"][1])
+    if not big:
+        x = (np.arange(N * U) + 0.5) / U
+        k = smooth((x - (m + R + 7)) / 9)[None, :, None]
+        img = img * (1 - k) + paint(A, apal) * k
+    return img
 
 
-def tendril(sx, sy, hw, ahw, g, w, turns=1.2):
-    """In the corner (sx, sy): a long wire leaving the arm well out along it,
-    sweeping in towards the run, then up along it, ending in a spiral turned
-    away from the run: an S, decorative, never a bracket."""
-    m = J / 2
-    X = lambda u: m + sx * (hw + u * g)
-    Y = lambda u: m + sy * (ahw + u * g)
-    path = chain(((X(6.5), Y(0)), (X(4.5), Y(0.1)), (X(1.6), Y(0.6)), (X(1.2), Y(2.6))),
-                 ((X(1.2), Y(2.6)), (X(0.9), Y(4.4)), (X(1.8), Y(5.8)), (X(3.0), Y(6.2))))
-    path = scroll(path, 0.9 * g, -sx * sy * turns, 0.38)
-    return [ribbon(path, w * np.linspace(1.0, 0.6, len(path)))]
+def volute(pts, r0, turns, w0, w1, shrink=0.42):
+    """A wire along a smooth path through pts curling at its end, w0 to w1
+    wide (never to a hairline)."""
+    lead = spline(pts, 50)
+    path = np.vstack([lead, curl(lead[-1], lead[-1] - lead[-2], r0, turns, shrink)[1:]])
+    return ribbon(path, np.linspace(w0, w1, len(path)))
 
 
-def branch(sx, sy, hw, ahw, g, w):
-    """A small C curling off the middle of the corner's tendril, out into the
-    open corner."""
-    m = J / 2
-    X = lambda u: m + sx * (hw + u * g)
-    Y = lambda u: m + sy * (ahw + u * g)
-    path = bez((X(1.5), Y(1.4)), (X(2.6), Y(2.0)), (X(3.6), Y(2.4)), (X(4.0), Y(3.4)), n=24)
-    path = scroll(path, 0.55 * g, sx * sy * 1.0, 0.38)
-    return [ribbon(path, w * np.linspace(0.9, 0.6, len(path)))]
-
-
-def lyre(hw, g, w, turns):
-    """On the run's far side, two long S's leaving the run at the meeting,
-    swinging out and running along it, away from each other, each ending in a
-    spiral turned away from the run: a lyre, its ends parted."""
-    m = J / 2
-    out = []
-    for s in (1, -1):
-        X = lambda u: m - hw - u * g
-        Y = lambda u: m - s * u * g
-        path = chain(((X(0), Y(0.4)), (X(1.6), Y(0.6)), (X(2.6), Y(1.4)), (X(2.4), Y(3.0))),
-                     ((X(2.4), Y(3.0)), (X(2.2), Y(4.6)), (X(1.2), Y(5.6)), (X(0.4), Y(6.6))))
-        path = scroll(path, 0.85 * g, -s * turns, 0.38)
-        out.append(ribbon(path, w * np.linspace(1.1, 0.6, len(path))))
-    return out
-
-
-def junction(c, run, arm, f, level, cross=False):
-    """The runs, then the wirework over them. run, arm: (half-width, bark)."""
-    (rhw, rpal), (ahw, apal) = run, arm
-    pen = Pen(c, J)
-    m, far = J / 2, (-12, J + 12)
-    if ahw < rhw:  # the lighter vine tucks under the heavier
-        raised(pen, turned(f, [ribbon([(m, m), (far[1], m)], ahw)]), apal, bevel=0.5 * ahw / 0.55, cast=0.4, grain=False)
-        raised(pen, turned(f, [ribbon([(m, far[0]), (m, far[1])], rhw)]), rpal, bevel=0.5 * rhw / 0.55, cast=0.4, grain=False)
-    else:
-        runs = [ribbon([(m, far[0]), (m, far[1])], rhw), ribbon([(m, m), (far[1], m)], ahw)]
-        if cross:
-            runs.append(ribbon([(far[0], m), (m, m)], ahw))
-        raised(pen, turned(f, runs), rpal, bevel=0.5 * rhw / 0.55, cast=0.4, grain=False)
-    # the wire and the work's size grow with the vines met (a lighter vine
-    # growing into a heavier one is sized between the two) and with the level
-    v = (rhw + ahw) / 2
-    w = 0.42 + 0.25 * v
-    g = (1.0 + 0.4 * v) * {"Wisp": 1.15, "Scroll": 1.3, "Filigree": 1.45}[level]
-    corners = [(1, -1), (1, 1)] + ([(-1, -1), (-1, 1)] if cross else [])
+def junction(big):
+    N = JOIN_SIZE[big]
+    m, R = N / 2, WEIGHTS["Thick"][0]
     work = []
-    for sx, sy in corners:
-        work += tendril(sx, sy, rhw, ahw, g, w, 1.5 if level == "Filigree" else 1.2)
-        if level == "Filigree":
-            work += branch(sx, sy, rhw, ahw, g, w * 0.85)
-    if level != "Wisp" and not cross:
-        work += lyre(rhw, g, w, 1.5 if level == "Filigree" else 1.2)
-    raised(pen, turned(f, work), dim(apal, 0.95), bevel=0.35, cast=0.45)
+    if big:
+        base = m - R - 9  # the fleur's base, where the arm splits
+        work.append(lance(base, m, 23))
+        for s in (-1, 1):
+            work.append(volute([(m - R - 2, m + s * 1.0), (base - 1, m + s * 7.5), (base - 10, m + s * 16.5),
+                                (base - 20, m + s * 18)], 4.6, s * 1.1, 1.7, 1.2))
+        return forge(N, True, work, arm_from=m - R - 10)
+    for s in (-1, 1):  # split from the arm at the trunk, an S out along it
+        work.append(volute([(m + R + 2.8, m + s * 0.8), (m + R + 4, m + s * 6.6), (m + R + 9, m + s * 11.2),
+                            (m + R + 15.5, m + s * 11), (m + R + 20.5, m + s * 13.8)], 3.3, s * 1.1, 1.4, 1.0))
+    return forge(N, False, work)
 
 
-NAMES = {"Thin": "Thin", "": "Medium", "Thick": "Thick"}
-
-
-def junctions(weight):
-    """A weight's junctions, J (64) square, centred where the runs meet, each at
-    the three levels (<level> at the end of its name): Cross and the T's of
-    its own weight (named for the arm leaving the straight run: TDown, a
-    horizontal run with an arm down), and the T's of each lighter weight
-    growing into it (<weight>T<way>From<Thin|Medium><level>)."""
-    vine_ = WEIGHTS[weight]
-    out = {}
-    for level in LEVELS:
-        c = ucanvas(J, J)
-        junction(c, vine_, vine_, TURNS["TRight"], level, cross=True)
-        out[weight + "Cross" + level] = c.final()
-        for way, f in TURNS.items():
-            c = ucanvas(J, J)
-            junction(c, vine_, vine_, f, level)
-            out[weight + way + level] = c.final()
-            for lighter, arm in WEIGHTS.items():
-                if arm[0] < vine_[0]:
-                    c = ucanvas(J, J)
-                    junction(c, vine_, arm, f, level)
-                    out[weight + way + "From" + NAMES[lighter] + level] = c.final()
-    return out
+def lance(base, y, L):
+    """The fleur's lance lying on its side, its base at x `base`, its point L
+    to the left."""
+    from scipy.interpolate import PchipInterpolator
+    knots = [(0, 1.5), (L * 0.22, 3.0), (L * 0.45, 3.3), (L * 0.72, 2.5), (L * 0.92, 1.1), (L, 0.45)]
+    f = PchipInterpolator([q[0] for q in knots], [q[1] for q in knots])
+    t = np.linspace(0, L, 120)
+    hw = f(t)
+    return [(base - u, y - w) for u, w in zip(t, hw)] + [(base - u, y + w) for u, w in zip(t[::-1], hw[::-1])]
 
 
 def joint(c):
@@ -743,6 +706,7 @@ def main():
     vines = {}
     for weight in WEIGHTS:
         vines.update(rule_pieces(weight))
+    vines["ThickTRightBig"], vines["ThickTRightFromMedium"] = junction(True), junction(False)
     for old in glob.glob(os.path.join(CORE_OUT, "Vine-*.tga")):
         os.remove(old)
     for stem, rgba in vines.items():
