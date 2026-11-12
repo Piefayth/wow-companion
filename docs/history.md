@@ -591,3 +591,22 @@ the moment the window closed. The window now lives with the capture session
 later. With looks cheap, the watcher went to ten looks a second (a press waits
 about 50 ms instead of 250), still 120 fps. Considered and left for later: hearing the game through its file opens
 (ETW, docs/proposals/etw-signals.md), which needs no capture at all.
+
+## A request outlives the companion copy that started it (2026-11-12)
+
+A restart waited for every request in flight, because an agent's answer came
+back on a pipe the starting copy owned: an R2 request held a restart for ten
+minutes, settings changes queued behind agents (before they became hot), and a
+crash lost the reply in flight. Now an agent starts detached, its prompt a file
+for stdin and its stream and complaints files in `runs\<job>\`, with `run.json`
+naming its conversation, round and process (id and start time, so a later
+process given the same id is not taken for it). Any copy follows the stream to
+its answer. At a hand-over or exit the old copy's followers let go of their
+runs, any reply already on its way out finishes, and the channel closes; the new
+copy takes over (ledger, runs, the game's commands) only once the old one has
+exited (the companion lock), so two copies never write the ledger or the slots.
+A job running at a start with its run on disk is followed again instead of
+ended. The look waiting for a reload moved to a file for the same reason. The
+progress courier no longer holds a finished request: it slept 15 s after a
+progress line before looking again, so a reply could wait on it (rarely: 1 of
+36 replies that followed a progress line went out right after one).

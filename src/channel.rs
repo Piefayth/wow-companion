@@ -87,9 +87,12 @@ struct Queue {
     /// A batch is being delivered (taken off `waiting`, its bell not yet silent).
     delivering: bool,
     sender: bool,
+    /// This copy is leaving (lifecycle::wind_down): it sends nothing more, since
+    /// the companion taking over may already be sending.
+    closed: bool,
 }
 
-static QUEUE: Mutex<Queue> = Mutex::new(Queue { waiting: Vec::new(), delivering: false, sender: false });
+static QUEUE: Mutex<Queue> = Mutex::new(Queue { waiting: Vec::new(), delivering: false, sender: false, closed: false });
 static MOVED: std::sync::Condvar = std::sync::Condvar::new();
 
 fn queue() -> std::sync::MutexGuard<'static, Queue> {
@@ -101,6 +104,10 @@ fn queue() -> std::sync::MutexGuard<'static, Queue> {
 /// per message.
 fn enqueue(addons: &Path, item: Pending) {
     let mut queue = queue();
+    if queue.closed {
+        println!("  not sent (this companion is leaving): {}", item.msg().lua().chars().take(120).collect::<String>());
+        return;
+    }
     queue.waiting.push(item);
     if !queue.sender {
         queue.sender = true;
@@ -145,6 +152,11 @@ pub(crate) fn flush() {
     while !queue.waiting.is_empty() || queue.delivering {
         queue = MOVED.wait(queue).unwrap_or_else(|poisoned| poisoned.into_inner());
     }
+}
+
+/// Send nothing more from this copy (after `flush`, as it leaves).
+pub(crate) fn close() {
+    queue().closed = true;
 }
 
 fn sender(addons: &Path) {

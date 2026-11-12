@@ -70,7 +70,8 @@ extras a player may use, never required (the player, 2026-11-11).
   `jobs.rs` (each request's one state, forward only; cancels and replies race
   there; a clip's job is named to the game by `heard` when it is let go),
   `context.rs` (the export, profile and integrations the agent gets),
-  `session.rs` (the game's UI session, on trial beside the channel), `settings_page.rs`
+  `session.rs` (the game's UI session, on trial beside the channel), `runs.rs` (an
+  agent's run on disk, any copy follows it), `settings_page.rs`
   (the settings page's half here: `status` with the settings, its `bind`/`set`/`mics`
   commands; a change is written to settings.toml and the voice loop takes it between
   presses, `voice::change`, never a restart), `restart.rs`, `install.rs`, `agent.rs` (the agent; its
@@ -176,9 +177,14 @@ Tests: `cargo test --workspace`.
   companion and watcher cleanly. A second `run` refuses (a lock). Logs:
   `%LOCALAPPDATA%\wow-companion\companion.log`, `crash.log`.
 - **Never kill it.** `wow-companion restart` asks it to move onto the newest build:
-  it waits for no request in flight and no button held, starts the new copy, which
-  opens its mic and loads, and only then closes its own mic and exits. Killing it
-  loses the reply in flight and has wedged a Bluetooth headset's voice link.
+  it waits for no button held and nothing said still unfinished (a clip at the
+  speech engine, words being gathered, a request queued behind another), starts
+  the new copy, which opens its mic and loads; the old copy then leaves its agents
+  running, closes its mic and exits, and the new one takes over once it is gone.
+  **A request outlives the copy that started it** (`src/runs.rs`): an agent runs
+  detached and writes its stream to `runs\<job>\` in the companion's folder, so
+  the copy that takes over, or the next start after a crash, follows it to its
+  answer. Killing it still has wedged a Bluetooth headset's voice link.
 - `wow-companion doctor <AddOns>` checks the whole chain in seconds: game,
   companion, restart, agent, slots, bells, heartbeat, mic. Run it first when
   something seems broken.

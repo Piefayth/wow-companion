@@ -91,12 +91,14 @@ impl Book {
         self.jobs = jobs;
     }
 
-    /// At a start: every job not ended ended with the companion. Its line says
-    /// so; the job itself becomes failed.
-    pub(crate) fn recover(&mut self) -> Vec<Line> {
+    /// At a start: every job not ended ended with the companion, unless its run
+    /// is `going` (src/runs.rs: its agent was left running, or finished, for
+    /// the next companion to follow). An ended one's line says so; the job itself
+    /// becomes failed.
+    pub(crate) fn recover(&mut self, going: &[u64]) -> Vec<Line> {
         let mut lines = Vec::new();
         for (id, slot, state) in self.jobs.iter_mut() {
-            if state.ended() {
+            if state.ended() || (*state == State::Running && going.contains(id)) {
                 continue;
             }
             let text = format!(
@@ -317,12 +319,13 @@ fn say(addons: &Path, news: Vec<String>) {
     }
 }
 
-/// At `run`'s start, before any request: load the ledger, number above what
-/// the game holds, end the jobs the last companion left running, and put
-/// every job back in the jobs table. Returns the lines that say which ended,
-/// to send (they are in the mailbox already). With the agents off there is no
+/// When the companion takes over, before any request: load the ledger, number
+/// above what the game holds, end the jobs the last companion left running
+/// except those whose runs are `going` (they are followed again), and put every
+/// job back in the jobs table. Returns the lines that say which ended, to send
+/// (they are in the mailbox already). With the agents off there is no
 /// conversation, so no ledger: nothing is loaded.
-pub(crate) fn open(addons: &Path, agents: bool) -> Vec<Line> {
+pub(crate) fn open(addons: &Path, agents: bool, going: &[u64]) -> Vec<Line> {
     // what is wrong now is this companion's to say: only a change rewrites the
     // file, so one left by an earlier companion, or by a check since removed,
     // would stand for good
@@ -355,7 +358,7 @@ pub(crate) fn open(addons: &Path, agents: bool) -> Vec<Line> {
             book.continue_above(lines);
         }
     }
-    let recovered = book.recover();
+    let recovered = book.recover(going);
     jobs::restore(book.jobs());
     let store = Store { book, ledger: ledger_path, mailbox: addons.join(MAILBOX).join("Mail.lua") };
     news.extend(save(&store));
@@ -499,15 +502,19 @@ mod tests {
     }
 
     #[test]
-    fn a_job_running_at_a_start_ended_with_the_companion() {
+    fn a_job_running_at_a_start_ended_with_the_companion_unless_its_run_goes_on() {
         let mut book = Book::default();
-        book.mirror(vec![(7, "l1".into(), State::Running), (8, "".into(), State::Answered), (9, "".into(), State::Queued)]);
-        let lines = book.recover();
+        book.mirror(vec![(6, "r2".into(), State::Running), (7, "l1".into(), State::Running), (8, "".into(), State::Answered), (9, "".into(), State::Queued)]);
+        let lines = book.recover(&[6, 9]);
         assert_eq!(lines.len(), 2);
         assert_eq!((lines[0].slot.as_str(), lines[0].job, lines[0].n), ("l1", Some((7, State::Failed)), 1));
         assert!(lines[0].text.contains("while it was running"), "{}", lines[0].text);
         assert!(lines[1].text.contains("while it was queued"), "{}", lines[1].text);
-        assert_eq!(book.jobs(), &[(7, "l1".to_string(), State::Failed), (8, "".to_string(), State::Answered), (9, "".to_string(), State::Failed)]);
+        // 6's run goes on; 9 is queued, which no run carries
+        assert_eq!(
+            book.jobs(),
+            &[(6, "r2".to_string(), State::Running), (7, "l1".to_string(), State::Failed), (8, "".to_string(), State::Answered), (9, "".to_string(), State::Failed)]
+        );
     }
 
     #[test]

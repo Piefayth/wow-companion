@@ -38,26 +38,123 @@ impl Drop for InFlight {
     }
 }
 
+/// Request threads following an agent's run (src/runs.rs), delivery included:
+/// an exit need not wait for them, since the next companion follows the run.
+pub(crate) static FOLLOWING: AtomicUsize = AtomicUsize::new(0);
+
+struct Following;
+
+impl Following {
+    fn start() -> Following {
+        FOLLOWING.fetch_add(1, Ordering::SeqCst);
+        Following
+    }
+}
+
+impl Drop for Following {
+    fn drop(&mut self) {
+        FOLLOWING.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// This copy is leaving (a restart's hand-over, `stop`, the game closing):
+/// followers leave their runs to the next companion, and no reply goes out from
+/// here once it is set. `delivering` counts replies on their way out, which
+/// finish first.
+struct Handover {
+    leaving: bool,
+    delivering: usize,
+}
+
+static HANDOVER: Mutex<Handover> = Mutex::new(Handover { leaving: false, delivering: 0 });
+
+fn handover() -> std::sync::MutexGuard<'static, Handover> {
+    HANDOVER.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn leaving() -> bool {
+    handover().leaving
+}
+
+/// A reply on its way out; None once this copy is leaving (the next one
+/// delivers it).
+struct Delivering;
+
+impl Delivering {
+    fn begin() -> Option<Delivering> {
+        let mut state = handover();
+        if state.leaving {
+            return None;
+        }
+        state.delivering += 1;
+        Some(Delivering)
+    }
+}
+
+impl Drop for Delivering {
+    fn drop(&mut self) {
+        handover().delivering -= 1;
+    }
+}
+
+/// Leave every run to the next companion: from now nothing is delivered from
+/// here; returns once the replies on their way out have gone and every
+/// follower has let go of its run.
+pub(crate) fn hand_over() {
+    handover().leaving = true;
+    while handover().delivering > 0 || FOLLOWING.load(Ordering::SeqCst) > 0 {
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// The main conversation's agent waiting to look: when it asked (the save's
+/// time then), until a reload changes it. On disk, so a companion that takes
+/// over goes on waiting.
+fn look_file() -> Option<PathBuf> {
+    companion_dir().ok().map(|dir| dir.join("looking.txt"))
+}
+
+fn looking() -> Option<Option<u128>> {
+    let text = fs::read_to_string(look_file()?).ok()?;
+    Some(text.trim().parse().ok())
+}
+
+/// The agent asked to look: its next turn comes after the reload.
+pub(crate) fn look_after_reload(addons: &Path) {
+    if let Some(file) = look_file() {
+        let since = session_began(addons).map(|millis| millis.to_string()).unwrap_or_default();
+        if let Err(err) = fs::write(&file, since) {
+            eprintln!("  the look could not be remembered ({}): {err}", file.display());
+        }
+    }
+}
+
+/// A new request in the main conversation supersedes a look still waiting.
+pub(crate) fn stop_looking() {
+    if let Some(file) = look_file() {
+        let _ = fs::remove_file(file);
+    }
+}
+
 /// The other half of looking. The agent ran something and asked to see what it
 /// did; the only way results reach disk is a reload, which the player was offered
 /// as a button. When the save lands, hand the agent the refreshed context and let
 /// it carry on, so one press is all the player does.
-pub(crate) fn watch_for_looks(addons: &Path, session: &Mutex<agent::Session>, looking: &Mutex<Option<Option<u128>>>) {
+pub(crate) fn watch_for_looks(addons: &Path, session: &Mutex<agent::Session>) {
     loop {
         thread::sleep(Duration::from_secs(1));
-        let waiting = *looking.lock().unwrap();
-        let Some(since) = waiting else { continue };
+        let Some(since) = looking() else { continue };
         if session_began(addons) == since {
             continue;
         }
-        *looking.lock().unwrap() = None;
+        stop_looking();
         // sent at once: a message made before the new UI polls waits on its rung
         // bell for it (docs/proposals/slot-bells.md)
         let note = "(I reloaded so you can look. Your steps' results are in <character>, \
                     under code runs and the slots; carry on with what I asked.)";
         let _in_flight = InFlight::start();
         match ask(addons, &mut session.lock().unwrap(), note, false, None) {
-            Ok(true) => *looking.lock().unwrap() = Some(session_began(addons)),
+            Ok(true) => look_after_reload(addons),
             Ok(false) => {}
             Err(err) => {
                 eprintln!("  looking again failed: {err}");
@@ -203,6 +300,7 @@ fn started(slot: &str, id: u64) -> Msg {
 /// A request that failed: its job ends failed and the game is told, unless a
 /// cancel ended it first (then the failure is only the kill, and is dropped).
 pub(crate) fn failed(addons: &Path, slot: &str, group: u64, err: io::Error) -> io::Result<bool> {
+    crate::runs::finished(group);
     if !jobs::finish(group, jobs::State::Failed) {
         println!("  ended by a cancel");
         return Ok(false);
@@ -245,13 +343,14 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         );
         &told
     };
-    let waiting = match session.start(spoken_for_agent, context) {
-        Ok(waiting) => waiting,
+    let run = match session.start(group, 0, spoken_for_agent, context) {
+        Ok(run) => run,
         Err(err) => return failed(addons, &session.slot, group, err),
     };
     // cancelled before its process existed: end it now
-    if !jobs::set_pid(group, waiting.id()) {
-        end_processes(&[waiting.id()]);
+    if !jobs::set_pid(group, run.pid) {
+        end_processes(&[run.pid]);
+        crate::runs::finished(group);
         println!("  cancelled before it started");
         return Ok(false);
     }
@@ -269,10 +368,19 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
     if let Err(err) = announced {
         println!("  not announced ({err}); the request goes on");
     }
+    follow(addons, session, group, run)
+}
+
+/// Follow job `group`'s run to its answer and deliver it: a run this copy
+/// started, or one a companion left going (src/runs.rs). Returns whether the
+/// agent wants to look at the results before it is done.
+pub(crate) fn follow(addons: &Path, session: &mut agent::Session, group: u64, run: crate::runs::Run) -> io::Result<bool> {
+    let _following = Following::start();
     let answer = {
         // Progress goes to the window, newest only, every PROGRESS_EVERY at most:
         // each update costs a slot. Its own thread, so the agent never waits on
-        // the game.
+        // the game; it ends the moment the request does, so a reply never waits
+        // on it.
         let (tell, heard) = std::sync::mpsc::channel::<String>();
         let courier = {
             let addons = addons.to_path_buf();
@@ -280,9 +388,13 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
             thread::spawn(move || {
                 let mut sent = 0;
                 while let Ok(mut latest) = heard.recv() {
-                    thread::sleep(PROGRESS_EVERY);
-                    while let Ok(newer) = heard.try_recv() {
-                        latest = newer;
+                    let due = Instant::now() + PROGRESS_EVERY;
+                    loop {
+                        match heard.recv_timeout(due.saturating_duration_since(Instant::now())) {
+                            Ok(newer) => latest = newer,
+                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+                            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                        }
                     }
                     if sent < PROGRESS_LIMIT {
                         let progress = Msg::new("progress").text("text", &latest).text("slot", &slot).int("job", group);
@@ -303,13 +415,20 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         // work so far stands, and the turn just ended early. Without this, a long
         // job stops dead until someone says "continue". The step limit still
         // bounds each round.
-        let mut waiting = waiting;
-        let mut round = 0;
+        let mut run = run;
         let answer = loop {
-            let finished = session.finish(waiting, &mut progress);
+            let finished = match session.finish(&run, &mut progress, leaving) {
+                Ok(None) => {
+                    println!("  left to the next companion: its agent goes on");
+                    return Ok(false);
+                }
+                Ok(Some(answer)) => Ok(answer),
+                Err(err) => Err(err),
+            };
             // Send now interrupted this run: the next one takes its messages
             if jobs::interrupted(group) {
                 println!("  interrupted: the next run takes it");
+                crate::runs::finished(group);
                 return Ok(false);
             }
             if jobs::state(group).is_some_and(jobs::State::ended) {
@@ -322,7 +441,7 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
             if !answer.out_of_steps {
                 break Ok(answer);
             }
-            round += 1;
+            let round = run.round + 1;
             if round > CONTINUES {
                 break Err(io::Error::other(format!(
                     "ran out of steps {} times in a row; what it did so far stands. Say \"continue\" to carry on.",
@@ -331,13 +450,15 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
             }
             println!("  out of steps: continuing ({round} of {CONTINUES})");
             progress(&format!("continuing ({round} of {CONTINUES})"));
-            waiting = match session.start(
+            run = match session.start(
+                group,
+                round,
                 "(The step limit ended your last turn before you answered. Carry on where you left off, then answer as usual.)",
                 None,
             ) {
                 Ok(next) => {
-                    if !jobs::set_pid(group, next.id()) {
-                        end_processes(&[next.id()]);
+                    if !jobs::set_pid(group, next.pid) {
+                        end_processes(&[next.pid]);
                         break Err(io::Error::other("stopped"));
                     }
                     next
@@ -352,6 +473,9 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
             Err(err) => return failed(addons, &slot, group, err),
         }
     };
+    // nothing goes out from a copy that is leaving: the next one follows the
+    // finished run and delivers it
+    let Some(_delivering) = Delivering::begin() else { return Ok(false) };
     voice::mark("agent answered");
     println!("claude: {}", answer.say);
     // One message, not two: the reply and the action it describes arrive together,
@@ -383,6 +507,7 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
     // the race with a cancel is decided here, once: whichever ended the job
     // first stands, and a reply that lost is dropped (the game shows cancelled)
     if !jobs::finish(group, jobs::State::Answered) {
+        crate::runs::finished(group);
         println!("  cancelled while answering: reply dropped");
         return Ok(false);
     }
@@ -391,6 +516,8 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         .ended(jobs::members(group))
         .steps(answer.inbox.clone());
     post(addons, reply)?;
+    // the reply is in the ledger: the run is done with
+    crate::runs::finished(group);
     // asked to start over: the next request begins a new conversation
     if answer.fresh {
         println!("  this conversation starts over");
@@ -407,8 +534,12 @@ pub(crate) fn think(addons: &Path, spoken: &str) -> io::Result<()> {
     let mut session = agent::Session::default();
     let started = Instant::now();
     let context = agent_context_for(addons, &session.slot);
-    let waiting = session.start(spoken, context)?;
-    let answer = session.finish(waiting, |doing| println!("  ... {doing}"))?;
+    // a run of its own, with no job: its folder goes when it is done
+    let id = jobs::now_ms() as u64;
+    let run = session.start(id, 0, spoken, context)?;
+    let answer = session.finish(&run, |doing| println!("  ... {doing}"), || false);
+    crate::runs::finished(id);
+    let answer = answer?.ok_or_else(|| io::Error::other("the run was left"))?;
     println!("({:.1}s) say: {}", started.elapsed().as_secs_f32(), answer.say);
     println!("would send: {}", answer.inbox.as_ref().map(Msg::lua).unwrap_or_else(|| "nothing".into()));
     Ok(())

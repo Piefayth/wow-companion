@@ -316,6 +316,7 @@ pub fn listen(
     model: &Path,
     options: &[String],
     vocabulary: impl Fn() -> Vec<String>,
+    take_over: impl FnOnce(),
     mut heard: impl FnMut(Event) -> io::Result<()>,
 ) -> io::Result<()> {
     let mut options = options.to_vec();
@@ -375,6 +376,9 @@ pub fn listen(
             thread::sleep(Duration::from_millis(20));
         }
     }
+    // the companion's own start, now that it may read the pad (the ledger, the
+    // runs left going, the game's commands)
+    take_over();
     publish(&options);
     READY.store(true, Ordering::SeqCst);
     let (mut rumbles, mut beeps) = feedback(&options);

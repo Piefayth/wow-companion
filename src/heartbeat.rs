@@ -49,12 +49,18 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
         let mut stamp = None;
         let mut beat_at = Instant::now();
         while BEATING.load(Ordering::SeqCst) {
+            // nothing until this copy has taken over (the ledger, the channel)
+            // and nothing once it is leaving: the other copy has them then
+            if !ready() {
+                thread::sleep(TICK);
+                continue;
+            }
             let beat = Instant::now() >= beat_at;
             if beat {
                 stamp = crate::saved_variables_stamp(&addons);
             }
             let now = (stamp.clone(), crate::voice::MIC.load(Ordering::Relaxed), crate::voice::APPLIED.load(Ordering::SeqCst));
-            if ready() && told.as_ref() != Some(&now) {
+            if told.as_ref() != Some(&now) {
                 if crate::send(&addons, &crate::settings_page::status(now.1)).is_ok() {
                     told = Some(now);
                 }
@@ -80,14 +86,12 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
                     }
                 }
             }
-            if ready() {
-                let (show, hide) = if on_a { (&a, &b) } else { (&b, &a) };
-                // both bells at once is what made the mark flap: report, don't hide it
-                if let Err(err) = crate::bells::ring(show).and_then(|()| crate::bells::silence(hide)) {
-                    eprintln!("heartbeat: {err}");
-                }
-                on_a = !on_a;
+            let (show, hide) = if on_a { (&a, &b) } else { (&b, &a) };
+            // both bells at once is what made the mark flap: report, don't hide it
+            if let Err(err) = crate::bells::ring(show).and_then(|()| crate::bells::silence(hide)) {
+                eprintln!("heartbeat: {err}");
             }
+            on_a = !on_a;
             thread::sleep(TICK);
         }
     });

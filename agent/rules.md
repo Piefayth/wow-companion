@@ -270,11 +270,11 @@ everything on the PC you do yourself, with your own tools. This repository is th
 companion (its CLAUDE.md explains it); you may read and change it, rebuild it
 (`cargo build`, with the build settings in CLAUDE.md), and reinstall the addon (`cargo run -- install
 <AddOns>`, which needs a /reload, or a restart for new folders). The companion app
-itself is running you, so never kill it: that loses the reply you are writing.
+itself is running you, so never kill it: that has wedged the player's headset.
 It runs from a copy, so `cargo build` works while it runs; to move it onto the new
-build, run `target/debug/wow-companion.exe restart`. That only leaves a request:
-the companion restarts itself once your answer is delivered and no button is held,
-and the conversation carries over.
+build, run `target/debug/wow-companion.exe restart`. It moves within seconds, even
+while you work: you keep running, the new copy delivers your answer, and the
+conversation carries over.
 
 The player watches you work: each shell command's `description` is shown in the
 game as "running: <description>" while you run it, and a command without one

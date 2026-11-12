@@ -30,6 +30,7 @@ mod tray;
 mod watcher;
 mod backups;
 mod settings_page;
+mod runs;
 use channel::*;
 use requests::*;
 use context::*;
@@ -46,7 +47,7 @@ use std::{
     env, fs, io,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
     },
     thread,
@@ -179,7 +180,7 @@ fn main() {
         [command, fragment] if command == "miccheck" => voice::miccheck(Some(fragment), None),
         [command, fragment, wake] if command == "miccheck" => voice::miccheck(Some(fragment), Some(wake)),
         [command, model, options @ ..] if command == "voice" => {
-            voice::listen(Path::new(model), options, Vec::new, |_| Ok(()))
+            voice::listen(Path::new(model), options, Vec::new, || {}, |_| Ok(()))
         }
         _ => {
             eprintln!("usage: wow-companion <command> [args]");
@@ -221,22 +222,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     crash::install(addons);
     lifecycle::hold()?;
     lifecycle::watch(addons);
-    // every line until the game has saved it, and every job's state, on disk
-    // and in the mailbox the game reads at load (src/ledger.rs); jobs the last
-    // companion left running end now, each with a line
     // dictation only (the setup window's agent "off"): no agent, so no conversation
     // and no ledger; what would be a line in one is said as a notice (channel::post)
     let agents = !options.iter().any(|option| option.strip_prefix("agent=") == Some(wow_companion_settings::AGENT_OFF));
-    let recovered = ledger::open(addons, agents);
-    {
-        let addons = addons.to_path_buf();
-        thread::spawn(move || {
-            for line in recovered {
-                let _ = send_line_now(&addons, line);
-            }
-            crash::after_start(&addons);
-        });
-    }
     {
         let args: Vec<String> = env::args().skip(1).collect();
         thread::spawn(move || watch_for_restart(args));
@@ -268,25 +256,6 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
     );
     // one conversation, reached from the voice loop and from the reload watcher
     let session = Arc::new(Mutex::new(session));
-    // Some(session start) while the agent waits to look: the reload it asked for
-    // is the next change to that timestamp
-    let looking: Arc<Mutex<Option<Option<u128>>>> = Arc::new(Mutex::new(None));
-    {
-        let (addons, session, looking) = (addons.to_path_buf(), Arc::clone(&session), Arc::clone(&looking));
-        thread::spawn(move || watch_for_looks(&addons, &session, &looking));
-    }
-    // Cancel and Send now in the window: the game's commands, read off the data strip
-    {
-        let addons = addons.to_path_buf();
-        thread::spawn(move || watch_commands(&addons));
-    }
-    // the slot bells of the sets no session uses, emptied (docs/proposals/slot-bells.md)
-    {
-        let addons = addons.to_path_buf();
-        thread::spawn(move || tend_slot_bells(&addons));
-    }
-    // other processes' asks to read the game (an agent's `strip --chat`)
-    strip::serve_asks(addons);
     // The voice loop never sends anything itself. A send waits for any other send,
     // and for a bell file the game may hold, and the voice loop is what reads
     // the pad: a send from it freezes the buttons and the cues while a request
@@ -334,41 +303,103 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             fresh
         }
     };
-    // Typed requests (`wow-companion tell <slot> <text>`): a file per request in
-    // %LOCALAPPDATA%\wow-companion\typed: a request to that conversation's agent
-    // (the spoken shortcuts are for speech only), asked from a terminal.
-    {
-        let (addons, find_session, looking, courier) =
-            (addons.to_path_buf(), slot_session.clone(), Arc::clone(&looking), courier.clone());
-        thread::spawn(move || loop {
-            thread::sleep(Duration::from_secs(2));
-            let Some(dir) = typed_dir() else { continue };
-            let mut waiting: Vec<_> = fs::read_dir(&dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "txt")).collect();
-            waiting.sort();
-            for path in waiting {
-                let Ok(text) = fs::read_to_string(&path) else { continue };
-                if fs::remove_file(&path).is_err() {
+    // Taking over, once this copy is the only companion (a restart's old copy
+    // has exited) and before the pad is read: every line until the game has
+    // saved it, and every job's state, are on disk and in the mailbox the game
+    // reads at load (src/ledger.rs); the runs a companion left going are
+    // followed to their answers (src/runs.rs), and the jobs it left with no run
+    // end, each with a line. Then what serves the game starts.
+    let take_over = {
+        let (addons, find_session, courier) = (addons.to_path_buf(), slot_session.clone(), courier.clone());
+        move || {
+            lifecycle::wait_until_alone();
+            let left = runs::left();
+            let going: Vec<u64> = left.iter().map(|run| run.job).collect();
+            let recovered = ledger::open(&addons, agents, &going);
+            {
+                let addons = addons.clone();
+                thread::spawn(move || {
+                    for line in recovered {
+                        let _ = send_line_now(&addons, line);
+                    }
+                    crash::after_start(&addons);
+                });
+            }
+            for run in left {
+                if jobs::state(run.job) != Some(jobs::State::Running) || !jobs::set_pid(run.job, run.pid) {
+                    runs::finished(run.job);
                     continue;
                 }
-                let Some((slot, text)) = text.split_once('\n') else { continue };
-                let (slot, text) = (slot.trim().to_string(), text.trim().to_string());
-                if text.is_empty() {
-                    continue;
-                }
-                println!("typed ({}): {text}", if slot.is_empty() { "main" } else { &slot });
-                let job = jobs::create(&slot, &text, jobs::State::Queued);
-                let (addons, session, looking, courier) =
-                    (addons.clone(), find_session(&slot), Arc::clone(&looking), courier.clone());
+                println!("following request {} [{}] where the last companion left it", run.job, if run.slot.is_empty() { "main" } else { &run.slot });
+                let (addons, session) = (addons.clone(), find_session(&run.slot));
                 let in_flight = InFlight::start();
                 thread::spawn(move || {
                     let _in_flight = in_flight;
-                    request(&addons, &slot, text, job, &session, &looking, &courier);
+                    let slot = run.slot.clone();
+                    let mut held = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                    match follow(&addons, &mut held, run.job, run) {
+                        Ok(true) if slot.is_empty() => look_after_reload(&addons),
+                        Ok(_) => {}
+                        Err(err) => {
+                            eprintln!("  not delivered: {err}");
+                            tell_failure(&addons, &slot, &err);
+                        }
+                    }
                 });
             }
-        });
-    }
+            // the main conversation's look, resumed after the reload it asked for
+            {
+                let (addons, session) = (addons.clone(), find_session(""));
+                thread::spawn(move || watch_for_looks(&addons, &session));
+            }
+            // Cancel and Send now in the window, and the settings page: the game's
+            // commands, read off the data strip
+            {
+                let addons = addons.clone();
+                thread::spawn(move || watch_commands(&addons));
+            }
+            // the slot bells of the sets no session uses, emptied (docs/proposals/slot-bells.md)
+            {
+                let addons = addons.clone();
+                thread::spawn(move || tend_slot_bells(&addons));
+            }
+            // other processes' asks to read the game (an agent's `strip --chat`)
+            strip::serve_asks(&addons);
+        // Typed requests (`wow-companion tell <slot> <text>`): a file per request in
+        // %LOCALAPPDATA%\wow-companion\typed: a request to that conversation's agent
+        // (the spoken shortcuts are for speech only), asked from a terminal.
+        {
+            let (addons, find_session, courier) = (addons.clone(), find_session.clone(), courier.clone());
+            thread::spawn(move || loop {
+                thread::sleep(Duration::from_secs(2));
+                let Some(dir) = typed_dir() else { continue };
+                let mut waiting: Vec<_> = fs::read_dir(&dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "txt")).collect();
+                waiting.sort();
+                for path in waiting {
+                    let Ok(text) = fs::read_to_string(&path) else { continue };
+                    if fs::remove_file(&path).is_err() {
+                        continue;
+                    }
+                    let Some((slot, text)) = text.split_once('\n') else { continue };
+                    let (slot, text) = (slot.trim().to_string(), text.trim().to_string());
+                    if text.is_empty() {
+                        continue;
+                    }
+                    println!("typed ({}): {text}", if slot.is_empty() { "main" } else { &slot });
+                    let job = jobs::create(&slot, &text, jobs::State::Queued);
+                    let (addons, session, courier) = (addons.clone(), find_session(&slot), courier.clone());
+                    let in_flight = InFlight::start();
+                    thread::spawn(move || {
+                        let _in_flight = in_flight;
+                        request(&addons, &slot, text, job, &session, &courier);
+                    });
+                }
+            });
+        }
+        }
+    };
     let dictation = Slot::Dictation.key();
-    voice::listen(model, options, || vocabulary(addons), |event| {
+    voice::listen(model, options, || vocabulary(addons), take_over, |event| {
         // dictation only: every clip is dictation's (its words to the chat box,
         // its notices as dictation's)
         let event = if agents { event } else { event.for_slot(Slot::Dictation) };
@@ -442,8 +473,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 }
                 // the session is found or made on the request's own thread: nothing
                 // the voice loop does may wait on a lock a request can hold
-                let (addons, find_session, looking, courier) =
-                    (addons.to_path_buf(), slot_session.clone(), Arc::clone(&looking), courier.clone());
+                let (addons, find_session, courier) = (addons.to_path_buf(), slot_session.clone(), courier.clone());
                 // counted from now, not from when the agent starts: gathering and
                 // queueing are part of the request
                 let in_flight = InFlight::start();
@@ -471,7 +501,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         }
                     };
                     voice::mark("gathered");
-                    request(&addons, &slot, text, job, &session, &looking, &courier);
+                    request(&addons, &slot, text, job, &session, &courier);
                 });
                 Ok(())
             }
@@ -496,7 +526,6 @@ fn request(
     text: String,
     job: u64,
     session: &Mutex<agent::Session>,
-    looking: &Mutex<Option<Option<u128>>>,
     courier: &Courier,
 ) {
     // a slot's request is marked with it, in the window and for the agent
@@ -505,7 +534,7 @@ fn request(
     // only the main conversation looks; a new request there supersedes a look
     // still waiting for its reload
     if slot.is_empty() {
-        *looking.lock().unwrap() = None;
+        stop_looking();
     }
     // Waiting means this conversation's lock is held (a request in another runs
     // beside it). Shown at once, as queued on its own line; the first to get the
@@ -529,7 +558,7 @@ fn request(
         text
     };
     match ask(addons, &mut held, &text, queued, Some(job)) {
-        Ok(true) if slot.is_empty() => *looking.lock().unwrap() = Some(session_began(addons)),
+        Ok(true) if slot.is_empty() => look_after_reload(addons),
         Ok(_) => {}
         Err(err) => {
             eprintln!("  not delivered: {err}");

@@ -19,11 +19,7 @@
 //! and can change them. What it reads from the web or from chat can steer it; the
 //! player accepted that trade.
 
-use std::{
-    io::{self, BufRead, BufReader, Read, Write},
-    thread,
-    process::{Child, Command, Stdio},
-};
+use std::{io, process::Command};
 
 use serde_json::Value;
 use crate::message::Msg;
@@ -160,10 +156,12 @@ impl Session {
         }
     }
 
-    /// Start the agent without waiting for it. A request takes seconds, and the
-    /// caller has its own seconds of work to do (announcing itself in game), so the
-    /// two should overlap rather than queue.
-    pub fn start(&mut self, transcript: &str, context: Option<String>) -> io::Result<Child> {
+    /// Start the agent without waiting for it, as round `round` of job `job`'s
+    /// run (src/runs.rs: detached, its stream in a file any companion copy can
+    /// follow). A request takes seconds, and the caller has its own seconds of
+    /// work to do (announcing itself in game), so the two should overlap rather
+    /// than queue.
+    pub fn start(&mut self, job: u64, round: u32, transcript: &str, context: Option<String>) -> io::Result<crate::runs::Run> {
         let fresh = context.filter(|context| self.seen.as_ref() != Some(context));
         let message = match &fresh {
             Some(context) => format!(
@@ -189,8 +187,9 @@ The player said: {transcript}"
         }
         // its conversation, for the strip asks it makes (src/strip.rs ask)
         claude.env(crate::strip::SLOT_ENV, &self.slot);
-        // the message goes on stdin: with the character export in it, it is past
-        // Windows' 32,767-character limit for a whole command line
+        // the message goes on stdin (a file, src/runs.rs): with the character
+        // export in it, it is past Windows' 32,767-character limit for a whole
+        // command line
         claude.arg("--print");
         if let Some(thread) = &self.thread {
             claude.args(["--resume", thread]);
@@ -217,25 +216,16 @@ The player said: {transcript}"
             .args(["--output-format", "stream-json", "--verbose"])
             .args(["--json-schema", SCHEMA])
             .args(["--model", if quick { QUICK_MODEL } else if self.model.is_empty() { DEFAULT_MODEL } else { &self.model }])
-            .args(["--max-turns", if quick { QUICK_TURNS } else { TURNS }])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        let mut child = claude.spawn()?;
-        // written whole, then closed, so the CLI knows the prompt has ended
-        child
-            .stdin
-            .take()
-            .ok_or_else(|| io::Error::other("claude has no stdin"))?
-            .write_all(message.as_bytes())?;
-        Ok(child)
+            .args(["--max-turns", if quick { QUICK_TURNS } else { TURNS }]);
+        crate::runs::start(job, &self.slot, round, claude, &message)
     }
 
-    /// Wait for the answer, handing each thing the agent does to `progress` as it
-    /// happens ("reading StanceBar.lua"), so a minute of work is not a minute of
-    /// silence.
-    pub fn finish(&mut self, waiting: Child, progress: impl FnMut(&str)) -> io::Result<Spoken> {
-        let answer = read(waiting, progress)?;
+    /// Follow the run to its answer, handing each thing the agent does to
+    /// `progress` as it happens ("reading StanceBar.lua"), so a minute of work is
+    /// not a minute of silence. None when `leave()` says this copy is handing
+    /// over: the run goes on, and the next copy follows it.
+    pub fn finish(&mut self, run: &crate::runs::Run, progress: impl FnMut(&str), leave: impl Fn() -> bool) -> io::Result<Option<Spoken>> {
+        let Some(answer) = read(run, progress, leave)? else { return Ok(None) };
         // remember the thread even on the first reply, so the next utterance resumes
         if let Some(thread) = answer.thread {
             save_thread(&self.slot, &thread);
@@ -244,7 +234,7 @@ The player said: {transcript}"
         if let Some(context) = self.offered.take() {
             self.seen = Some(context);
         }
-        Ok(answer.spoken)
+        Ok(Some(answer.spoken))
     }
 }
 
@@ -276,20 +266,10 @@ fn describe(tool: &str, input: &Value) -> Option<String> {
     })
 }
 
-fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer> {
-    // stderr drained on its own thread: a full pipe would stall the agent
-    let mut stderr = waiting.stderr.take();
-    let complaints = thread::spawn(move || {
-        let mut text = String::new();
-        if let Some(pipe) = stderr.as_mut() {
-            let _ = pipe.read_to_string(&mut text);
-        }
-        text
-    });
-    let stdout = waiting.stdout.take().ok_or_else(|| io::Error::other("claude has no stdout"))?;
+fn read(run: &crate::runs::Run, mut progress: impl FnMut(&str), leave: impl Fn() -> bool) -> io::Result<Option<Answer>> {
     let mut envelope: Option<Value> = None;
-    for line in BufReader::new(stdout).lines() {
-        let Ok(event) = serde_json::from_str::<Value>(&line?) else { continue };
+    let followed = crate::runs::follow(run, leave, |line| {
+        let Ok(event) = serde_json::from_str::<Value>(line) else { return };
         match event.get("type").and_then(Value::as_str) {
             Some("assistant") => {
                 let content = event.pointer("/message/content").and_then(Value::as_array);
@@ -325,19 +305,17 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
             }
             _ => {}
         }
+    })?;
+    if matches!(followed, crate::runs::Followed::Left) {
+        return Ok(None);
     }
-    let status = waiting.wait()?;
-    let complaint = complaints.join().unwrap_or_default();
-    if !status.success() && envelope.is_none() {
-        return Err(io::Error::other(format!("claude exited {status}: {}", complaint.trim())));
-    }
-    let envelope = envelope.ok_or_else(|| io::Error::other(format!("claude gave no result: {}", complaint.trim())))?;
+    let envelope = envelope.ok_or_else(|| io::Error::other(format!("claude gave no result: {}", crate::runs::complaints(run).trim())))?;
     let thread = envelope.get("session_id").and_then(Value::as_str).map(str::to_string);
     // the step limit is not a fault: the work so far stands and the conversation
     // can carry on (the companion does, a few times). The result names it.
     if envelope.get("subtype").and_then(Value::as_str) == Some("error_max_turns") {
         let spoken = Spoken { say: String::new(), inbox: None, look: false, fresh: false, modules: Vec::new(), out_of_steps: true };
-        return Ok(Answer { spoken, thread });
+        return Ok(Some(Answer { spoken, thread }));
     }
     if envelope.get("is_error").and_then(Value::as_bool) == Some(true) {
         return Err(io::Error::other(format!("claude reported an error: {envelope}")));
@@ -391,7 +369,7 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
         1 => built.pop(),
         _ => Some(Msg::new("batch").list("steps", built)),
     };
-    Ok(Answer { spoken: Spoken { say, inbox, look, fresh, modules, out_of_steps: false }, thread })
+    Ok(Some(Answer { spoken: Spoken { say, inbox, look, fresh, modules, out_of_steps: false }, thread }))
 }
 
 /// One step as the message the addon's dispatch accepts.

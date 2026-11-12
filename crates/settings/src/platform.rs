@@ -30,6 +30,12 @@ impl Process {
         imp::find(image)
     }
 
+    /// The process with this id, if it still runs (or has exited but is still
+    /// known); `started` tells it from a later process given the same id.
+    pub fn open(pid: u32) -> Option<Process> {
+        imp::open_process(pid)
+    }
+
     /// Whether it still runs.
     pub fn running(&self) -> bool {
         imp::running(self.handle)
@@ -120,24 +126,26 @@ mod imp {
     pub fn find(image: &str) -> Option<Process> {
         pids(image)
             .into_iter()
-            .filter_map(|pid| {
-                // SAFETY: the handle is owned by the Process made from it, or
-                // closed here when its times cannot be read; the times are four u64s
-                unsafe {
-                    let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid);
-                    if handle == 0 {
-                        return None;
-                    }
-                    let (mut creation, mut exit, mut kernel, mut user) = (0u64, 0u64, 0u64, 0u64);
-                    if GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) == 0 {
-                        CloseHandle(handle);
-                        return None;
-                    }
-                    Some(Process { handle, started: creation })
-                }
-            })
+            .filter_map(open_process)
             // the others are dropped, which closes them
             .min_by_key(Process::started)
+    }
+
+    pub fn open_process(pid: u32) -> Option<Process> {
+        // SAFETY: the handle is owned by the Process made from it, or closed here
+        // when its times cannot be read; the times are four u64s
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid);
+            if handle == 0 {
+                return None;
+            }
+            let (mut creation, mut exit, mut kernel, mut user) = (0u64, 0u64, 0u64, 0u64);
+            if GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) == 0 {
+                CloseHandle(handle);
+                return None;
+            }
+            Some(Process { handle, started: creation })
+        }
     }
 
     pub fn running(handle: isize) -> bool {
@@ -287,6 +295,10 @@ mod imp {
     pub fn windowed_count(_image: &str) -> usize {
         0
     }
+    pub fn open_process(_pid: u32) -> Option<Process> {
+        None
+    }
+
     pub fn find(_image: &str) -> Option<Process> {
         None
     }

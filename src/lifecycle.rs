@@ -6,7 +6,8 @@
 //!   its own, so the overlap the hand-over needs still happens.
 //! - Clean exits, each written to `exit.txt` (reason and pid) so the watcher
 //!   (src/watcher.rs) can tell them from a crash: `stop` (a request file, acted
-//!   on when no request is in flight and no button is held, as a restart is),
+//!   on when nothing said is unfinished and no button is held, as a restart is;
+//!   agents still working are left to the next companion, src/runs.rs),
 //!   the game closing (only when the watcher started us: the companion wakes
 //!   with WoW and sleeps without it, releasing the mic and the model's video
 //!   memory), and a restart's hand-over.
@@ -54,6 +55,23 @@ pub(crate) fn refuse_second() -> io::Result<()> {
     )))
 }
 
+/// The lock is this copy's: no other companion runs (a restart's old copy has
+/// exited), so nothing else follows a run or writes the ledger.
+static ALONE: AtomicBool = AtomicBool::new(false);
+
+/// Wait until this copy is the only companion (`ALONE`).
+pub(crate) fn wait_until_alone() {
+    let since = Instant::now();
+    let mut said = false;
+    while !ALONE.load(Ordering::SeqCst) {
+        if !said && since.elapsed() > Duration::from_secs(15) {
+            println!("waiting for the companion this one replaces to exit");
+            said = true;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
 /// In the copy that runs: take the lock for the life of the process. The
 /// copy a restart started waits for the old one to let go, on its own thread.
 pub(crate) fn hold() -> io::Result<()> {
@@ -61,6 +79,7 @@ pub(crate) fn hold() -> io::Result<()> {
         // the lock exists from now (this thread's handle), so nothing sees a gap
         thread::spawn(|| {
             let lock = platform::take_lock(platform::COMPANION_LOCK, true);
+            ALONE.store(true, Ordering::SeqCst);
             let _ = fs::write(pid_file().unwrap_or_default(), std::process::id().to_string());
             // the lock belongs to this thread: it lives as long as the process
             loop {
@@ -76,6 +95,7 @@ pub(crate) fn hold() -> io::Result<()> {
         Some(lock) => {
             // held by the main thread, which runs the voice loop until we exit
             std::mem::forget(lock);
+            ALONE.store(true, Ordering::SeqCst);
             let _ = fs::write(pid_file()?, std::process::id().to_string());
             // a stale request from before must not stop this start at once
             let _ = fs::remove_file(stop_request()?);
@@ -106,24 +126,31 @@ pub(crate) fn last_exit(since: u128) -> Option<String> {
     Some(text.split_once(' ').map(|(_, reason)| reason.trim().to_string()).unwrap_or_default())
 }
 
-/// Nothing the player said is unfinished: the talk button is up, no clip is at
-/// the speech engine, no request thread runs, and the courier holds nothing.
+/// Nothing the player said is unfinished here: the talk button is up, no clip
+/// is at the speech engine, every request thread is following an agent's run
+/// (which the next companion follows instead, src/runs.rs), and the courier
+/// holds nothing.
 pub(crate) fn idle() -> bool {
     !voice::HOLDING.load(Ordering::SeqCst)
         && voice::PENDING.load(Ordering::SeqCst) == 0
-        && IN_FLIGHT.load(Ordering::SeqCst) == 0
+        && IN_FLIGHT.load(Ordering::SeqCst) == crate::requests::FOLLOWING.load(Ordering::SeqCst)
         && crate::COURIER.load(Ordering::SeqCst) == 0
 }
 
-/// How every exit ends: deaf to the pad, then everything already said finished
-/// and sent, then the mic closed properly.
+/// How every exit ends: deaf to the pad, then everything already said handed to
+/// an agent, the agents still working left to the next companion, what is
+/// queued for the game sent, and nothing sent after; then the mic closed
+/// properly.
 pub(crate) fn wind_down() {
     voice::DEAF.store(true, Ordering::SeqCst);
     while !idle() {
         thread::sleep(Duration::from_millis(100));
     }
-    // what is queued for the game goes out first (lines are in the mailbox anyway)
+    crate::requests::hand_over();
+    // what is queued for the game goes out first (lines are in the mailbox
+    // anyway); from here this copy sends nothing, since the next one may
     crate::channel::flush();
+    crate::channel::close();
     voice::SHUTDOWN.store(true, Ordering::SeqCst);
     let asked = Instant::now();
     while !voice::STOPPED.load(Ordering::SeqCst) && asked.elapsed() < Duration::from_secs(3) {
