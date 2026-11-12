@@ -1,9 +1,6 @@
 -- The settings page: Blizzard's Settings list in our window. Rows grouped
--- under section headers (their SettingsListSectionHeaderTemplate). Names on
--- the light stone, the controls in a trough of the dark stone to the right
--- (dark under what the player operates, as Chat's gutter), its left edge
--- shadowed, a quest log divider between sections stopping at it; each row one
--- controller stop
+-- under section headers (their SettingsListSectionHeaderTemplate), a quest log
+-- divider between sections as on the Status tab, each row one controller stop
 -- (Rows.lua: left and right change it, confirm opens a dropdown's menu or
 -- presses a button, up and down move between rows). The focused row's note is
 -- read in one band at the foot of the page, where Blizzard shows a tooltip.
@@ -29,9 +26,7 @@ local headers = {} -- section name -> header frame
 local ROW_H, HEADER_H, CONTROL_W = 36, 36, 250
 -- Blizzard's columns: the label from the left to the middle, the control from
 -- just left of the middle (SettingsListElementMixin, SettingsSliderControlMixin)
--- the seam between the stones sits just left of the controls, the names end
--- clear of it
-local LABEL_X, SEAM_X, CONTROL_X = 24, -92, -80
+local LABEL_X, CONTROL_X = 24, -80
 
 local page = CreateFrame("Frame", "WowCompanionSettingsPage", UIParent)
 page:Hide()
@@ -74,31 +69,17 @@ scroll:SetScript("OnMouseWheel", function(self, delta)
 	local most = math.max(0, content:GetHeight() - self:GetHeight())
 	self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW_H)))
 end)
--- the trough: from the seam to the backing's right edge (9 px outside the
--- page; 7 above it, where the backing starts), down to the band. It does not
--- scroll; the rows pass over it.
-local trough = page:CreateTexture(nil, "BACKGROUND")
-stone(trough, "you")
-trough:SetPoint("TOPLEFT", page, "TOP", SEAM_X, 7)
-trough:SetPoint("TOPRIGHT", page, "TOPRIGHT", 9, 7)
-trough:SetPoint("BOTTOMLEFT", band, "TOP", SEAM_X, 0)
-trough:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, 0)
--- the two stones are a few values apart: the shadow is what shows the seam,
--- the trough sunk below the light stone as the chat sits below the tabs
-local seam = page:CreateTexture(nil, "BORDER")
-seam:SetTexture([[Interface\Common\ShadowOverlay-Left]])
-seam:SetWidth(24)
-seam:SetPoint("TOPLEFT", trough, "TOPLEFT")
-seam:SetPoint("BOTTOMLEFT", trough, "BOTTOMLEFT")
--- the trough's floor, under every row
-divider(band)
+local bandLine = divider(band)
 local bandText = band:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
 bandText:SetPoint("TOPLEFT", LABEL_X, -14)
 bandText:SetPoint("BOTTOMRIGHT", -LABEL_X, 4)
 bandText:SetJustifyH("LEFT")
 bandText:SetJustifyV("TOP")
+-- nothing focused, nothing shown: no line over an empty band
 local function describe(row)
-	bandText:SetText(row and row.text or "")
+	local text = row and row.text
+	bandText:SetText(text or "")
+	bandLine:SetShown(text ~= nil)
 end
 
 -- One setting as Blizzard's Settings lay one out (SettingsListElementTemplate):
@@ -116,7 +97,7 @@ local function settingRow(row, step, prompt)
 	hover:SetColorTexture(1, 1, 1, 0.1)
 	local fs = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	fs:SetPoint("LEFT", LABEL_X, 0)
-	fs:SetPoint("RIGHT", r, "CENTER", SEAM_X - 8, 0)
+	fs:SetPoint("RIGHT", r, "CENTER", CONTROL_X - 5, 0)
 	fs:SetJustifyH("LEFT")
 	fs:SetWordWrap(false)
 	fs:SetText(row.label)
@@ -198,9 +179,7 @@ local function header(name)
 	local h = CreateFrame("Frame", nil, content, "SettingsListSectionHeaderTemplate")
 	h:SetPoint("RIGHT", content, "RIGHT", -9, 0)
 	h.Title:SetText(name)
-	-- from the backing's left edge to the seam, as Chat's dividers stop at its gutter
 	h.divider = divider(h)
-	h.divider:SetPoint("RIGHT", h, "TOP", SEAM_X, 0)
 	headers[name] = h
 	return h
 end
