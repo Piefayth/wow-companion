@@ -15,8 +15,9 @@ E.TITLE = { new = "New", equip = "Upgrades", quest = "Quest", use = "Consumables
 -- the junk coin's colour per verdict (only these three show it)
 E.COIN = { sell = { 1, 0.82, 0 }, auction = { 0.35, 0.65, 1 }, equip = { 0.2, 1, 0.2 } }
 
--- never sold: hearthstone and gathering tools
-local KEEP = { [6948] = true, [7005] = true, [2901] = true, [5956] = true, [6256] = true,
+-- never sold or suggested for room: hearthstone and gathering tools (MakeRoom
+-- reads it too)
+E.KEEP = { [6948] = true, [7005] = true, [2901] = true, [5956] = true, [6256] = true,
 	[6365] = true, [12225] = true, [6219] = true, [10498] = true, [7189] = true }
 
 -- inventory slots for an equip location
@@ -93,7 +94,7 @@ function E.Of(bag, slot)
 	local info = C_Container.GetContainerItemInfo(bag, slot)
 	if not (info and info.itemID) then return "empty" end
 	local id = info.itemID
-	if KEEP[id] then return "keep", "a tool or your hearthstone" end
+	if E.KEEP[id] then return "keep", "a tool or your hearthstone" end
 	local q = C_Container.GetContainerItemQuestInfo(bag, slot)
 	if q and (q.isQuestItem or q.questID) then return "quest" end
 	if C_NewItems and C_NewItems.IsNewItem and C_NewItems.IsNewItem(bag, slot) then return "new" end

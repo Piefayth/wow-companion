@@ -33,16 +33,19 @@ function WC.BagsMenu.Build(f, holdBindings, MAXBAG)
 		C_Container.SplitContainerItem(m.bag, m.slot, n)
 		C_Container.PickupContainerItem(bag, slot)
 	end
-	local BARS = { { 181, "d-pad" }, { 185, "L2" }, { 193, "R2" }, { 201, "L2+R2" } }
-	local KEYS = { "left", "up", "right", "down", "square", "triangle", "circle", "cross" }
+	-- the first empty button of the gamepad bars (Core's Bars.lua), named
+	-- with the pad's own glyphs
 	local function toBar(b)
-		for _, bar in ipairs(BARS) do
-			for k = 0, 7 do
-				if not GetActionInfo(bar[1] + k) then
+		for _, bar in ipairs(WC.GamepadBars) do
+			for k = 0, bar.inForm and -1 or bar.count - 1 do
+				if not GetActionInfo(bar.first + k) then
 					C_Container.PickupContainerItem(f.meta[b].bag, f.meta[b].slot)
-					PlaceAction(bar[1] + k)
+					PlaceAction(bar.first + k)
 					ClearCursor()
-					print(("bags: put on %s + %s"):format(bar[2], KEYS[k + 1]))
+					local chord = {}
+					for _, key in ipairs(bar.held) do chord[#chord + 1] = WowCompanion_Glyph(key) end
+					chord[#chord + 1] = WowCompanion_Glyph(WC.GamepadBars.KEYS[k + 1])
+					print("bags: put on " .. table.concat(chord, " + "))
 					return
 				end
 			end

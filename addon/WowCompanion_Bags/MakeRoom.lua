@@ -1,8 +1,8 @@
 -- Full bags while looting (WC module): names the cheapest thing to drop for the
 -- best thing on the corpse, on the board. Sends BAGS_FULL(worst, top).
 local M = WC.Module('MakeRoom')
--- never suggested: hearthstone and profession tools
-local KEEP = { [6948] = true, [7005] = true, [2901] = true, [5956] = true, [6256] = true, [6365] = true, [12225] = true, [6219] = true, [10498] = true, [7189] = true }
+-- never suggested: hearthstone and profession tools (BagsEvaluate.lua's list)
+local KEEP = WC.BagsEval.KEEP
 -- worth: the better of a vendor's pay and an auction after the 5% cut, from the
 -- price capability (Engine.lua; an auction addon's provider when one is loaded)
 local function each(id)

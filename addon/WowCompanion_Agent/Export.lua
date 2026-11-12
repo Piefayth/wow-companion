@@ -51,7 +51,6 @@ end
 -- functions; Agent.lua calls WC.Export.Context() / WC.Export.NoteForms().
 
 local chords = WC.Chords
-local GAMEPAD_BARS = chords.GAMEPAD_BARS
 local LAST_ACTION_SLOT = chords.LAST_ACTION_SLOT
 local PAD_WORDS = chords.PAD_WORDS
 local actionFrames = chords.actionFrames
@@ -483,8 +482,8 @@ local function exportContext()
 			line("-- 5-8 the face buttons square, triangle, circle, cross (from each button's")
 			line("-- icon). The modifier is learned by watching which triggers are held when a")
 			line("-- button fires; '?' means not seen yet, and is not to be guessed")
-			for _, bar in ipairs(GAMEPAD_BARS) do
-				local name = barLabel(bar[1] .. "ActionButton1"):gsub(" 1$", "")
+			for _, bar in ipairs(WC.GamepadBars) do
+				local name = barLabel(bar.frame .. "ActionButton1"):gsub(" 1$", "")
 				local modifier, presses = barModifier(name)
 				line(("%s: %s"):format(name, modifier and ("%s (seen %d times)"):format(modifier, presses) or "?"))
 			end
@@ -494,8 +493,8 @@ local function exportContext()
 			-- learn the same chord.
 			local formNames = shapeshiftForms()
 			local byModifier = {}
-			for _, bar in ipairs(GAMEPAD_BARS) do
-				local name = barLabel(bar[1] .. "ActionButton1"):gsub(" 1$", "")
+			for _, bar in ipairs(WC.GamepadBars) do
+				local name = barLabel(bar.frame .. "ActionButton1"):gsub(" 1$", "")
 				local modifier = barModifier(name)
 				if modifier then
 					byModifier[modifier] = byModifier[modifier] or {}

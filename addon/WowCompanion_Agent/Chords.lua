@@ -53,13 +53,6 @@ end
 -- which modifiers are held when a button goes into its pushed state. So the base
 -- comes from the art and the modifier is learned from play, keyed by bar position
 -- rather than slot, because forms and stances page the slots under the same buttons.
-local GAMEPAD_BARS = {
-	{ "TopCenteredAnchorTopBar", 4 },
-	{ "LeftCenteredAnchorLeftBar", 8 },
-	{ "RightCenteredAnchorRightBar", 8 },
-	{ "BottomCenteredAnchorBottomBar", 8 },
-	{ "TopCenteredAnchorStanceBar", 8 },
-}
 local ART_INPUT = {
 	dpadleft = "left", dpadup = "up", dpadright = "right", dpaddown = "down",
 	["ps%-square"] = "square", ["ps%-triangle"] = "triangle",
@@ -73,9 +66,9 @@ local function gamepadButtons()
 		return padButtons
 	end
 	padButtons = {}
-	for _, bar in ipairs(GAMEPAD_BARS) do
-		for i = 1, bar[2] do
-			local name = "GamepadMainActionBarFramePageUnit" .. bar[1] .. "ActionButton" .. i
+	for _, bar in ipairs(WC.GamepadBars) do
+		for i = 1, bar.count do
+			local name = "GamepadMainActionBarFramePageUnit" .. bar.frame .. "ActionButton" .. i
 			local button = _G[name]
 			if button then
 				local art = button.SlotArt and button.SlotArt.GetAtlas and button.SlotArt:GetAtlas() or ""
@@ -344,7 +337,6 @@ end
 
 
 WC.Chords = WC.Chords or {}
-WC.Chords.GAMEPAD_BARS = GAMEPAD_BARS
 WC.Chords.LAST_ACTION_SLOT = LAST_ACTION_SLOT
 WC.Chords.PAD_WORDS = PAD_WORDS
 WC.Chords.barLabel = barLabel

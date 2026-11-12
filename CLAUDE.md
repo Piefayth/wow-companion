@@ -80,7 +80,8 @@ yes; don't reinvent what Claude Code has.
   - `WowCompanion` (Core, needs nothing of the PC): `Engine.lua` (`WC`: modules,
     bus, settings, `WC.AfterCombat`, the focus helpers, capabilities, `WC.Saved`),
     `Conversations.lua` (the conversations as the PC names them, their labels;
-    `WC.Conversations`), `Style.lua` (Blizzard look, glyphs, destroy dialog),
+    `WC.Conversations`), `Bars.lua` (the gamepad action bars: frames, slots,
+    triggers, `WC.GamepadBars`), `Style.lua` (Blizzard look, glyphs, destroy dialog),
     `Rows.lua` (settings rows as controller stops, `WC.RowStop`, `WC.SliderStop`),
     `SettingsPage.lua` (the one settings page, `WC.SettingsPage.Add` for each
     addon's rows; its own window, the minimap mark and Blizzard's AddOns settings
