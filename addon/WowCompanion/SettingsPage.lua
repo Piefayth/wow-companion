@@ -153,7 +153,7 @@ across:SetHeight(16)
 across:SetPoint("LEFT", band, "TOPLEFT", -2 - SEAM / 2, SEAM / 2)
 across:SetPoint("RIGHT", band, "TOPRIGHT", 9, SEAM / 2)
 WC.Style.VineLine(across, "Thick", false, false, true)
-WC.Style.VineJoin(across, "Thick", "TRight", "LEFT")
+WC.Style.VineJoin(across, "Thick", "TRightScroll", "LEFT")
 
 -- One setting: a row from the names well to the right edge, its name at the left
 -- and its control at the edge; the row is the one stop, shaded white at 0.1
@@ -286,7 +286,7 @@ local function header(name)
 	h.divider:SetHeight(16)
 	h.divider:SetFrameLevel(scroll:GetFrameLevel() + 5)
 	WC.Style.VineLine(h.divider, "", false, false, true)
-	WC.Style.VineJoin(h.divider, "Thick", "TRightFromMedium", "LEFT")
+	WC.Style.VineJoin(h.divider, "Thick", "TRightFromMediumWisp", "LEFT")
 	headers[name] = h
 	return h
 end
