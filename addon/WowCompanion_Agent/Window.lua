@@ -234,10 +234,11 @@ local function buildTabs(frame, messages)
 	chatWell:SetPoint("BOTTOMRIGHT", well, "BOTTOMLEFT", -GAP, 0)
 	table.insert(frame.chatParts, chatWell)
 	-- The chat well's geometry, in one place (docs/ui-layout.md): inside the
-	-- inset's border (EDGE) the transcript fills the well, and the scroll bar
-	-- (ChatBar.lua) stands over its right end, so each turn's stone runs on
-	-- behind the bar to the edge.
-	local EDGE = 3
+	-- inset's border (EDGE, its whole carved wall: the text clips there and
+	-- never scrolls across the wall) the transcript fills the well, and the
+	-- scroll bar (ChatBar.lua) stands over its right end, so each turn's stone
+	-- runs on behind the bar to the edge.
+	local EDGE = INSET
 	local level = chatWell:GetFrameLevel()
 	messages.scroll:ClearAllPoints()
 	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", EDGE, -EDGE)
