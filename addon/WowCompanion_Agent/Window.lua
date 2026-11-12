@@ -335,10 +335,26 @@ local function buildTabs(frame, messages)
 	-- in, no more: deeper, they covered the top line of text), drawn under
 	-- the well's top shadow so it falls across their foot as across the text
 	local names = {}
+	local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s%s-1]]
 	local function makeTab(name)
 		local i = #names + 1
 		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTopTabButtonTemplate")
 		if not made or not tab then return end
+		-- our art (tools/make_tab_art.py) on the template's regions, kept on
+		-- its anchors: every piece 36 units tall from the tab's foot, the caps
+		-- 36 wide (together the tab's least width), the highlight the
+		-- unselected art added, as Blizzard's is
+		for _, part in ipairs({ "Left", "Middle", "Right" }) do
+			for _, state in ipairs({ "", "Active", "Highlight" }) do
+				local t = tab[part .. state]
+				if t then
+					t:SetTexture(TAB_ART:format(part, state == "Active" and "-Active" or ""))
+					t:SetTexCoord(0, 1, 0, 1)
+					t:SetHorizTile(false)
+					if part == "Middle" then t:SetHeight(36) else t:SetSize(36, 36) end
+				end
+			end
+		end
 		names[i] = name
 		tab:SetID(i)
 		tab:SetText(name)
