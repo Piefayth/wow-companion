@@ -107,6 +107,9 @@ end
 -- two ends, the thumb riding in it, and at each divider's y a Joint (32x16, its
 -- x 6 the column's left edge) taking the divider into the left border and on
 -- past the groove to the pane's edge.
+-- the thumb art's opaque width, in the art's 32 (alpha over half, measured
+-- off the TGAs), to the groove floor's 7.8
+local FILL = { Lance = 7.8 / 5.75, Fleur = 7.8 / 5.5, Bud = 7.8 / 5.25, Lancet = 7.8 / 6.25 }
 local function groove(c, design, lane, ends)
 	local caps = {}
 	for _, spec in ipairs({ { "Up", "TOP" }, { "Down", "BOTTOM" } }) do
@@ -135,7 +138,10 @@ local function groove(c, design, lane, ends)
 	-- the thumb: its ends, its centre (the set's motif) and the shaft stretched between
 	local thumb = CreateFrame("Frame", nil, c)
 	thumb:SetFrameLevel(c:GetFrameLevel() + 3)
-	thumb:SetWidth(32)
+	-- as wide as the groove's floor (8 of the art's 32): the drawn thumb is
+	-- narrower (measured, its opaque width per set), so its art is widened to
+	-- fill the floor with no gap down either side
+	thumb:SetWidth(32 * FILL[design])
 	local function piece(name, height, point)
 		local t = thumb:CreateTexture(nil, "ARTWORK")
 		t:SetTexture(art(design, name))
@@ -151,9 +157,9 @@ local function groove(c, design, lane, ends)
 		shaft:SetPoint("BOTTOMRIGHT", span[2], "TOPRIGHT")
 	end
 	-- the thumb travels to the groove's own rounded ends, which lie inside the
-	-- caps: the groove's floor reaches 21 of each cap's 32 (measured in the art,
-	-- rows 84..127 of 128), so the thumb meets them flush at either end
-	return caps.Up, caps.Down, thumb, 21
+	-- caps (the round end's centre 24 of each cap's 32, radius 4), so it meets
+	-- them flush; it draws above the caps there, or their art hid its end
+	return caps.Up, caps.Down, thumb, 20
 end
 
 -- each: a name, its builder and its art. The spearhead's divider is Blizzard's
@@ -297,7 +303,9 @@ local function pane(page, option)
 	if ok then
 		up, down, thumb, inset = unpack(built)
 		-- the arrows and thumb over the scrolling joints
-		for _, f in ipairs({ up, down, thumb }) do f:SetFrameLevel(box:GetFrameLevel() + 6) end
+		up:SetFrameLevel(box:GetFrameLevel() + 6)
+		down:SetFrameLevel(box:GetFrameLevel() + 6)
+		thumb:SetFrameLevel(box:GetFrameLevel() + 7)
 	end
 	-- The thumb's share of its room is the share of the conversation in view,
 	-- its place the scroll's; an arrow moves most of a view, as the chat's do.
