@@ -215,9 +215,6 @@ end
 local function pane(page, option)
 	local box = CreateFrame("Frame", nil, page, "InsetFrameTemplate")
 	if box.Bg then box.Bg:Hide() end
-	-- above the page well's own top shadow (Window.lua's pageLip, the well's
-	-- level + 20), which would shade the bar; set first, so its children follow
-	box:SetFrameLevel(page:GetParent():GetFrameLevel() + 25)
 	-- the turns past the well's bottom are cut off there, as the chat's scroll does
 	box:SetClipsChildren(true)
 	local column = CreateFrame("Frame", nil, box)
@@ -333,4 +330,15 @@ WC.Companion.AddTab("Scroll bars", function(page)
 		buttons[i] = b
 	end
 	pick(1)
+	-- Above the page well's own top shadow (Window.lua's pageLip, the well's
+	-- level + 20), which shaded the whole preview's top, bar included. Set on
+	-- each show: the page is re-parented after it is filled, which resets the
+	-- levels set while filling (measured: the preview sat at level 2, under it).
+	page:HookScript("OnShow", function()
+		local above = page:GetParent():GetFrameLevel() + 25
+		for n, box in ipairs(boxes) do
+			box:SetFrameLevel(above)
+			buttons[n]:SetFrameLevel(above + 10)
+		end
+	end)
 end)
