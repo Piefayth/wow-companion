@@ -251,7 +251,9 @@ function WowCompanion_Style.VineLine(owner, weight, vertical, capStart, capEnd)
 	local made = {}
 	local function piece(name, w, h)
 		local t = owner:CreateTexture(nil, "ARTWORK")
-		t:SetTexture(WowCompanion_Style.Vine(weight .. name))
+		-- clamped: a wrapped edge samples the far edge, and a cap's far edge is
+		-- the vine, a grey nub past its round end
+		t:SetTexture(WowCompanion_Style.Vine(weight .. name), "CLAMP", "CLAMP")
 		if w then t:SetWidth(w) end
 		if h then t:SetHeight(h) end
 		made[#made + 1] = t
@@ -279,10 +281,10 @@ function WowCompanion_Style.VineLine(owner, weight, vertical, capStart, capEnd)
 end
 -- A junction centred on a point of `owner`, square at the size it was drawn
 -- for (the art's units), its own stretch of both vines inside it
-local JOIN_SIZE = { TRightBig = 112, TRightFromMedium = 80 }
+local JOIN_SIZE = { TRightBig = 112, TRightFromMedium = 80, TRightFromMediumPlain = 80 }
 function WowCompanion_Style.VineJoin(owner, weight, kind, point)
 	local t = owner:CreateTexture(nil, "OVERLAY")
-	t:SetTexture(WowCompanion_Style.Vine(weight .. kind))
+	t:SetTexture(WowCompanion_Style.Vine(weight .. kind), "CLAMP", "CLAMP")
 	t:SetSize(JOIN_SIZE[kind], JOIN_SIZE[kind])
 	t:SetPoint("CENTER", owner, point)
 	return t

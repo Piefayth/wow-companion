@@ -479,6 +479,8 @@ def rule_pieces(weight):
 #   FromMedium (Vine-ThickTRightFromMedium) a medium vine growing out of the
 #             thick: it flares into the run, its root split into two volutes
 #             curling away from it, the arm itself their fleur's lance
+#   FromMediumPlain (Vine-ThickTRightFromMediumPlain) the same flare and
+#             no volutes, where the arm runs past text (the Status rows)
 # Mirrored halves are built by moving points, so the light stays the frame's.
 
 JOIN_SIZE = {True: 112, False: 80}  # units square: Style.lua's VineJoin sizes
@@ -707,6 +709,7 @@ def main():
     for weight in WEIGHTS:
         vines.update(rule_pieces(weight))
     vines["ThickTRightBig"], vines["ThickTRightFromMedium"] = junction(True), junction(False)
+    vines["ThickTRightFromMediumPlain"] = forge(JOIN_SIZE[False], False)
     for old in glob.glob(os.path.join(CORE_OUT, "Vine-*.tga")):
         os.remove(old)
     for stem, rgba in vines.items():
