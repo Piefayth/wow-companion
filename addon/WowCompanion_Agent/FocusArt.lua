@@ -20,11 +20,18 @@ local TEX, MARGIN, INSET = 128, 48, 32
 local UNIT = 2 * 4 / 3 -- texels a unit
 local M, OUT = MARGIN / UNIT, INSET / UNIT -- 18 and 12 units
 
+-- the glow's style while the player picks one (A to E, or "" for the first):
+-- a letter in WowCompanionAgentDB.focusGlow, switched live by WC.FocusArt.Style
+local function glowPath()
+	local pick = WowCompanionAgentDB and WowCompanionAgentDB.focusGlow or ""
+	return ART:format(pick ~= "" and ("Focus-Glow-" .. pick) or "Focus-Glow")
+end
+
 local function glow(frame)
 	local holder = frame.FrameGlow
 	if not holder or holder.wcPieces then return end
 	if holder.GlowTexture then holder.GlowTexture:SetAlpha(0) end
-	local path = ART:format("Focus-Glow")
+	local path = glowPath()
 	local a, b = MARGIN / TEX, (TEX - MARGIN) / TEX
 	local cols = { { 0, a }, { a, b }, { b, 1 } }
 	local pieces = {}
@@ -118,4 +125,12 @@ events:SetScript("OnEvent", function()
 	if _G.WowCompanionLog then pcall(glow, _G.WowCompanionLog) end
 end)
 
-WC.FocusArt = { Dress = glow }
+WC.FocusArt = {
+	Dress = glow,
+	-- "A".."E", or "" for the first glow; the window's glow changes at once
+	Style = function(pick)
+		WowCompanionAgentDB.focusGlow = pick or ""
+		local holder = _G.WowCompanionLog and _G.WowCompanionLog.FrameGlow
+		for _, p in ipairs(holder and holder.wcPieces or {}) do p.t:SetTexture(glowPath()) end
+	end,
+}
