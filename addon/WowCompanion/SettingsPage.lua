@@ -30,7 +30,9 @@ WC.SettingsPage = Page
 local rows = {}    -- every row added: { row = the caller's table, frame = once made }
 local refreshers = {} -- one per made row whose shown value can change
 local headers = {} -- section name -> its name in the names well
-local ROW_H, GAP, CONTROL_W = 36, 24, 250
+-- the controls 200 wide: Blizzard's 250 is for a 920-wide Settings window;
+-- in ours it took half of each row and dwarfed the names
+local ROW_H, GAP, CONTROL_W = 36, 24, 200
 -- the names well's width from the page's left; a row's name inset from it;
 -- the control's inset from the right edge (a slider's value text after it)
 local SPINE, LABEL_X, EDGE, VALUE_W = 170, 10, 8, 32
