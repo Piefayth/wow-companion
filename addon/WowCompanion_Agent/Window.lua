@@ -26,7 +26,7 @@ end
 -- tools/make_frame_art.py draws the window at these numbers to check them.
 local RIM, TOP = 6, 28 -- the rim's width; the top pieces' height (title band and rule)
 local BAND = 22.6 -- the title band's foot, where the art's rule begins
-local GAP = 4
+local GAP = 7
 local RULE_FOOT, FOOT = 25.6, 20 -- RULE_FOOT: the title rule's foot
 local WELL_TOP = RULE_FOOT + GAP
 -- The tabs' plaques (tools/make_tab_art.py), one PLAQUE-sized piece a tab, its
