@@ -159,7 +159,7 @@ local function groove(c, design, lane, ends)
 	-- the thumb travels to the groove's own rounded ends, which lie inside the
 	-- caps (the round end's centre 24 of each cap's 32, radius 4), so it meets
 	-- them flush; it draws above the caps there, or their art hid its end
-	return caps.Up, caps.Down, thumb, 20
+	return caps.Up, caps.Down, thumb, 20.4 -- a pixel short of the round end at 4K, the player's eye
 end
 
 -- each: a name, its builder and its art. The spearhead's divider is Blizzard's
