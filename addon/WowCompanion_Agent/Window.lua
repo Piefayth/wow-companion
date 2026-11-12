@@ -305,7 +305,18 @@ local function buildTabs(frame, messages)
 	-- (SharedUIPanelTemplates.xml:195), above the scrolling text and its
 	-- dividers so they slide under it. It covers the turns only, fading out
 	-- sideways as it nears the bar, so the bar stands above the chat, unshaded,
-	-- with no edge where the shadow stops.
+	-- with no edge where the shadow stops. Under the chosen tab the wall is
+	-- open, so its shadow is cut away there (openings, below).
+	local openings = {} -- a lip's mask, each: clear under the chosen tab
+	local function opening(lipFrame, ...)
+		local mask = lipFrame:CreateMaskTexture()
+		-- clamped, its clear ends reach past it; its rows are alike, so only
+		-- its left and right matter
+		mask:SetTexture([[Interface\AddOns\WowCompanion_Agent\Art\Tab-Opening-3]], "CLAMP", "CLAMP")
+		mask:SetHeight(8)
+		for _, t in ipairs({ ... }) do t:AddMaskTexture(mask) end
+		openings[#openings + 1] = mask
+	end
 	local FADE = 48
 	local lip = CreateFrame("Frame", nil, chatWell)
 	lip:SetPoint("TOPLEFT", messages.scroll, "TOPLEFT")
@@ -321,6 +332,7 @@ local function buildTabs(frame, messages)
 	fade:SetPoint("TOPLEFT", shade, "TOPRIGHT")
 	fade:SetPoint("BOTTOMRIGHT")
 	fade:SetGradient("HORIZONTAL", CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 0))
+	opening(lip, shade, fade)
 	table.insert(frame.chatParts, lip)
 
 	-- the page well, over both wells' area, for the other tabs
@@ -346,26 +358,32 @@ local function buildTabs(frame, messages)
 	stone:SetVertTile(true)
 	stone:SetPoint("TOPLEFT", 3, -3)
 	stone:SetPoint("BOTTOMRIGHT", -3, 3)
-	-- the same shadow under the tabs as the chat well has, on every other tab
+	-- the same shadow under the tabs as the chat well has, on every other tab,
+	-- from the wall's foot
 	local pageLip = CreateFrame("Frame", nil, pageWell)
-	pageLip:SetPoint("TOPLEFT", 3, -3)
-	pageLip:SetPoint("TOPRIGHT", -3, -3)
+	pageLip:SetPoint("TOPLEFT", INSET, -INSET)
+	pageLip:SetPoint("TOPRIGHT", -INSET, -INSET)
 	pageLip:SetHeight(24)
 	pageLip:SetFrameLevel(pageWell:GetFrameLevel() + 20)
 	local pageShade = pageLip:CreateTexture(nil, "OVERLAY")
 	pageShade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
 	pageShade:SetAllPoints()
+	opening(pageLip, pageShade)
 
-	-- the tabs, their foot standing on the chat well's outer edge, never over
-	-- its carved wall, the row's left end over the well's inner edge (EDGE)
-	local names = {}
-	-- our art (tools/make_tab_art.py) carries no margin: the unselected
-	-- pieces are the button's own size, the open ones set out by their glow
-	-- (HALO), and the row's spacing is decided here: every tab at least
+	-- The tabs (tools/make_frame_art.py), standing on the wells' top edge:
+	-- each a notch carved in the panel with the wells' wall, its floor stone.
+	-- The chosen one and the well under it are one cavity: its art reaches
+	-- INSET below its foot, over the well's wall, and FLARE past each side,
+	-- where its walls turn out into the well's; its floor is the replies'
+	-- stone, run down to the wall's foot. The others are shorter, on the
+	-- darker stone, the well's wall running on in front of their feet.
+	-- The art carries no margin; the row's spacing is here: every tab at least
 	-- TAB_MIN wide (PanelTemplates_TabResize reads frame.minTabWidth), TAB_GAP
-	-- between them, the old row's pitch and gap between rims
-	local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s%s-2]]
-	local TAB_MIN, TAB_GAP, CAP, HALO = 69, 3, 6, 2
+	-- between them, the first FLARE in from the well's inner edge (EDGE), so
+	-- the chosen first tab's flare starts there.
+	local names = {}
+	local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s-3]]
+	local TAB_MIN, TAB_GAP, CAP, FLARE = 69, 3, 6, 2.5
 	local TAB_H, TAB_ACTIVE_H = 20.2, 25.6
 	frame.minTabWidth = TAB_MIN
 	local function makeTab(name)
@@ -379,11 +397,11 @@ local function buildTabs(frame, messages)
 				local t = tab[part .. state]
 				if t then
 					local active = state == "Active"
-					t:SetTexture(TAB_ART:format(part, active and "-Active" or ""))
+					t:SetTexture(TAB_ART:format(part .. (active and "-Active" or "")))
 					t:SetTexCoord(0, 1, 0, 1)
 					t:SetHorizTile(false)
-					t:SetHeight(active and TAB_ACTIVE_H or TAB_H)
-					if part ~= "Middle" then t:SetWidth(active and CAP + HALO or CAP) end
+					t:SetHeight(active and TAB_ACTIVE_H + INSET or TAB_H)
+					if part ~= "Middle" then t:SetWidth(active and CAP + FLARE or CAP) end
 				end
 			end
 		end
@@ -392,14 +410,16 @@ local function buildTabs(frame, messages)
 		tab.Right:ClearAllPoints()
 		tab.Right:SetPoint("BOTTOMRIGHT")
 		tab.LeftActive:ClearAllPoints()
-		tab.LeftActive:SetPoint("BOTTOMLEFT", -HALO, 0)
+		tab.LeftActive:SetPoint("BOTTOMLEFT", -FLARE, -INSET)
 		tab.RightActive:ClearAllPoints()
-		tab.RightActive:SetPoint("BOTTOMRIGHT", HALO, 0)
+		tab.RightActive:SetPoint("BOTTOMRIGHT", FLARE, -INSET)
+		-- the floor, under the art (the template's pieces are BACKGROUND 0)
+		tab.floor = tab:CreateTexture(nil, "BACKGROUND", nil, -8)
 		names[i] = name
 		tab:SetID(i)
 		tab:SetText(name)
 		if i == 1 then
-			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", EDGE, 0)
+			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", EDGE + FLARE, 0)
 		else
 			tab:SetPoint("LEFT", frame.Tabs[i - 1], "RIGHT", TAB_GAP, 0)
 		end
@@ -427,6 +447,23 @@ local function buildTabs(frame, messages)
 		id = ((id - 1) % #names) + 1
 		frame.currentTab = id
 		PanelTemplates_SetTab(frame, id)
+		-- each tab's floor, a unit inside its walls' soft edge; the chosen
+		-- one's down to the well's wall's foot, and the lips cut under it
+		for i, tab in ipairs(frame.Tabs) do
+			local chosen = i == id
+			local floor = tab.floor
+			floor:SetTexture(chosen and WC.Style.STONE.claude or WC.Style.STONE.you, "REPEAT", "REPEAT")
+			floor:SetHorizTile(true)
+			floor:SetVertTile(true)
+			floor:ClearAllPoints()
+			floor:SetPoint("TOPLEFT", tab, "BOTTOMLEFT", 1, (chosen and TAB_ACTIVE_H or TAB_H) - 1)
+			floor:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -1, chosen and -INSET or 0)
+		end
+		for _, mask in ipairs(openings) do
+			mask:ClearAllPoints()
+			mask:SetPoint("LEFT", frame.Tabs[id], "LEFT")
+			mask:SetPoint("RIGHT", frame.Tabs[id], "RIGHT")
+		end
 		local chat = id == 1
 		-- the page's name in the title, as Collections does
 		if frame.SetTitle then frame:SetTitle(chat and "Companion" or names[id]) end

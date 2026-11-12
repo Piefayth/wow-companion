@@ -4,8 +4,9 @@ drawn here as vector shapes, bevelled and lit from the top left, many samples
 to a pixel and averaged down, never Blizzard's art.
 
     python tools/make_frame_art.py   writes addon/WowCompanion_Agent/Art/Frame-*-<v>.tga,
-                                     Inset-*-<v>.tga, Close-*-<v>.tga and
-                                     target/frame-sheet-<v>.png (the comparison sheet)
+                                     Inset-*-<v>.tga, Close-*-<v>.tga, Tab-*-<tab v>.tga,
+                                     target/frame-fix-4k.png (the window mocked at 4K) and
+                                     target/tabs-v<tab v>-sheet.png (the tab row: the shot's, ours)
 
 The frame replaces its NineSlice region by region: four corners, four edges
 stretched between them (each edge is the same all along its length, so it
@@ -16,15 +17,17 @@ through the join without a step. The top pieces hold the title bar: the rim,
 the dark band the title sits in, the bronze rule under it and that rule's
 shadow. Nothing is drawn outside the rim; Window.lua puts it on the frame's
 bounds and decides every margin. The inset's border is painted as
-Blizzard's is (inset()).
+Blizzard's is (inset()); the tabs are
+carved with the same wall (tab()).
 
 The game keeps a texture for the session under its path, so a change bumps
-VERSION (and Window.lua's ART); older files are deleted.
+VERSION (and Window.lua's ART), or TAB_VERSION for the tabs (and its
+TAB_ART); older files are deleted.
 """
 import glob
 import os
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 
@@ -238,40 +241,53 @@ def close(state):
 INSET = 4.0  # the inset's corners' side and its edges' width
 STONE = (np.array((16, 14, 12.0)), np.array((52, 48, 43.0)), np.array((112, 104, 92.0)))  # the wall: shadow, mid, lit
 LINE_IN = np.array((5, 4, 3.0))  # the creases at the wall's top and foot
+WALL_FOOT = 3.3  # where the wall meets the floor, its contact shadow on to INSET
+
+
+def carve(d, k=K, brass=None):
+    """The wells' wall painted on a depth field d (units into the cavity from
+    its edge, negative outside): opaque stone carved down from the panel, so
+    a cavity reads as cut into the frame rather than shaded over. A dark
+    crease where the panel breaks, a rounded, worn wall lit by the frame's
+    light (walls facing away fall dark, the others catch it), a dark crease at
+    its foot, and a short contact shadow onto the floor, which is left clear.
+    The whole is blurred a quarter unit, so no line is razor sharp. brass, if
+    given, is how much of an aged brass bead lies along the wall's lip at
+    each point."""
+    lay = Layers(d.shape)
+    top = 0.35
+    # the wall's height: the panel's level at its top, the floor's at its
+    # foot, rounded over at the lip as worn stone is
+    t = np.clip((d - top) / (WALL_FOOT - top), 0, 1)
+    hgt = 1.6 * (1 - t) ** 1.6
+    wall = shade(ndimage.gaussian_filter(hgt, k * 0.15), STONE, k, gloss=0.08, power=10)
+    lay.over(wall, ((d >= 0) & (d < WALL_FOOT + 0.2)).astype(float))
+    lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.12) / 0.22, 0, 1) * (d >= 0) * 0.9)
+    if brass is not None:
+        # a rounded bead a unit wide on the lip, with a crease on its inner side
+        u = (d - 0.75) / 0.55
+        bh = ndimage.gaussian_filter(bead(np.clip(u, -1, 1)) * (np.abs(u) < 1), k * 0.1)
+        lay.over(shade(bh, BRASS, k, gloss=0.12, power=12), np.clip((1 - np.abs(u)) / 0.25, 0, 1) * brass)
+        lay.over(LINE_IN, np.clip(1 - np.abs(d - 1.35) / 0.2, 0, 1) * 0.6 * brass)
+    lay.over(LINE_IN, np.clip(1 - np.abs(d - WALL_FOOT) / 0.3, 0, 1) * 0.9)
+    lay.over(np.zeros(3), np.where(d > WALL_FOOT, np.clip(1 - (d - WALL_FOOT) / (INSET - WALL_FOOT), 0, 1) * 0.45, 0))
+    pre = lay.pre()
+    return np.stack([ndimage.gaussian_filter(pre[..., i], k * 0.25) for i in range(4)], -1)
 
 
 def inset():
-    """An inset's border in a 20-unit square: a wall carved down from the
-    panel into the well, opaque stone, so the well reads as cut into the
-    frame rather than shaded over. A dark crease where the panel breaks, a
-    rounded, worn wall lit by the frame's light (the top and left walls face
-    away and fall dark, the bottom and right catch it), a dark crease at its
-    foot, and a short contact shadow onto the well's floor. The corners turn
-    softly, and the whole is blurred a quarter unit, so no line is razor
-    sharp."""
+    """An inset's border, cut from a 20-unit square carved by carve(); the
+    corners turn softly (a rounded box's depth)."""
     n, pad = 20.0, 1.0
     xx, yy = grid(n + 2 * pad, n + 2 * pad)
     xx, yy = xx - pad, yy - pad
-    # depth into the border: a rounded box's, so the corners turn softly
     r = 1.2
     qx = np.maximum(np.minimum(xx, n - xx), 0)
     qy = np.maximum(np.minimum(yy, n - yy), 0)
     ex, ey = np.maximum(r - qx, 0), np.maximum(r - qy, 0)
     d = np.where((ex > 0) & (ey > 0), r - np.hypot(ex, ey), np.minimum(qx, qy))
     d = np.where((xx < 0) | (yy < 0) | (xx > n) | (yy > n), -1, d)
-    lay = Layers(xx.shape)
-    top, foot = 0.35, 3.3
-    # the wall's height: the panel's level at its top, the well's at its foot,
-    # rounded over at the lip as worn stone is
-    t = np.clip((d - top) / (foot - top), 0, 1)
-    hgt = 1.6 * (1 - t) ** 1.6
-    wall = shade(ndimage.gaussian_filter(hgt, K * 0.15), STONE, gloss=0.08, power=10)
-    lay.over(wall, ((d >= 0) & (d < foot + 0.2)).astype(float))
-    lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.12) / 0.22, 0, 1) * (d >= 0) * 0.9)
-    lay.over(LINE_IN, np.clip(1 - np.abs(d - foot) / 0.3, 0, 1) * 0.9)
-    lay.over(np.zeros(3), np.where(d > foot, np.clip(1 - (d - foot) / (INSET - foot), 0, 1) * 0.45, 0))
-    pre = lay.pre()
-    pre = np.stack([ndimage.gaussian_filter(pre[..., i], K * 0.25) for i in range(4)], -1)
+    pre = carve(d)
     k = K
 
     def cut(x0, y0, x1, y1):
@@ -289,6 +305,96 @@ def inset():
     }
 
 
+# --- the tabs -------------------------------------------------------------------
+#
+# Window.lua's tab row (PanelTopTabButtonTemplate's Left, Middle and Right
+# pieces, each state): every tab a notch carved in the panel with the wells'
+# wall, its floor left clear for the stone Window.lua lays under it. The chosen
+# tab's notch and the well under it are one cavity: its side walls turn out
+# through a fillet into the well's top wall, its floor runs on into the well's.
+# So its art reaches INSET below the button's foot, over the well's wall, and
+# FLARE past each side, where the fillet and its blur have given way to the
+# plain wall again; the strip it lays over the well's wall is opaque, so the
+# wall under it never shows twice. Its lip carries an aged brass bead that wears
+# away as the walls turn into the well's. The other tabs are shorter and dimmer,
+# their notches open at the foot, the well's wall running on in front of them.
+# Tab-Opening is the mask Window.lua cuts the well's top shadow with under the
+# chosen tab: clear at its ends (clamped beyond them), the shadow fading out
+# across each side wall.
+
+TAB_VERSION = 3
+TAB_K = 40  # px a unit drawn: every edge below on a whole pixel
+TAB_W, TAB_GAP, TAB_H, TAB_ACTIVE_H, CAP, FLARE = 69.0, 3.0, 20.2, 25.6, 6.0, 2.5  # Window.lua's
+CORNER, FILLET = 2.0, 1.5  # the notch's top corners worn round; the turn into the well's wall
+TAB_MID = 2.0  # the middle piece's width in units
+TAB_DIM = 0.8  # the unchosen tabs' walls
+UNDER = np.array((23, 24, 27.0))  # the stone's mean, under the flare's wall
+
+
+def edt(mask):
+    return ndimage.distance_transform_edt(mask)
+
+
+def tab(active, w, k=TAB_K):
+    """A whole tab on a button w units wide as premultiplied RGBA, over the
+    piece's bounds (the chosen tab's flare and the strip below its foot)."""
+    h = TAB_ACTIVE_H if active else TAB_H
+    pad = 3.0  # more than FILLET, or the closing fills it
+    side = FLARE if active else 0
+    below = INSET if active else 0
+    xx, yy = grid(w + 2 * (side + pad), h + below + 2 * pad, k)
+    xx, yy = xx - side - pad, yy - h - pad  # units from the button's foot left, y down
+    cavity = (xx >= 0) & (xx <= w) & (yy >= -h)
+    if active:
+        cavity |= yy >= 0
+    r = CORNER * k  # the top corners round: an opening of the cavity
+    cavity = edt(~(edt(cavity) > r)) <= r
+    if active:  # the panel's corners at the turn round: a closing
+        f = FILLET * k
+        cavity = edt(~cavity) <= f
+        cavity = edt(cavity) > f
+    d = np.where(cavity, edt(cavity) - 0.5, 0.5 - edt(~cavity)) / k
+    if active:
+        pre = carve(d, k, brass=np.clip((-yy - 0.5) / 3.0, 0, 1))
+        # the flare's strip over the well's wall: the floor there opaque
+        # (below the wall's blurred top, and beside the floor's stone)
+        strip = ((yy > 1) & ((xx < 1) | (xx > w - 1)))[..., None]
+        under = np.concatenate([UNDER * strip, strip], -1)
+        pre = pre + under * (1 - pre[..., 3:])
+    else:
+        pre = carve(d, k)
+        pre[..., :3] *= TAB_DIM
+    p = int(round(pad * k))
+    return pre[p:-p, p:-p]
+
+
+def tab_pieces():
+    out = {}
+    k = TAB_K
+    w = 2 * CAP + 2 * TAB_MID
+    for active in (False, True):
+        img = tab(active, w)
+        h = TAB_ACTIVE_H + INSET if active else TAB_H
+        cap = int(round((CAP + (FLARE if active else 0)) * k))
+        mid = int(round(TAB_MID * k))
+        size = (64, 256)
+        name = "Tab-%s" + ("-Active" if active else "")
+        out[name % "Left"] = fit(img[:, :cap], size)
+        out[name % "Right"] = fit(img[:, -cap:], size)
+        c = img.shape[1] // 2
+        out[name % "Middle"] = fit(img[:, c - mid // 2:c - mid // 2 + mid], (16, 256))
+        assert img.shape[0] == int(round(h * k))
+    # the opening's mask: white, its alpha 1 at the ends and 0 between, fading
+    # out across each side wall (INSET of TAB_W)
+    u = (np.arange(128) + 0.5) / 128 * TAB_W
+    e = np.clip(np.minimum(u, TAB_W - u) / INSET, 0, 1)
+    a = 1 - e * e * (3 - 2 * e)
+    mask = np.ones((8, 128, 4)) * 255
+    mask[..., 3] = a * 255
+    out["Tab-Opening"] = mask
+    return out
+
+
 def render():
     art = frame_pieces()
     art.update(inset())
@@ -301,21 +407,27 @@ def render():
 #
 # The window as the game draws it, rebuilt at a 4K screen's own pixels from the
 # written textures and Window.lua's layout, beside the shot it replaces
-# (%LOCALAPPDATA%/wow-companion/shots/full.png: the medium window at 1.5 scale,
+# (%LOCALAPPDATA%/wow-companion/shots/full4.png: the medium window at 1.5 scale,
 # 2.7 px a unit, its top left at 28.8, 208.8; read in game with GetLeft/GetTop).
 # Every edge is rounded to a whole pixel, as the game snaps a texture.
 
 PX = 2.7
 ORIGIN = (28.8, 208.8)
 SIZE = (760.0, 520.0)
-SHOT = os.path.join(os.environ.get("LOCALAPPDATA", ""), "wow-companion", "shots", "full.png")
+SHOT = os.path.join(os.environ.get("LOCALAPPDATA", ""), "wow-companion", "shots", "full4.png")
 GLOW_SHOT = os.path.join(ROOT, "target", "glowshot.png")  # the focus glow's atlas drawn 1:1 on black
+SLATE = os.path.join(ROOT, "addon", "WowCompanion", "Art", "%s-6.tga")  # Style.lua's STONE
 
 # Window.lua's layout, in units
 RIM, GAP, WELL_TOP, FOOT, WELL = 6.0, 4.0, 64.0, 20.0, 130.0
 CLOSE_PAD = 3.0  # Window.lua: the close button's gap from the rim
 GLOW = (14.0, 10.75, 13.0, 11.0)
-TAB_W, TAB_GAP, TAB_H, TAB_ACTIVE_H, CAP, HALO, EDGE = 69.0, 3.0, 20.2, 25.6, 6.0, 2.0, 3.0
+EDGE = INSET
+LABELS = ["Chat", "Settings", "Status", "Errands"]
+# the well's top shadow (ShadowOverlay-Top, the lip), its alpha down from
+# EDGE, read off the shot
+LIP = ((0, 1.5, 3.0, 4.4, 5.9, 7.4, 8.9, 10.4, 11.9, 13.3, 16.3),
+       (0.67, 0.57, 0.48, 0.40, 0.33, 0.24, 0.17, 0.12, 0.07, 0.02, 0))
 
 
 class Mock:
@@ -337,6 +449,16 @@ class Mock:
         im = Image.fromarray(img.astype(np.uint8), "RGBA").resize((c - a, d - b), Image.BILINEAR)
         self.im.alpha_composite(im, (a, b))
 
+    def tile(self, stem, x0, y0, x1, y1, k=1.0):
+        """A stone tiled over the rect, a texel a screen pixel, times k."""
+        a, b = self.px(x0, y0)
+        c, d = self.px(x1, y1)
+        src = np.asarray(Image.open(SLATE % stem).convert("RGB")).astype(float)
+        reps = ((d - b) // src.shape[0] + 1, (c - a) // src.shape[1] + 1, 1)
+        rgb = np.tile(src, reps)[:d - b, :c - a] * k
+        im = np.concatenate([rgb, np.full(rgb.shape[:2] + (1,), 255.0)], -1)
+        self.im.alpha_composite(Image.fromarray(np.clip(im, 0, 255).astype(np.uint8), "RGBA"), (a, b))
+
     def nine(self, art, prefix, x0, y0, x1, y1, rim, top):
         """dress(): every piece rim wide, the top ones top tall."""
         self.put(art[prefix + "TopLeftCorner"], x0, y0, x0 + rim, y0 + top)
@@ -357,7 +479,6 @@ class Mock:
         a = src.max(-1) / 255.0
         ml, mt, mr, mb = 156, 115, 220, 179
         H, W = a.shape
-        pieces = {}
         xs = ((0, ml), (ml, W - mr), (W - mr, W))
         ys = ((0, mt), (mt, H - mb), (H - mb, H))
         ux = ((x0, x0 + ml / 2), (x0 + ml / 2, x1 - mr / 2), (x1 - mr / 2, x1))
@@ -373,7 +494,7 @@ class Mock:
                 self.put(rgba, ux[i][0], uy[j][0], ux[i][1], uy[j][1])
 
 
-def mock(art, backdrop):
+def mock(art, backdrop, chosen=0):
     w, h = SIZE
     m = Mock(backdrop)
     m.put((49, 45, 41, 255), 2, 21, w - 2, h - 2)  # the template's Bg
@@ -381,27 +502,65 @@ def mock(art, backdrop):
     wells = (RIM + GAP, w - (RIM + GAP + WELL + GAP), w - (RIM + GAP + WELL), w - (RIM + GAP))
     top, foot = WELL_TOP, h - (RIM + FOOT)
     m.put((20, 21, 24, 255), wells[0], top, wells[1], foot)
+    m.tile("SlateLight", wells[0] + EDGE, top + EDGE, wells[1] - EDGE, foot - EDGE)
     m.put((34, 28, 24, 255), wells[2], top, wells[3], foot)
+    # the tabs' feet, left to right: the first FLARE in from the well's inner edge
+    xs = [wells[0] + EDGE + FLARE + i * (TAB_W + TAB_GAP) for i in range(len(LABELS))]
+    # the lip: the shadow down from the well's top wall, cut under the chosen
+    # tab by Tab-Opening's alpha (clamped past its ends)
+    x0, x1 = wells[0] + EDGE, wells[1] - EDGE - 30
+    a, b = m.px(x0, top + EDGE)
+    c, d = m.px(x1, top + EDGE + 24)
+    yu = (np.arange(d - b) + 0.5) / PX
+    xu = x0 + (np.arange(c - a) + 0.5) / PX
+    ma = art["Tab-Opening"][0, :, 3] / 255
+    cut = np.interp((xu - xs[chosen]) / TAB_W, (np.arange(128) + 0.5) / 128, ma)
+    lip = np.zeros((d - b, c - a, 4))
+    lip[..., 3] = np.interp(yu, *LIP)[:, None] * cut[None, :] * 255
+    m.im.alpha_composite(Image.fromarray(lip.astype(np.uint8), "RGBA"), (a, b))
     m.nine(art, "Inset-", wells[0], top, wells[1], foot, INSET, INSET)
     m.nine(art, "Inset-", wells[2], top, wells[3], foot, INSET, INSET)
-    tabs = {s: np.asarray(Image.open(os.path.join(OUT, "Tab-%s-2.tga" % s)).convert("RGBA")).astype(float)
-            for s in ("Left", "Middle", "Right", "Left-Active", "Middle-Active", "Right-Active")}
-    for i in range(5):
-        x = wells[0] + EDGE + i * (TAB_W + TAB_GAP)
-        y1 = top + 1
-        if i == 0:
-            m.put(tabs["Left-Active"], x - HALO, y1 - TAB_ACTIVE_H, x + CAP, y1)
-            m.put(tabs["Middle-Active"], x + CAP, y1 - TAB_ACTIVE_H, x + TAB_W - CAP, y1)
-            m.put(tabs["Right-Active"], x + TAB_W - CAP, y1 - TAB_ACTIVE_H, x + TAB_W + HALO, y1)
+    labels = []
+    for i, x in enumerate(xs):
+        act = i == chosen
+        if act:
+            # the floor: the replies' stone, inside the walls' soft edge
+            m.tile("SlateLight", x + 1, top - TAB_ACTIVE_H + 1, x + TAB_W - 1, top + INSET)
+            y0, y1, out, sfx = top - TAB_ACTIVE_H, top + INSET, FLARE, "-Active"
         else:
-            m.put(tabs["Left"], x, y1 - TAB_H, x + CAP, y1)
-            m.put(tabs["Middle"], x + CAP, y1 - TAB_H, x + TAB_W - CAP, y1)
-            m.put(tabs["Right"], x + TAB_W - CAP, y1 - TAB_H, x + TAB_W, y1)
+            m.tile("Slate", x + 1, top - TAB_H + 1, x + TAB_W - 1, top)
+            y0, y1, out, sfx = top - TAB_H, top, 0, ""
+        cap = CAP + out
+        m.put(art["Tab-Left" + sfx], x - out, y0, x - out + cap, y1)
+        m.put(art["Tab-Middle" + sfx], x - out + cap, y0, x + TAB_W + out - cap, y1)
+        m.put(art["Tab-Right" + sfx], x + TAB_W + out - cap, y0, x + TAB_W + out, y1)
+        # PanelTemplates_SelectTab and _DeselectTab: the label's centre 12 and
+        # 8 units over the foot
+        labels.append((x + TAB_W / 2, top - (12 if act else 8), LABELS[i], (255, 255, 255) if act else (255, 209, 0)))
     m.glow(-GLOW[0], -GLOW[1], w + GLOW[2], h + GLOW[3])
     m.nine(art, "Frame-", 0, 0, w, h, RIM, TOP_H)
     cx, cy = w - RIM - CLOSE_PAD - CLOSE, (RIM + 22.6 - CLOSE) / 2
     m.put(art["Close-Normal"], cx, cy, cx + CLOSE, cy + CLOSE)
+    draw = ImageDraw.Draw(m.im)
+    font = ImageFont.truetype("arial.ttf", int(round(10 * PX)))
+    for x, y, text, col in labels:
+        draw.text(m.px(x, y), text, font=font, fill=col + (255,), anchor="mm", stroke_width=1, stroke_fill=(0, 0, 0, 255))
     return m.im.convert("RGB")
+
+
+def stack(rows, path):
+    W = max(sum(i.width for i in r) + 12 * len(r) for r in rows) + 12
+    H = sum(max(i.height for i in r) + 12 for r in rows) + 12
+    out = Image.new("RGB", (W, H), (52, 50, 46))
+    y = 12
+    for r in rows:
+        x = 12
+        for i in r:
+            out.paste(i, (x, y))
+            x += i.width + 12
+        y += max(i.height for i in r) + 12
+    out.save(path)
+    return path
 
 
 def sheet(art):
@@ -414,41 +573,39 @@ def sheet(art):
         for y in range(0, 1830, world.height):
             back.paste(world, (x, y + 100))
     new = mock(art, back)
-    box = (0, 150, 2130, 1680)
-    a, b = old.crop(box), new.crop(box)
-    rows = [[a.resize((a.width // 2, a.height // 2), Image.LANCZOS), b.resize((b.width // 2, b.height // 2), Image.LANCZOS)]]
-    w, h = SIZE
-    wells_x = w - (RIM + GAP + WELL + GAP)
-    spots = [(-20, -20), (w - 90, -20), (-20, h - 50), (w - 90, h - 50),
-             (wells_x - 30, 200), (40, WELL_TOP - 40), (wells_x - 30, h - 50)]
-    for x, y in spots:
-        x0, y0 = int(ORIGIN[0] + x * PX), int(ORIGIN[1] + y * PX)
-        crop = (x0, y0, x0 + 300, y0 + 200)
-        rows.append([old.crop(crop).resize((900, 600), Image.NEAREST), new.crop(crop).resize((900, 600), Image.NEAREST)])
-    W = max(sum(i.width for i in r) + 12 * len(r) for r in rows) + 12
-    H = sum(max(i.height for i in r) + 12 for r in rows) + 12
-    out = Image.new("RGB", (W, H), (52, 50, 46))
-    y = 12
-    for r in rows:
-        x = 12
-        for i in r:
-            out.paste(i, (x, y))
-            x += i.width + 12
-        y += max(i.height for i in r) + 12
-    path = os.path.join(ROOT, "target", "frame-fix-sheet.png")
-    out.save(path)
+    second = mock(art, back, chosen=1)
     new.save(os.path.join(ROOT, "target", "frame-fix-4k.png"))
-    return path
+    # the tab row: the shot's, then ours with Chat and with Settings chosen,
+    # each at 4K's own pixels and zoomed 3x; then the chosen tabs' joins at 8x
+    box = (40, 300, 640, 440)
+    up = lambda im, z: im.resize((im.width * z, im.height * z), Image.NEAREST)
+    rows = []
+    for im in (old, new, second):
+        crop = im.crop(box)
+        rows += [[crop], [up(crop, 3)]]
+    for im, x in ((new, 0), (second, TAB_W + TAB_GAP)):
+        for side in (0, TAB_W):
+            jx = ORIGIN[0] + (RIM + GAP + EDGE + FLARE + x + side) * PX
+            jy = ORIGIN[1] + WELL_TOP * PX
+            rows.append([up(im.crop((int(jx) - 30, int(jy) - 40, int(jx) + 30, int(jy) + 30)), 8)])
+    rows[-4:] = [sum(rows[-4:], [])]
+    return stack(rows, os.path.join(ROOT, "target", "tabs-v%d-sheet.png" % TAB_VERSION))
 
 
 def main():
     art = render()
+    tabs = tab_pieces()
     os.makedirs(OUT, exist_ok=True)
     for pat in ("Frame-*.tga", "Inset-*.tga", "Close-*.tga"):
         for old in glob.glob(os.path.join(OUT, pat)):
             os.remove(old)
+    for old in glob.glob(os.path.join(OUT, "Tab-*.tga")):
+        os.remove(old)
     for stem, img in art.items():
         write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, VERSION)), img)
+    for stem, img in tabs.items():
+        write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, TAB_VERSION)), img)
+    art.update(tabs)
     print(len(art), "textures;", sheet(art))
 
 
