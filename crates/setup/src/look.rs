@@ -147,18 +147,6 @@ fn chip(ui: &mut egui::Ui, status: &Status) {
         });
 }
 
-/// A button's name drawn like a key cap; lit while waiting for a press.
-pub fn keycap(ui: &mut egui::Ui, text: &str, lit: bool) {
-    egui::Frame::new()
-        .fill(if lit { ACCENT.gamma_multiply(0.14) } else { FIELD })
-        .stroke(Stroke::new(1.0, if lit { ACCENT } else { EDGE }))
-        .corner_radius(6)
-        .inner_margin(Margin::symmetric(14, 5))
-        .show(ui, |ui| {
-            ui.label(RichText::new(text).strong().color(if lit { ACCENT } else { TEXT }));
-        });
-}
-
 /// A thin level bar, 0..1.
 pub fn level(ui: &mut egui::Ui, value: f32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 8.0), Sense::hover());

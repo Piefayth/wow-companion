@@ -71,6 +71,11 @@ impl Msg {
         self
     }
 
+    pub(crate) fn texts(mut self, key: &'static str, items: Vec<String>) -> Msg {
+        self.fields.push((key, Value::List(items.into_iter().map(Value::Text).collect())));
+        self
+    }
+
     pub(crate) fn msg(mut self, key: &'static str, value: Msg) -> Msg {
         self.fields.push((key, Value::Msg(value)));
         self

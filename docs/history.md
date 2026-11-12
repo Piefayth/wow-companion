@@ -555,3 +555,22 @@ and, by taking slots, the message channel's cursor. `/wc frames off` and a
 reload restored it. The one real message the frame bell caught arrived in 8 ms.
 What came of it: docs/proposals/slot-bells.md (a bell per slot, a set per
 session, watched before it takes anything).
+
+## The companion's settings move into the game (2026-11-12)
+
+The talk button lived in two places that could disagree: `ask=` in
+settings.toml (the bit the companion reads over HID) and WoW's binding of
+`WOWCOMPANION_WINDOW` (the tap that opens the window). On 2026-11-11 the WoW half
+was simply empty after 5834a61 and minus did nothing in game. Rejected on the way
+(docs/proposals/settings-in-game.md): the game as the truth, which needs either
+a name-to-bit database for every pad (SDL's `gamecontrollerdb.txt` has the
+DualSense and the Edge with the measured bits, but its lookup and WoW's own
+remapping make it a second implementation agreeing by hope) or a screen read per
+request (and no talking on loading screens). Chosen: the companion holds every
+setting; a button is set by pressing it on our page, so one press gives WoW's
+name and the bit, stored together; WoW's binding is a copy the addon writes from
+`status`. The setup window's button learning went with it: it guessed buttons by
+which bytes stayed still (a counter byte fooled it); buttons now come from the
+pad's report descriptor, Sony's layout or the XInput word. Built the same day:
+the Lua half 3e9b04f (Main), the Rust half after it. The fallback tag is
+`settings-in-game-before`.

@@ -71,7 +71,6 @@ struct Setup {
     addons: String,
     model: String,
     pad: String,
-    ask: String,
     mic: String,
     agent: String,
     /// `cpu` when the player chose the CPU build
@@ -85,7 +84,6 @@ struct Setup {
     other_model: bool,
     pads: Vec<(u16, u16, String)>,
     mics: Vec<String>,
-    learning: Arc<Mutex<Learning>>,
     meter: Meter,
     claude: String,
     /// alias -> None while checking, Some(Ok) usable, Some(Err(why)) not
@@ -94,9 +92,10 @@ struct Setup {
     report: Arc<Mutex<String>>,
     /// the try-it test: what it is doing, and what it heard
     talk: Arc<Mutex<Talk>>,
-    /// the talk button, read on its own thread
+    /// the talk button (set on the game's settings page), read on its own thread
     held_on_pad: Arc<AtomicBool>,
-    pad_target: Arc<Mutex<(String, String)>>,
+    /// the pad and its `talk` setting, as the file has them
+    pad_target: Arc<Mutex<(String, Option<String>)>>,
     /// the companion listens to the same button; then the pad does not record here
     companion_running: bool,
     /// whether the hold (pad or mouse) was down last frame
@@ -120,14 +119,6 @@ struct Setup {
 }
 
 #[derive(Clone, Default)]
-enum Learning {
-    #[default]
-    Idle,
-    Waiting,
-    Failed(String),
-}
-
-#[derive(Clone, Default)]
 enum Talk {
     #[default]
     Idle,
@@ -146,7 +137,6 @@ impl Setup {
             addons: value("addons"),
             model: value("model"),
             pad: value("pad"),
-            ask: value("ask"),
             mic: value("mic"),
             agent: value("agent"),
             engine: value("engine"),
@@ -159,7 +149,6 @@ impl Setup {
             other_model: false,
             pads: Vec::new(),
             mics: Vec::new(),
-            learning: Arc::default(),
             meter: Meter::default(),
             claude: claude_version(),
             agents: Arc::new(Mutex::new(AGENT_MODELS.iter().map(|(alias, ..)| (*alias, None)).collect())),
@@ -209,12 +198,11 @@ impl Setup {
             .unwrap_or_default();
     }
 
-    fn fields(&mut self) -> [(&'static str, &mut String); 9] {
+    fn fields(&mut self) -> [(&'static str, &mut String); 8] {
         [
             ("addons", &mut self.addons),
             ("model", &mut self.model),
             ("pad", &mut self.pad),
-            ("ask", &mut self.ask),
             ("mic", &mut self.mic),
             ("agent", &mut self.agent),
             ("engine", &mut self.engine),
@@ -274,7 +262,7 @@ impl eframe::App for Setup {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.ctx().request_repaint_after(Duration::from_millis(33));
         self.follow_file();
-        *self.pad_target.lock().unwrap() = (self.pad.clone(), self.ask.clone());
+        *self.pad_target.lock().unwrap() = (self.pad.clone(), self.settings.get("talk").map(str::to_string));
 
         egui::Panel::bottom("actions")
             .frame(egui::Frame::new().fill(look::BAR).inner_margin(egui::Margin::symmetric(24, 14)))
@@ -357,15 +345,13 @@ impl Setup {
     }
 
     fn controller(&mut self, ui: &mut egui::Ui) {
-        let learning = self.learning.lock().unwrap().clone();
-        let status = match (&learning, self.ask.is_empty(), self.pad_connected()) {
-            (Learning::Waiting, ..) => Status::Busy("listening"),
-            (_, _, false) => Status::Problem("not connected"),
-            (_, true, _) => Status::Todo("pick a talk button"),
-            _ => Status::Ready("ready"),
+        let talk = self.talk();
+        let status = match (self.pad_connected(), &talk) {
+            (false, _) => Status::Problem("not connected"),
+            (true, None) => Status::Todo("set its talk button in the game"),
+            (true, Some(_)) => Status::Ready("ready"),
         };
         look::card(ui, 2, "Controller", status, |ui| {
-            let pad_before = self.pad.clone();
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt("pad")
                     .width((ui.available_width() - 90.0).max(200.0))
@@ -380,52 +366,14 @@ impl Setup {
                     self.refresh_devices();
                 }
             });
-            // a learned button is a bit in one controller's report: another
-            // controller starts from its own default
-            if self.pad != pad_before {
-                let (vid, pid) = pad::split(&self.pad).unwrap_or((0, 0));
-                self.ask = pad::default_talk(vid, pid).to_string();
-            }
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Talk button").color(look::MUTED));
-                ui.add_space(8.0);
-                match &learning {
-                    Learning::Waiting => {
-                        look::keycap(ui, "press it now...", true);
-                    }
-                    _ => {
-                        look::keycap(ui, &self.talk_name(), false);
-                        let label = if self.ask.is_empty() { "Set it" } else { "Change" };
-                        if ui.button(label).clicked() {
-                            self.learn();
-                        }
-                    }
-                }
-            });
-            match &learning {
-                Learning::Waiting => {
-                    ui.label(RichText::new("Press the button you want to hold to talk.").color(look::ACCENT));
-                }
-                Learning::Failed(why) => {
-                    ui.colored_label(look::BAD, why);
-                }
-                Learning::Idle => {
-                    if pad::split(&self.pad).ok() == Some(pad::XINPUT) && self.talk_name() == "Guide" {
-                        ui.label(
-                            RichText::new(
-                                "Windows opens Xbox Game Bar on the Guide button. Turn that off: Settings > Gaming >                                  Xbox Game Bar > \"Open Xbox Game Bar using this button on a controller\".",
-                            )
-                            .small()
-                            .color(look::WARN),
-                        );
-                    }
-                    ui.label(
-                        RichText::new("Hold it to talk. A trigger held with it (L1, L2, R1, R2) picks a conversation.")
-                            .small()
-                            .color(look::MUTED),
-                    );
-                }
+            if pad::split(&self.pad).ok() == Some(pad::XINPUT) && talk.is_some_and(|talk| talk.name == "PADSYSTEM") {
+                ui.label(
+                    RichText::new(
+                        "Windows opens Xbox Game Bar on the Guide button. Turn that off: Settings > Gaming > Xbox Game Bar > \"Open Xbox Game Bar using this button on a controller\".",
+                    )
+                    .small()
+                    .color(look::WARN),
+                );
             }
         });
     }
@@ -572,16 +520,17 @@ impl Setup {
     /// Whisper) where it ran.
     fn try_it(&mut self, ui: &mut egui::Ui, talk: &Talk) {
         ui.label(RichText::new("Test").color(look::MUTED));
-        let via_pad = !self.companion_running && !self.ask.is_empty();
+        let has_talk = self.talk().is_some();
+        let via_pad = !self.companion_running && has_talk;
         let hint = match (talk, via_pad) {
-            (Talk::Listening(_), _) => "Listening... let go when you're done.".to_string(),
-            (Talk::Transcribing, _) => "Working out what you said...".to_string(),
-            (_, true) => format!("Hold your talk button ({}) or this button, and say something.", self.talk_name()),
-            (_, false) => "Hold this button and say something.".to_string(),
+            (Talk::Listening(_), _) => "Listening... let go when you're done.",
+            (Talk::Transcribing, _) => "Working out what you said...",
+            (_, true) => "Hold your talk button or this button, and say something.",
+            (_, false) => "Hold this button and say something.",
         };
         let busy = matches!(talk, Talk::Transcribing);
-        let mouse_held = look::hold_button(ui, &hint, matches!(talk, Talk::Listening(_)), busy, self.meter.level());
-        if self.companion_running && !self.ask.is_empty() {
+        let mouse_held = look::hold_button(ui, hint, matches!(talk, Talk::Listening(_)), busy, self.meter.level());
+        if self.companion_running && has_talk {
             ui.label(
                 RichText::new("The companion is running and listens to your talk button too, so only the button above records here.")
                     .small()
@@ -928,7 +877,7 @@ fn game_running() -> bool {
     platform::process_count("Wow.exe") > 0
 }
 
-// the pad: its name, the talk button, learning one
+// the pad: its name and its talk button
 impl Setup {
     fn pad_connected(&self) -> bool {
         self.pads.iter().any(|(vid, pid, _)| format!("{vid:04x}:{pid:04x}") == self.pad)
@@ -942,41 +891,10 @@ impl Setup {
             .unwrap_or_else(|| if self.pad.is_empty() { "No controller found".into() } else { format!("{} (not connected)", self.pad) })
     }
 
-    /// The talk button as a player would call it.
-    fn talk_name(&self) -> String {
-        if self.ask.is_empty() {
-            return "not set".into();
-        }
-        let (vid, pid) = pad::split(&self.pad).unwrap_or((0, 0));
-        match pad::press_for(&self.ask, vid, pid) {
-            Ok(press) => match press.name(vid, pid) {
-                Some(name) => name.to_string(),
-                None => format!("button {}", press.spec()),
-            },
-            Err(_) => self.ask.clone(),
-        }
-    }
-
-    fn learn(&mut self) {
-        let Ok((vid, pid)) = pad::split(&self.pad) else {
-            *self.learning.lock().unwrap() = Learning::Failed("Pick a controller first.".into());
-            return;
-        };
-        *self.learning.lock().unwrap() = Learning::Waiting;
-        let learning = Arc::clone(&self.learning);
-        let target = Arc::clone(&self.pad_target);
-        thread::spawn(move || {
-            let result = pad::learn(vid, pid, Duration::from_secs(15), |_| {});
-            *learning.lock().unwrap() = match result {
-                Ok(press) => {
-                    // the window picks the new button up from here on its next frame
-                    target.lock().unwrap().1 = press.spec();
-                    LEARNED.lock().unwrap().replace(press.spec());
-                    Learning::Idle
-                }
-                Err(err) => Learning::Failed(format!("Could not learn it: {err}. Try again.")),
-            };
-        });
+    /// The talk button: as the game's settings page set it, else this pad's default.
+    fn talk(&self) -> Option<pad::Bound> {
+        let (vid, pid) = pad::split(&self.pad).ok()?;
+        pad::bound("talk", self.settings.get("talk"), vid, pid).ok().flatten()
     }
 
     /// Reads whether the talk button is held, on its own thread, so the try-it
@@ -987,14 +905,14 @@ impl Setup {
         thread::spawn(move || {
             let mut open: Option<(String, pad::Pad)> = None;
             loop {
-                let (id, ask) = target.lock().unwrap().clone();
+                let (id, talk) = target.lock().unwrap().clone();
                 if open.as_ref().is_none_or(|(was, _)| *was != id) {
                     open = pad::split(&id).ok().and_then(|(vid, pid)| pad::Pad::open(vid, pid).ok()).map(|p| (id.clone(), p));
                 }
                 let (vid, pid) = pad::split(&id).unwrap_or((0, 0));
-                let down = match (&mut open, pad::press_for(&ask, vid, pid)) {
-                    (Some((_, device)), Ok(press)) => match device.refresh() {
-                        Ok(()) => device.held(&press),
+                let down = match (&mut open, pad::bound("talk", talk.as_deref(), vid, pid)) {
+                    (Some((_, device)), Ok(Some(talk))) => match device.refresh() {
+                        Ok(()) => device.held(&talk.press),
                         Err(_) => {
                             open = None;
                             false
@@ -1101,17 +1019,11 @@ fn size(bytes: u64) -> String {
     if bytes >= 1_000_000_000 { format!("{:.1} GB", bytes as f64 / 1e9) } else { format!("{} MB", bytes / 1_000_000) }
 }
 
-/// A button the learn thread found, for the window to take on its next frame.
-static LEARNED: Mutex<Option<String>> = Mutex::new(None);
-
 // the try-it test
 impl Setup {
     /// Called every frame with whether the hold is down: starts recording on the
     /// press, and on the release hands the clip to the companion's own build.
     fn hold(&mut self, held: bool) {
-        if let Some(spec) = LEARNED.lock().unwrap().take() {
-            self.ask = spec;
-        }
         if held && !self.was_held {
             self.meter.record(true);
             *self.talk.lock().unwrap() = Talk::Listening(Instant::now());

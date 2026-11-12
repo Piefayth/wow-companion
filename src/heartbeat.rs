@@ -35,16 +35,15 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
         let [a, b] = bells(&addons);
         let mut on_a = true;
         let mut session = None;
-        // the mic state the game was last told; it forgets at a reload, where it
-        // assumes a mic, so a missing one is told again
+        // the mic state the game was last told; a reload forgets it and the
+        // settings page's settings, so every new session is told again
         let mut told_mic: Option<bool> = None;
         while BEATING.load(Ordering::SeqCst) {
             let began = crate::session_began(&addons);
             let new_session = began != session;
             let mic = crate::voice::MIC.load(Ordering::Relaxed);
-            if ready() && (told_mic != Some(mic) || (new_session && !mic)) {
-                let status = crate::message::Msg::new("status").flag("mic", mic);
-                if crate::send(&addons, &status).is_ok() {
+            if ready() && (told_mic != Some(mic) || new_session) {
+                if crate::send(&addons, &crate::settings_page::status(mic)).is_ok() {
                     told_mic = Some(mic);
                 }
             }

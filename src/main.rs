@@ -27,6 +27,7 @@ mod logfile;
 mod tray;
 mod watcher;
 mod backups;
+mod settings_page;
 use channel::*;
 use requests::*;
 use context::*;
@@ -183,7 +184,7 @@ fn main() {
             eprintln!("  install <AddOns>                 lay down the addon and its slots");
             eprintln!("  tell <conversation> <text>       a typed request to the running companion");
             eprintln!("  pads                            list HID devices");
-            eprintln!("  pads <vid:pid>                   watch one pad's raw reports");
+            eprintln!("  pads <vid:pid>                   one pad's buttons going down and up");
             eprintln!("  mics                             list input devices");
             eprintln!("  speakers                         list output devices");
             eprintln!("  voice <model> [options]          hold the button and speak");
@@ -193,7 +194,7 @@ fn main() {
             eprintln!("  think <AddOns> <text>            the agent's answer, sent nowhere");
             eprintln!("  context <AddOns> <out>           bars, bindings, macros, spellbook");
             eprintln!("  context <AddOns>                 what the agent and Whisper are given");
-            eprintln!("    options: ask=minus mic=<name> cue=<name> volume=<0..1>");
+            eprintln!("    options: talk=<byte:mask PADNAME> mic=<name> cue=<name> volume=<0..1>");
             std::process::exit(2);
         }
     };
@@ -238,6 +239,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         let args: Vec<String> = env::args().skip(1).collect();
         thread::spawn(move || watch_for_restart(args));
     }
+    // what the game's settings page shows (src/settings_page.rs)
+    settings_page::running(model, options);
     // the in-game "companion" mark: beats while the voice loop can hear the player,
     // and stops when a restart hands over
     heartbeat::start(addons, || {

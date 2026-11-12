@@ -40,11 +40,15 @@ extras a player may use, never required (the player, 2026-11-11).
 
 - `crates/pad`: the controller over raw HID (DualSense and other HID pads;
   rumble is DualSense output report 0x02). Which pad this player has is in their
-  profile. Buttons are named by byte and mask (`home` byte 10/0x01, `minus` 9/0x10
-  on a DualSense), or learned in the setup window. **Xbox pads go through XInput**
-  (`pad=xinput`, `crates/pad/src/xinput.rs`): their state becomes a 4-byte report
-  so learning and names work the same; Guide (the default talk button there) via
-  `XInputGetStateEx`; rumble works. Button names follow the pad (`press_for`).
+  profile. Which bits are buttons comes from the pad, never a guess: Sony's
+  fixed layout (the Edge's Fn and back buttons too; Bluetooth's report 0x31 turned
+  into it), the XInput word, else the pad's HID report descriptor
+  (`descriptor.rs`). Buttons have no names on the PC: the companion's keys (`talk`,
+  `l1` `l2` `r1` `r2`) are set by pressing them on our settings page in the game
+  and stored as the bit plus WoW's name (`talk = "9:0x10 PADSOCIAL"`); the two
+  layouts we know default to minus (Guide on Xbox) and the shoulders.
+  **Xbox pads go through XInput** (`pad=xinput`, `crates/pad/src/xinput.rs`): their
+  state becomes a 4-byte report; Guide via `XInputGetStateEx`; rumble works.
 - `crates/voice`: mic (`cpal`) and speech, its own crate
   so the CUDA build is not invalidated by edits elsewhere. **Two engines, both
   kept** (the player, 2026-11-11: Whisper is more accurate, streaming much faster;
@@ -66,7 +70,9 @@ extras a player may use, never required (the player, 2026-11-11).
   `jobs.rs` (each request's one state, forward only; cancels and replies race
   there; a clip's job is named to the game by `heard` when it is let go),
   `context.rs` (the export, profile and integrations the agent gets),
-  `session.rs` (the game's UI session, on trial beside the channel), `restart.rs`, `install.rs`, `agent.rs` (the agent; its
+  `session.rs` (the game's UI session, on trial beside the channel), `settings_page.rs`
+  (the settings page's half here: `status` with the settings, its `bind`/`set`/`mics`
+  commands, a change written to settings.toml and applied by a restart), `restart.rs`, `install.rs`, `agent.rs` (the agent; its
   rules are `agent/rules.md`), `bells.rs`, `heartbeat.rs`, `doctor.rs`, `modules.rs`; its life:
   `lifecycle.rs` (one companion at a time, clean exits, pause, two clients),
   `watcher.rs` + `tray.rs` (`start`: wakes it with WoW, the tray icon),
@@ -154,7 +160,7 @@ Tests: `cargo test --workspace`.
 ## Running it
 
 - `wow-companion run` (options from `settings.toml`, written by the setup window;
-  `run <AddOns> <model> ask=minus mic=<name>` overrides them)
+  `run <AddOns> <model> mic=<name>` overrides them)
   (one talk button, everything said to the agent; L1+R1 is dictation into chat)
   **Conversation slots**: a trigger (L1, L2, R1, R2) held with minus sends the
   request to that slot's own conversation (`thread-l2.txt`…), shown as "[L2] …";

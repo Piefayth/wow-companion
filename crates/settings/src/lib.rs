@@ -7,9 +7,10 @@
 //!
 //! Keys: `addons` (the game's Interface\AddOns folder), `model` (the Whisper
 //! model file), `engine` (`cpu` to use the CPU build a release ships beside the
-//! GPU one), and the run options: `pad` (vid:pid), `ask` (the talk button: a
-//! name or byte:mask), `chat`, `mic`, `cue`, `volume`, `agent`, `speech`
-//! (`whisper` or `streaming`) and `stream_model` (the
+//! GPU one), and the run options: `pad` (vid:pid), `talk`, `l1`, `l2`, `r1`,
+//! `r2` (the talk button and the conversation triggers, `byte:mask PADNAME`, set
+//! on the game's settings page), `feedback`, `chat`, `mic`, `cue`, `volume`,
+//! `agent`, `speech` (`whisper` or `streaming`) and `stream_model` (the
 //! streaming model's folder).
 
 pub mod changes;
@@ -30,7 +31,8 @@ pub const VERSION: &str = match option_env!("WOW_COMPANION_VERSION") {
 };
 
 /// The run options a settings file may carry, in the order they are written.
-pub const OPTIONS: &[&str] = &["pad", "ask", "chat", "mic", "cue", "volume", "agent", "speech", "stream_model"];
+pub const OPTIONS: &[&str] =
+    &["pad", "talk", "l1", "l2", "r1", "r2", "feedback", "chat", "mic", "cue", "volume", "agent", "speech", "stream_model"];
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Settings {
@@ -114,11 +116,11 @@ mod tests {
     fn round_trips_paths_and_options() {
         let mut settings = Settings::default();
         settings.set("addons", r"S:\World of Warcraft\_forever_\Interface\AddOns");
-        settings.set("ask", "9:0x10");
+        settings.set("talk", "9:0x10 PADSOCIAL");
         settings.set("mic", "AirPods \"Max\"");
         let again = Settings::parse(&settings.render());
         assert_eq!(again, settings);
-        assert_eq!(again.options(), vec!["ask=9:0x10".to_string(), "mic=AirPods \"Max\"".to_string()]);
+        assert_eq!(again.options(), vec!["talk=9:0x10 PADSOCIAL".to_string(), "mic=AirPods \"Max\"".to_string()]);
     }
 
     #[test]

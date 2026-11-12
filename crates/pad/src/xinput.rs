@@ -3,16 +3,17 @@
 //! the path) leaves out the Guide button, joins the triggers on one axis and
 //! makes the d-pad a hat, so HID is no good for them.
 //!
-//! The state is turned into a 4-byte report so the rest of the crate (learning,
-//! `held`, names) works on it as on any HID pad: byte 0 and 1 are XInput's
-//! button word (low, high), byte 2 and 3 are the left and right trigger as
-//! on/off. Guide is only in the undocumented `XInputGetStateEx` (ordinal 100 of
-//! xinput1_4.dll), which every Xbox overlay uses.
+//! The state is turned into a 4-byte report so the rest of the crate (`held`,
+//! `down`, setting a key) works on it as on any HID pad: byte 0 and 1 are
+//! XInput's button word (low, high), byte 2 and 3 are the left and right trigger
+//! as on/off. Guide is only in the undocumented `XInputGetStateEx` (ordinal 100
+//! of xinput1_4.dll), which every Xbox overlay uses.
 //!
 //! Measured with switch2connect in Xbox mode: home = Guide (0x0400),
 //! minus = View (0x0020), plus = Menu (0x0010), the d-pad as four buttons, L/R =
 //! LB/RB, ZL/ZR = triggers at 0 or 255, and rumble through XInputSetState is felt.
 
+use crate::Press;
 use std::{
     ffi::c_void,
     io,
@@ -137,38 +138,34 @@ impl Reader {
     }
 }
 
-/// Buttons by name, as (byte, mask) in the report above.
-pub const NAMES: &[(&str, usize, u8)] = &[
-    ("d-pad up", 0, 0x01),
-    ("d-pad down", 0, 0x02),
-    ("d-pad left", 0, 0x04),
-    ("d-pad right", 0, 0x08),
-    ("Menu", 0, 0x10),
-    ("View", 0, 0x20),
-    ("left stick", 0, 0x40),
-    ("right stick", 0, 0x80),
-    ("LB", 1, 0x01),
-    ("RB", 1, 0x02),
-    ("Guide", 1, 0x04),
-    ("A", 1, 0x10),
-    ("B", 1, 0x20),
-    ("X", 1, 0x40),
-    ("Y", 1, 0x80),
-    ("LT", 2, 0x01),
-    ("RT", 3, 0x01),
+/// The bits that are buttons in the report above: the button word (d-pad
+/// up/down/left/right, Menu, View, the stick clicks; LB, RB, Guide, A, B, X, Y)
+/// and the two triggers.
+pub const BUTTONS: [Press; 17] = [
+    Press { byte: 0, mask: 0x01 },
+    Press { byte: 0, mask: 0x02 },
+    Press { byte: 0, mask: 0x04 },
+    Press { byte: 0, mask: 0x08 },
+    Press { byte: 0, mask: 0x10 },
+    Press { byte: 0, mask: 0x20 },
+    Press { byte: 0, mask: 0x40 },
+    Press { byte: 0, mask: 0x80 },
+    Press { byte: 1, mask: 0x01 },
+    Press { byte: 1, mask: 0x02 },
+    Press { byte: 1, mask: 0x04 },
+    Press { byte: 1, mask: 0x10 },
+    Press { byte: 1, mask: 0x20 },
+    Press { byte: 1, mask: 0x40 },
+    Press { byte: 1, mask: 0x80 },
+    Press { byte: 2, mask: 0x01 },
+    Press { byte: 3, mask: 0x01 },
 ];
 
-/// What the companion's names mean on an Xbox pad: the trigger slots and the
-/// talk buttons (`minus`/`plus`/`home` as switch2connect maps them).
-pub fn named(name: &str) -> Option<(usize, u8)> {
-    Some(match name {
-        "guide" | "home" | "xbox" => (1, 0x04),
-        "l1" | "lb" => (1, 0x01),
-        "r1" | "rb" => (1, 0x02),
-        "l2" | "lt" => (2, 0x01),
-        "r2" | "rt" => (3, 0x01),
-        "minus" | "view" | "back" => (0, 0x20),
-        "plus" | "menu" | "start" => (0, 0x10),
-        _ => return None,
-    })
-}
+/// The keys on an Xbox pad: Guide (WoW ignores it) and the shoulders.
+pub const KEYS: &[(&str, Press, &str)] = &[
+    ("talk", Press { byte: 1, mask: 0x04 }, "PADSYSTEM"),
+    ("l1", Press { byte: 1, mask: 0x01 }, "PADLSHOULDER"),
+    ("r1", Press { byte: 1, mask: 0x02 }, "PADRSHOULDER"),
+    ("l2", Press { byte: 2, mask: 0x01 }, "PADLTRIGGER"),
+    ("r2", Press { byte: 3, mask: 0x01 }, "PADRTRIGGER"),
+];

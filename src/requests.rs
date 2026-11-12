@@ -156,7 +156,8 @@ pub(crate) fn run_queued(addons: &Path, slot: &str, lead: u64) -> Option<String>
 }
 
 /// The game's commands, read off the data strip in this process (src/strip.rs):
-/// "WCCMD <nonce> cancel|now <slot> <job>", a message's Cancel or Send now.
+/// "WCCMD <nonce> cancel|now <slot> <job>", a message's Cancel or Send now, and
+/// the settings page's `bind`, `set` and `mics` (src/settings_page.rs).
 pub(crate) fn watch_commands(addons: &Path) {
     crate::strip::serve(|line| {
         if line.starts_with("WCCMD") {
@@ -168,6 +169,17 @@ pub(crate) fn watch_commands(addons: &Path) {
             ["WCCMD", _nonce, verb @ ("cancel" | "now"), slot, req, ..] => {
                 if let Ok(req) = req.parse::<u64>() {
                     cancel_request(addons, &main(slot), req, *verb == "now");
+                }
+            }
+            ["WCCMD", _nonce, "bind", key, what] => crate::settings_page::bind(addons, key, what),
+            // the value is the rest of the line as drawn (a mic's name has spaces)
+            ["WCCMD", _nonce, "set", key, ..] => {
+                let value = line.splitn(5, ' ').nth(4).unwrap_or_default();
+                crate::settings_page::set(addons, key, value);
+            }
+            ["WCCMD", _nonce, "mics"] => {
+                if let Err(err) = crate::settings_page::mics(addons) {
+                    eprintln!("  the mic list was not delivered: {err}");
                 }
             }
             _ => {}

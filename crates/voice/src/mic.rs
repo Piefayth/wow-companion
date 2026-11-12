@@ -206,7 +206,8 @@ pub(crate) fn push(capture: &Arc<Mutex<Capture>>, samples: impl Iterator<Item = 
     }
 }
 
-pub(crate) fn input_names() -> Vec<String> {
+/// The inputs Windows lists now, by name.
+pub fn input_names() -> Vec<String> {
     let Ok(devices) = cpal::default_host().input_devices() else { return Vec::new() };
     devices
         .filter_map(|device| device.description().ok().map(|d| d.name().to_string()))
