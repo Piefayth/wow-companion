@@ -62,10 +62,6 @@ local function control(parent, spec, width)
 	return b
 end
 
-local function value(spec)
-	return spec[2] == "slider" and spec[4] or spec[2] == "button" and "" or spec[3]
-end
-
 local function hover(row, l, r)
 	local t = row:CreateTexture(nil, "BACKGROUND", nil, 1)
 	t:SetPoint("TOPLEFT", l or -9, -2)
@@ -75,110 +71,105 @@ end
 
 local CANDIDATES = {}
 
--- A. What is on the page now
-CANDIDATES[1] = { "Now", function(p)
-	local y = 0
-	for i, section in ipairs(SECTIONS) do
-		if i > 1 then
-			local d = p:CreateTexture(nil, "ARTWORK")
-			d:SetAtlas("QuestLog-frame-devider")
-			d:SetAlpha(0.8)
-			d:SetHeight(15)
-			d:SetPoint("LEFT", p, "TOPLEFT", -9, -y)
-			d:SetPoint("RIGHT", p, "TOPRIGHT", 9, -y)
-		end
-		text(p, "GameFontHighlightLarge", section[1]):SetPoint("TOPLEFT", 7, -y - 16)
-		y = y + 36
-		for _, spec in ipairs(section[2]) do
-			local row = CreateFrame("Frame", nil, p)
-			row:SetPoint("TOPLEFT", 0, -y)
-			row:SetPoint("RIGHT")
-			row:SetHeight(36)
-			if spec.focus then hover(row) end
-			text(row, "GameFontNormal", spec[1]):SetPoint("LEFT", 24, 0)
-			control(row, spec):SetPoint("LEFT", row, "CENTER", -80, 0)
-			y = y + 36
-		end
-	end
-	text(p, "GameFontHighlightMed2", SECTIONS[1][2][2].note):SetPoint("BOTTOMLEFT", 24, 14)
-end }
+-- Round 2: the section names in the left margin (round 1's D, the player's
+-- pick for using the width), each candidate grounding the rows differently
+-- so they stop floating. Controls against the right edge, the rows spanning
+-- the page between margin and edge.
+local MARGIN, ROW, GAP = 170, 36, 18
 
--- B. Sentence list, the row you are on lit: every value read as text beside
--- its name; only the focused row shows its control and its note under it
-CANDIDATES[2] = { "Values beside names, the focused row lit", function(p)
-	local y = 0
-	local VALUE_X = 200
-	for _, section in ipairs(SECTIONS) do
-		text(p, "GameFontHighlightLarge", section[1]):SetPoint("TOPLEFT", 7, -y - 16)
-		y = y + 40
-		for _, spec in ipairs(section[2]) do
-			local h = spec.focus and 56 or 30
-			local row = CreateFrame("Frame", nil, p)
-			row:SetPoint("TOPLEFT", 0, -y)
-			row:SetPoint("RIGHT")
-			row:SetHeight(h)
-			if spec.focus then
-				local glow = row:CreateTexture(nil, "BACKGROUND", nil, 1)
-				glow:SetPoint("TOPLEFT", -9, 0)
-				glow:SetPoint("BOTTOMRIGHT", 9, 0)
-				glow:SetColorTexture(1, 1, 1, 1)
-				glow:SetGradient("HORIZONTAL", CreateColor(1, 0.9, 0.6, 0.16), CreateColor(1, 0.9, 0.6, 0))
-				text(row, "GameFontNormal", spec[1]):SetPoint("TOPLEFT", 24, -10)
-				control(row, spec):SetPoint("TOPLEFT", VALUE_X, -4)
-				text(row, "GameFontHighlightSmall", spec.note, 0.75, 0.75, 0.75):SetPoint("TOPLEFT", VALUE_X, -34)
-			else
-				text(row, "GameFontNormal", spec[1], 1, 0.82, 0, 0.6):SetPoint("LEFT", 24, 0)
-				text(row, "GameFontHighlight", value(spec), 0.75, 0.75, 0.75):SetPoint("LEFT", VALUE_X + 30, 0)
-			end
-			y = y + h
-		end
-	end
-end }
+local function line(parent, atlas, alpha)
+	local t = parent:CreateTexture(nil, "ARTWORK")
+	t:SetAtlas(atlas)
+	t:SetAlpha(alpha or 1)
+	return t
+end
 
--- C. Book page: one centred column, name and control close, the section
--- titles centred with the divider's ornament at its own size under them
-CANDIDATES[3] = { "A centred column, like a book page", function(p)
-	local y = 4
-	for _, section in ipairs(SECTIONS) do
-		local title = text(p, "GameFontHighlightLarge", section[1])
-		title:SetPoint("TOP", 0, -y - 8)
-		local d = p:CreateTexture(nil, "ARTWORK")
-		d:SetAtlas("QuestLog-frame-devider", true)
-		d:SetPoint("TOP", title, "BOTTOM", 0, -2)
-		y = y + 44
-		for _, spec in ipairs(section[2]) do
-			local row = CreateFrame("Frame", nil, p)
-			row:SetPoint("TOP", 0, -y)
-			row:SetSize(440, 34)
-			if spec.focus then hover(row, -12, 12) end
-			local name = text(row, "GameFontNormal", spec[1])
-			name:SetPoint("RIGHT", row, "LEFT", 160, 0)
-			control(row, spec, 230):SetPoint("LEFT", 176, 0)
-			y = y + 34
-		end
-	end
-end }
-
--- D. Hanging headings: each section's name in the left margin beside its
--- rows, no rules
-CANDIDATES[4] = { "Section names in the margin", function(p)
+-- lays the sections out; each(row, spec, first, last) dresses a row,
+-- group(head, top, bottom) dresses a section's span
+local function margin(p, each, group)
 	local y = 6
-	local MARGIN = 170
 	for i, section in ipairs(SECTIONS) do
+		local top = y
 		local head = text(p, "GameFontHighlightMed2", section[1])
-		head:SetPoint("TOPRIGHT", p, "TOPLEFT", MARGIN - 16, -y - 10)
-		for _, spec in ipairs(section[2]) do
+		head:SetPoint("TOPRIGHT", p, "TOPLEFT", MARGIN - 18, -y - 10)
+		head:SetJustifyH("RIGHT")
+		for n, spec in ipairs(section[2]) do
 			local row = CreateFrame("Frame", nil, p)
 			row:SetPoint("TOPLEFT", MARGIN, -y)
-			row:SetPoint("RIGHT")
-			row:SetHeight(36)
-			if spec.focus then hover(row, -8, 9) end
-			text(row, "GameFontNormal", spec[1]):SetPoint("LEFT", 0, 0)
-			control(row, spec):SetPoint("LEFT", 150, 0)
-			y = y + 36
+			row:SetPoint("RIGHT", -4, 0)
+			row:SetHeight(ROW)
+			if spec.focus then hover(row, -6, 6) end
+			text(row, "GameFontNormal", spec[1]):SetPoint("LEFT", 10, 0)
+			control(row, spec):SetPoint("RIGHT", spec[2] == "slider" and -40 or -8, 0)
+			if each then each(row, spec, n == 1, n == #section[2]) end
+			y = y + ROW
 		end
-		y = y + (i < #SECTIONS and 18 or 0)
+		if group then group(head, top, y) end
+		y = y + (i < #SECTIONS and GAP or 0)
 	end
+end
+
+-- A. Ledger: every row on a fine rule, a column rule between the margin and
+-- the rows; the words sit on lines as in a ledger
+CANDIDATES[1] = { "Ledger: rows on ruled lines", function(p)
+	local rule = line(p, "spec-columndivider", 0.8)
+	rule:SetWidth(7)
+	rule:SetPoint("TOPLEFT", MARGIN - 4, 0)
+	rule:SetPoint("BOTTOMLEFT", MARGIN - 4, 0)
+	margin(p, function(row)
+		local l = line(row, "Options_HorizontalDivider", 0.5)
+		l:SetHeight(1)
+		l:SetPoint("BOTTOMLEFT", 4, 0)
+		l:SetPoint("BOTTOMRIGHT", 0, 0)
+	end)
+end }
+
+-- B. Spine: the margin is a strip of the dark stone down the page's left,
+-- the section names on it, its edge a column rule; the rows hang off it
+CANDIDATES[2] = { "Spine: the margin on dark stone", function(p)
+	local spine = p:CreateTexture(nil, "BACKGROUND", nil, 1)
+	stone(spine, "you")
+	spine:SetPoint("TOPLEFT", -9, 7)
+	spine:SetPoint("BOTTOMRIGHT", p, "BOTTOMLEFT", MARGIN - 2, -7)
+	local rule = line(p, "spec-columndivider", 1)
+	rule:SetWidth(7)
+	rule:SetPoint("TOPLEFT", MARGIN - 5, 7)
+	rule:SetPoint("BOTTOMLEFT", MARGIN - 5, -7)
+	margin(p)
+end }
+
+-- C. Inlaid rows: each row a shallow band of the dark stone between two
+-- fine rules, from the margin to the edge
+CANDIDATES[3] = { "Inlaid: each row a band of dark stone", function(p)
+	margin(p, function(row)
+		local band = row:CreateTexture(nil, "BACKGROUND")
+		stone(band, "you")
+		band:SetPoint("TOPLEFT", 2, -2)
+		band:SetPoint("BOTTOMRIGHT", 9, 2)
+		for _, edge in ipairs({ "TOP", "BOTTOM" }) do
+			local l = line(row, "Options_HorizontalDivider", 0.6)
+			l:SetHeight(1)
+			l:SetPoint(edge .. "LEFT", 2, edge == "TOP" and -2 or 2)
+			l:SetPoint(edge .. "RIGHT", 9, edge == "TOP" and -2 or 2)
+		end
+	end)
+end }
+
+-- D. Bracketed: a vertical rule runs beside each section's rows only,
+-- joining its name to them; nothing across the page
+CANDIDATES[4] = { "Bracket: a rule binds each section", function(p)
+	margin(p, function(row, _, _, last)
+		if last then return end
+		local l = line(row, "Options_HorizontalDivider", 0.35)
+		l:SetHeight(1)
+		l:SetPoint("BOTTOMLEFT", 10, 0)
+		l:SetPoint("BOTTOMRIGHT", 0, 0)
+	end, function(head, top, bottom)
+		local bracket = line(head:GetParent(), "Talents-divider-vertical-c60", 1)
+		bracket:SetWidth(2)
+		bracket:SetPoint("TOPLEFT", head:GetParent(), "TOPLEFT", MARGIN - 6, -top - 4)
+		bracket:SetPoint("BOTTOMLEFT", head:GetParent(), "TOPLEFT", MARGIN - 6, -bottom + 4)
+	end)
 end }
 
 local function cell(page, i, candidate)
