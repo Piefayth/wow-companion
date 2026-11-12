@@ -71,11 +71,10 @@ end
 
 local CANDIDATES = {}
 
--- Round 2: the section names in the left margin (round 1's D, the player's
--- pick for using the width), each candidate grounding the rows differently
--- so they stop floating. Controls against the right edge, the rows spanning
--- the page between margin and edge.
-local MARGIN, ROW, GAP = 170, 36, 18
+-- The section names in the left margin (round 1's pick, for using the
+-- width), controls against the right edge, the rows spanning the page between
+-- margin and edge.
+local MARGIN, ROW, GAP = 170, 36, 24
 
 local function line(parent, atlas, alpha)
 	local t = parent:CreateTexture(nil, "ARTWORK")
@@ -85,7 +84,7 @@ local function line(parent, atlas, alpha)
 end
 
 -- lays the sections out; each(row, spec, first, last) dresses a row,
--- group(head, top, bottom) dresses a section's span
+-- group(head, top, bottom, i) dresses section i's span
 local function margin(p, each, group)
 	local y = 6
 	for i, section in ipairs(SECTIONS) do
@@ -104,71 +103,63 @@ local function margin(p, each, group)
 			if each then each(row, spec, n == 1, n == #section[2]) end
 			y = y + ROW
 		end
-		if group then group(head, top, y) end
+		if group then group(head, top, y, i) end
 		y = y + (i < #SECTIONS and GAP or 0)
 	end
 end
 
--- A. Ledger: every row on a fine rule, a column rule between the margin and
--- the rows; the words sit on lines as in a ledger
-CANDIDATES[1] = { "Ledger: rows on ruled lines", function(p)
-	local rule = line(p, "spec-columndivider", 0.8)
-	rule:SetWidth(7)
-	rule:SetPoint("TOPLEFT", MARGIN - 4, 0)
-	rule:SetPoint("BOTTOMLEFT", MARGIN - 4, 0)
-	margin(p, function(row)
-		local l = line(row, "Options_HorizontalDivider", 0.5)
-		l:SetHeight(1)
-		l:SetPoint("BOTTOMLEFT", 4, 0)
-		l:SetPoint("BOTTOMRIGHT", 0, 0)
-	end)
-end }
+-- Round 3: the spine (round 2's B, the player's pick), four answers to where
+-- the sections divide. group(head, top, bottom, i) also gets the section's
+-- index; the gap below a section is GAP.
 
--- B. Spine: the margin is a strip of the dark stone down the page's left,
--- the section names on it, its edge a column rule; the rows hang off it
-CANDIDATES[2] = { "Spine: the margin on dark stone", function(p)
-	local spine = p:CreateTexture(nil, "BACKGROUND", nil, 1)
-	stone(spine, "you")
-	spine:SetPoint("TOPLEFT", -9, 7)
-	spine:SetPoint("BOTTOMRIGHT", p, "BOTTOMLEFT", MARGIN - 2, -7)
+-- the dark stone down the left from top to bottom (or one piece per section)
+local function spine(p, top, bottom)
+	local t = p:CreateTexture(nil, "BACKGROUND", nil, 1)
+	stone(t, "you")
+	t:SetPoint("TOPLEFT", p, "TOPLEFT", -9, top and -top or 7)
+	t:SetPoint("BOTTOMRIGHT", p, bottom and "TOPLEFT" or "BOTTOMLEFT", MARGIN - 2, bottom and -bottom or -7)
 	local rule = line(p, "spec-columndivider", 1)
 	rule:SetWidth(7)
-	rule:SetPoint("TOPLEFT", MARGIN - 5, 7)
-	rule:SetPoint("BOTTOMLEFT", MARGIN - 5, -7)
+	rule:SetPoint("TOPLEFT", t, "TOPRIGHT", -3, 0)
+	rule:SetPoint("BOTTOMLEFT", t, "BOTTOMRIGHT", -3, 0)
+end
+
+-- A. No lines at all: the space between sections and the names on the spine
+-- do the dividing
+CANDIDATES[1] = { "Spine, sections parted by space", function(p)
+	spine(p)
 	margin(p)
 end }
 
--- C. Inlaid rows: each row a shallow band of the dark stone between two
--- fine rules, from the margin to the edge
-CANDIDATES[3] = { "Inlaid: each row a band of dark stone", function(p)
-	margin(p, function(row)
-		local band = row:CreateTexture(nil, "BACKGROUND")
-		stone(band, "you")
-		band:SetPoint("TOPLEFT", 2, -2)
-		band:SetPoint("BOTTOMRIGHT", 9, 2)
-		for _, edge in ipairs({ "TOP", "BOTTOM" }) do
-			local l = line(row, "Options_HorizontalDivider", 0.6)
-			l:SetHeight(1)
-			l:SetPoint(edge .. "LEFT", 2, edge == "TOP" and -2 or 2)
-			l:SetPoint(edge .. "RIGHT", 9, edge == "TOP" and -2 or 2)
-		end
+-- B. The spine notched: the light stone's gap between sections cuts through
+-- the spine too, so each section has its own piece of it
+CANDIDATES[2] = { "Spine in pieces, one per section", function(p)
+	margin(p, nil, function(_, top, bottom, i)
+		spine(p, i == 1 and -7 or top - GAP / 2 + 4, i == #SECTIONS and nil or bottom + GAP / 2 - 4)
 	end)
 end }
 
--- D. Bracketed: a vertical rule runs beside each section's rows only,
--- joining its name to them; nothing across the page
-CANDIDATES[4] = { "Bracket: a rule binds each section", function(p)
-	margin(p, function(row, _, _, last)
-		if last then return end
-		local l = line(row, "Options_HorizontalDivider", 0.35)
-		l:SetHeight(1)
-		l:SetPoint("BOTTOMLEFT", 10, 0)
-		l:SetPoint("BOTTOMRIGHT", 0, 0)
-	end, function(head, top, bottom)
-		local bracket = line(head:GetParent(), "Talents-divider-vertical-c60", 1)
-		bracket:SetWidth(2)
-		bracket:SetPoint("TOPLEFT", head:GetParent(), "TOPLEFT", MARGIN - 6, -top - 4)
-		bracket:SetPoint("BOTTOMLEFT", head:GetParent(), "TOPLEFT", MARGIN - 6, -bottom + 4)
+-- C. Dividers on the right only, each growing out of the spine's edge
+CANDIDATES[3] = { "Dividers from the spine's edge, right side only", function(p)
+	spine(p)
+	margin(p, nil, function(_, _, bottom, i)
+		if i == #SECTIONS then return end
+		local d = line(p, "QuestLog-frame-devider", 0.8)
+		d:SetHeight(15)
+		d:SetPoint("LEFT", p, "TOPLEFT", MARGIN, -bottom - GAP / 2)
+		d:SetPoint("RIGHT", p, "TOPRIGHT", 9, -bottom - GAP / 2)
+	end)
+end }
+
+-- D. The ornament on the spine only: a small divider at its own size
+-- between the section names, the right side parted by space
+CANDIDATES[4] = { "An ornament on the spine between sections", function(p)
+	spine(p)
+	margin(p, nil, function(_, _, bottom, i)
+		if i == #SECTIONS then return end
+		local d = line(p, "QuestLog-frame-devider", 0.9)
+		d:SetSize(93, 15)
+		d:SetPoint("CENTER", p, "TOPLEFT", (MARGIN - 11) / 2, -bottom - GAP / 2)
 	end)
 end }
 
