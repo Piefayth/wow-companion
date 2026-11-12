@@ -265,10 +265,14 @@ goes to a detached process.
 
 ## Rules for game code
 
-- **Never set a property of Blizzard's frames, open their windows from code, or
-  replace their globals.** That taints them, and the gamepad UI's
-  `SetPreferredGamepadInteractTarget` then fails: the A and B buttons stop
-  working. Chat text goes only into a box the player opened. Our frames are fine.
+- **Never write Lua state into Blizzard's frames (fields, scripts, functions),
+  open their windows from code, or replace their globals.** That taints them, and
+  the gamepad UI's `SetPreferredGamepadInteractTarget` then fails: the A and B
+  buttons stop working. Chat text goes only into a box the player opened. Our
+  frames are fine. **Their art is not state**: `SetAtlas`/`SetTexture` on their
+  textures changes no Lua value (the controller pointer's texture swapped from
+  agent code, 2026-11-12: no taint, A and B fine); Blizzard may set it back, so
+  re-apply from a `hooksecurefunc` post-hook.
 - **Our keys are addon keybindings in WoW's own Keybindings screen** (a
   Bindings.xml per owning addon, category "WoW Companion"), never slash commands
   or override bindings that take a key. The companion's own buttons (talk, the
