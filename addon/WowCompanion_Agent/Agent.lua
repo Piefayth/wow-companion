@@ -459,27 +459,18 @@ local bus = WC.Module("Agent")
 -- decides a tap: the PC sends nothing for one)
 bus:On("TALK_TAP", function() toggleWindow() end)
 -- a hold is talking: the board's talking row and, with the window open, the
--- conversation's tab (renderPending) follow the pick each frame, and go when
--- the key is let go
--- The PC's rule (crates/voice, the voice loop): the triggers held at the press
--- pick the conversation; then the last trigger pulled during the hold picks it,
--- and letting it go keeps it. Pulled with its partner held, a pair's: L2+R2
--- Quick, L1+R1 dictation.
-local PAIR = { l1 = { "r1", WC.Conversations.DICTATION }, r1 = { "l1", WC.Conversations.DICTATION },
-	l2 = { "r2", "quick" }, r2 = { "l2", "quick" } }
+-- conversation's tab (renderPending) follow the pick each frame (the
+-- companion's rule, Pad.lua's latch), and go when the key is let go
 talking:SetScript("OnUpdate", function(self)
-	local held, slot = WC.Pad.Triggers(), self.slot
-	for name, pair in pairs(PAIR) do
-		if held[name] and not self.held[name] then slot = held[pair[1]] and pair[2] or name end
-	end
-	self.held = held
+	local slot = self.latch:Update()
 	if slot ~= self.slot then
 		self.slot = slot
 		renderPending()
 	end
 end)
 bus:On("TALK_DOWN", function()
-	talking.at, talking.slot, talking.held = GetTime(), WowCompanion_PadSlot(), WC.Pad.Triggers()
+	talking.latch = WC.Pad.Latch()
+	talking.at, talking.slot = GetTime(), talking.latch.slot
 	talking:Show()
 end)
 -- shown only once the press is a hold: a tap opens the window, it says nothing

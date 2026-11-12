@@ -94,9 +94,14 @@ extras a player may use, never required (the player, 2026-11-11).
     guide, Polestar's pins). Saved: `WowCompanionDB` (module settings).
   - `WowCompanion_Link` (needs Core): the PC bridge. `Link.lua` the channel
     (slots, bells, polling, the mailbox, dispatch to handlers registered with
-    `WC.Link.Handle`), the Companion key (an addon keybinding, Bindings.xml: a tap
-    is TALK_TAP on the bus, a hold the PC's push-to-talk, named by its `heard`), `/wc`
-    (`WC.Link.Slash`). `Pad.lua` the pad's state and `WowCompanion_PadSlot`.
+    `WC.Link.Handle`), the companion's `status` (`WC.Link.Settings()`), the talk
+    button (WoW's binding of it written from the companion's `settings.talk`, never
+    in the Keybindings screen: a tap is TALK_TAP on the bus, a hold the PC's
+    push-to-talk, named by its `heard`), `/wc` (`WC.Link.Slash`). `Pad.lua` the pad's
+    state and the one conversation-pick rule (`WowCompanion_PadSlot`, `WC.Pad.Latch`,
+    on the chord names from `status`). `CompanionSettings.lua` the companion's
+    settings rows (docs/proposals/settings-in-game.md: the companion holds them, the
+    rows edit them with strip commands, `WowCompanion_Strip.Command`, one at a time).
     `Chat.lua` whisper lookup and the chat line (a line goes into the chat box the
     player opened, or waits for the next one; nothing opens it; dictation goes
     into another focused text box, the auction search, when there is one), the
@@ -253,7 +258,10 @@ goes to a detached process.
   working. Chat text goes only into a box the player opened. Our frames are fine.
 - **Our keys are addon keybindings in WoW's own Keybindings screen** (a
   Bindings.xml per owning addon, category "WoW Companion"), never slash commands
-  or override bindings that take a key.
+  or override bindings that take a key. The companion's own buttons (talk, the
+  conversation chords) are the exception: the companion holds them, set on our
+  settings page by pressing, and WoW's binding of the talk button is a copy our
+  code writes (docs/proposals/settings-in-game.md).
 - **Settings in our windows are one column of rows, as Blizzard's Settings
   are**: each row one controller stop (`WC.RowStop`, Rows.lua); left/right
   change its value (a slider steps, a dropdown cycles its choices), confirm

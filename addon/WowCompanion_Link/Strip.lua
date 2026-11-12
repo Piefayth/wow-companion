@@ -7,6 +7,8 @@
 --   cell 3: sum of bytes, cell 4: sum of running sums (both mod 2^24)
 --   cell 5 on: the bytes, 3 per cell, zero padded
 -- Cells fill left to right along the bottom row, then rows upward.
+--   WowCompanion_Strip.Send(text, seconds)   draw a payload now (a data read)
+--   WowCompanion_Strip.Command(words)        a command for the companion, queued
 WowCompanion_Strip = WowCompanion_Strip or {}
 WC.Strip = WowCompanion_Strip
 do
@@ -75,5 +77,27 @@ do
 	end
 	function WowCompanion_Strip.Hide()
 		if frame then frame:Hide() end
+	end
+
+	-- A command for the companion: "WCCMD <nonce> <words>" (src/requests.rs reads
+	-- them from the strip it always watches). One shows at a time: a command
+	-- drawn while another is up waits its turn rather than replacing it, so a
+	-- Stop is never lost under a settings change. A fresh nonce for every draw
+	-- gets a repeated command past the companion's same-strip dedupe.
+	local commands, showing = {}, false
+	local COMMAND_SECONDS = 2.5
+	local function nextCommand()
+		local words = table.remove(commands, 1)
+		if not words then
+			showing = false
+			return
+		end
+		showing = true
+		WowCompanion_Strip.Send(("WCCMD %d%04d %s"):format(time(), math.random(0, 9999), words), COMMAND_SECONDS)
+		C_Timer.After(COMMAND_SECONDS, nextCommand)
+	end
+	function WowCompanion_Strip.Command(words)
+		commands[#commands + 1] = words
+		if not showing then nextCommand() end
 	end
 end

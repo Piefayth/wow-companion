@@ -27,9 +27,9 @@ local function audit(what, slot, detail) pcall(WC.Link.Audit, what, slot, detail
 
 local function command(verb, slot, id)
 	audit("draw", slot, ("%s%s"):format(verb, id and (" %.0f"):format(id) or ""))
-	if not (WowCompanion_Strip and WowCompanion_Strip.Send) then return end
-	WowCompanion_Strip.Send(("WCCMD %d%04d %s %s%s"):format(time(), math.random(0, 9999), verb,
-		WC.Conversations.Wire(slot), id and (" " .. ("%.0f"):format(id)) or ""), 2.5)
+	if not (WowCompanion_Strip and WowCompanion_Strip.Command) then return end
+	WowCompanion_Strip.Command(("%s %s%s"):format(verb, WC.Conversations.Wire(slot),
+		id and (" " .. ("%.0f"):format(id)) or ""))
 end
 
 local function nowMs() return GetTime() * 1000 end

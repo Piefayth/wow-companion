@@ -12,11 +12,14 @@
 --
 --   WC.SettingsPage.Add(row)     row: { kind = "dropdown" | "slider" | "button",
 --                                section (its name in the names well), label, text
---                                (its note), order (lower first; a section goes
---                                where its first row does), and by kind:
+--                                (its note, or a function giving it), order (lower
+--                                first; a section goes where its first row does),
+--                                and by kind:
 --                                options()/get()/set(name);
 --                                min, max, steps, get()/set(value), format(value);
---                                button (its text), onClick() }
+--                                button (its text, or a function giving it), onClick() }
+--   WC.SettingsPage.Refresh()    the rows' values and notes drawn again, for rows
+--                                whose values change by themselves
 --   WC.SettingsPage.Open()       the page in its own window
 --   WC.SettingsPage.ShowIn(f)    the page inside frame f (anchored to fill it)
 
@@ -24,6 +27,7 @@ local Page = {}
 WC.SettingsPage = Page
 
 local rows = {}    -- every row added: { row = the caller's table, frame = once made }
+local refreshers = {} -- one per made row whose shown value can change
 local headers = {} -- section name -> its name in the names well
 local ROW_H, GAP, CONTROL_W = 36, 24, 250
 -- the names well's width from the page's left; a row's name inset from it;
@@ -86,11 +90,18 @@ bandText:SetPoint("TOPLEFT", bandName, "BOTTOMLEFT", 0, -4)
 bandText:SetPoint("BOTTOMRIGHT", -EDGE, 2)
 bandText:SetJustifyH("LEFT")
 bandText:SetJustifyV("TOP")
+-- a row's note: a string, or a function for one that changes
+local function textOf(v)
+	if type(v) == "function" then return v() end
+	return v
+end
 -- with no row under the cursor, what the band is for, dimmed
+local described
 local function describe(row)
+	described = row
 	if row and row.text then
 		bandName:SetText(row.label)
-		bandText:SetText(row.text)
+		bandText:SetText(textOf(row.text))
 		bandText:SetTextColor(1, 1, 1)
 	else
 		bandName:SetText("")
@@ -169,6 +180,7 @@ local function dropdown(row)
 			root:CreateRadio(name, function(n) return n == row.get() end, function(n) row.set(n) dd:SignalUpdate() end, name)
 		end
 	end)
+	refreshers[#refreshers + 1] = function() dd:GenerateMenu() end
 	control:SetSteppersShown(true)
 	WC.MarkIgnored(control)
 	r:SetScript("OnClick", function() dd:MouseDown() dd:MouseUp() end)
@@ -202,7 +214,8 @@ local function button(row)
 	b:SetSize(120, 22)
 	-- level with the dropdowns' outer arrows, which overhang their frame
 	b:SetPoint("RIGHT", r, "RIGHT", -(EDGE - 5), 0)
-	b:SetText(row.button)
+	b:SetText(textOf(row.button))
+	refreshers[#refreshers + 1] = function() b:SetText(textOf(row.button)) end
 	b:SetScript("OnClick", row.onClick)
 	r:SetScript("OnClick", row.onClick)
 	WC.MarkIgnored(b)
@@ -282,6 +295,11 @@ end)
 function Page.Add(row)
 	rows[#rows + 1] = { row = row }
 	if page:IsShown() then layout() end
+end
+
+function Page.Refresh()
+	for _, refresh in ipairs(refreshers) do pcall(refresh) end
+	if described then describe(described) end
 end
 
 -- frame is the page's area: its holder decides the margin (the Companion

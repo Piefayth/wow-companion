@@ -14,3 +14,4 @@ Strip.lua
 Chat.lua
 ChatWheel.lua
 Status.lua
+CompanionSettings.lua

@@ -8,11 +8,17 @@
 --   WC.Link.Run(step)           a step through its handler: ok, outcome
 --   WC.Link.Current()           the conversation slot of the message being handled
 --   WC.Link.Slash(word, fn)     a /wc subcommand
--- Bus messages sent: TALK_TAP (a tap of the Companion key), TALK_DOWN and
+--   WC.Link.Settings()          the companion's settings as its last status said
+--                               (talk, l1..r2 as WoW names, feedback, speech, mic,
+--                               engines), or nil while it has said none
+--   WC.Link.Status()            that last status message itself
+--   WC.Link.Mics()              the inputs Windows listed at the last `mics`
+-- Bus messages sent: TALK_TAP (a tap of the talk button), TALK_DOWN and
 -- TALK_UP (its press and release), TALK_HOLD (the press outlasted a tap),
 -- JOB_MESSAGE(inbox) (a handled message that names a job or lists jobs: their
 -- states for whoever keeps them), LINK_STEP(step, ok, outcome) (a follow-up step
--- ran), LINK_FAILED(text), MAILBOX_JOBS(jobs).
+-- ran), LINK_FAILED(text), MAILBOX_JOBS(jobs), COMPANION_STATUS(inbox),
+-- COMPANION_MICS(list).
 
 local SLOTS_PREFIX = "WowCompanion"
 local SIGNALS = "Interface\\AddOns\\WowCompanion_Link\\Signals\\"
@@ -52,16 +58,19 @@ local handlers = {}
 -- ran, a button offered, a failure) lands in that conversation
 local current
 
--- The Companion key, an addon keybinding in WoW's own Keybindings screen
--- (Bindings.xml, "Toggle Companion window"; the player binds the talk button to
--- it). It runs on press and release, so a tap is told from a hold: a tap sends
--- TALK_TAP (the Agent opens or closes its window), a hold does nothing here (the
--- PC's push-to-talk, its clip named by the PC's `heard`). TALK_DOWN and TALK_UP
--- go out on both edges (the chat wheel's ring), TALK_HOLD once a press has
+-- The talk button in the game. The companion holds which button it is
+-- (settings.talk in its status, set on our settings page,
+-- docs/proposals/settings-in-game.md); WoW's binding of it to our button is a
+-- copy we write (writeTalkBinding below), never in WoW's Keybindings screen,
+-- where a change would come with no press for the companion to see. It runs on
+-- press and release, so a tap is told from a hold: a tap sends TALK_TAP (the
+-- Agent opens or closes its window), a hold does nothing here (the PC's
+-- push-to-talk, its clip named by the PC's `heard`). TALK_DOWN and TALK_UP go
+-- out on both edges (the chat wheel's ring), TALK_HOLD once a press has
 -- outlasted a tap (the PC's own line, crates/voice TAP: it is talking now).
 local TAP_MAX = 0.35
 local downAt
-function WowCompanion_TalkBinding(keystate)
+local function talkEdge(keystate)
 	if keystate == "down" then
 		local at = GetTime()
 		downAt = at
@@ -76,7 +85,10 @@ function WowCompanion_TalkBinding(keystate)
 	WC.Send("TALK_UP")
 	if held and held <= TAP_MAX then WC.Send("TALK_TAP") end
 end
-BINDING_NAME_WOWCOMPANION_WINDOW = "Toggle Companion window (tap; hold to talk)"
+local talkButton = _G["WCTalkKey"] or CreateFrame("Button", "WCTalkKey", UIParent)
+talkButton:RegisterForClicks("AnyDown", "AnyUp")
+talkButton:SetScript("OnClick", function(_, _, down) talkEdge(down and "down" or "up") end)
+local TALK_ACTION = "CLICK WCTalkKey:LeftButton"
 
 -- A clip let go, named by the job the PC made for it: its state goes out as
 -- every job's does (JOB_MESSAGE), to the window's model and dictation's wait.
@@ -84,13 +96,48 @@ function handlers.heard()
 	return "heard"
 end
 
--- The companion's state: `mic` false while the chosen microphone is gone
--- (unplugged, or the headset taken by a phone). Assumed there at every load
--- until the companion says otherwise; Status.lua draws it.
+-- WoW's binding of the talk button, written from the companion's settings.talk
+-- (out of combat): the button the companion reports, and no other, clicks ours.
+-- A key that holds ours and is no longer the talk button is cleared; a key
+-- holding something else is overwritten only when it is the talk button.
+local function writeTalkBinding(talk)
+	local changed = false
+	for _, key in ipairs({ GetBindingKey(TALK_ACTION) }) do
+		if key ~= talk then
+			SetBinding(key)
+			changed = true
+		end
+	end
+	if talk and GetBindingAction(talk) ~= TALK_ACTION then
+		SetBindingClick(talk, "WCTalkKey")
+		changed = true
+	end
+	if changed then SaveBindings(GetCurrentBindingSet()) end
+end
+
+-- The companion's state, its last `status` (docs/proposals/settings-in-game.md,
+-- Protocol): `mic` false while the chosen microphone is gone (unplugged, or the
+-- headset taken by a phone), assumed there at every load until the companion
+-- says otherwise (Status.lua draws it); `settings` the values it runs with (none
+-- until it has reported them: our settings page says so); `binding`, `bind`,
+-- `set` its answers to the page's bind and set commands.
 local mic = true
+local lastStatus = {}
 function handlers.status(inbox)
 	if inbox.mic ~= nil then mic = inbox.mic and true or false end
+	lastStatus = inbox
+	local talk = type(inbox.settings) == "table" and inbox.settings.talk
+	if talk then WC.AfterCombat(function() writeTalkBinding(talk) end) end
+	WC.Send("COMPANION_STATUS", inbox)
 	return "status: mic " .. tostring(mic)
+end
+
+-- The inputs Windows lists now, the answer to the page's `mics` command.
+local mics = {}
+function handlers.mics(inbox)
+	mics = type(inbox.mics) == "table" and inbox.mics or {}
+	WC.Send("COMPANION_MICS", mics)
+	return ("mics: %d"):format(#mics)
 end
 
 -- With the agents off (dictation only), what would be a conversation line (a
@@ -325,9 +372,12 @@ WC.Link = {
 	say = say,
 	MessagesSent = function() return nextSlot - 1 end,
 	Audit = audit,
-	-- the key bound to the Companion window (Bindings.xml), for prompts that
-	-- name it, or nil while none is
-	TalkKey = function() return GetBindingKey("WOWCOMPANION_WINDOW") end,
+	-- the talk button by WoW's name, for prompts that name it, or nil while the
+	-- companion has reported none
+	TalkKey = function() return type(lastStatus.settings) == "table" and lastStatus.settings.talk or nil end,
+	Settings = function() return type(lastStatus.settings) == "table" and lastStatus.settings or nil end,
+	Status = function() return lastStatus end,
+	Mics = function() return mics end,
 	-- false while the companion has no microphone (handlers.status)
 	Mic = function() return mic end,
 }
