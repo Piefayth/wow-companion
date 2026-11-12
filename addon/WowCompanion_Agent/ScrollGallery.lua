@@ -157,9 +157,9 @@ end
 local OPTIONS = {
 	{ "Bronze spearhead", spear, "Spear" },
 	{ "Bronze lance", groove, "Lance" },
-	{ "Wrought-iron fleur-de-lis", groove, "Fleur" },
+	{ "Iron fleur-de-lis", groove, "Fleur" },
 	{ "Vine and leaf-bud", groove, "Bud" },
-	{ "Inlaid bronze lancet", groove, "Lancet" },
+	{ "Inlaid lancet", groove, "Lancet" },
 }
 
 -- a conversation as the chat shows it, long enough to scroll: each turn's
@@ -214,6 +214,8 @@ end
 local function pane(page, option)
 	local box = CreateFrame("Frame", nil, page, "InsetFrameTemplate")
 	if box.Bg then box.Bg:Hide() end
+	-- the turns past the well's bottom are cut off there, as the chat's scroll does
+	box:SetClipsChildren(true)
 	local column = CreateFrame("Frame", nil, box)
 	column:SetPoint("TOPRIGHT", -EDGE, -EDGE)
 	column:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
@@ -296,6 +298,7 @@ WC.Companion.AddTab("Scroll bars", function(page)
 		label:SetPoint("LEFT", 10, 0)
 		label:SetPoint("RIGHT", -6, 0)
 		label:SetJustifyH("LEFT")
+		label:SetWordWrap(false)
 		label:SetText(i .. ". " .. option[1] .. (err and " |cffff6060(failed)|r" or ""))
 		b:SetScript("OnClick", function() pick(i) end)
 		WC.MarkFocusable(b)
