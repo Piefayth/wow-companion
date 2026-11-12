@@ -1,61 +1,75 @@
 """The "chord" glyph: a shoulder button with no letter on it, for prompts that
 mean "hold any conversation's chord" (the Companion window's Chord+R3 Switch).
-The game's own glyphs are lettered per controller (L1, LB); this one fits any.
+The game's own prompt icons are lettered per controller (L1, LB); this one fits
+any. Drawn to sit beside them: the textured prompt set Blizzard's legends use
+(gamepad-ps-triggerl1 and kin), a dark brown face in a bronze rim, lit from
+above, a soft shadow under.
 
     python tools/make_chord_glyph.py    writes addon/WowCompanion/Art/Chord-<v>.tga
 
 The game keeps a loaded texture for the session under its path, so each
-version gets a new file name: bump VERSION here and the number in Style.lua's CHORD,
-run this, reload. Older versions are deleted.
+version gets a new file name: bump VERSION here and the number in Style.lua's
+CHORD, run this, reload. Older versions are deleted.
 
-64 x 64, 32-bit uncompressed TGA, drawn 4x oversampled and averaged down for
-smooth edges: a bumper's shape (a rounded bar, its top edge arched), dark fill,
-light rim, as the game's controller glyphs are drawn.
+64 x 64, 32-bit uncompressed TGA, drawn 4x oversampled and averaged down.
 """
 import glob
 import os
 import struct
 import numpy as np
 
-VERSION = 1
+VERSION = 2
 SIZE = 64
 OVER = 4
 OUT = os.path.join(os.path.dirname(__file__), "..", "addon", "WowCompanion", "Art")
 
 
-def inside(x, y, inset):
-    """The bumper, shrunk by `inset` pixels: a rounded bar whose top edge is
-    arched (higher in the middle)."""
-    cx, cy = 32, 32
-    hw, hh = 27 - inset, 15 - inset
-    r = max(9 - inset, 1)
+def rounded_box(x, y, cx, cy, hw, hh, r):
+    """Signed distance to a rounded rectangle (negative inside)."""
     qx = np.abs(x - cx) - hw + r
     qy = np.abs(y - cy) - hh + r
-    d = np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0) - r
-    # the arch: the top edge dips 8 px toward the sides
-    top = cy - hh + 8 * ((x - cx) / (hw)) ** 2
-    return (d <= 0) & (y >= top)
+    return np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0) - r
 
 
 def main():
     n = SIZE * OVER
     c = (np.arange(n) + 0.5) / OVER
     x, y = np.meshgrid(c, c)
-    outer = inside(x, y, 0).astype(float)
-    inner = inside(x, y, 3.2).astype(float)
-    rim = outer - inner
+    cx, cy, hw, hh, r = 32, 31, 22, 21, 12
+    d = rounded_box(x, y, cx, cy, hw, hh, r)
+    shadow_d = rounded_box(x, y, cx, cy + 3, hw + 1, hh + 1, r)
+
+    rim_w = 3.2
+    shape = (d <= 0).astype(float)
+    face = (d <= -rim_w).astype(float)
+    rim = shape - face
+    # light from above: the rim runs from pale bronze at the top to dark below
+    t = np.clip((y - (cy - hh)) / (2 * hh), 0, 1)
+    rim_rgb = np.stack([200 - 110 * t, 166 - 96 * t, 108 - 66 * t], axis=-1)
+    # a thin bright edge just inside the rim's top, as on Blizzard's icons
+    glint = ((d > -rim_w - 1.2) & (d <= -rim_w) & (y < cy)).astype(float) * 0.5
+    # the face: dark brown, a little lighter toward the top centre
+    dist = np.hypot((x - cx) / hw, (y - (cy - hh * 0.4)) / hh)
+    k = np.clip(1 - dist, 0, 1)
+    face_rgb = np.stack([30 + 22 * k, 25 + 18 * k, 20 + 13 * k], axis=-1)
+    face_rgb += glint[..., None] * np.array([90, 75, 50])
+
+    rgb = rim[..., None] * rim_rgb + face[..., None] * face_rgb
+    alpha = shape
+    # the soft shadow, under the shape, offset down
+    shadow = np.clip(1 - np.maximum(shadow_d, 0) / 4.0, 0, 1) * (shadow_d < 4) * 0.55
+    alpha_all = alpha + shadow * (1 - alpha)
+    rgb_all = rgb  # the shadow is black
 
     def down(a):
+        if a.ndim == 3:
+            return a.reshape(SIZE, OVER, SIZE, OVER, a.shape[2]).mean(axis=(1, 3))
         return a.reshape(SIZE, OVER, SIZE, OVER).mean(axis=(1, 3))
 
-    rim, fill = down(rim), down(inner)
-    alpha = np.clip(rim + fill, 0, 1)
-    shade = np.where(alpha > 0, (rim * 215 + fill * 46) / np.maximum(alpha, 1e-6), 0)
-    rgba = np.zeros((SIZE, SIZE, 4))
-    rgba[..., 0] = shade
-    rgba[..., 1] = shade
-    rgba[..., 2] = shade * 1.02
-    rgba[..., 3] = alpha * 255
+    a = down(alpha_all)
+    premul = down(rgb_all * alpha[..., None])
+    colour = premul / np.maximum(a[..., None], 1e-6)
+    rgba = np.concatenate([colour, a[..., None] * 255], axis=-1)
 
     os.makedirs(OUT, exist_ok=True)
     for old in glob.glob(os.path.join(OUT, "Chord-*.tga")):

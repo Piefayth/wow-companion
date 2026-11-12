@@ -15,16 +15,23 @@
 -- plain art if a template is missing.
 WowCompanion_Style = WowCompanion_Style or {}
 
--- A controller button drawn as the game draws it for the pad in use: the same
--- glyph set Blizzard's prompts pick (InputDeviceIconSetManager: the active
--- device's labelStyle, Shp shapes, Ltr letters, Rev Nintendo), from the strings
--- SharedConstants.lua defines (KEY_ABBR_PAD1_SHP...). Never a fixed name, so any
--- controller reads right. Falls back to the generic glyph, then the key name.
--- labelStyle reads "Shapes" on this client, not "Shp": unmatched, every glyph
--- falls back to the generic numbered one. Both spellings map.
+-- A controller button drawn as the game draws it for the pad in use: the
+-- textured prompt icons Blizzard's own legends use for the active controller
+-- (InputIconTextureSetUtility, InputIconTexture.lua: the PlayStation and Xbox
+-- sets), at text size. A pad with no textured set (Nintendo layout) gets the
+-- flat glyph strings (KEY_ABBR_<key>_SHP...) for its label style, then the
+-- generic glyph, then the key name.
+-- labelStyle reads "Shapes" on this client, not "Shp": both spellings map.
 local GLYPH_SUFFIX = { Shp = "_SHP", Shapes = "_SHP", Ltr = "_LTR", Letters = "_LTR",
 	Rev = "_REV", Reverse = "_REV", Reversed = "_REV" }
+local GLYPH_SIZE = 18
 function WowCompanion_Glyph(key)
+	local icons = InputIconTextureSetUtility
+	local ok, atlas = icons ~= nil, nil
+	if ok then ok, atlas = pcall(icons.GetNormalActiveInputIconButtonTexture, key) end
+	if ok and type(atlas) == "string" and C_Texture.GetAtlasInfo(atlas) then
+		return ("|A:%s:%d:%d|a"):format(atlas, GLYPH_SIZE, GLYPH_SIZE)
+	end
 	local style
 	pcall(function()
 		local state = C_GamePad.GetDeviceMappedState(C_GamePad.GetActiveDeviceID())
@@ -196,4 +203,4 @@ WowCompanion_Style.STONE = {
 }
 -- "hold a conversation's chord": a shoulder button with no letter, inline in
 -- text (tools/make_chord_glyph.py draws it; the version is in its name)
-WowCompanion_Style.CHORD = "|T" .. ART .. "Chord-1:14:14|t"
+WowCompanion_Style.CHORD = "|T" .. ART .. "Chord-2:" .. GLYPH_SIZE .. ":" .. GLYPH_SIZE .. "|t"
