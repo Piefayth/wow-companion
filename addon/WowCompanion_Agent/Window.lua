@@ -566,8 +566,24 @@ local function buildLog()
 	local grip = CreateFrame("Button", nil, frame)
 	grip:SetSize(16, 16)
 	grip:SetPoint("BOTTOMRIGHT", -4, 4)
-	grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-	grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+	-- Blizzard's only corner grip is the chat frame's 16px file, blurry when
+	-- scaled; this is the same three diagonal ridges drawn as lines (crisp at
+	-- any scale), a dark edge under a light one in its grey-gold, brighter on hover.
+	local RIDGE = { 0.82, 0.76, 0.6, 0.9 }
+	local ridges = {}
+	for i = 1, 3 do
+		local d = i * 4
+		for _, part in ipairs({ { 0, 0, 0, 0.75, -1 }, { RIDGE[1], RIDGE[2], RIDGE[3], RIDGE[4], 0 } }) do
+			local l = grip:CreateLine(nil, "OVERLAY")
+			l:SetThickness(1.25)
+			l:SetColorTexture(part[1], part[2], part[3], part[4])
+			l:SetStartPoint("BOTTOMRIGHT", -d - 1, 2 + part[5])
+			l:SetEndPoint("BOTTOMRIGHT", -2, d + 1 + part[5])
+			if part[5] == 0 then ridges[#ridges + 1] = l end
+		end
+	end
+	grip:SetScript("OnEnter", function() for _, l in ipairs(ridges) do l:SetColorTexture(1, 0.9, 0.55, 1) end end)
+	grip:SetScript("OnLeave", function() for _, l in ipairs(ridges) do l:SetColorTexture(unpack(RIDGE)) end end)
 	-- A mouse drags it; the controller can only click it, so a
 	-- click that did not resize steps through three sizes. A drag
 	-- also ends in a click, which is why the size at mouse-down is compared.
