@@ -34,6 +34,53 @@ local function turnBand(content, owner)
 	return band, WC.ChatBar.Divider(content)
 end
 
+-- A conversation switch empties the transcript and fills it again, so a row's
+-- parts are kept when it goes and handed to the next row: frames are never
+-- freed, and making them anew at every switch hitched and grew without end.
+-- One pool per kind of part, each part reset to what a new one would be.
+local function take(pool, make)
+	local part = table.remove(pool)
+	if part then
+		part:Show()
+		return part
+	end
+	return make()
+end
+local function text(t, font)
+	local fs = take(t.pool.text, function() return t.content:CreateFontString(nil, "OVERLAY") end)
+	fs:SetFontObject(font)
+	fs:SetTextColor(_G[font]:GetTextColor())
+	return fs
+end
+local function turnParts(t, owner)
+	local band = take(t.pool.turn, function() return t.content:CreateTexture(nil, "BACKGROUND", nil, -1) end)
+	ownBand(band, owner)
+	return band, take(t.pool.divider, function() return WC.ChatBar.Divider(t.content) end)
+end
+local function codeBand(t)
+	return take(t.pool.band, function()
+		-- the ready check's backing, tiled
+		local band = t.content:CreateTexture(nil, "BACKGROUND")
+		band:SetTexture([[Interface\DialogFrame\UI-DialogBox-Background-Dark]], "REPEAT", "REPEAT")
+		band:SetHorizTile(true)
+		band:SetVertTile(true)
+		band:SetAlpha(0.75)
+		return band
+	end)
+end
+-- a row leaves the transcript: its parts hidden and kept for the next
+local function release(t, row)
+	local pool = t.pool
+	for _, part in ipairs({ { row.fs, pool.text }, { row.marker, pool.text }, { row.band, pool.band },
+		{ row.turn, pool.turn }, { row.divider, pool.divider } }) do
+		if part[1] then
+			part[1]:Hide()
+			part[1]:ClearAllPoints()
+			table.insert(part[2], part[1])
+		end
+	end
+end
+
 local function inline(text)
 	text = text:gsub("%*%*(.-)%*%*", "|cfff4ecdc%1|r")
 	text = text:gsub("`([^`]+)`", "|cff9ad5ff%1|r")
@@ -67,7 +114,8 @@ local function newTranscript(parent)
 	local content = CreateFrame("Frame", nil, scroll)
 	content:SetSize(1, 1)
 	scroll:SetScrollChild(content)
-	local t = setmetatable({ scroll = scroll, content = content, rows = {}, height = PAD_TOP }, Transcript)
+	local t = setmetatable({ scroll = scroll, content = content, rows = {}, height = PAD_TOP,
+		pool = { text = {}, band = {}, turn = {}, divider = {} } }, Transcript)
 	scroll:EnableMouseWheel(true)
 	scroll:SetScript("OnMouseWheel", function(self, delta)
 		local range = self:GetVerticalScrollRange()
@@ -173,7 +221,7 @@ end
 -- here, before the row is placed: an appended row is placed at once, and a
 -- backing added after that stretched the turn before it instead.
 function Transcript:Row(font, text, indent, gap, r, g, b, owner)
-	local fs = self.content:CreateFontString(nil, "OVERLAY", font)
+	local fs = text(self, font)
 	fs:SetJustifyH("LEFT")
 	fs:SetJustifyV("TOP")
 	fs:SetWordWrap(true)
@@ -183,7 +231,7 @@ function Transcript:Row(font, text, indent, gap, r, g, b, owner)
 	fs:SetText(text)
 	local row = { fs = fs, indent = indent or 0, gap = self.gap or gap or 0,
 		header = owner and true or nil }
-	if owner then row.turn, row.divider = turnBand(self.content, owner) end
+	if owner then row.turn, row.divider = turnParts(self, owner) end
 	self.gap = nil
 	-- Confirmed lines are only ever appended, so the conversation never jumps. What is still to come is shown
 	-- below, as the waiting lines (Jobs.lua), and replaced there in place.
@@ -212,12 +260,7 @@ function Transcript:Markdown(line, r, g, b)
 	end
 	if self.code then
 		local row = self:Row(BODY_FONT, (line:gsub("|", "||")), 14, 0, 0.74, 0.86, 0.74)
-		-- the ready check's backing, tiled
-		row.band = self.content:CreateTexture(nil, "BACKGROUND")
-		row.band:SetTexture([[Interface\DialogFrame\UI-DialogBox-Background-Dark]], "REPEAT", "REPEAT")
-		row.band:SetHorizTile(true)
-		row.band:SetVertTile(true)
-		row.band:SetAlpha(0.75)
+		row.band = codeBand(self)
 		return
 	end
 	if line:match("^%s*$") then
@@ -238,7 +281,7 @@ function Transcript:Markdown(line, r, g, b)
 	if mark then
 		local indent = 18 + math.floor(#lead / 2) * 16
 		local row = self:Row(BODY_FONT, inline(rest), indent, 3, r, g, b)
-		row.marker = self.content:CreateFontString(nil, "OVERLAY", BODY_FONT)
+		row.marker = text(self, BODY_FONT)
 		row.marker:SetText((mark == "-" or mark == "*") and "|cffffd100•|r" or ("|cffffd100%s|r"):format(mark))
 		return
 	end
@@ -272,18 +315,13 @@ function Transcript:Add(who, text, continued, at, job)
 		-- what a step did, a probe found, or an error: small notes under the reply
 		local row = self:Row(NOTE_FONT, inline(text), 14, continued and 1 or 5,
 			who == "error" and 1 or 0.72, who == "error" and 0.47 or 0.74, who == "error" and 0.47 or 0.78)
-		row.marker = self.content:CreateFontString(nil, "OVERLAY", NOTE_FONT)
+		row.marker = text(self, NOTE_FONT)
 		row.marker:SetText(who == "error" and "|cffff7777!|r" or "|cff5c6370›|r")
 	end
 	-- a long session would grow without end; keep the newest rows
 	if #self.rows > LOG_KEEP * 3 then
 		for i = 1, LOG_KEEP do
-			local row = table.remove(self.rows, 1)
-			row.fs:Hide()
-			if row.marker then row.marker:Hide() end
-			if row.band then row.band:Hide() end
-			if row.turn then row.turn:Hide() end
-			if row.divider then row.divider:Hide() end
+			release(self, table.remove(self.rows, 1))
 		end
 		self:Layout()
 	end
@@ -306,10 +344,8 @@ end
 function Transcript:EndLive(live, text, answered)
 	local n = #self.rows
 	if answered and self.rows[n] == live.line and self.rows[n - 1] == live.head then
-		live.head.fs:Hide()
-		live.head.turn:Hide()
-		live.head.divider:Hide()
-		live.line.fs:Hide()
+		release(self, live.head)
+		release(self, live.line)
 		self.rows[n] = nil
 		self.rows[n - 1] = nil
 		self:Layout()
@@ -328,13 +364,7 @@ function Transcript:Hold(holding)
 end
 
 function Transcript:Clear()
-	for _, row in ipairs(self.rows) do
-		row.fs:Hide()
-		if row.marker then row.marker:Hide() end
-		if row.band then row.band:Hide() end
-		if row.turn then row.turn:Hide() end
-		if row.divider then row.divider:Hide() end
-	end
+	for _, row in ipairs(self.rows) do release(self, row) end
 	self.turnBand = nil
 	self.rows, self.height, self.code, self.gap = {}, PAD_TOP, false, nil
 	self.live = nil
