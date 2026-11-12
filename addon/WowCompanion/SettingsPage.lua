@@ -23,40 +23,56 @@ local page = CreateFrame("Frame", "WowCompanionSettingsPage", UIParent)
 page:Hide()
 local y = 0
 
-local function note(anchor, text)
-	if not text then return end
-	local fs = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	fs:SetPoint("LEFT", anchor, "RIGHT", 12, 0)
-	fs:SetPoint("RIGHT", page, "RIGHT", 0, 0)
-	fs:SetJustifyH("LEFT")
-	fs:SetText(text)
-end
--- one setting: its name on the left, the control beside it, a note after
-local function label(text, height)
-	local fs = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	fs:SetPoint("TOPLEFT", 0, -y - 6)
+-- One setting as Blizzard's Settings lay one out (SettingsListElementTemplate):
+-- a row the width of the page holding its name, the control and a note; the
+-- row is the one controller stop, shaded white at 0.1 while the cursor is on it
+-- (their HoverBackgroundTemplate), the cursor at its left. The control inside
+-- is out of the cycle, as theirs is.
+local ROW_H = 34
+local function settingRow(row, step, prompt)
+	local r = CreateFrame("Button", nil, page)
+	r:SetPoint("TOPLEFT", 0, -y)
+	r:SetPoint("RIGHT", page, "RIGHT", 0, 0)
+	r:SetHeight(ROW_H)
+	local hover = r:CreateTexture(nil, "HIGHLIGHT")
+	hover:SetPoint("TOPLEFT", -10, 0)
+	hover:SetPoint("BOTTOMRIGHT", -5, 0)
+	hover:SetColorTexture(1, 1, 1, 0.1)
+	local fs = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	fs:SetPoint("LEFT", 0, 0)
 	fs:SetWidth(LABEL_W)
 	fs:SetJustifyH("LEFT")
+	fs:SetText(row.label)
+	y = y + ROW_H
+	WC.SetCursorAnchor(r, 30)
+	WC.RowStop(r, step, prompt)
+	return r
+end
+local function note(r, anchor, text)
+	if not text then return end
+	local fs = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	fs:SetPoint("LEFT", anchor, "RIGHT", 12, 0)
+	fs:SetPoint("RIGHT", r, "RIGHT", 0, 0)
+	fs:SetJustifyH("LEFT")
 	fs:SetText(text)
-	local top = y
-	y = y + (height or 34)
-	return top
 end
 
--- A choice from a list, as Blizzard's Settings show one: their dropdown with
--- steppers (SettingsDropdownWithButtonsTemplate's own), its menu the game's.
--- The row is one stop laid over it, as their settings row is (the control
--- itself out of the cycle): left and right are the steppers, confirm opens the
--- menu the way their gamepad footer does (MouseDown, MouseUp). A pick does not
--- refresh the steppers by itself (Settings re-inits on every change), so each
--- pick signals the dropdown again, or an end's disabled arrow stays disabled.
+-- A choice from a list: their dropdown with steppers
+-- (SettingsDropdownWithButtonsTemplate's own), its menu the game's. Left and
+-- right are the steppers, confirm opens the menu the way their gamepad footer
+-- does (MouseDown, MouseUp). A pick does not refresh the steppers by itself
+-- (Settings re-inits on every change), so each pick signals the dropdown
+-- again, or an end's disabled arrow stays disabled.
 local function dropdown(row)
-	local top = label(row.label)
-	local control = CreateFrame("Frame", nil, page, "Metal2DropdownWithSteppersAndLabelTemplate")
+	local control
+	local r = settingRow(row, function(dir)
+		if dir < 0 then control.DecrementButton:Click() else control.IncrementButton:Click() end
+	end, "Change")
+	control = CreateFrame("Frame", nil, r, "Metal2DropdownWithSteppersAndLabelTemplate")
 	local dd = control.Dropdown
 	dd:SetWidth(CONTROL_W - 50)
 	control:SetSize(CONTROL_W, 26)
-	control:SetPoint("TOPLEFT", LABEL_W, -top + 1)
+	control:SetPoint("LEFT", LABEL_W, 0)
 	dd:SetupMenu(function(_, root)
 		for _, name in ipairs(row.options()) do
 			root:CreateRadio(name, function(n) return n == row.get() end, function(n) row.set(n) dd:SignalUpdate() end, name)
@@ -64,33 +80,25 @@ local function dropdown(row)
 	end)
 	control:SetSteppersShown(true)
 	WC.MarkIgnored(control)
-	local stop = CreateFrame("Button", nil, page)
-	stop:SetPoint("TOPLEFT", control.DecrementButton, "TOPLEFT", -4, 4)
-	stop:SetPoint("BOTTOMRIGHT", control.IncrementButton, "BOTTOMRIGHT", 4, -4)
-	stop:SetFrameLevel(control:GetFrameLevel() + 5)
-	stop:SetHighlightAtlas("Options_List_Hover", "ADD")
-	stop:SetScript("OnClick", function() dd:MouseDown() dd:MouseUp() end)
-	note(control.IncrementButton, row.text)
-	WC.RowStop(stop, function(dir)
-		if dir < 0 then control.DecrementButton:Click() else control.IncrementButton:Click() end
-	end, "Change")
+	r:SetScript("OnClick", function() dd:MouseDown() dd:MouseUp() end)
+	note(r, control.IncrementButton, row.text)
 end
 
--- a number in a range: Blizzard's slider with steppers either side
+-- A number in a range: their slider with steppers; left and right step it as
+-- their footer does (OnStepperClicked).
 local function slider(row)
-	local top = label(row.label, 38)
-	local made, s = pcall(CreateFrame, "Frame", nil, page, "MinimalSliderWithSteppersTemplate")
-	if not made or not s then return end
+	local s
+	local r = settingRow(row, function(dir) s:OnStepperClicked(dir > 0) end, "Adjust")
+	s = CreateFrame("Frame", nil, r, "MinimalSliderWithSteppersTemplate")
 	s:SetWidth(CONTROL_W)
-	s:SetPoint("TOPLEFT", LABEL_W, -top - 2)
-	local formatters = MinimalSliderWithSteppersMixin and {
-		[MinimalSliderWithSteppersMixin.Label.Right] = CreateMinimalSliderFormatter
-			and CreateMinimalSliderFormatter(MinimalSliderWithSteppersMixin.Label.Right, row.format) or row.format,
+	s:SetPoint("LEFT", LABEL_W, 0)
+	local formatters = {
+		[MinimalSliderWithSteppersMixin.Label.Right] = CreateMinimalSliderFormatter(MinimalSliderWithSteppersMixin.Label.Right, row.format),
 	}
 	s:Init(row.get(), row.min, row.max, row.steps, formatters)
 	s:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, value) row.set(value) end, s)
-	note(s.RightText or s, row.text)
-	WC.SliderStop(s)
+	WC.MarkIgnored(s)
+	note(r, s.RightText or s, row.text)
 end
 
 local function button(row)
@@ -100,7 +108,13 @@ local function button(row)
 	b:SetPoint("TOPLEFT", 0, -y)
 	b:SetText(row.label)
 	b:SetScript("OnClick", row.onClick)
-	note(b, row.text)
+	if row.text then
+		local fs = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		fs:SetPoint("LEFT", b, "RIGHT", 12, 0)
+		fs:SetPoint("RIGHT", page, "RIGHT", 0, 0)
+		fs:SetJustifyH("LEFT")
+		fs:SetText(row.text)
+	end
 	WC.MarkFocusable(b)
 	y = y + 34
 end

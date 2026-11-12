@@ -11,9 +11,6 @@
 --
 --   WC.RowStop(button, step, prompt)  step(-1 | 1) changes the value; prompt is
 --                                     the legend's word ("Adjust", "Change")
---   WC.SliderStop(slider)             a MinimalSliderWithSteppersTemplate as
---                                     one row: a button laid over it, the
---                                     slider and its steppers out of the cycle
 --   WC.RowPrompt(window)              the legend's words while a row in window
 --                                     has the cursor, else nil
 
@@ -58,18 +55,6 @@ function WC.RowStop(button, step, prompt)
 	rows[#rows + 1] = button
 	WC.MarkFocusable(button)
 	return button
-end
-
-function WC.SliderStop(slider)
-	local stop = CreateFrame("Button", nil, slider:GetParent())
-	stop:SetPoint("TOPLEFT", slider, "TOPLEFT", -4, 2)
-	stop:SetPoint("BOTTOMRIGHT", slider, "BOTTOMRIGHT", 4, -2)
-	stop:SetFrameLevel(slider:GetFrameLevel() + 5)
-	stop:SetHighlightAtlas("Options_List_Hover", "ADD")
-	WC.MarkIgnored(slider)
-	return WC.RowStop(stop, function(dir)
-		if dir < 0 then slider.Back:Click() else slider.Forward:Click() end
-	end, "Adjust")
 end
 
 function WC.RowPrompt(window)

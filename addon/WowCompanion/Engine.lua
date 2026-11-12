@@ -84,6 +84,14 @@ do
 		if m and InputUtil and InputUtil.IsGamepadUIEnabled() then return m end
 	end
 
+	-- the controller's cursor sits at x past frame's left edge, not its centre
+	-- (Blizzard's settings rows: SettingsListElementMixin:SetSmartNavCursorAnchor)
+	function WC.SetCursorAnchor(frame, x)
+		if not (frame and SmartNavigation_SetCustomCursorAnchorPointForFrame and CreateAnchor) then return end
+		later(key("anchor", frame), function()
+			SmartNavigation_SetCustomCursorAnchorPointForFrame(frame, CreateAnchor("RIGHT", frame, "LEFT", x))
+		end)
+	end
 	-- the controller's cursor may land on frame
 	function WC.MarkFocusable(frame)
 		if not (frame and SmartNavigation_MarkFrameFocusable) then return end
