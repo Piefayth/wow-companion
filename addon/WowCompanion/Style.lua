@@ -29,11 +29,28 @@ local GLYPH_SIZE = 20
 -- draws those 5 px past their bounds each side (InputIconTextureMixin
 -- ApplyTextureLayout), so inline they are drawn that much larger
 local PADDED = { width = 76, height = 75, scale = 76 / 66 }
+-- the stick-press icons (L3, R3) carry a press arrow over the stick that takes a
+-- third of the canvas: inline they are cut to the stick and its label (pixels
+-- of the 76 x 75 canvas, measured from a screenshot), so the label can be read
+local PRESS_CROP = { x0 = 10, x1 = 66, y0 = 27, y1 = 64 }
+local function pressIcon(info)
+	local w = info.width / (info.rightTexCoord - info.leftTexCoord)
+	local h = info.height / (info.bottomTexCoord - info.topTexCoord)
+	local left, top = info.leftTexCoord * w, info.topTexCoord * h
+	local c = PRESS_CROP
+	local width = math.floor(GLYPH_SIZE * (c.x1 - c.x0) / (c.y1 - c.y0) + 0.5)
+	return ("|T%d:%d:%d:0:0:%d:%d:%d:%d:%d:%d|t"):format(info.file, GLYPH_SIZE, width, w, h,
+		left + c.x0, left + c.x1, top + c.y0, top + c.y1)
+end
 function WowCompanion_Glyph(key)
 	local icons = InputIconTextureSetUtility
 	local ok, atlas = icons ~= nil, nil
 	if ok then ok, atlas = pcall(icons.GetNormalActiveInputIconButtonTexture, key) end
 	local info = ok and type(atlas) == "string" and C_Texture.GetAtlasInfo(atlas)
+	if info and info.width == PADDED.width and info.height == PADDED.height
+		and (key == "PADLSTICK" or key == "PADRSTICK") and type(info.file) == "number" then
+		return pressIcon(info)
+	end
 	if info then
 		local size = GLYPH_SIZE
 		if info.width == PADDED.width and info.height == PADDED.height then

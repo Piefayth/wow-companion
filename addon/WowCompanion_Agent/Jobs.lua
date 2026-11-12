@@ -500,9 +500,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " Cancel newest" end
 		if focused and sendable() then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
 		if focused and offerShown() then parts[#parts + 1] = glyph("PADLSTICK") .. " " .. offerShown() end
-		-- the plain right stick icon reads better here than the press icon (whose
-		-- arrow leaves R3 too small to read inline)
-		if anyTab then parts[#parts + 1] = WC.Style.CHORD .. "+" .. glyph("PADRSTICKAXIS") .. " Switch" end
+		if anyTab then parts[#parts + 1] = WC.Style.CHORD .. "+" .. glyph("PADRSTICK") .. " Switch" end
 		-- a settings row under the cursor, on any tab (WC.RowStop binds the keys)
 		local adjust = WC.RowPrompt(window)
 		if adjust then parts[#parts + 1] = adjust end
