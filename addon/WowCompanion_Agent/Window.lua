@@ -19,19 +19,30 @@ function WC.Companion.AddTab(name, fill)
 	if addTab then return addTab(name, fill) end
 	added[#added + 1] = { name = name, fill = fill }
 end
--- Our own frame art (tools/make_frame_art.py) on the NineSlice pieces of our
--- window and its wells: the art is cut tight to what it draws, and each
--- piece's size and place is decided here. corner: the corners' width; top,
--- bottom: the top and bottom corners' heights (the top edge's too); out:
--- how far the pieces stand past the owner's left, top, right and bottom
--- (negative is inside); left, right, foot: the left, right and bottom edges'
--- widths.
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-1]]
-local FRAME_SLICE = { art = "Frame", corner = 12, top = 28, bottom = 12, out = { -2, 4, 2, -1 },
-	left = 8, right = 6, foot = 6 }
-local INSET_SLICE = { art = "Inset", corner = 4, top = 4, bottom = 4, out = { 0, 0, 0, 0 },
-	left = 4, right = 4, foot = 4 }
-local function dress(owner, l)
+-- The window's layout, every margin decided here (the art carries none):
+-- the rim stands on the frame's own bounds; every well is GAP inside the
+-- rim's inner edge, and GAP apart; the wells' tops leave room for the title
+-- band and the tab row, their feet for the legend's strip (FOOT, Jobs.lua).
+-- tools/make_frame_art.py draws the window at these numbers to check them.
+local RIM, TOP = 6, 28 -- the rim's width; the top pieces' height (title band and rule)
+local BAND = 22.6 -- the title band's foot, where the art's rule begins
+local GAP = 4
+local WELL_TOP, FOOT = 64, 20
+local INSET = 4 -- the wells' border, as wide as its art
+local CLOSE = 26
+-- The controller's focus glow (FrameGlow, gamepad-uiframemetal-focus) is
+-- placed by Blizzard for its own metal (FocusEffects.lua: -10, 14, 14, -14
+-- from the frame), not ours. Its bright line's inner edge lies this far inside
+-- its box, left, top, right, bottom: 28, 21.5, 26 and 22 of the atlas's
+-- pixels, drawn at half scale (measured, 2026-11-12), so the box set out by
+-- these puts the line on the rim's outer edge all round.
+local GLOW = { 14, 10.75, 13, 11 }
+
+-- Our own frame art (tools/make_frame_art.py) on an owner's NineSlice pieces,
+-- on the owner's bounds: every piece rim wide, the top corners and edge top
+-- tall, so a corner and the edge beside it share their pixels on screen.
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-2]]
+local function dress(owner, art, rim, top)
 	local slice = owner.NineSlice
 	if not slice then return end
 	local p = {}
@@ -39,33 +50,29 @@ local function dress(owner, l)
 		"TopEdge", "BottomEdge", "LeftEdge", "RightEdge" }) do
 		local t = slice[name]
 		if not t then return end
-		t:SetTexture(ART:format(l.art, name))
+		t:SetTexture(ART:format(art, name))
 		t:SetTexCoord(0, 1, 0, 1)
 		t:SetHorizTile(false)
 		t:SetVertTile(false)
 		t:ClearAllPoints()
 		p[name] = t
 	end
-	local ol, ot, orr, ob = unpack(l.out)
-	p.TopLeftCorner:SetPoint("TOPLEFT", owner, "TOPLEFT", -ol, ot)
-	p.TopRightCorner:SetPoint("TOPRIGHT", owner, "TOPRIGHT", orr, ot)
-	p.BottomLeftCorner:SetPoint("BOTTOMLEFT", owner, "BOTTOMLEFT", -ol, -ob)
-	p.BottomRightCorner:SetPoint("BOTTOMRIGHT", owner, "BOTTOMRIGHT", orr, -ob)
-	p.TopLeftCorner:SetSize(l.corner, l.top)
-	p.TopRightCorner:SetSize(l.corner, l.top)
-	p.BottomLeftCorner:SetSize(l.corner, l.bottom)
-	p.BottomRightCorner:SetSize(l.corner, l.bottom)
+	p.TopLeftCorner:SetPoint("TOPLEFT", owner)
+	p.TopRightCorner:SetPoint("TOPRIGHT", owner)
+	p.BottomLeftCorner:SetPoint("BOTTOMLEFT", owner)
+	p.BottomRightCorner:SetPoint("BOTTOMRIGHT", owner)
+	p.TopLeftCorner:SetSize(rim, top)
+	p.TopRightCorner:SetSize(rim, top)
+	p.BottomLeftCorner:SetSize(rim, rim)
+	p.BottomRightCorner:SetSize(rim, rim)
 	p.TopEdge:SetPoint("TOPLEFT", p.TopLeftCorner, "TOPRIGHT")
 	p.TopEdge:SetPoint("BOTTOMRIGHT", p.TopRightCorner, "BOTTOMLEFT")
-	p.BottomEdge:SetPoint("BOTTOMLEFT", p.BottomLeftCorner, "BOTTOMRIGHT")
+	p.BottomEdge:SetPoint("TOPLEFT", p.BottomLeftCorner, "TOPRIGHT")
 	p.BottomEdge:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "BOTTOMLEFT")
-	p.BottomEdge:SetHeight(l.foot)
 	p.LeftEdge:SetPoint("TOPLEFT", p.TopLeftCorner, "BOTTOMLEFT")
-	p.LeftEdge:SetPoint("BOTTOMLEFT", p.BottomLeftCorner, "TOPLEFT")
-	p.LeftEdge:SetWidth(l.left)
-	p.RightEdge:SetPoint("TOPRIGHT", p.TopRightCorner, "BOTTOMRIGHT")
+	p.LeftEdge:SetPoint("BOTTOMRIGHT", p.BottomLeftCorner, "TOPRIGHT")
+	p.RightEdge:SetPoint("TOPLEFT", p.TopRightCorner, "BOTTOMLEFT")
 	p.RightEdge:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "TOPRIGHT")
-	p.RightEdge:SetWidth(l.right)
 end
 
 local function buildTabs(frame, messages)
@@ -207,11 +214,9 @@ local function buildTabs(frame, messages)
 	local WELL = 130
 	local made, well = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not made or not well then well = CreateFrame("Frame", nil, frame) end
-	dress(well, INSET_SLICE)
-	-- inside the panel where its own inset would be (ButtonFrameTemplate's
-	-- Inset: 4, -60 to -6, 26), the tabs standing on top
-	well:SetPoint("TOPRIGHT", -6, -60)
-	well:SetPoint("BOTTOMRIGHT", -6, 26)
+	dress(well, "Inset", INSET, INSET)
+	well:SetPoint("TOPRIGHT", -(RIM + GAP), -WELL_TOP)
+	well:SetPoint("BOTTOMRIGHT", -(RIM + GAP), RIM + FOOT)
 	well:SetWidth(WELL)
 	local back = well:CreateTexture(nil, "BACKGROUND", nil, 1)
 	back:SetAtlas("auctionhouse-background-categories")
@@ -224,9 +229,9 @@ local function buildTabs(frame, messages)
 	-- keeps only the waiting line.
 	local madeChat, chatWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not madeChat or not chatWell then chatWell = CreateFrame("Frame", nil, frame) end
-	dress(chatWell, INSET_SLICE)
-	chatWell:SetPoint("TOPLEFT", 4, -60)
-	chatWell:SetPoint("BOTTOMRIGHT", -(6 + WELL + 2), 26)
+	dress(chatWell, "Inset", INSET, INSET)
+	chatWell:SetPoint("TOPLEFT", RIM + GAP, -WELL_TOP)
+	chatWell:SetPoint("BOTTOMRIGHT", well, "BOTTOMLEFT", -GAP, 0)
 	table.insert(frame.chatParts, chatWell)
 	-- The chat well's geometry, in one place (docs/ui-layout.md): inside the
 	-- inset's border (EDGE) there are two rects and nothing else, the
@@ -353,7 +358,7 @@ local function buildTabs(frame, messages)
 	-- the page well, over both wells' area, for the other tabs
 	local madePage, pageWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not madePage or not pageWell then pageWell = CreateFrame("Frame", nil, frame) end
-	dress(pageWell, INSET_SLICE)
+	dress(pageWell, "Inset", INSET, INSET)
 	pageWell:SetPoint("TOPLEFT", chatWell, "TOPLEFT")
 	pageWell:SetPoint("BOTTOMRIGHT", well, "BOTTOMRIGHT")
 	pageWell:Hide()
@@ -384,8 +389,9 @@ local function buildTabs(frame, messages)
 	pageShade:SetAllPoints()
 
 	-- the tabs, their foot resting on the chat well's top border (one pixel
-	-- in, no more: deeper, they covered the top line of text), drawn under
-	-- the well's top shadow so it falls across their foot as across the text
+	-- in, no more: deeper, they covered the top line of text), the row's left
+	-- end on the well's inner edge (EDGE), drawn under the well's top shadow
+	-- so it falls across their foot as across the text
 	local names = {}
 	-- our art (tools/make_tab_art.py) carries no margin: the unselected
 	-- pieces are the button's own size, the open ones set out by their glow
@@ -427,7 +433,7 @@ local function buildTabs(frame, messages)
 		tab:SetID(i)
 		tab:SetText(name)
 		if i == 1 then
-			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 10, -1)
+			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", EDGE, -1)
 		else
 			tab:SetPoint("LEFT", frame.Tabs[i - 1], "RIGHT", TAB_GAP, 0)
 		end
@@ -494,16 +500,34 @@ local function buildLog()
 	-- our wells take the template's inset's place
 	if frame.Inset then frame.Inset:Hide() end
 	if frame.SetTitle then frame:SetTitle("Companion") end
-	-- our border and title bar over the template's, where the game's stood
-	dress(frame, FRAME_SLICE)
+	-- our border and title bar over the template's, on the frame's bounds,
+	-- and the focus glow fitted round them
+	dress(frame, "Frame", RIM, TOP)
+	if frame.FrameGlow then
+		frame.FrameGlow:ClearAllPoints()
+		frame.FrameGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", -GLOW[1], GLOW[2])
+		frame.FrameGlow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", GLOW[3], -GLOW[4])
+	end
+	-- the title centred in the band, between the close button and its mirror
+	local bar = frame.TitleContainer
+	if bar then
+		bar:ClearAllPoints()
+		bar:SetPoint("TOPLEFT", frame, "TOPLEFT", CLOSE, -RIM)
+		bar:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", -CLOSE, -BAND)
+		if bar.TitleText then
+			bar.TitleText:ClearAllPoints()
+			bar.TitleText:SetPoint("LEFT")
+			bar.TitleText:SetPoint("RIGHT")
+		end
+	end
 	-- our close button on the rim's top right corner; the controller's back
 	-- button (circle) closes a focused window by clicking its
 	-- frame.CloseButton (SmartNavigation:AttemptClose)
 	if frame.CloseButton then
 		local close = frame.CloseButton
-		close:SetSize(26, 26)
+		close:SetSize(CLOSE, CLOSE)
 		close:ClearAllPoints()
-		close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 2, 4)
+		close:SetPoint("TOPRIGHT")
 		close:SetNormalTexture(ART:format("Close", "Normal"))
 		close:SetPushedTexture(ART:format("Close", "Pushed"))
 		close:SetDisabledTexture(ART:format("Close", "Disabled"))
@@ -514,7 +538,6 @@ local function buildLog()
 	end
 	-- the title bar is the drag handle, so a drag inside the transcript stays free
 	frame:SetMovable(true)
-	local bar = frame.TitleContainer
 	if bar then
 		bar:EnableMouse(true)
 		bar:RegisterForDrag("LeftButton")
@@ -661,7 +684,7 @@ local function buildLog()
 	end
 	local grip = CreateFrame("Button", nil, frame)
 	grip:SetSize(16, 16)
-	grip:SetPoint("BOTTOMRIGHT", -5.5, 5.5)
+	grip:SetPoint("BOTTOMRIGHT", -RIM, RIM)
 	-- Blizzard's only corner grip is the chat frame's 16px file, blurry when
 	-- scaled; this draws its three diagonal ridges as lines (crisp at any scale),
 	-- cut into the panel: each groove is a dark line with a faint light lip on its
@@ -746,3 +769,5 @@ end
 
 WC.Window = WC.Window or {}
 WC.Window.buildLog = buildLog
+-- the middle of the strip under the wells, for the legend (Jobs.lua)
+WC.Window.FOOT_MID = RIM + FOOT / 2

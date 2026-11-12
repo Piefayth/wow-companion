@@ -489,9 +489,9 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		if not window.jobsLegend then
 			local fs = window:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 			-- at the window's right, where Blizzard's panels keep their buttons,
-			-- centred in the strip between the wells (26 up) and the bottom
-			-- border (about 4 thick), clear of the size grip
-			fs:SetPoint("RIGHT", window, "BOTTOMRIGHT", -26, 15)
+			-- centred in the strip between the wells and the rim (Window.lua),
+			-- clear of the size grip
+			fs:SetPoint("RIGHT", window, "BOTTOMRIGHT", -26, WC.Window.FOOT_MID)
 			fs:SetJustifyH("RIGHT")
 			window.jobsLegend = fs
 		end
