@@ -497,8 +497,9 @@ def rule_pieces(weight):
 #   FromMedium (Vine-ThickTRightFromMedium) a medium vine growing out of the
 #             thick: the same, smaller, beside it: a stem each way bowing out
 #             from the root into a volute, a satellite curling off near the run
-#   FromMediumPlain (Vine-ThickTRightFromMediumPlain) the same flare and
-#             no ornament, where the arm runs past text (the Status rows)
+#   BigPlain, FromMediumPlain (Vine-ThickTRight...Plain) each kind's join
+#             with no ornament, for tight places (the Status rows): every
+#             size comes ornamental and plain (the player, 2026-11-12)
 # Mirrored halves are built by moving points, so the light stays the frame's.
 # The big one reaches 46 units left and 28 up and down; the small one 30 right
 # and 23 up and down, clear of the rows' text (from 13 right of the run, 24
@@ -774,6 +775,7 @@ def main():
     for weight in WEIGHTS:
         vines.update(rule_pieces(weight))
     vines["ThickTRightBig"], vines["ThickTRightFromMedium"] = junction(True), junction(False)
+    vines["ThickTRightBigPlain"] = forge(JOIN_SIZE[True], True)
     vines["ThickTRightFromMediumPlain"] = forge(JOIN_SIZE[False], False)
     for old in glob.glob(os.path.join(CORE_OUT, "Vine-*.tga")):
         os.remove(old)

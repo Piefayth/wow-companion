@@ -281,8 +281,9 @@ function WowCompanion_Style.VineLine(owner, weight, vertical, capStart, capEnd)
 	return made
 end
 -- A junction centred on a point of `owner`, square at the size it was drawn
--- for (the art's units), its own stretch of both vines inside it
-local JOIN_SIZE = { TRightBig = 112, TRightFromMedium = 80, TRightFromMediumPlain = 80 }
+-- for (the art's units), its own stretch of both vines inside it; each kind
+-- ornamental, and plain (…Plain) where there is no room for scrollwork
+local JOIN_SIZE = { TRightBig = 112, TRightBigPlain = 112, TRightFromMedium = 80, TRightFromMediumPlain = 80 }
 function WowCompanion_Style.VineJoin(owner, weight, kind, point)
 	local t = owner:CreateTexture(nil, "OVERLAY")
 	t:SetTexture(WowCompanion_Style.Vine(weight .. kind), "CLAMP", "CLAMP")

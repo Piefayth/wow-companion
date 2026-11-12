@@ -29,6 +29,8 @@ none of this. When the player states a new preference or changes one, write it h
   Ornament is wire scrollwork in the vine's bark, never a ball or boss; its
   wire has weight and never tapers to a hairline (thin ends read as fading
   into the dark), and errs bigger rather than smaller (2026-11-12).
+  Every vine joint comes in two variants, ornamental and plain; plain where
+  space is tight, like the Status rows (2026-11-12).
   Tabs never open into the chat (2026-11-12): its stone is shaded to sit back
   and scrolls, so no tab can join it; tabs stand apart, on its border.
 - **Nothing of ours opens itself** (2026-11-10). The Companion window opens only
