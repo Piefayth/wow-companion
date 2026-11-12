@@ -88,8 +88,6 @@ local function buildActionButton()
 			self.offer = nil
 			WC.AfterCombat(showOffer)
 		end)
-		-- it belongs to the Chat tab: another tab takes it away, Chat brings it back
-		if frame.SelectTab then hooksecurefunc(frame, "SelectTab", function() showOffer() end) end
 	end
 	return frame
 end
@@ -102,6 +100,12 @@ showOffer = function()
 	if picked > #offers then picked = 1 end
 	local held = offers[picked]
 	local frame = logFrame()
+	-- it belongs to the Chat tab: another tab takes it away, Chat brings it back
+	-- (followed from the first call, so an offer that came on another tab shows)
+	if frame and frame.SelectTab and not frame.offerFollowsTabs then
+		frame.offerFollowsTabs = true
+		hooksecurefunc(frame, "SelectTab", function() showOffer() end)
+	end
 	if not held or (frame and (frame.currentTab or 1) ~= 1) then
 		if actionButton then
 			actionButton.offer = nil
