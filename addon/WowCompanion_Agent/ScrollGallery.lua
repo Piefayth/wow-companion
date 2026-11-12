@@ -1,6 +1,6 @@
 -- A design sheet, for now: candidate scroll bars side by side, each on a small
--- copy of the chat well (two turns on the stone, a divider between meeting the
--- bar), so the player compares them in the Companion window instead of one
+-- copy of the chat well (four turns on the stone, the dividers between
+-- meeting the bar), so the player compares them in the Companion window instead of one
 -- reload per idea. Shown only; nothing scrolls. Goes when a bar is chosen.
 
 local STONE = WC.Style.STONE
@@ -13,11 +13,12 @@ local function stone(tex, which)
 end
 
 -- All drawn by tools/make_scrollbar_art.py. The spearhead (round 1) is
--- arrows over the slim grey bar, a rod and joints; the others (round 3) are
--- grooves carved into the stone, their ends arrow-shaped recesses.
+-- arrows over the slim grey bar, a rod and joints; the others (round 4) are a
+-- groove carved into the stone, its ends and its joints with the dividers
+-- ornaments raised round it.
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-]]
 local function art(design, piece)
-	return ART .. design .. "-" .. piece .. "-" .. (design == "Spear" and 1 or 3)
+	return ART .. design .. "-" .. piece .. "-" .. (design == "Spear" and 1 or 4)
 end
 local ARROW = 16 -- an arrow's square, its art about 12 of it
 
@@ -95,19 +96,19 @@ local function spear(c, design, ends)
 	column3(thumb, "ARTWORK", "minimal-scrollbar-small-thumb", "minimal-scrollbar-small-thumb-middle")
 end
 
--- A groove carved into the stone, the column's full 20 wide: the caps (20x40)
--- are the arrow buttons, their recess and arrow at the far end and the groove
--- running on; each divider's end is a Joint (40x20, centred on the column's
--- left edge and the line, the groove running through it, under the divider);
--- the groove (Mid) is stretched between caps and joints, and Blizzard's
--- minimal thumb rides in it.
-local function carved(c, design, ends)
+-- A groove carved into the stone, 8 wide in the middle of the column (32):
+-- the caps (32x64) are the arrow buttons, their ornament wrapped round the
+-- groove's end and the groove running on; each divider's end is a Joint
+-- (64x32, its right edge the column's, centred on the line), the same
+-- ornament gripping the groove; the groove (Mid) is stretched between caps
+-- and joints, and Blizzard's minimal thumb rides in it.
+local function ornate(c, design, ends)
 	local caps = {}
-	for _, spec in ipairs({ { "Up", "TOP", 0, 0, 0, 18 }, { "Down", "BOTTOM", 0, 0, 18, 0 } }) do
+	for _, spec in ipairs({ { "Up", "TOP", 0, 16 }, { "Down", "BOTTOM", 16, 0 } }) do
 		local b = CreateFrame("Button", nil, c)
-		b:SetSize(20, 40)
+		b:SetSize(32, 64)
 		b:SetPoint(spec[2])
-		b:SetHitRectInsets(spec[3], spec[4], spec[5], spec[6]) -- the arrow, not the groove after it
+		b:SetHitRectInsets(0, 0, spec[3], spec[4]) -- the ornament, not the groove after it
 		local base = spec[1] .. "-"
 		b:SetNormalTexture(art(design, base .. "Normal"))
 		b:SetPushedTexture(art(design, base .. "Pushed"))
@@ -123,18 +124,19 @@ local function carved(c, design, ends)
 		mid:SetPoint("BOTTOMRIGHT", below, top)
 	end
 	for _, at in ipairs(ends) do
-		local joint = at:GetParent():CreateTexture(nil, "BORDER")
+		local joint = c:CreateTexture(nil, "ARTWORK")
 		joint:SetTexture(art(design, "Joint"))
-		joint:SetSize(40, 20)
-		joint:SetPoint("CENTER", at, "TOPRIGHT")
+		joint:SetSize(64, 32)
+		joint:SetPoint("RIGHT", at, "TOPRIGHT", 32, 0)
 		groove(joint, "TOPRIGHT")
-		above, under = joint, "BOTTOM"
+		above, under = joint, "BOTTOM" -- the column's left edge
 	end
 	groove(caps.Down, "TOPRIGHT")
-	local room = (c:GetHeight() > 0 and c:GetHeight() or 300) - 40
+	local room = (c:GetHeight() > 0 and c:GetHeight() or 300) - 128
 	local thumb = CreateFrame("Frame", nil, c)
+	thumb:SetFrameLevel(c:GetFrameLevel() + 2)
 	thumb:SetSize(8, room / 3)
-	thumb:SetPoint("TOP", c, "TOP", 0, -20 - room / 6)
+	thumb:SetPoint("TOP", c, "TOP", 0, -64 - room / 6)
 	local function piece(atlas, point)
 		local t = thumb:CreateTexture(nil, "ARTWORK")
 		t:SetAtlas(atlas)
@@ -150,19 +152,49 @@ local function carved(c, design, ends)
 	mid:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT")
 end
 
--- each: a name, its builder, its art, and its divider: Blizzard's quest log
--- divider, or the design's own (RuleLeft, RuleMid stretched, into the Joint)
+-- each: a name, its builder, its art, its column's width, and its divider:
+-- Blizzard's quest log divider (under the joint's collar where the design
+-- has one, `inset` short of the column), or the design's own (RuleLeft, RuleMid
+-- stretched, a Knot in the middle, into the Joint)
 local OPTIONS = {
-	{ "Bronze spearhead", spear, "Spear", "blizzard" },
-	{ "Carved lancet, bronze", carved, "Lancet", "blizzard" },
-	{ "Gold chevron, engraved line", carved, "Chevron", "own" },
-	{ "Sapphire socket, bronze inlay", carved, "Socket", "own" },
+	{ "Bronze spearhead", spear, "Spear", 20, "blizzard", 0 },
+	{ "Wrought iron scrolls", ornate, "Iron", 32, "blizzard", 10 },
+	{ "Living vine, leaf arrow", ornate, "Vine", 32, "own" },
+	{ "Gold finial, ruby clasp", ornate, "Finial", 32, "own" },
 }
 
+-- four turns, so three dividers, as the chat shows them
 local SAMPLE = {
-	{ "you", "|cffffd100You|r 20:47\nCarved into the stone, please." },
-	{ "claude", "|cffffd100Claude|r 20:48\nA groove cut into the panel, its ends shaped as arrows, each divider running into it. Each pane is a small chat well with your stone and mine." },
+	{ "you", "|cffffd100You|r 20:47\nWrap the ends, please.", 50 },
+	{ "claude", "|cffffd100Claude|r 20:48\nThe ornament wraps the groove's ends as its arrows.", 76 },
+	{ "you", "|cffffd100You|r 20:49\nAnd the dividers?", 50 },
+	{ "claude", "|cffffd100Claude|r 20:50\nEach meets the groove through the same ornament.", 0 },
 }
+
+local function divider(text, band, option)
+	if option[5] == "blizzard" then
+		local line = text:CreateTexture(nil, "ARTWORK")
+		line:SetAtlas("QuestLog-frame-devider")
+		line:SetAlpha(0.8)
+		line:SetHeight(15)
+		line:SetPoint("LEFT", band, "TOPLEFT")
+		line:SetPoint("RIGHT", band, "TOPRIGHT", -option[6], 0)
+		return
+	end
+	local left = text:CreateTexture(nil, "ARTWORK")
+	left:SetTexture(art(option[3], "RuleLeft"))
+	left:SetSize(32, 16)
+	left:SetPoint("LEFT", band, "TOPLEFT")
+	local line = text:CreateTexture(nil, "ARTWORK")
+	line:SetTexture(art(option[3], "RuleMid"))
+	line:SetHeight(16)
+	line:SetPoint("LEFT", left, "RIGHT")
+	line:SetPoint("RIGHT", band, "TOPRIGHT", -32, 0) -- the Joint carries it on
+	local knot = text:CreateTexture(nil, "OVERLAY")
+	knot:SetTexture(art(option[3], "Knot"))
+	knot:SetSize(32, 16)
+	knot:SetPoint("CENTER", band, "TOP")
+end
 
 local function pane(page, i, option)
 	local box = CreateFrame("Frame", nil, page, "InsetFrameTemplate")
@@ -173,7 +205,7 @@ local function pane(page, i, option)
 	local column = CreateFrame("Frame", nil, box)
 	column:SetPoint("TOPRIGHT", -EDGE, -EDGE)
 	column:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
-	column:SetWidth(20)
+	column:SetWidth(option[4])
 	column:SetFrameLevel(box:GetFrameLevel() + 2)
 	local text = CreateFrame("Frame", nil, box)
 	text:SetPoint("TOPLEFT", EDGE, -EDGE)
@@ -184,41 +216,24 @@ local function pane(page, i, option)
 	stone(under, "claude")
 	under:SetPoint("TOPLEFT", EDGE, -EDGE)
 	under:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
-	local y, last, ends = 0, nil, {}
+	local y, ends = 0, {}
 	for n, turn in ipairs(SAMPLE) do
 		local band = text:CreateTexture(nil, "BACKGROUND")
 		stone(band, turn[1])
 		local fs = text:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		fs:SetJustifyH("LEFT")
 		fs:SetTextColor(0.86, 0.83, 0.76)
-		fs:SetPoint("TOPLEFT", 8, y - 6)
+		fs:SetPoint("TOPLEFT", 8, y - 8)
 		fs:SetPoint("RIGHT", -8, 0)
 		fs:SetText(turn[2])
 		band:SetPoint("TOPLEFT", 0, y)
 		band:SetPoint("RIGHT")
-		if n == #SAMPLE then band:SetPoint("BOTTOM") else band:SetHeight(64) end
-		if last and option[4] == "blizzard" then
-			local divider = text:CreateTexture(nil, "ARTWORK")
-			divider:SetAtlas("QuestLog-frame-devider")
-			divider:SetAlpha(0.8)
-			divider:SetHeight(15)
-			divider:SetPoint("LEFT", band, "TOPLEFT")
-			divider:SetPoint("RIGHT", band, "TOPRIGHT")
-			ends[#ends + 1] = band
-		elseif last then
-			local left = text:CreateTexture(nil, "ARTWORK")
-			left:SetTexture(art(option[3], "RuleLeft"))
-			left:SetSize(20, 10)
-			left:SetPoint("LEFT", band, "TOPLEFT")
-			local line = text:CreateTexture(nil, "ARTWORK")
-			line:SetTexture(art(option[3], "RuleMid"))
-			line:SetHeight(10)
-			line:SetPoint("LEFT", left, "RIGHT")
-			line:SetPoint("RIGHT", band, "TOPRIGHT", -20, 0) -- the Joint carries it on
+		if n == #SAMPLE then band:SetPoint("BOTTOM") else band:SetHeight(turn[3]) end
+		if n > 1 then
+			divider(text, band, option)
 			ends[#ends + 1] = band
 		end
-		last = band
-		y = y - 64
+		y = y - turn[3]
 	end
 	local ok, err = pcall(option[2], column, option[3], ends)
 	if not ok then
