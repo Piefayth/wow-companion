@@ -13,11 +13,11 @@ local function stone(tex, which)
 end
 
 -- All drawn by tools/make_scrollbar_art.py. The spearhead (round 1) is
--- arrows over the slim grey bar, a rod and joints; the others (round 2) are
--- one object each: end caps that are the arrows, rails and groove between.
+-- arrows over the slim grey bar, a rod and joints; the others (round 3) are
+-- grooves carved into the stone, their ends arrow-shaped recesses.
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-]]
 local function art(design, piece)
-	return ART .. design .. "-" .. piece .. "-" .. (design == "Spear" and 1 or 2)
+	return ART .. design .. "-" .. piece .. "-" .. (design == "Spear" and 1 or 3)
 end
 local ARROW = 16 -- an arrow's square, its art about 12 of it
 
@@ -95,59 +95,73 @@ local function spear(c, design, ends)
 	column3(thumb, "ARTWORK", "minimal-scrollbar-small-thumb", "minimal-scrollbar-small-thumb-middle")
 end
 
--- One object, 16 wide in the 20-wide column: the caps (16x16) are the
--- arrow buttons, the rails and groove (Mid) stretch between them, the thumb
--- (8 wide) rides in the groove. Each divider's end gets the design's Joint,
--- 16x16, its right 2.5 the left rail (column x 3 to 5.5).
-local function onePiece(c, design, ends)
+-- A groove carved into the stone, the column's full 20 wide: the caps (20x40)
+-- are the arrow buttons, their recess and arrow at the far end and the groove
+-- running on; each divider's end is a Joint (40x20, centred on the column's
+-- left edge and the line, the groove running through it, under the divider);
+-- the groove (Mid) is stretched between caps and joints, and Blizzard's
+-- minimal thumb rides in it.
+local function carved(c, design, ends)
 	local caps = {}
-	for _, spec in ipairs({ { "Up", "TOP" }, { "Down", "BOTTOM" } }) do
+	for _, spec in ipairs({ { "Up", "TOP", 0, 0, 0, 18 }, { "Down", "BOTTOM", 0, 0, 18, 0 } }) do
 		local b = CreateFrame("Button", nil, c)
-		b:SetSize(16, 16)
+		b:SetSize(20, 40)
 		b:SetPoint(spec[2])
-		local base = "Cap-" .. spec[1] .. "-"
+		b:SetHitRectInsets(spec[3], spec[4], spec[5], spec[6]) -- the arrow, not the groove after it
+		local base = spec[1] .. "-"
 		b:SetNormalTexture(art(design, base .. "Normal"))
 		b:SetPushedTexture(art(design, base .. "Pushed"))
 		b:SetHighlightTexture(art(design, base .. "Highlight"), "ADD")
 		b:SetDisabledTexture(art(design, base .. "Disabled"))
 		caps[spec[1]] = b
 	end
-	local mid = c:CreateTexture(nil, "BACKGROUND")
-	mid:SetTexture(art(design, "Mid"))
-	mid:SetPoint("TOP", caps.Up, "BOTTOM")
-	mid:SetPoint("BOTTOM", caps.Down, "TOP")
-	mid:SetWidth(16)
-	local room = (c:GetHeight() > 0 and c:GetHeight() or 300) - 32
-	local function thumb(piece, h, y)
-		local t = c:CreateTexture(nil, "ARTWORK")
-		t:SetTexture(art(design, "Thumb-" .. piece))
-		t:SetSize(8, h)
-		t:SetPoint("TOP", mid, "TOP", 0, y)
+	local above, under = caps.Up, "BOTTOMLEFT"
+	local function groove(below, top)
+		local mid = c:CreateTexture(nil, "BACKGROUND")
+		mid:SetTexture(art(design, "Mid"))
+		mid:SetPoint("TOPLEFT", above, under)
+		mid:SetPoint("BOTTOMRIGHT", below, top)
+	end
+	for _, at in ipairs(ends) do
+		local joint = at:GetParent():CreateTexture(nil, "BORDER")
+		joint:SetTexture(art(design, "Joint"))
+		joint:SetSize(40, 20)
+		joint:SetPoint("CENTER", at, "TOPRIGHT")
+		groove(joint, "TOPRIGHT")
+		above, under = joint, "BOTTOM"
+	end
+	groove(caps.Down, "TOPRIGHT")
+	local room = (c:GetHeight() > 0 and c:GetHeight() or 300) - 40
+	local thumb = CreateFrame("Frame", nil, c)
+	thumb:SetSize(8, room / 3)
+	thumb:SetPoint("TOP", c, "TOP", 0, -20 - room / 6)
+	local function piece(atlas, point)
+		local t = thumb:CreateTexture(nil, "ARTWORK")
+		t:SetAtlas(atlas)
+		t:SetSize(8, 8)
+		t:SetPoint(point)
 		return t
 	end
-	thumb("Top", 4, -room / 6)
-	thumb("Mid", room / 3 - 8, -room / 6 - 4)
-	thumb("Bottom", 4, -room / 6 - room / 3 + 4)
-	for _, at in ipairs(ends) do
-		local joint = c:CreateTexture(nil, "OVERLAY")
-		joint:SetTexture(art(design, "Joint"))
-		joint:SetSize(16, 16)
-		joint:SetPoint("CENTER", at, "TOPRIGHT", -2.5, 0)
-	end
+	local top = piece("minimal-scrollbar-small-thumb-top", "TOP")
+	local bottom = piece("minimal-scrollbar-small-thumb-bottom", "BOTTOM")
+	local mid = thumb:CreateTexture(nil, "ARTWORK")
+	mid:SetAtlas("minimal-scrollbar-small-thumb-middle")
+	mid:SetPoint("TOPLEFT", top, "BOTTOMLEFT")
+	mid:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT")
 end
 
 -- each: a name, its builder, its art, and its divider: Blizzard's quest log
 -- divider, or the design's own (RuleLeft, RuleMid stretched, into the Joint)
 local OPTIONS = {
 	{ "Bronze spearhead", spear, "Spear", "blizzard" },
-	{ "Gold sceptre, ruby", onePiece, "Sceptre", "own" },
-	{ "Blackiron arrowhead", onePiece, "Blackiron", "blizzard" },
-	{ "Iron onion, sapphire", onePiece, "Onion", "own" },
+	{ "Carved lancet, bronze", carved, "Lancet", "blizzard" },
+	{ "Gold chevron, engraved line", carved, "Chevron", "own" },
+	{ "Sapphire socket, bronze inlay", carved, "Socket", "own" },
 }
 
 local SAMPLE = {
-	{ "you", "|cffffd100You|r 20:47\nOne bar, one piece, please." },
-	{ "claude", "|cffffd100Claude|r 20:48\nThe slim grey bar with new ornate arrows, and an edge where each divider ends. Each pane is a small chat well with your stone and mine." },
+	{ "you", "|cffffd100You|r 20:47\nCarved into the stone, please." },
+	{ "claude", "|cffffd100Claude|r 20:48\nA groove cut into the panel, its ends shaped as arrows, each divider running into it. Each pane is a small chat well with your stone and mine." },
 }
 
 local function pane(page, i, option)
@@ -194,13 +208,13 @@ local function pane(page, i, option)
 		elseif last then
 			local left = text:CreateTexture(nil, "ARTWORK")
 			left:SetTexture(art(option[3], "RuleLeft"))
-			left:SetSize(16, 8)
+			left:SetSize(20, 10)
 			left:SetPoint("LEFT", band, "TOPLEFT")
 			local line = text:CreateTexture(nil, "ARTWORK")
 			line:SetTexture(art(option[3], "RuleMid"))
-			line:SetHeight(8)
+			line:SetHeight(10)
 			line:SetPoint("LEFT", left, "RIGHT")
-			line:SetPoint("RIGHT", band, "TOPRIGHT", -9, 0)
+			line:SetPoint("RIGHT", band, "TOPRIGHT", -20, 0) -- the Joint carries it on
 			ends[#ends + 1] = band
 		end
 		last = band
