@@ -216,17 +216,15 @@ local function buildTabs(frame, messages)
 	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", EDGE, -EDGE)
 	messages.scroll:SetPoint("BOTTOMRIGHT", column, "BOTTOMLEFT", 0, EDGE)
 	messages.scroll:SetFrameLevel(level + 2)
-	-- the column: the replies' stone under Blizzard's inner shadow
-	-- (ShadowOverlaySmallTemplate, UIPanelTemplates.xml:1045), so it reads
-	-- carved; the arrows at its ends and the thumb's track between them
+	-- the column: the replies' stone, no shadow over it (an inner shadow's
+	-- corners darkened the stone beside the arrows); the arrows at its ends
+	-- and the thumb's track between them
 	local channel = column:CreateTexture(nil, "BACKGROUND")
 	channel:SetTexture(WC.Transcript.STONE.claude, "REPEAT", "REPEAT")
 	channel:SetHorizTile(true)
 	channel:SetVertTile(true)
 	channel:SetPoint("TOPLEFT", EDGE, -EDGE)
 	channel:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
-	local madeShadow, shadow = pcall(CreateFrame, "Frame", nil, column, "ShadowOverlaySmallTemplate")
-	if madeShadow and shadow then shadow:SetAllPoints(channel) end
 	if frame.chatParts[1] and frame.chatParts[2] then
 		frame.chatParts[1]:ClearAllPoints()
 		frame.chatParts[1]:SetPoint("TOP", column, "TOP", 0, -(EDGE + 1))
