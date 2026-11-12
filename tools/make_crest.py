@@ -1,7 +1,8 @@
 """Crest trial: the junction in the fleur arrow's own language, at its scale.
 Temporary, beside make_junction_trials.py.
 
-    python tools/make_crest.py   writes Art/Try-Crest-<Big|Small>-1.tga (C units square)
+    python tools/make_crest.py   writes Art/Try-Crest-<Big|Small>-1.tga (C units square),
+                                 and Core's Vine-ThickTRight[FromMedium]Crest for the settings page
 """
 import os
 import sys
@@ -53,7 +54,10 @@ def main():
     for big in (True, False):
         c = ucanvas(C, C)
         crest(c, big)
-        write_tga(os.path.join(OUT, "Try-Crest-%s-1.tga" % ("Big" if big else "Small")), c.final())
+        img = c.final()
+        write_tga(os.path.join(OUT, "Try-Crest-%s-1.tga" % ("Big" if big else "Small")), img)
+        # on the settings page too, as Style.VineJoin names it
+        write_tga(os.path.join(M.CORE_OUT, "Vine-ThickTRight%sCrest-%d.tga" % ("" if big else "FromMedium", M.VINE_VERSION)), img)
 
 
 if __name__ == "__main__":

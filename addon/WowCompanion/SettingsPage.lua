@@ -151,7 +151,7 @@ across:SetHeight(16)
 across:SetPoint("LEFT", band, "TOPLEFT", -2 - SEAM / 2, SEAM / 2)
 across:SetPoint("RIGHT", band, "TOPRIGHT", 9, SEAM / 2)
 WC.Style.VineLine(across, "Thick", false, false, true)
-WC.Style.VineJoin(across, "Thick", "TRightScroll", "LEFT")
+WC.Style.VineJoin(across, "Thick", "TRightCrest", "LEFT")
 
 -- One setting: a row from the names well to the right edge, its name at the left
 -- and its control at the edge; the row is the one stop, shaded white at 0.1
@@ -283,7 +283,7 @@ local function header(name)
 	h.divider = CreateFrame("Frame", nil, content)
 	h.divider:SetHeight(16)
 	WC.Style.VineLine(h.divider, "", false, false, true)
-	WC.Style.VineJoin(h.divider, "Thick", "TRightFromMediumScroll", "LEFT")
+	WC.Style.VineJoin(h.divider, "Thick", "TRightFromMediumCrest", "LEFT")
 	headers[name] = h
 	return h
 end

@@ -279,11 +279,13 @@ function WowCompanion_Style.VineLine(owner, weight, vertical, capStart, capEnd)
 	end
 	return made
 end
--- A junction (64 square: room for its work to spread) centred on a point of `owner`
+-- A junction (64 square: room for its work to spread; the crest, on trial in
+-- the Junctions tab, 96) centred on a point of `owner`
 function WowCompanion_Style.VineJoin(owner, weight, kind, point, x, y)
 	local t = owner:CreateTexture(nil, "OVERLAY")
 	t:SetTexture(WowCompanion_Style.Vine((weight or "") .. kind))
-	t:SetSize(64, 64)
+	local size = kind:find("Crest$") and 96 or 64
+	t:SetSize(size, size)
 	t:SetPoint("CENTER", owner, point or "CENTER", x or 0, y or 0)
 	return t
 end
