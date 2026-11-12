@@ -284,7 +284,7 @@ def render():
 #   RuleLeft 32x16, RuleMid 64x16: the divider's left end and its line,
 #     stretched whole to the Joint
 
-VERSION6 = 8
+VERSION6 = 9
 PRESS = 1.25  # how far a pressed arrow sinks toward the groove, in units
 GT = 24.0  # the arrows' groove end (its round end's centre)
 FOOT = GT - 4.0 - PRESS  # an arrow's foot: under the border's arc, pressed or not
@@ -974,32 +974,40 @@ def shade(c, m, k):
     c.rgb = c.rgb * (1 - np.clip(m, 0, 1)[..., None] * k)
 
 
-# The three thumbs are drawn for their true size, about eight UI units across
-# at 2.8 px a unit: a clear outline, a lit side, a body and a shadow side, one
-# soft light, and at most three features each at least 1.5 units; no grain,
-# grooves or fine lines (they read as noise at that size).
+def smooth(t):
+    t = np.clip(t, 0, 1)
+    return 3 * t ** 2 - 2 * t ** 3
+
+
+# The three thumbs are painted as the Bud's own thumb is (raised(), its grain,
+# wear and dark edge), the body alone carrying the design end to end: nothing
+# across the middle, no band or ring, no line finer than a unit (it reads as
+# noise at true size).
 
 def strands_thumb(c):
-    """Three vine strands side by side, the middle one on top and longest,
-    bound by a broad grass band near each end."""
+    """Three vine strands laid close side by side, the middle one on top and
+    longest, so the bundle's end rounds off strand by strand; each strand a
+    round stem of its own, one warmer, one cooler."""
     pen = Pen(c, 48)
-    for k, pal in ((-1, dim(BARK, 0.85)), (1, dim(BARK, 0.72)), (0, BARK)):  # the middle strand on top
-        x, end = 16 + k * 1.7, 0.85 + 1.5 * abs(k)
-        raised(pen, [ribbon([(x, end), (x, 48 - end)], 0.85), (x, end, 0.85), (x, 48 - end, 0.85)], pal,
-               bevel=0.5, cast=0.45 if k == 0 else 0.25, grain=False)
-    for y in (5.4, 42.6):  # the bands, as wide as the strands (the groove's floor)
-        raised(pen, [ribbon([(14.75, y), (17.25, y)], 1.3), (14.75, y, 1.3), (17.25, y, 1.3)], dim(BUD, 0.95),
-               bevel=0.8, cast=0.5, grain=False)
+    warm = tuple(tuple(min(255, int(v * f)) for v, f in zip(col, (1.02, 0.97, 0.9))) for col in BARK)
+    cool = tuple(tuple(min(255, int(v * f)) for v, f in zip(col, (0.94, 0.98, 1.0))) for col in BARK)
+    for x, end, pal in ((14.4, 1.9, warm), (17.6, 1.9, cool), (16, 0.6, BARK)):  # the middle strand on top
+        hw = 1.0 if x == 16 else 1.05
+        raised(pen, [ribbon([(x, end + hw), (x, 48 - end - hw)], hw), (x, end + hw, hw), (x, 48 - end - hw, hw)], pal,
+               bevel=0.55, cast=0.15)
 
 
 def heart_thumb(c):
-    """A capsule of turned heartwood, warm and smooth, its ends left in the
-    darker bark."""
+    """A capsule of turned heartwood: the darker, redder heart broad down its
+    middle, the paler sapwood either side, the end grain darkening at both ends."""
     pen = Pen(c, 48)
-    raised(pen, [profile(THUMB_ENDS)], HEART, bevel=2.0, cast=0.4, gloss=0.3, grain=False)
-    k = U * c.s
-    for y0, y1 in ((-2, 5.2), (42.8, 50)):  # the bark ends
-        shade(c, ndimage.gaussian_filter(pen.mask([[(10, y0), (22, y0), (22, y1), (10, y1)]]), k * 0.25) * c.a, 0.5)
+    m = raised(pen, [profile(THUMB_ENDS)], HEART, bevel=1.6, cast=0.4)
+    s = U * c.s
+    heart = ndimage.gaussian_filter(pen.mask([[(14.6, -4), (17.4, -4), (17.4, 52), (14.6, 52)]]), s * 0.8) * m
+    c.over(np.broadcast_to(np.array(HEART_CORE, float), c.rgb.shape), heart * 0.55)
+    yy = (np.arange(c.H) / c.s - c.pad) / U
+    ends = smooth(1 - (np.minimum(yy, 48 - yy) - 0.6) / 3.6)[:, None]
+    shade(c, ends * m, 0.45)
 
 
 def furl_thumb(c):
@@ -1007,19 +1015,21 @@ def furl_thumb(c):
     an edge right of the middle, its pale underside showing beyond the edge;
     at the top the leaf's tip unrolls, the edge sweeping across the end."""
     pen = Pen(c, 48)
-    raised(pen, [profile(THUMB_ENDS)], LEAF_UNDER, bevel=0.8, cast=0.4, grain=False)
+    raised(pen, [profile(THUMB_ENDS)], LEAF_UNDER, bevel=1.0, cast=0.4)
     hw = half_width(THUMB_ENDS)
     ys = np.linspace(0.6, 47.4, 300)
     t = np.clip((ys - 1.2) / 6.3, 0, 1)  # done within the top piece (the shaft is stretched from y 8)
-    edge = 16 + hw(ys) * (-0.9 + 1.0 * (3 * t ** 2 - 2 * t ** 3))  # 0.1 along the shaft; across to the left at the tip
+    edge = 16 + hw(ys) * (-0.9 + 1.0 * smooth(t))  # 0.1 along the shaft; across to the left at the tip
     left = 16 - hw(ys)
     keep = edge > left + 0.05
     outer = [(x, y) for x, y in zip(left[keep], ys[keep])] + [(x, y) for x, y in zip(edge[keep][::-1], ys[keep][::-1])]
-    raised(pen, [outer], dim(BUD, 0.72), bevel=1.0, cast=0.7, grain=False)
+    raised(pen, [outer], LEAF, bevel=1.1, cast=0.7)
 
 
-HEART = ((32, 23, 14), (100, 80, 56), (152, 128, 96))  # heartwood, warm and muted
-LEAF_UNDER = ((66, 68, 50), (134, 136, 106), (178, 176, 142))  # a leaf's paler underside
+HEART = ((32, 21, 13), (96, 72, 50), (152, 122, 90))  # heartwood, warm and muted
+HEART_CORE = (72, 44, 30)  # its heart, redder and darker
+LEAF = ((20, 23, 15), (60, 66, 46), (126, 132, 98))  # the leaf's face, cooler than the vine
+LEAF_UNDER = ((52, 46, 32), (112, 102, 76), (156, 140, 104))  # its underside, paler and warmer
 
 
 LANCET_CH = 1.95  # the channel's half-width

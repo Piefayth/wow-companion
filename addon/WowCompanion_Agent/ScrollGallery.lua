@@ -19,7 +19,7 @@ end
 -- the borders closing round its ends under the arrows and the set's own
 -- dividers joining the left border (docs/proposals/scrollbar-concepts.md).
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-]]
-local ROUND6 = 8 -- the generator's VERSION6
+local ROUND6 = 9 -- the generator's VERSION6
 local function art(design, piece)
 	return ART .. design .. "-" .. piece .. "-" .. (design == "Spear" and 1 or ROUND6)
 end
