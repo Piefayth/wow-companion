@@ -10,14 +10,15 @@
 -- Shown in a window of its own (the minimap mark, Blizzard's AddOns settings)
 -- or inside another frame (the Companion window's Settings tab).
 --
---   WC.SettingsPage.Add(row)     row: { kind = "dropdown" | "slider" | "button",
+--   WC.SettingsPage.Add(row)     row: { kind = "dropdown" | "slider" | "button" | "key",
 --                                section (its name in the names well), label, text
 --                                (its note, or a function giving it), order (lower
 --                                first; a section goes where its first row does),
 --                                and by kind:
 --                                options()/get()/set(name);
 --                                min, max, steps, get()/set(value), format(value);
---                                button (its text, or a function giving it), onClick() }
+--                                button (its text, or a function giving it), onClick();
+--                                key: as button, drawn as Blizzard's key-binding button }
 --   WC.SettingsPage.Refresh()    the rows' values and notes drawn again, for rows
 --                                whose values change by themselves
 --   WC.SettingsPage.Open()       the page in its own window
@@ -222,7 +223,25 @@ local function button(row)
 	return r
 end
 
-local KINDS = { dropdown = dropdown, slider = slider, button = button }
+-- A key binding: Blizzard's key-binding button (KeyBindingFrameBindingButtonTemplate
+-- is UIMenuButtonStretchTemplate), as wide as the other controls, showing the key
+-- as the game does, by its icon.
+local function key(row)
+	local r = settingRow(row)
+	local b = CreateFrame("Button", nil, r, "UIMenuButtonStretchTemplate")
+	b:SetSize(CONTROL_W, 24)
+	b:SetPoint("RIGHT", r, "RIGHT", -(EDGE - 5), 0)
+	b:SetNormalFontObject("GameFontHighlight")
+	b:SetHighlightFontObject("GameFontHighlight")
+	b:SetText(textOf(row.button))
+	refreshers[#refreshers + 1] = function() b:SetText(textOf(row.button)) end
+	b:SetScript("OnClick", row.onClick)
+	r:SetScript("OnClick", row.onClick)
+	WC.MarkIgnored(b)
+	return r
+end
+
+local KINDS = { dropdown = dropdown, slider = slider, button = button, key = key }
 
 -- a section's name in the names well, right-aligned beside its first row, and the
 -- divider over the section (shown for every section but the first), from the

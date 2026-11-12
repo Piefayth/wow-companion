@@ -94,7 +94,7 @@ local function buttonText(key)
 		local now = settings()
 		if not now then return "Not reported" end
 		if pending[key] and now[key] ~= pending[key] then return "Applying..." end
-		return now[key] and WowCompanion_Glyph(now[key]) .. " " .. now[key] or "Not set"
+		return now[key] and WowCompanion_Glyph(now[key]) or "Not set"
 	end
 end
 local function note(key, what)
@@ -116,7 +116,7 @@ local BUTTON_ROWS = {
 for i, def in ipairs(BUTTON_ROWS) do
 	local key, label, what = def[1], def[2], def[3]
 	WC.SettingsPage.Add({
-		kind = "button", section = SECTION, order = 100 + i, label = label,
+		kind = "key", section = SECTION, order = 100 + i, label = label,
 		text = note(key, what),
 		button = buttonText(key),
 		onClick = function() if bindKey == key then cancelBind() else startBind(key) end end,
