@@ -164,8 +164,6 @@ renderPending = function()
 		if toastIdleShown() then toast(nil) end
 	end
 end
--- the model changed: the board and list follow at once
-if WC.Jobs then WC.Jobs.Changed = function() renderPending() end end
 
 -- Kept in SavedVariables, so it is written on /reload or logout like everything else.
 -- Conversations: the talk button alone is the main one
@@ -487,6 +485,9 @@ bus:On("LINK_FAILED", function(text) remember("error", text) end)
 -- every job's state, as each message that names one is handled, and the
 -- mailbox's at load: the model is the window's one truth of what runs
 bus:On("JOB_MESSAGE", function(inbox) if WC.Jobs then pcall(WC.Jobs.Apply, inbox) end end)
+-- the model changed: the board, the list and the working line follow at once
+-- (a message on the bus: Jobs.lua loads after this file)
+bus:On("JOBS_CHANGED", function() renderPending() end)
 bus:On("MAILBOX_JOBS", function(jobs) if WC.Jobs then pcall(WC.Jobs.Mail, jobs) end end)
 WC.Board.poster = function(slot, text, opts) return WowCompanion_Recent(slot, text, opts) end
 for kind, fn in pairs(handlers) do WC.Link.Handle(kind, fn) end

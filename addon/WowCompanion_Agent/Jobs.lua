@@ -52,7 +52,7 @@ local function getModel()
 		lines = WowCompanionAgentDB.lines,
 		changed = function()
 			if WC.Jobs.Refresh then WC.Jobs.Refresh() end
-			if WC.Jobs.Changed then WC.Jobs.Changed() end
+			WC.Send("JOBS_CHANGED")
 		end,
 	})
 	jobs = model.jobs
