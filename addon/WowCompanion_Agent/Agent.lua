@@ -118,7 +118,7 @@ renderPending = function()
 		return { slotLabel(slot), state, clip(detail, 90), r, g, b }
 	end
 	-- while the Companion key is held: talking, and where it will go (the
-	-- chord held now; it follows the triggers until the key is let go)
+	-- first trigger touched in the hold, as the PC picks it)
 	if talking.slot then
 		local dictation = talking.slot == WC.Conversations.DICTATION
 		lines[#lines + 1] = row(dictation and "chat" or talking.slot, "ff8080",
@@ -447,10 +447,16 @@ local bus = WC.Module("Agent")
 -- decides a tap: the PC sends nothing for one)
 bus:On("TALK_TAP", function() toggleWindow() end)
 -- a hold is talking: the board's talking row and, with the window open, the
--- conversation's tab (renderPending) follow the chord each frame, and go when
+-- conversation's tab (renderPending) follow the pick each frame, and go when
 -- the key is let go
+-- The PC's rule (crates/voice, the voice loop): the first trigger held at any
+-- moment of the hold picks the conversation and stays picked when let go; the
+-- second of L2+R2 makes it Quick, of L1+R1 dictation.
+local JOINS = { quick = { l2 = true, r2 = true }, [WC.Conversations.DICTATION] = { l1 = true, r1 = true } }
 talking:SetScript("OnUpdate", function(self)
-	local slot = WowCompanion_PadSlot()
+	local now = WowCompanion_PadSlot()
+	local slot = self.slot
+	if slot == nil or slot == "" or (JOINS[now] and JOINS[now][slot]) then slot = now end
 	if slot ~= self.slot then
 		self.slot = slot
 		renderPending()
