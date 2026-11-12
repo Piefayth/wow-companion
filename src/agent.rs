@@ -187,6 +187,8 @@ The player said: {transcript}"
         if let Ok(exe) = std::env::current_exe() {
             claude.env("WOW_COMPANION_EXE", exe);
         }
+        // its conversation, for the strip asks it makes (src/strip.rs ask)
+        claude.env(crate::strip::SLOT_ENV, &self.slot);
         // the message goes on stdin: with the character export in it, it is past
         // Windows' 32,767-character limit for a whole command line
         claude.arg("--print");

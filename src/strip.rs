@@ -221,7 +221,9 @@ fn asks_dir() -> io::Result<PathBuf> {
 /// `strip --send <lua> [seconds]` and `strip --chat`, from any process: the
 /// running companion puts the Lua through its own channel (a second process
 /// sending would race it) and reads the strip it draws. Returns the strip's
-/// text, or exactly why not.
+/// text, or exactly why not. An agent's ask names its conversation (the
+/// companion gives each agent `WOW_COMPANION_SLOT`), so what the game says about
+/// the run lands in that conversation, not the one in view.
 fn ask(lua: &str, seconds: f64) -> io::Result<Vec<u8>> {
     if !crate::lifecycle::running() {
         return Err(io::Error::other("the companion is not running: nothing can reach the game"));
@@ -229,7 +231,8 @@ fn ask(lua: &str, seconds: f64) -> io::Result<Vec<u8>> {
     let dir = asks_dir()?;
     let id = SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_nanos()).unwrap_or_default();
     let part = dir.join(format!("{id}.part"));
-    fs::write(&part, format!("{seconds}\n{lua}"))?;
+    let slot = std::env::var(SLOT_ENV).unwrap_or_default();
+    fs::write(&part, format!("{seconds}\n{slot}\n{lua}"))?;
     fs::rename(&part, dir.join(format!("{id}.ask")))?;
     // the send waits for any send ahead of it, then the watch itself: the
     // deadline covers both, and passing it is said
@@ -273,9 +276,12 @@ pub(crate) fn serve_asks(addons: &Path) {
                 continue;
             }
             let answer = fs::read_to_string(&taken).map_err(|err| err.to_string()).and_then(|text| {
-                let (seconds, lua) = text.split_once('\n').ok_or("an ask without its Lua")?;
+                let mut parts = text.splitn(3, '\n');
+                let (Some(seconds), Some(slot), Some(lua)) = (parts.next(), parts.next(), parts.next()) else {
+                    return Err("an ask without its seconds, conversation and Lua".to_string());
+                };
                 let seconds: f64 = seconds.trim().parse().map_err(|_| "an ask without its seconds")?;
-                serve_one(&addons, lua, seconds)
+                serve_one(&addons, slot.trim(), lua, seconds)
             });
             let _ = fs::remove_file(&taken);
             let abandoned = path.with_extension("abandoned");
@@ -294,13 +300,21 @@ pub(crate) fn serve_asks(addons: &Path) {
     });
 }
 
-fn serve_one(addons: &Path, lua: &str, seconds: f64) -> Result<Vec<u8>, String> {
+/// An agent's conversation, given to the agent's process by the companion.
+pub(crate) const SLOT_ENV: &str = "WOW_COMPANION_SLOT";
+
+/// `slot`: the asking agent's conversation, empty for a caller outside one.
+fn serve_one(addons: &Path, slot: &str, lua: &str, seconds: f64) -> Result<Vec<u8>, String> {
     if !channel::game_running() {
         return Err("the game is closed".into());
     }
     // a fresh id per read; the serving thread takes one ask at a time
     let id = SystemTime::now().duration_since(UNIX_EPOCH).map(|at| at.as_nanos()).unwrap_or_default().to_string();
-    channel::send(addons, &crate::message::Msg::new("lua").text("code", &tagged(lua, &id)))
+    let mut msg = crate::message::Msg::new("lua");
+    if !slot.is_empty() {
+        msg = msg.text("slot", slot);
+    }
+    channel::send(addons, &msg.text("code", &tagged(lua, &id)))
         .map_err(|err| format!("the Lua could not be sent: {err}"))?;
     watch(&id, seconds).map_err(|why| {
         format!("no strip in {seconds:.0} s ({why}); the game runs Lua from the companion out of combat only, and the code must call WowCompanion_Strip.Send")

@@ -174,6 +174,8 @@ end
 
 local function sandbox(output)
 	local env = {}
+	-- the conversation the code came from: a print after the run lands there
+	local whose = WC.Link.Current()
 	-- C functions that take or return a vector or a color look its mixin up in
 	-- the calling code's environment directly, so the proxy below is not
 	-- enough: "unable to find mixin or metatable (Vector2DMixin)". Put the
@@ -195,9 +197,9 @@ local function sandbox(output)
 					end
 					local text = table.concat(parts, " ")
 					-- after the run, from a slash command or an event the code set up:
-					-- nobody is collecting any more, so straight to the window
+					-- nobody is collecting any more, so straight to its conversation
 					if output.done then
-						remember("probe", text)
+						remember("probe", text, nil, whose)
 					else
 						output[#output + 1] = text
 					end
