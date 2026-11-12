@@ -45,11 +45,14 @@ end
 function handlers.batch(inbox)
 	local slot = WC.Link.Current()
 	local steps = inbox.steps or {}
-	local function from(first)
+	-- queued: this run is the queue's own job, which Busy() counts, so its
+	-- first step must not wait on itself (it did, and every step after a
+	-- lua step was dropped: the Reload behind one never appeared)
+	local function from(first, queued)
 		for at = first, #steps do
-			if WC.Sandbox.Busy() then
+			if not (queued and at == first) and WC.Sandbox.Busy() then
 				WC.Sandbox.Queue(function(done)
-					WC.Link.As(slot, from, at)
+					WC.Link.As(slot, from, at, true)
 					done()
 				end)
 				return
