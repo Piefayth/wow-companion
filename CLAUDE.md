@@ -126,7 +126,7 @@ extras a player may use, never required (the player, 2026-11-11).
     `WC.Offer`), `Steps.lua` (an answer's steps: batch, macro, bar). `Sandbox.lua` agent code (`lua`, `module` steps, the taint scan,
     blocked-action notices). `Window.lua` (the window and its tabs: Chat, Settings showing Core's page, Status;
     other addons add theirs with `WC.Companion.AddTab`), `Transcript.lua` (lines
-    only append), `JobsModel.lua` (pure, property-tested: `python
+    only append), `ChatBar.lua` (the chat's scroll bar and dividers), `JobsModel.lua` (pure, property-tested: `python
     tools/test_jobs.py`, needs `lupa`) and `Jobs.lua` (draws it), `Chords.lua`
     (name lookups, chord learning), `Export.lua` (the context
     export, bag contents too), `FocusLog.lua`, `ItemView.lua`, `LinkCatcher.lua`

@@ -12,7 +12,7 @@ Steps.lua
 Sandbox.lua
 Window.lua
 Transcript.lua
-ScrollGallery.lua
+ChatBar.lua
 JobsModel.lua
 Jobs.lua
 Chords.lua

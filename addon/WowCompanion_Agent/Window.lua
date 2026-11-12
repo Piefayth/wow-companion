@@ -234,60 +234,18 @@ local function buildTabs(frame, messages)
 	chatWell:SetPoint("BOTTOMRIGHT", well, "BOTTOMLEFT", -GAP, 0)
 	table.insert(frame.chatParts, chatWell)
 	-- The chat well's geometry, in one place (docs/ui-layout.md): inside the
-	-- inset's border (EDGE) there are two rects and nothing else, the
-	-- transcript on the left and the scroll column (BAR wide) on the right.
-	-- Everything in the well anchors to one of the two, never to a number of
-	-- its own, so backings, shadows and the bar cannot drift apart.
-	-- BAR is the classic trough's own width (its end cap atlas, 31)
-	local EDGE, BAR = 3, 31
+	-- inset's border (EDGE) the transcript fills the well, and the scroll bar
+	-- (ChatBar.lua) stands over its right end, so each turn's stone runs on
+	-- behind the bar to the edge.
+	local EDGE = 3
 	local level = chatWell:GetFrameLevel()
-	-- The column is Blizzard's classic scroll trough, as WowClassicScrollBar
-	-- draws it (TrimScrollBar.xml; the classic auction house's bar): metal
-	-- rails with an end cap at each end. Its centre atlas is not in this
-	-- client, so the centre is the top cap's rails-only rows (9..14 of its
-	-- 64-row file), stretched along the rails, which run straight down.
-	-- Between the rails, the player's darker stone: a gutter apart from the
-	-- replies' stone beside it.
-	local column = _G["WCChatScrollColumn"] or CreateFrame("Frame", "WCChatScrollColumn", chatWell)
-	column:SetPoint("TOPRIGHT", -EDGE, -EDGE)
-	column:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
-	column:SetWidth(BAR)
-	column:SetFrameLevel(level + 1)
-	table.insert(frame.chatParts, column)
-	local gutter = column:CreateTexture(nil, "BACKGROUND")
-	gutter:SetTexture(WC.Style.STONE.you, "REPEAT", "REPEAT")
-	gutter:SetHorizTile(true)
-	gutter:SetVertTile(true)
-	gutter:SetPoint("TOPLEFT", 5, 0)
-	gutter:SetPoint("BOTTOMRIGHT", -5, 0)
-	local capTop = column:CreateTexture(nil, "BORDER")
-	capTop:SetAtlas("UI-ClassicScrollBar-EndCap-Top", true)
-	capTop:SetPoint("TOPLEFT")
-	local capBottom = column:CreateTexture(nil, "BORDER")
-	capBottom:SetAtlas("UI-ClassicScrollBar-EndCap-Bottom", true)
-	capBottom:SetPoint("BOTTOMLEFT")
-	local cap = C_Texture.GetAtlasInfo("UI-ClassicScrollBar-EndCap-Top")
-	if cap then
-		local rails = column:CreateTexture(nil, "BORDER")
-		rails:SetTexture(cap.file)
-		rails:SetTexCoord(cap.leftTexCoord, cap.rightTexCoord, 9 / 64, 14 / 64)
-		rails:SetPoint("TOPLEFT", capTop, "BOTTOMLEFT")
-		rails:SetPoint("BOTTOMRIGHT", capBottom, "TOPRIGHT")
-	end
 	messages.scroll:ClearAllPoints()
 	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", EDGE, -EDGE)
-	messages.scroll:SetPoint("BOTTOMRIGHT", column, "BOTTOMLEFT", 2, 0)
-	messages.scroll:SetFrameLevel(level + 2)
-	if frame.chatParts[1] and frame.chatParts[2] then
-		frame.chatParts[1]:ClearAllPoints()
-		-- inside the caps, where WowClassicScrollBar puts its steppers
-		frame.chatParts[1]:SetPoint("TOP", column, "TOP", 0, -4)
-		frame.chatParts[1]:SetFrameLevel(level + 3)
-		frame.chatParts[2]:ClearAllPoints()
-		frame.chatParts[2]:SetPoint("BOTTOM", column, "BOTTOM", 0, 4)
-		frame.chatParts[2]:SetFrameLevel(level + 3)
-	end
-	if frame.scrollTrack then frame.scrollTrack:SetFrameLevel(level + 3) end
+	messages.scroll:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT", -EDGE, EDGE)
+	messages.scroll:SetFrameLevel(level + 1)
+	messages.content:SetFrameLevel(level + 2)
+	local column, up, down = WC.ChatBar.Build(chatWell, messages.scroll, EDGE, level)
+	for _, part in ipairs({ column, up, down }) do table.insert(frame.chatParts, part) end
 	frame.convButtons = {}
 	for i, key in ipairs(WC.Conversations.list) do
 		local b = CreateFrame("Button", nil, well)
@@ -342,17 +300,26 @@ local function buildTabs(frame, messages)
 	-- each message's own panel (Jobs.lua) docks at the bottom of the chat well
 	frame.chatWell = chatWell
 	-- A shadow cast down from the chat well's top edge, under the tabs, so the
-	-- well reads as sunk into the panel: Blizzard's
-	-- own ShadowOverlay-Top (SharedUIPanelTemplates.xml:195), above the
-	-- scrolling text so lines slide under it.
+	-- well reads as sunk into the panel: Blizzard's own ShadowOverlay-Top
+	-- (SharedUIPanelTemplates.xml:195), above the scrolling text and its
+	-- dividers so they slide under it. It covers the turns only, fading out
+	-- sideways as it nears the bar, so the bar stands above the chat, unshaded,
+	-- with no edge where the shadow stops.
+	local FADE = 48
 	local lip = CreateFrame("Frame", nil, chatWell)
 	lip:SetPoint("TOPLEFT", messages.scroll, "TOPLEFT")
-	lip:SetPoint("TOPRIGHT", messages.scroll, "TOPRIGHT")
+	lip:SetPoint("TOPRIGHT", column, "TOPLEFT", -6, 0)
 	lip:SetHeight(24)
-	lip:SetFrameLevel(chatWell:GetFrameLevel() + 3)
+	lip:SetFrameLevel(level + 5)
 	local shade = lip:CreateTexture(nil, "OVERLAY")
 	shade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
-	shade:SetAllPoints()
+	shade:SetPoint("TOPLEFT")
+	shade:SetPoint("BOTTOMRIGHT", -FADE, 0)
+	local fade = lip:CreateTexture(nil, "OVERLAY")
+	fade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
+	fade:SetPoint("TOPLEFT", shade, "TOPRIGHT")
+	fade:SetPoint("BOTTOMRIGHT")
+	fade:SetGradient("HORIZONTAL", CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 0))
 	table.insert(frame.chatParts, lip)
 
 	-- the page well, over both wells' area, for the other tabs
@@ -548,96 +515,6 @@ local function buildLog()
 	local messages = newTranscript(frame)
 	messages.scroll:SetPoint("TOPLEFT", 20, -42)
 	messages.scroll:SetPoint("BOTTOMRIGHT", -40, 34)
-	-- Scrolling on a controller without taking the right stick (the camera):
-	-- Blizzard's own scroll arrows on the right edge, which the cursor reaches
-	-- like any button and A presses. Each press moves most of a page.
-	local function scrollBy(pages)
-		local sc = messages.scroll
-		local step = math.max(40, (sc:GetHeight() or 200) * 0.75)
-		local range = sc:GetVerticalScrollRange()
-		sc:SetVerticalScroll(math.max(0, math.min(range, sc:GetVerticalScroll() + pages * step)))
-	end
-	local arrows = {}
-	for _, spec in ipairs({ { "UIPanelScrollUpButtonTemplate", -1, "TOPRIGHT", -16, -44 },
-		{ "UIPanelScrollDownButtonTemplate", 1, "BOTTOMRIGHT", -16, 36 } }) do
-		local made, arrow = pcall(CreateFrame, "Button", nil, frame, spec[1])
-		if made and arrow then
-			frame.chatParts = frame.chatParts or {}
-			table.insert(frame.chatParts, arrow)
-			arrow:SetPoint(spec[3], frame, spec[3], spec[4], spec[5])
-			arrow:SetScript("OnClick", function() scrollBy(spec[2]) end)
-			arrows[#arrows + 1] = arrow
-		end
-	end
-	-- The scroll bar between the arrows: a thumb sized to
-	-- the share of the transcript in view and placed at the scroll position, in
-	-- Blizzard's own scroll bar art. Shown only, never dragged: the arrows scroll.
-	if #arrows == 2 then
-		local track = CreateFrame("Frame", nil, frame)
-		frame.scrollTrack = track
-		track:SetPoint("TOP", arrows[1], "BOTTOM", 0, -2)
-		track:SetPoint("BOTTOM", arrows[2], "TOP", 0, 2)
-		track:SetWidth(arrows[1]:GetWidth() > 0 and arrows[1]:GetWidth() or 16)
-		-- Nothing is stretched. The thumb is drawn as
-		-- Blizzard's WowTrimScrollBar thumb is (TrimScrollBar.xml and .lua): the
-		-- round end caps at their own size, and the centre *tiled*: its texture
-		-- coordinate runs past 1 by the height over the art's own height, so the
-		-- art repeats instead of growing. Without those atlases a knob is
-		-- shown at one fixed size, which only moves.
-		local thumb = CreateFrame("Frame", nil, track)
-		thumb:SetWidth(math.min(18, track:GetWidth()))
-		local function piece(atlas, layer)
-			local info = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas)
-			if not info then return nil end
-			local t = thumb:CreateTexture(nil, layer or "ARTWORK")
-			t:SetAtlas(atlas, true)
-			t.info = info
-			return t
-		end
-		local top = piece("UI-ScrollBar-Knob-EndCap-Top", "OVERLAY")
-		local bottom = top and piece("UI-ScrollBar-Knob-EndCap-Bottom", "OVERLAY")
-		local middle = bottom and piece("UI-ScrollBar-Knob-Center")
-		if middle and middle.info.height and middle.info.height > 0 then
-			-- Blizzard's anchors: caps at the ends, the centre inset 5 under them
-			top:SetPoint("TOPLEFT")
-			bottom:SetPoint("BOTTOMLEFT")
-			middle:SetPoint("TOPLEFT", 0, -5)
-			middle:SetPoint("TOPRIGHT", 0, -5)
-			thumb:SetWidth(math.max(top:GetWidth(), middle:GetWidth()))
-			thumb.minSize = 23 -- Blizzard's minThumbExtent
-			thumb.tile = function(height)
-				local h = math.max(1, height - 10)
-				middle:SetHeight(h)
-				middle:SetTexCoord(0, 1, 0, h / middle.info.height)
-			end
-		else
-			local knob = thumb:CreateTexture(nil, "ARTWORK")
-			knob:SetAllPoints()
-			knob:SetTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-			knob:SetTexCoord(0.20, 0.80, 0.125, 0.875)
-			thumb.fixed = 24
-		end
-		table.insert(frame.chatParts, track)
-		local function paintThumb()
-			local sc = messages.scroll
-			local range = sc:GetVerticalScrollRange() or 0
-			local view = sc:GetHeight() or 0
-			local room = track:GetHeight() or 0
-			if range <= 1 or view <= 0 or room <= 0 then thumb:Hide() return end
-			local size = thumb.fixed or math.max(thumb.minSize or 23, room * view / (view + range))
-			local offset = (room - size) * math.min(1, (sc:GetVerticalScroll() or 0) / range)
-			thumb:ClearAllPoints()
-			thumb:SetPoint("TOP", track, "TOP", 0, -offset)
-			thumb:SetHeight(size)
-			if thumb.tile then thumb.tile(size) end
-			thumb:Show()
-		end
-		messages.scroll:HookScript("OnVerticalScroll", paintThumb)
-		messages.scroll:HookScript("OnScrollRangeChanged", paintThumb)
-		messages.scroll:HookScript("OnSizeChanged", paintThumb)
-		track:SetScript("OnShow", paintThumb)
-		frame.paintThumb = paintThumb
-	end
 	frame.messages = messages
 
 	-- 1.60.1 added a SmartNavigation API for exactly this: an addon can mark its own

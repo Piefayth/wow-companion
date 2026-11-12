@@ -20,7 +20,7 @@ local NOTE_FONT = "GameFontHighlightSmall"
 
 -- Every turn on our own stone (WC.Style.STONE): the replies on the lighter
 -- one, the player's on the darker. Owners differ by value, never by hue.
--- Turns parted by the quest log's divider.
+-- Turns parted by the scroll bar's own divider (ChatBar.lua), which joins its border.
 local STONE = WC.Style.STONE
 -- owner: whose turn, which picks the stone
 local function ownBand(band, owner)
@@ -31,11 +31,7 @@ end
 local function turnBand(content, owner)
 	local band = content:CreateTexture(nil, "BACKGROUND", nil, -1)
 	ownBand(band, owner)
-	local divider = content:CreateTexture(nil, "ARTWORK")
-	divider:SetAtlas("QuestLog-frame-devider")
-	divider:SetAlpha(0.8)
-	divider:SetHeight(15)
-	return band, divider
+	return band, WC.ChatBar.Divider(content)
 end
 
 local function inline(text)
@@ -84,8 +80,11 @@ local function newTranscript(parent)
 	return t
 end
 
+-- the text's width: the turns run the scroll frame's full width, the bar
+-- standing over their right end, and the text keeps clear of it
 function Transcript:Width()
 	local width = self.scroll:GetWidth()
+	width = width and width - WC.ChatBar.ROOM
 	return width and width > 60 and width or nil
 end
 
@@ -98,7 +97,7 @@ function Transcript:Place(row, y, width)
 		local top = turnTop + math.floor((y - turnTop) / 2)
 		row.turn:ClearAllPoints()
 		row.turn:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -top)
-		-- the backings and dividers stop where the scroll bar's gutter begins
+		-- the backings and dividers run on under the scroll bar to the well's edge
 		row.turn:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", 0, -top)
 		row.turn:SetHeight(1)
 		-- centred on the boundary with the turn above; none above the first
@@ -120,7 +119,7 @@ function Transcript:Place(row, y, width)
 	if row.band then
 		row.band:ClearAllPoints()
 		row.band:SetPoint("TOPLEFT", self.content, "TOPLEFT", PAD_L + row.indent - 6, -y + 3)
-		row.band:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", -PAD_R + 6, -y + 3)
+		row.band:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", -(PAD_R + WC.ChatBar.ROOM) + 6, -y + 3)
 		row.band:SetHeight(height + 6)
 		height = height + 3
 	end
@@ -143,7 +142,7 @@ function Transcript:Layout()
 	local offset = scroll:GetVerticalScroll()
 	local following = range <= 0 or offset >= range - 4
 	local fraction = range > 0 and offset / range or 1
-	self.content:SetWidth(width)
+	self.content:SetWidth(scroll:GetWidth())
 	self.turnBand = nil
 	local y = PAD_TOP
 	for _, row in ipairs(self.rows) do
