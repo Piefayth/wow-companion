@@ -18,7 +18,7 @@ import os
 import struct
 import numpy as np
 
-VERSION = 5
+VERSION = 6
 SIZE = 64
 OVER = 4
 OUT = os.path.join(os.path.dirname(__file__), "..", "addon", "WowCompanion", "Art")
@@ -37,20 +37,20 @@ def one_bumper(x, y, inset, cx, cy, angle, drop):
     a = np.radians(angle)
     u = np.cos(a) * (x - cx) + np.sin(a) * (y - cy - drop)
     v = -np.sin(a) * (x - cx) + np.cos(a) * (y - cy - drop)
-    hw, hh = 12.5 - inset, 8.5 - inset
-    body = rounded_box(u, v, 0, 0, hw, hh, max(7.5 - inset, 1)) <= 0
+    hw, hh = 14.5 - inset, 10.5 - inset
+    body = rounded_box(u, v, 0, 0, hw, hh, max(9 - inset, 1)) <= 0
     # the top bulges: an arch over the pill
     arch = v >= -hh - 2.5 * (1 - (u / max(hw, 1)) ** 2)
-    top = rounded_box(u, v + 1.5, 0, 0, hw, hh + 1.5, max(7.5 - inset, 1)) <= 0
+    top = rounded_box(u, v + 1.5, 0, 0, hw, hh + 1.5, max(9 - inset, 1)) <= 0
     return (body | top) & arch
 
 
 def bumper(x, y, inset, drop=0.0):
     """Both shoulders, as on the top edge of a controller: two bumpers side by
-    side, their outer ends dipping, within the same square as the game's icons
-    so the chord takes no more room than one button."""
-    left = one_bumper(x, y, inset, 18, 33, -14, drop)
-    right = one_bumper(x, y, inset, 46, 33, 14, drop)
+    side, their outer ends dipping, filling the canvas's width: inline it is
+    cut to the rows Style.lua's CHORD names, as wide as the trimmed R3."""
+    left = one_bumper(x, y, inset, 16, 32, -12, drop)
+    right = one_bumper(x, y, inset, 48, 32, 12, drop)
     return left | right
 
 

@@ -227,6 +227,10 @@ WowCompanion_Style.STONE = {
 	you = ART .. "Slate-" .. STONE_VERSION,
 	claude = ART .. "SlateLight-" .. STONE_VERSION,
 }
--- "hold a conversation's chord": a shoulder button with no letter, inline in
--- text (tools/make_chord_glyph.py draws it; the version is in its name)
-WowCompanion_Style.CHORD = "|T" .. ART .. "Chord-5:" .. GLYPH_SIZE .. ":" .. GLYPH_SIZE .. "|t"
+-- "hold a conversation's chord": both shoulder buttons with no letters, inline
+-- in text (tools/make_chord_glyph.py draws it on a 64 x 64 canvas, the version
+-- in its name), cut to the rows the bumpers fill so it stands as tall as the
+-- other prompt icons and about as wide as the trimmed R3
+local CHORD_ROWS = { 14, 52 }
+WowCompanion_Style.CHORD = ("|T%sChord-6:%d:%d:0:0:64:64:0:64:%d:%d|t"):format(ART, GLYPH_SIZE,
+	math.floor(GLYPH_SIZE * 64 / (CHORD_ROWS[2] - CHORD_ROWS[1]) + 0.5), CHORD_ROWS[1], CHORD_ROWS[2])
