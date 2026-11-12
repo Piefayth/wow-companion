@@ -284,7 +284,7 @@ def render():
 #   RuleLeft 32x16, RuleMid 64x16: the divider's left end and its line,
 #     stretched whole to the Joint
 
-VERSION6 = 2
+VERSION6 = 3
 PRESS = 1.25  # how far a pressed arrow sinks toward the groove, in units
 GT = 24.0  # the arrows' groove end (its round end's centre)
 FOOT = GT - 4.0 - PRESS  # an arrow's foot: under the border's arc, pressed or not
@@ -540,7 +540,8 @@ def lance_cap(c, down, mode):
     raised(pen, [profile([(2.2, 0), (4.0, 0.28), (9.0, 0.4), (13.4, 0.3)])], BRZ, bevel=0.3, cast=0, gloss=0.8)  # the midrib
     raised(pen, [[(16 - 1.8, 14.5), (16 + 1.8, 14.5), (16 + 1.8, 15.9), (16 - 1.8, 15.9)]], BRZ, bevel=0.45, cast=0.4)  # the collar
     sink(c, pen, under)
-    border(still, [ribbon(border_path(still), BORDER_HW)], BRZ)
+    if mode != "Bare":  # the highlight glows round the arrow alone, not the groove's border
+        border(still, [ribbon(border_path(still), BORDER_HW)], BRZ)
     if mode == "Pushed":
         glint(c, pen, 16, 3.0)
 
@@ -612,7 +613,8 @@ def fleur_cap(c, down, mode):
     raised(pen, [[(16 - 1.55, 12.6), (16 + 1.55, 12.6), (16 + 1.55, 16.6), (16 - 1.55, 16.6)]], IRN, bevel=0.7, cast=0.4)
     twist_marks(c, pen, 12.6, 16.6, 1.55)
     sink(c, pen, under)
-    border(still, [ribbon(border_path(still), BORDER_HW)], IRN)
+    if mode != "Bare":  # the highlight glows round the arrow alone, not the groove's border
+        border(still, [ribbon(border_path(still), BORDER_HW)], IRN)
     glint(c, pen, 16, 2.6, 1.8, 0.8 if mode == "Pushed" else 0.55)  # the point's one warm light
 
 
@@ -660,7 +662,8 @@ def bud_cap(c, down, mode):
     seam = pen.mask([ribbon(bez((16, 2.6), (16.25, 5.0), (16.35, 7.8), (16.1, 11.0), n=20), np.linspace(0.12, 0.22, 20))])
     c.over(np.broadcast_to(np.array(BUD[0], float), c.rgb.shape), seam * 0.6)
     sink(c, pen, under)
-    border(still, [ribbon(border_path(still), BORDER_HW)], BARK)
+    if mode != "Bare":  # the highlight glows round the arrow alone, not the groove's border
+        border(still, [ribbon(border_path(still), BORDER_HW)], BARK)
     if mode == "Pushed":
         glint(c, pen, 16, 3.0, 1.6, 0.5)
 
@@ -703,7 +706,8 @@ def lancet_cap(c, down, mode):
     arch = [bez((RAIL[0], GT + 2), (RAIL[0], 15.0), (15.0, 9.0), (16, 2.6)),
             bez((RAIL[1], GT + 2), (RAIL[1], 15.0), (17.0, 9.0), (16, 2.6))]
     lines = [ribbon(np.vstack([[(x, 44)], a]), INLAY_HW) for x, a in zip(RAIL, arch)]
-    lines += [ribbon(border_path(pen)[2:-2], INLAY_HW * 0.8)]  # the groove's end ringed
+    if mode != "Bare":  # the ring is the groove's, not the arrow's: no highlight round it
+        lines += [ribbon(border_path(pen)[2:-2], INLAY_HW * 0.8)]  # the groove's end ringed
     lines += [[(16, 0.2), (17.5, 2.9), (16, 5.6), (14.5, 2.9)]]  # the finial
     lines += [[(16, 9.6), (17.15, 12.8), (16, 16.0), (14.85, 12.8)]]  # a lozenge in the arch
     lines += pair(lambda s: stroke(scroll(bez((X(s, 21.5), 18.4), (X(s, 23.2), 17.4), (X(s, 24.4), 18.4), (X(s, 24.0), 20.4), n=24),
