@@ -357,50 +357,52 @@ local function buildTabs(frame, messages)
 	pageShade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
 	pageShade:SetAllPoints()
 
-	-- The tabs (tools/make_frame_art.py): blocks of cut stone, hard
-	-- chiselled facets round a tiled stone face (Tab-Face), standing on the
-	-- chat well's outer edge, the well's wall running on unbroken beneath
-	-- them; the chosen one taller, its face lighter. The art carries no margin; the row's spacing is here: every
-	-- tab at least TAB_MIN wide (PanelTemplates_TabResize reads
-	-- frame.minTabWidth), TAB_GAP between them, the first over the well's inner
-	-- edge (EDGE).
+	-- The tabs, in the chat's own language (the player's look, 2026-11-12):
+	-- no boxes of their own. The chosen tab is a plate of the replies' marbled
+	-- slate standing on the chat well, crowned by the dividers' bronze vine
+	-- (ChatBar.lua's art: its curl at each end, its middle stretched); its
+	-- label is light. The others are only their labels, in washed bronze, on
+	-- the panel. The row's spacing is here: every tab at least TAB_MIN wide
+	-- (PanelTemplates_TabResize reads frame.minTabWidth), TAB_GAP between
+	-- them, the first over the well's inner edge (EDGE).
 	local names = {}
-	local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s-5]]
-	local TAB_MIN, TAB_GAP, CAP = 69, 3, 6
-	local TAB_H, TAB_ACTIVE_H = 20.2, 25.6
+	local VINE = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-%s-18]] -- ChatBar.lua's VERSION
+	local TAB_MIN, TAB_GAP, TAB_H = 69, 3, 25.6
+	local LIGHT, BRONZE = { 0.94, 0.9, 0.82 }, { 0.78, 0.64, 0.42 }
 	frame.minTabWidth = TAB_MIN
 	local function makeTab(name)
 		local i = #names + 1
 		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTopTabButtonTemplate")
 		if not made or not tab then return end
-		-- the highlight is the unselected art added, as Blizzard's is, on the
-		-- template's anchors to the unselected pieces
+		-- the template's art goes; ours is the plate and its vine
 		for _, part in ipairs({ "Left", "Middle", "Right" }) do
 			for _, state in ipairs({ "", "Active", "Highlight" }) do
 				local t = tab[part .. state]
-				if t then
-					local active = state == "Active"
-					t:SetTexture(TAB_ART:format(part .. (active and "-Active" or "")))
-					t:SetTexCoord(0, 1, 0, 1)
-					t:SetHorizTile(false)
-					t:SetHeight(active and TAB_ACTIVE_H or TAB_H)
-					if part ~= "Middle" then t:SetWidth(CAP) end
-				end
+				if t then t:SetTexture(nil) end
 			end
 		end
-		-- the face, under the facets (the template's pieces are BACKGROUND 0)
-		tab.face = tab:CreateTexture(nil, "BACKGROUND", nil, -8)
-		tab.face:SetTexture(TAB_ART:format("Face"), "REPEAT", "REPEAT")
-		tab.face:SetHorizTile(true)
-		tab.face:SetVertTile(true)
-		tab.Left:ClearAllPoints()
-		tab.Left:SetPoint("BOTTOMLEFT")
-		tab.Right:ClearAllPoints()
-		tab.Right:SetPoint("BOTTOMRIGHT")
-		tab.LeftActive:ClearAllPoints()
-		tab.LeftActive:SetPoint("BOTTOMLEFT")
-		tab.RightActive:ClearAllPoints()
-		tab.RightActive:SetPoint("BOTTOMRIGHT")
+		local plate = tab:CreateTexture(nil, "BACKGROUND", nil, -8)
+		plate:SetTexture(WC.Style.STONE.claude, "REPEAT", "REPEAT")
+		plate:SetHorizTile(true)
+		plate:SetVertTile(true)
+		plate:SetPoint("BOTTOMLEFT")
+		plate:SetPoint("BOTTOMRIGHT")
+		plate:SetHeight(TAB_H)
+		local left = tab:CreateTexture(nil, "ARTWORK")
+		left:SetTexture(VINE:format("RuleLeft"))
+		left:SetSize(32, 16)
+		left:SetPoint("LEFT", plate, "TOPLEFT", -4, 0)
+		local right = tab:CreateTexture(nil, "ARTWORK")
+		right:SetTexture(VINE:format("RuleLeft"))
+		right:SetTexCoord(1, 0, 0, 1)
+		right:SetSize(32, 16)
+		right:SetPoint("RIGHT", plate, "TOPRIGHT", 4, 0)
+		local mid = tab:CreateTexture(nil, "ARTWORK")
+		mid:SetTexture(VINE:format("RuleMid"))
+		mid:SetHeight(16)
+		mid:SetPoint("LEFT", left, "RIGHT")
+		mid:SetPoint("RIGHT", right, "LEFT")
+		tab.chosenParts = { plate, left, right, mid }
 		names[i] = name
 		tab:SetID(i)
 		tab:SetText(name)
@@ -433,15 +435,10 @@ local function buildTabs(frame, messages)
 		id = ((id - 1) % #names) + 1
 		frame.currentTab = id
 		PanelTemplates_SetTab(frame, id)
-		-- each tab's face inside its outline, full on the chosen tab, dimmed
-		-- on the rest (FACE_DIM in the art tool)
 		for i, tab in ipairs(frame.Tabs) do
 			local chosen = i == id
-			local face, k = tab.face, chosen and 1 or 0.66
-			face:ClearAllPoints()
-			face:SetPoint("TOPLEFT", tab, "BOTTOMLEFT", 1, (chosen and TAB_ACTIVE_H or TAB_H) - 1)
-			face:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -1, 0)
-			face:SetVertexColor(k, k, k)
+			for _, part in ipairs(tab.chosenParts) do part:SetShown(chosen) end
+			tab.Text:SetTextColor(unpack(chosen and LIGHT or BRONZE))
 		end
 		local chat = id == 1
 		-- the page's name in the title, as Collections does

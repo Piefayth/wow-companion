@@ -4,7 +4,7 @@ drawn here as vector shapes, bevelled and lit from the top left, many samples
 to a pixel and averaged down, never Blizzard's art.
 
     python tools/make_frame_art.py   writes addon/WowCompanion_Agent/Art/Frame-*-<v>.tga,
-                                     Inset-*-<v>.tga, Close-*-<v>.tga, Tab-*-<tab v>.tga,
+                                     Inset-*-<v>.tga, Close-*-<v>.tga,
                                      target/frame-fix-4k.png (the window mocked at 4K) and
                                      target/tabs-v<tab v>-sheet.png (the tab row: the shot's, ours)
 
@@ -21,8 +21,7 @@ Blizzard's is (inset()); the tabs are
 carved with the same wall (tab()).
 
 The game keeps a texture for the session under its path, so a change bumps
-VERSION (and Window.lua's ART), or TAB_VERSION for the tabs (and its
-TAB_ART); older files are deleted.
+VERSION (and Window.lua's ART); older files are deleted.
 """
 import glob
 import os
@@ -308,106 +307,12 @@ def inset():
 
 # --- the tabs -------------------------------------------------------------------
 #
-# Window.lua's tab row (PanelTopTabButtonTemplate's Left, Middle and Right
-# pieces, each state): every tab a block of cut stone standing on the panel at
-# the well's brink, the inverse of the wells (cut down) so a tab reads as a
-# thing to press. Hard, not soft: its top and sides are flat chiselled facets,
-# each one shade, lit from the top left (the top facet brightest, the left one
-# lit, the right one in shadow), its top corners cut off square at 45 degrees,
-# a crisp light arris where a lit facet meets the face and a dark one where the
-# shadowed facet does, and a dark outline round it all. No blur beyond the
-# pixels' own averaging. Its foot is cut flat where it stands, so no facet
-# runs along the well. The face is clear: Window.lua tiles Tab-Face under it,
-# a grey stone (face()), full on the chosen tab, which is also taller, dimmed
-# on the others, which are shorter.
+# The tabs have no art of their own (Window.lua): the chosen one is a plate of
+# the replies' slate crowned by the dividers' vine (Scroll-RuleLeft and
+# -RuleMid), the rest only labels. The mock draws them from those.
 
-TAB_VERSION = 5
-TAB_K = 40  # px a unit drawn: every edge below on a whole pixel
-TAB_W, TAB_GAP, TAB_H, TAB_ACTIVE_H, CAP = 69.0, 3.0, 20.2, 25.6, 6.0  # Window.lua's
-CHAMFER = 2.6  # the top corners cut off at 45 degrees
-BEVEL = 2.2  # the facets' width, where the face begins
-TAB_MID = 2.0  # the middle piece's width in units
-TAB_DIM = 0.78  # the unchosen tabs
-FACE_DIM = 0.66  # their face's tint (Window.lua)
-FACE_PX = 128  # Tab-Face's side, tiled a texel a screen pixel
-FACETS = {  # each facet's one shade, by how it faces the light
-    "top": np.array((128, 120, 106.0)),
-    "left": np.array((96, 89, 79.0)),
-    "corner_l": np.array((116, 108, 96.0)),
-    "corner_r": np.array((70, 64, 57.0)),
-    "right": np.array((30, 27, 24.0)),
-}
-
-
-def edt(mask):
-    return ndimage.distance_transform_edt(mask)
-
-
-def tab(active, w, k=TAB_K):
-    """A whole tab on a button w units wide as premultiplied RGBA, over the
-    button's bounds."""
-    h = TAB_ACTIVE_H if active else TAB_H
-    xx, yy = grid(w, h, k)
-    yy = yy - h  # units from the foot, y down: the top at -h
-    # distances in from each side, and from each corner's cut (a 45-degree
-    # line CHAMFER from the corner along both edges)
-    dt, dl, dr = yy + h, xx, w - xx
-    s2 = np.sqrt(2)
-    dcl = (dt + dl - CHAMFER) / s2
-    dcr = (dt + dr - CHAMFER) / s2
-    dist = np.stack([dt, dl, dr, dcl, dcr])
-    d = dist.min(0)  # into the block from its outline
-    facet = dist.argmin(0)
-    lay = Layers(d.shape)
-    names = ("top", "left", "right", "corner_l", "corner_r")
-    for n, name in enumerate(names):
-        lay.over(FACETS[name], ((facet == n) & (d >= 0) & (d < BEVEL)).astype(float))
-    # the arrises where the facets meet the face: light under the lit ones,
-    # dark beside the shadowed one
-    edge = (d >= BEVEL - 0.25) & (d < BEVEL + 0.15)
-    lit = (facet == 0) | (facet == 1) | (facet == 3)
-    lay.over(np.array((168, 158, 140.0)), (edge & lit).astype(float) * 0.7)
-    lay.over(LINE_IN, (edge & ~lit).astype(float) * 0.7)
-    # the outline
-    lay.over(LINE_IN, ((d >= 0) & (d < 0.35)).astype(float) * 0.95)
-    pre = lay.pre()
-    if not active:
-        pre[..., :3] *= TAB_DIM
-    return pre
-
-
-def face(n=FACE_PX, seed=11):
-    """Tab-Face: a tileable grey stone, n pixels square: cloudy tone and a
-    fine grain, from noise smoothed with wrap-around so it tiles."""
-    rng = np.random.default_rng(seed)
-
-    def cloud(sigma):
-        c = ndimage.gaussian_filter(rng.standard_normal((n, n)), sigma, mode="wrap")
-        return c / c.std()
-    tone = cloud(14) * 0.55 + cloud(5) * 0.3 + cloud(0.8) * 0.25
-    base = np.array((84, 79, 71.0))
-    col = base[None, None] * (1 + 0.075 * tone)[..., None]
-    return np.concatenate([np.clip(col, 0, 255), np.full((n, n, 1), 255.0)], -1)
-
-
-def tab_pieces():
-    out = {}
-    k = TAB_K
-    w = 2 * CAP + 2 * TAB_MID
-    for active in (False, True):
-        img = tab(active, w)
-        h = TAB_ACTIVE_H if active else TAB_H
-        cap = int(round(CAP * k))
-        mid = int(round(TAB_MID * k))
-        size = (64, 256)
-        name = "Tab-%s" + ("-Active" if active else "")
-        out[name % "Left"] = fit(img[:, :cap], size)
-        out[name % "Right"] = fit(img[:, -cap:], size)
-        c = img.shape[1] // 2
-        out[name % "Middle"] = fit(img[:, c - mid // 2:c - mid // 2 + mid], (16, 256))
-        assert img.shape[0] == int(round(h * k))
-    out["Tab-Face"] = face()
-    return out
+TAB_W, TAB_GAP, TAB_H = 69.0, 3.0, 25.6  # Window.lua's
+VINE = os.path.join(OUT, "Scroll-%s-18.tga")  # ChatBar.lua's VERSION
 
 
 def render():
@@ -474,17 +379,6 @@ class Mock:
         im = np.concatenate([rgb, np.full(rgb.shape[:2] + (1,), 255.0)], -1)
         self.im.alpha_composite(Image.fromarray(np.clip(im, 0, 255).astype(np.uint8), "RGBA"), (a, b))
 
-    def tile_art(self, img, k, x0, y0, x1, y1):
-        """A written texture tiled over the rect, a texel a screen pixel (as
-        the game tiles), times k."""
-        a, b = self.px(x0, y0)
-        c, d = self.px(x1, y1)
-        src = img[..., :3]
-        reps = ((d - b) // src.shape[0] + 1, (c - a) // src.shape[1] + 1, 1)
-        rgb = np.tile(src, reps)[:d - b, :c - a] * k
-        im = np.concatenate([rgb, np.full(rgb.shape[:2] + (1,), 255.0)], -1)
-        self.im.alpha_composite(Image.fromarray(np.clip(im, 0, 255).astype(np.uint8), "RGBA"), (a, b))
-
     def nine(self, art, prefix, x0, y0, x1, y1, rim, top):
         """dress(): every piece rim wide, the top ones top tall."""
         self.put(art[prefix + "TopLeftCorner"], x0, y0, x0 + rim, y0 + top)
@@ -543,17 +437,18 @@ def mock(art, backdrop, chosen=0):
     m.nine(art, "Inset-", wells[0], top, wells[1], foot, INSET, INSET)
     m.nine(art, "Inset-", wells[2], top, wells[3], foot, INSET, INSET)
     labels = []
+    vine = {n: np.asarray(Image.open(VINE % n).convert("RGBA")).astype(float) for n in ("RuleLeft", "RuleMid")}
     for i, x in enumerate(xs):
         act = i == chosen
-        th = TAB_ACTIVE_H if act else TAB_H
-        sfx = "-Active" if act else ""
-        m.tile_art(art["Tab-Face"], 1.0 if act else FACE_DIM, x + 1, top - th + 1, x + TAB_W - 1, top)
-        m.put(art["Tab-Left" + sfx], x, top - th, x + CAP, top)
-        m.put(art["Tab-Middle" + sfx], x + CAP, top - th, x + TAB_W - CAP, top)
-        m.put(art["Tab-Right" + sfx], x + TAB_W - CAP, top - th, x + TAB_W, top)
+        if act:
+            m.tile("SlateLight", x, top - TAB_H, x + TAB_W, top)
+            y0 = top - TAB_H - 8
+            m.put(vine["RuleLeft"], x - 4, y0, x + 28, y0 + 16)
+            m.put(vine["RuleMid"], x + 28, y0, x + TAB_W - 28, y0 + 16)
+            m.put(vine["RuleLeft"][:, ::-1], x + TAB_W - 28, y0, x + TAB_W + 4, y0 + 16)
         # PanelTemplates_SelectTab and _DeselectTab: the label's centre 12 and
         # 8 units over the foot
-        labels.append((x + TAB_W / 2, top - (12 if act else 8), LABELS[i], (255, 255, 255) if act else (255, 209, 0)))
+        labels.append((x + TAB_W / 2, top - (12 if act else 8), LABELS[i], (240, 230, 209) if act else (199, 163, 107)))
     m.glow(-GLOW[0], -GLOW[1], w + GLOW[2], h + GLOW[3])
     m.nine(art, "Frame-", 0, 0, w, h, RIM, TOP_H)
     cx, cy = w - RIM - CLOSE_PAD - CLOSE, (RIM + 22.6 - CLOSE) / 2
@@ -600,29 +495,17 @@ def sheet(art):
     for im in (old, new, second):
         crop = im.crop(box)
         rows += [[crop], [up(crop, 3)]]
-    for im, x in ((new, 0), (second, TAB_W + TAB_GAP)):
-        for side in (0, TAB_W):
-            jx = ORIGIN[0] + (RIM + GAP + EDGE + x + side) * PX
-            jy = ORIGIN[1] + WELL_TOP * PX
-            rows.append([up(im.crop((int(jx) - 30, int(jy) - 40, int(jx) + 30, int(jy) + 30)), 8)])
-    rows[-4:] = [sum(rows[-4:], [])]
-    return stack(rows, os.path.join(ROOT, "target", "tabs-v%d-sheet.png" % TAB_VERSION))
+    return stack(rows, os.path.join(ROOT, "target", "tabs-sheet.png"))
 
 
 def main():
     art = render()
-    tabs = tab_pieces()
     os.makedirs(OUT, exist_ok=True)
     for pat in ("Frame-*.tga", "Inset-*.tga", "Close-*.tga"):
         for old in glob.glob(os.path.join(OUT, pat)):
             os.remove(old)
-    for old in glob.glob(os.path.join(OUT, "Tab-*.tga")):
-        os.remove(old)
     for stem, img in art.items():
         write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, VERSION)), img)
-    for stem, img in tabs.items():
-        write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, TAB_VERSION)), img)
-    art.update(tabs)
     print(len(art), "textures;", sheet(art))
 
 
