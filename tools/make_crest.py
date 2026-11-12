@@ -20,8 +20,11 @@ THICK, MEDIUM = WEIGHTS["Thick"], WEIGHTS[""]
 WIRE = dim(BARK, 0.92)
 
 
-def wire(path, w0, w1):
-    return ribbon(path, np.linspace(w0, w1, len(path)))
+def wire(path, w0, w1, mirror=False):
+    p = np.array(path, float)
+    if mirror:  # across the trunk: the points move, so the light stays the frame's
+        p[:, 0] = C - p[:, 0]
+    return ribbon(p, np.linspace(w0, w1, len(p)))
 
 
 def crest(c, big):
@@ -36,15 +39,16 @@ def crest(c, big):
         k = 1.0 if big else 1.45  # a branch's pincers are its whole ornament, so larger
         lead = bez((e + 13 * k, m + s * ahw * 0.4), (e + 11 * k, m + s * 8.5 * k), (e + 3.5 * k, m + s * 9.5 * k),
                    (e + 1.0, m + s * 5.5 * k), n=40)
-        work.append(wire(scroll(lead, 1.9 * k, s * 0.85, 0.5), w, w * 0.75))
+        work.append(wire(scroll(lead, 1.9 * k, s * 0.85, 0.5), w, w * 0.75, big))
         if big:
             # the long sweep: from further out, along the trunk, an open volute at its end
             lead = bez((e + 24, m + s * ahw * 0.4), (e + 22, m + s * 15), (e + 2.5, m + s * 11), (e + 1.6, m + s * 27), n=60)
-            work.append(wire(scroll(lead, 3.0, -s * 0.9, 0.5), w, w * 0.75))
-            # through the trunk: the arm comes out the far side as a short fleur
+            work.append(wire(scroll(lead, 3.0, -s * 0.9, 0.5), w, w * 0.75, True))
+            # two trunks: the crest stands on the trunk's left, on a stem the arm
+            # runs through to (the player, 2026-11-12), the arm leaving a short fleur on the right
             lead = bez((m - rhw, m), (m - rhw - 5, m + s * 0.3), (m - rhw - 7, m + s * 4), (m - rhw - 4.5, m + s * 7.5), n=30)
-            work.append(wire(scroll(lead, 1.8, s * 0.85, 0.5), w, w * 0.75))
-    stub = [ribbon([(m - rhw - 6, m), (m, m)], ahw)] if big else []
+            work.append(wire(scroll(lead, 1.8, s * 0.85, 0.5), w, w * 0.75, True))
+    stub = [ribbon([(m - rhw - 24.5, m), (m, m)], ahw)] if big else []
     raised(pen, work, WIRE, bevel=0.6, cast=0.5)
     raised(pen, [ribbon([(m, -12), (m, C + 12)], rhw)], rpal, bevel=0.5 * rhw / 0.55, cast=0.4, grain=False)
     raised(pen, [ribbon([(m, m), (C + 12, m)], ahw)] + stub, apal, bevel=0.5 * ahw / 0.55, cast=0.4, grain=False)
