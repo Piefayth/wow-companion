@@ -3,19 +3,19 @@ drawn here as vector shapes, bevelled and lit from the top left, at 16x and
 averaged down, never Blizzard's art.
 
     python tools/make_scrollbar_art.py   writes addon/WowCompanion_Agent/Art/Scroll-*-<v>.tga
-                                         and target/scrollbar-sheet-4b.png (the comparison sheet, its first
-                                         row the game's own grab redrawn at true size)
+                                         and target/scrollbar-sheet-5.png (the comparison sheet: each set
+                                         drawn into the game's own grab at true size, then 4x)
 
 The game keeps a texture for the session under its path, so a change bumps
-the version (VERSION for the spearhead, VERSION4 for the ornate ones, and
-ScrollGallery.lua's art()); older files are deleted.
+the version (VERSION for the spearhead, VERSION5 for round 5, and
+ScrollGallery.lua's ROUND5); older files are deleted.
 
 The spearhead (round 1, kept): an up and a down arrow in four states (Normal,
 Pushed, Highlight drawn for ADD blending, Disabled), 32x32 shown at 16x16, set
 over Blizzard's slim bar; a rod tile (RuleMid, 16x32, shown 8 wide, repeated
 down), its caps (RuleTop, RuleBottom, 16x16) and the joint where a divider
 meets it (Joint, 32x32). The down arrow is drawn mirrored, not flipped, so its
-light still comes from the top left. Round 4's ornate grooves: see below.
+light still comes from the top left. Round 5's grooves: see below.
 """
 import glob
 import os
@@ -35,7 +35,6 @@ HALF = LIGHT + np.array([0, 0, 1.0]); HALF /= np.linalg.norm(HALF)
 GOLD = ((70, 42, 8), (196, 146, 52), (255, 232, 150))
 BRONZE = ((52, 28, 12), (160, 98, 50), (240, 190, 130))
 IRON = ((14, 12, 9), (62, 55, 42), (150, 136, 108))  # the divider's rod
-SAPPHIRE = ((4, 14, 60), (24, 70, 190), (130, 200, 255))
 EMERALD = ((0, 40, 16), (14, 140, 60), (120, 255, 160))
 OUTLINE = (10, 7, 4)
 
@@ -267,45 +266,41 @@ def render():
     return out
 
 
-
-
-# --- round 4: ornate ends wrapped round a groove carved into the panel ------
+# --- round 5: four sets, each a groove carved into the stone with its ornament
+# at the two ends only (docs/proposals/scrollbar-concepts.md)
 #
-# The groove is a recess in the stone (dark floor, the top wall in shadow, a
-# faint lit bottom lip), 8 wide in the middle of a 32-wide column; its ends
-# are ornaments raised on the stone round it, outside the groove, that resolve
-# into an arrow; each divider meets the groove through the same ornament. In
-# UI units, U texture px each:
-#   <Up|Down>-<state> 32x64: the groove's end and its ornament (the button;
-#     the groove runs on out of the far edge)
-#   Mid 32x8: the groove alone (stretched between caps and joints)
-#   Joint 64x32: the divider's line (y 16) meeting the groove; its right edge
-#     is the column's, the groove at x 44..52
-#   RuleLeft, RuleMid, Knot 32x16: our own divider's left end, its line
-#     (x-invariant, stretched) and its middle ornament (line at y 8)
+# In UI units, U texture px each; every piece is 32 units wide and centred on
+# the column (20 wide, x 6..26), the groove x 12..20:
+#   <Up|Down>-<state> 32x32: the button, the arrow set into the groove's end
+#     (the groove runs on out of the far edge)
+#   Mid 32x8: the groove alone, stretched between the buttons
+#   Thumb-Top, Thumb-Mid (stretched), Thumb-Centre 32x16, Thumb-Bottom 32x8
+#   Joint 32x16: where a divider (its line at y 8) meets the groove; its x 6 is
+#     the column's left edge, where a divider stops
+#   RuleLeft 32x16, RuleMid 64x16: the design's own divider (its left end, and
+#     its line stretched whole to the Joint)
 
-VERSION4 = 5
+VERSION5 = 1
+PRESS = 1.25  # how far a pressed arrow sinks into the groove, in units
+GT, ORN = 22.0, 1.15  # the arrows' groove end (its round end's centre) and the ornament's scale
 U = 4
 SS = 4
 GX0, GX1 = 12, 20
-GROOVE_TOP = 26  # the up cap's groove end (round, its top at 22)
 
-# Blizzard's palette, read off the game's own frame and divider at 4K: muted,
-# desaturated, the lights never white
-IRON = ((12, 11, 9), (58, 55, 44), (136, 128, 104))  # the divider's olive iron
-WOOD = ((20, 13, 8), (74, 52, 32), (146, 116, 82))
-LEAF = ((12, 20, 10), (54, 76, 40), (128, 146, 92))
-GOLD = ((38, 24, 8), (124, 92, 44), (212, 182, 128))  # the frame's antique gold
-RUBY = ((34, 4, 6), (112, 20, 24), (210, 112, 100))
+# Blizzard's own UI metal, read off the game's atlases drawn in a frame of ours
+# (UI-Frame-Metal, DiamondMetal, QuestLog-frame-devider): muted, warm, the
+# lights never white
+BRZ = ((34, 21, 9), (88, 58, 28), (176, 136, 84))
+IRN = ((14, 13, 10), (44, 41, 32), (112, 104, 80))  # the divider's olive iron
+BARK = ((22, 15, 9), (68, 48, 30), (138, 108, 74))
+BUD = ((20, 22, 15), (62, 68, 48), (128, 132, 100))  # olive-grey, the green all but gone
+ROD = ((39, 36, 27), (58, 52, 40), (96, 88, 66))  # QuestLog-frame-devider's own rod
+LEATHER = ((18, 11, 7), (56, 35, 21), (112, 80, 54))
+WARM = np.array((255, 208, 128), float)
 
 
 def ucanvas(w, h):
     return Canvas(w * U, h * U, pad=8, s=SS)
-
-
-def umask(c, polys=(), circles=()):
-    return c.mask([[(x * U, y * U) for x, y in p] for p in polys],
-                  circles=[(x * U, y * U, r * U) for x, y, r in circles])
 
 
 def profile(pts, cx=16):
@@ -319,7 +314,7 @@ def profile(pts, cx=16):
 
 
 def ribbon(path, hw):
-    """A path (units) as a polygon `hw` wide either side (per point or one)."""
+    """A path as a polygon `hw` wide either side (per point or one)."""
     p = np.asarray(path, float)
     hw = np.broadcast_to(np.asarray(hw, float), (len(p),))
     d = np.gradient(p, axis=0)
@@ -336,11 +331,10 @@ def bez(*pts, n=40):
 
 
 def curl(start, tangent, r0, turns, shrink=0.35, n=90):
-    """A scroll's spiral leaving `start` along `tangent`, turning by `turns`
-    (positive: clockwise on screen) and tightening to r0 * shrink."""
+    """A spiral leaving `start` along `tangent`, turning by `turns` (positive:
+    clockwise on screen) and tightening to r0 * shrink."""
     t = np.array(tangent, float); t /= np.linalg.norm(t)
-    sgn = np.sign(turns)
-    nrm = np.array([-t[1], t[0]]) * sgn  # toward the centre
+    nrm = np.array([-t[1], t[0]]) * np.sign(turns)
     centre = np.array(start, float) + nrm * r0
     a0 = np.arctan2(*(np.array(start) - centre)[::-1])
     a = a0 + np.linspace(0, turns * 2 * np.pi, n)
@@ -348,60 +342,98 @@ def curl(start, tangent, r0, turns, shrink=0.35, n=90):
     return np.stack([centre[0] + r * np.cos(a), centre[1] + r * np.sin(a)], 1)
 
 
-def scroll_path(lead, r0, turns, shrink=0.35):
+def scroll(lead, r0, turns, shrink=0.35):
     """A lead (points) running on into a curl at its end."""
     lead = np.asarray(lead, float)
-    sp = curl(lead[-1], lead[-1] - lead[-2], r0, turns, shrink)
-    return np.vstack([lead, sp[1:]])
+    return np.vstack([lead, curl(lead[-1], lead[-1] - lead[-2], r0, turns, shrink)[1:]])
 
 
-def tapered(path, hw0, hw1, knob=True):
-    """A ribbon thinning from hw0 to hw1, a round knob at the thin end."""
+def stroke(path, w0, w1, knob=True):
+    """A line thinning from half-width w0 to w1, a round knob at its thin end."""
     p = np.asarray(path, float)
-    poly = ribbon(p, np.linspace(hw0, hw1, len(p)))
-    return poly, ((p[-1][0], p[-1][1], hw1 * 1.35) if knob else None)
+    out = [ribbon(p, np.linspace(w0, w1, len(p)))]
+    if knob:
+        out.append((p[-1][0], p[-1][1], w1 * 1.3))
+    return out
 
 
-def leaf_poly(base, tip, width, n=40):
+def leaf(base, tip, width, n=40):
     """A pointed leaf from base to tip, `width` across at its widest."""
     b, t = np.array(base, float), np.array(tip, float)
     d = t - b; L = np.linalg.norm(d); d /= L
     nrm = np.array([-d[1], d[0]])
     s = np.linspace(0, 1, n)
     hw = width / 2 * np.sin(np.pi * s ** 0.8) ** 1.1
-    left = [b + d * L * k + nrm * w for k, w in zip(s, hw)]
-    right = [b + d * L * k - nrm * w for k, w in zip(s[::-1], hw[::-1])]
-    return [tuple(q) for q in left + right]
+    return [tuple(b + d * L * k + nrm * w) for k, w in zip(s, hw)] + \
+           [tuple(b + d * L * k - nrm * w) for k, w in zip(s[::-1], hw[::-1])]
 
 
-def sym32(pts, cx=16):
-    """Points and their mirror about x = cx."""
-    return [(2 * cx - x, y) for x, y in pts]
+def X(sgn, x):
+    """x mirrored to the left side of the groove's centre when sgn is -1."""
+    return 16 + sgn * (x - 16)
 
 
-def flipy(shape, h):
-    return [(x, h - y) for x, y in shape]
+class Pen:
+    """Draws in units on a canvas as the up end has them: flip mirrors y about
+    h (the down end, its light still from the top left), dy moves the shapes
+    toward the groove (a pressed button). An arrow's pen (cap=True) draws the
+    ornament as designed round a groove end at y 19, 1.15 times larger about
+    that end, set at GT (its groove itself is drawn by a plain pen)."""
+
+    def __init__(self, c, h, flip=False, dy=0.0, cap=False):
+        self.c, self.h, self.flip, self.dy = c, h, flip, dy
+        self.k, self.y0 = (ORN, 19.0) if cap else (1.0, None)
+
+    def x(self, x):
+        return x if self.y0 is None else 16 + (x - 16) * self.k
+
+    def y(self, y):
+        if self.y0 is not None:
+            y = GT + (y - self.y0) * self.k
+        return self.h - (y + self.dy) if self.flip else y + self.dy
+
+    def mask(self, pieces):
+        polys = [[(self.x(x) * U, self.y(y) * U) for x, y in p] for p in pieces if not isinstance(p, tuple)]
+        circles = [(self.x(p[0]) * U, self.y(p[1]) * U, p[2] * self.k * U) for p in pieces if isinstance(p, tuple)]
+        return self.c.mask(polys, circles=circles)
 
 
-def groove_mask(c, y0, y1, round_top=None, round_bottom=None):
-    circles = []
-    if round_top is not None:
-        circles.append((16, round_top, (GX1 - GX0) / 2))
-    if round_bottom is not None:
-        circles.append((16, round_bottom, (GX1 - GX0) / 2))
-    return umask(c, [[(GX0, y0), (GX1, y0), (GX1, y1), (GX0, y1)]], circles)
+def shadow(c, m, k=0.55):
+    """A soft shadow of `m` cast down and right onto what is under it."""
+    s = U * c.s
+    sh = ndimage.shift(ndimage.gaussian_filter(m, s * 0.35), (s * 0.45, s * 0.3), order=1)
+    c.over(np.zeros_like(c.rgb), np.clip(sh, 0, 1) * k)
 
 
-def carve4(c, m, depth=1.0, floor=1.0):
-    """A recess where `m` is: dark floor, walls shaded from a depth field
-    (top-left light), a faint light rim and the lit bottom lip (measured
-    against Blizzard's minimal track)."""
+def raised(pen, pieces, pal, bevel=1.0, cast=0.55, **kw):
+    """Pieces of one raised metal, painted as Blizzard paints it."""
+    m = pen.mask(pieces)
+    if cast:
+        shadow(pen.c, m, cast)
+    kw.setdefault("gloss", 0.35)
+    pen.c.metal(m, pal, bevel=bevel * U, outline=1.1, shadow=False, sheen=False, paint=True, **kw)
+    shows(pen.c, m)
+    return m
+
+
+def shows(c, m):
+    """Note where metal now shows on the canvas (carving takes it away)."""
+    c.shown = np.maximum(getattr(c, "shown", 0), np.clip(m, 0, 1))
+
+
+def dim(pal, k):
+    return tuple(tuple(int(x * k) for x in col) for col in pal)
+
+
+def carve(c, m, depth=1.0, floor=1.0):
+    """A recess where `m` is: dark floor, the top-left wall in shadow, the
+    bottom-right wall and lip faintly lit (measured against Blizzard's minimal
+    track)."""
+    c.shown = getattr(c, "shown", 0) * (1 - np.clip(m, 0, 1))
     k = U * c.s
-    inside = m > 0.5
-    du = ndimage.distance_transform_edt(inside) / k
+    du = ndimage.distance_transform_edt(m > 0.5) / k
     t = np.clip(du / depth, 0, 1)
-    h = -(1 - (1 - t) ** 2) * depth * U * 1.3
-    h = ndimage.gaussian_filter(h, k * 0.18, mode="nearest")
+    h = ndimage.gaussian_filter(-(1 - (1 - t) ** 2) * depth * U * 1.3, k * 0.18, mode="nearest")
     gy, gx = np.gradient(h * c.s)
     n = np.stack([-gx, -gy, np.ones_like(gx)], -1)
     n /= np.linalg.norm(n, axis=-1, keepdims=True)
@@ -413,298 +445,345 @@ def carve4(c, m, depth=1.0, floor=1.0):
     lip = np.clip(near(ndimage.shift(m, (k * 0.55, k * 0.2), order=1, mode="nearest"), k * 0.15) - m, 0, 1)
     pale = np.broadcast_to(np.array((205, 196, 178), float), c.rgb.shape)
     c.over(pale, np.clip(rim * 0.16 + lip * 0.42, 0, 1))
-    dark = np.broadcast_to(np.array((14, 12, 10), float), c.rgb.shape)
-    c.over(dark, m * floor)
-    c.over(np.zeros_like(c.rgb), m * np.clip(-shade * 5, 0, 1) * 0.9)  # the top-left wall in shadow
-    c.over(pale, m * np.clip(shade * 3.0, 0, 1) * 0.5)  # the bottom-right wall lit
+    c.over(np.broadcast_to(np.array((14, 12, 10), float), c.rgb.shape), m * floor)
+    c.over(np.zeros_like(c.rgb), m * np.clip(-shade * 5, 0, 1) * 0.9)
+    c.over(pale, m * np.clip(shade * 3.0, 0, 1) * 0.5)
 
 
-def forged(c, pieces, pal, bevel=1.1, minus=(), **kw):
-    """Pieces (polygons, and circles as (x, y, r)) in units, one raised metal,
-    pierced where `minus` (polygons) is."""
-    polys = [p for p in pieces if p is not None and not (isinstance(p, tuple) and len(p) == 3 and np.isscalar(p[0]))]
-    circles = [p for p in pieces if isinstance(p, tuple) and len(p) == 3 and np.isscalar(p[0])]
-    m = umask(c, polys, circles)
-    if minus:
-        m = m * (1 - umask(c, list(minus)))
-    c.metal(m, pal, bevel=bevel * U, outline=0.55, sheen=False, paint=True, gloss=0.35, **kw)
+def groove_end(pen, gt):
+    """The groove from its round end (centred at y gt) out of the far edge."""
+    return pen.mask([[(GX0, gt), (GX1, gt), (GX1, pen.h + 20), (GX0, pen.h + 20)], (16, gt, (GX1 - GX0) / 2)])
 
 
-def pieces_of(*parts):
-    out = []
-    for p in parts:
-        if isinstance(p, tuple) and len(p) == 2 and isinstance(p[0], list):
-            out.append(p[0]); out.append(p[1])
-        else:
-            out.append(p)
-    return out
+def deep(c, flip, h=32, gt=None):
+    """How far into the groove's shadow each pixel is (0..1): nothing over
+    the groove's round end, then a hard shadow straight across, then dark."""
+    gt = GT if gt is None else gt
+    yy = (np.arange(c.H)[:, None] / c.s - c.pad) / U
+    depth = (yy if not flip else h - yy) - (gt - (GX1 - GX0) / 2) - (GX1 - GX0) / 2 * 0.6
+    k = np.where(depth > 0, 0.55 + 0.45 * np.clip(depth / 3, 0, 1), 0)
+    return k * groove_run(c)
 
 
-# --- the ornaments, each drawn for the up cap (tip at the top, groove below).
-# Every end is one forged piece: a socket wrapped round the groove's end (the
-# groove is carved through it afterwards, so the socket's cheeks are its lips)
-# and the head rising out of it, faceted to a ridge as forged metal is.
-
-SOCKET = (8.6, 23.4, 17.0, 34.0)  # x0, x1, y0, y1: round the groove's end at 22
-
-
-def socket(top=17.0, bottom=34.0, x0=8.6, x1=23.4, r=3.0):
-    """The socket's outline: a band round the groove's end, its corners cut."""
-    return [(x0 + r, top), (x1 - r, top), (x1, top + r), (x1, bottom - r), (x1 - r, bottom),
-            (x0 + r, bottom), (x0, bottom - r), (x0, top + r)]
+def sink(c, pen, gt, under):
+    """What lies in the groove below its end's lip goes down into the dark,
+    fading into the groove as it was before (`under`) the further it runs in:
+    a pressed piece, further in, darker."""
+    m = deep(c, pen.flip, pen.h, gt)[..., None]
+    c.rgb = c.rgb * (1 - m) + under * m
 
 
-def iron_cap(c, pal):
-    """Wrought iron: a faceted arrowhead rising out of a socket round the
-    groove's end, its barbs rolled into scrolls; two bars run on down the
-    groove's lips and end in curls."""
-    head = [(16, 1.0), (21.0, 7.4), (25.6, 13.4), (26.4, 16.2), (22.6, 15.2), (19.6, 17.4)]
-    head = head + sym32(head[::-1])
-    forged(c, [head], pal, bevel=4.0)
-    parts = [socket()]
-    for sgn in (1, -1):
-        X = lambda x: 16 + sgn * (x - 16)
-        barb = scroll_path([(X(25.6), 14.6), (X(26.8), 17.4), (X(26.4), 20.0)], 2.2, sgn * 0.85, 0.42)
-        parts += pieces_of(tapered(barb, 1.1, 0.65))
-        bar = scroll_path(bez((X(22.0), 32.0), (X(22.4), 36), (X(22.4), 40), (X(22.0), 44.0), n=20), 2.4, sgn * 0.9, 0.4)
-        parts += pieces_of(tapered(bar, 1.2, 0.7))
-    forged(c, parts, pal, bevel=1.0)
-    for y in (19.6, 31.4):  # rivets on the socket's cheeks
-        for x in (10.6, 21.4):
-            c.metal(umask(c, circles=[(x, y, 0.9)]), pal, bevel=0.5 * U, outline=0.3, shadow=False, dome=True,
-                    glow=False, gloss=0.5, sheen=False, paint=True)
+def groove_run(c):
+    """The groove through a whole piece, both ends running off it."""
+    return c.mask([[(GX0 * U, -40), (GX1 * U, -40), (GX1 * U, c.h + 40), (GX0 * U, c.h + 40)]])
 
 
-def vine_cap(c, pal):
-    """A living vine: a knot of wood grown round the groove's end, a broad
-    leaf rising out of it as the arrow (its midrib the facet's ridge), stems
-    running on down the lips into tendrils."""
-    stems = [socket(r=4.4)]
-    for sgn in (1, -1):
-        X = lambda x: 16 + sgn * (x - 16)
-        stem = bez((X(22.0), 30.0), (X(22.8), 36), (X(22.6), 42), (X(23.6), 46), n=24)
-        stem = scroll_path(stem, 1.8, -sgn * 0.8, 0.45)
-        stems += pieces_of(tapered(stem, 1.7, 0.7))
-    forged(c, stems, WOOD, bevel=1.4)
-    for sgn in (1, -1):
-        X = lambda x: 16 + sgn * (x - 16)
-        forged(c, [leaf_poly((X(23.0), 34.0), (X(28.4), 38.6), 3.6)], pal, bevel=1.6)
-    big = profile([(0.4, 0), (5.0, 2.8), (10.0, 6.2), (14.6, 9.6), (17.0, 8.2), (19.0, 4.6), (20.6, 1.4)], cx=16)
-    forged(c, [big], pal, bevel=4.5)
-    veins = []
-    for y0, y1, dx in ((8.0, 5.4, 4.4), (12.0, 9.6, 6.6), (16.0, 14.0, 6.6)):
-        for sgn in (1, -1):
-            veins.append(ribbon(bez((16, y0), (16 + sgn * dx * 0.4, y0 - 0.8), (16 + sgn * dx * 0.8, y1 + 0.6), (16 + sgn * dx, y1), n=16),
-                                np.linspace(0.24, 0.1, 16)))
-    vm = umask(c, veins) * (c.a > 0.5)
-    c.over(np.broadcast_to(np.array(pal[0], float), c.rgb.shape), vm * 0.55)
+def engrave(c, m, lit=False):
+    """Lines cut into metal: dark, the cut's far wall catching light; lit, the
+    cut glows warm (a pressed inlay)."""
+    k = U * c.s
+    on = np.clip(c.a, 0, 1)
+    c.over(np.broadcast_to(np.array((34, 20, 9), float), c.rgb.shape), m * on * 0.85)
+    wall = m * (1 - ndimage.shift(m, (-k * 0.22, -k * 0.16), order=1))
+    c.over(np.broadcast_to(np.array((214, 178, 120), float), c.rgb.shape), np.clip(wall, 0, 1) * on * 0.55)
+    if lit:
+        g = np.clip(ndimage.gaussian_filter(m, k * 0.3) * 1.6, 0, 1)
+        c.over(np.broadcast_to(WARM, c.rgb.shape), np.clip(g * on, 0, 1) * 0.85)
 
 
-def gold_cap(c, pal):
-    """A forged finial: a faceted spearhead with petals rolled outward over a
-    collar set with a ruby, the collar running on as a socket round the
-    groove's end, and two claws that grip its lips."""
-    spear = profile([(0.4, 0), (5.0, 4.0), (9.6, 6.8), (12.6, 4.6), (14.6, 2.2), (16.0, 2.2)], cx=16)
-    forged(c, [spear], pal, bevel=3.6)
-    parts = [socket(top=14.6, bottom=32.0, r=2.4)]
-    for sgn in (1, -1):
-        X = lambda x: 16 + sgn * (x - 16)
-        petal = scroll_path(bez((X(18.6), 15.6), (X(22.6), 14.4), (X(25.6), 11.6), (X(27.8), 12.2)), 1.9, sgn * 0.85, 0.4)
-        parts += pieces_of(tapered(petal, 1.4, 0.65))
-        claw = bez((X(22.0), 30.0), (X(23.0), 34.0), (X(22.8), 39.0), (X(21.0), 43.6), n=30)
-        claw = np.vstack([claw, bez((X(21.0), 43.6), (X(20.4), 45.0), (X(19.6), 45.4), (X(18.8), 44.8), n=12)[1:]])
-        parts.append(ribbon(claw, np.concatenate([np.linspace(1.4, 1.0, 30), np.linspace(1.0, 0.15, 11)])))
-    forged(c, parts, pal, bevel=1.0)
-    c.gem(16 * U, 18.6 * U, 1.5 * U, RUBY)
+def glint(c, pen, x, y, r=1.6, k=0.7):
+    """A soft warm light on the metal at (x, y): the one bright spot."""
+    yy, xx = np.mgrid[0:c.H, 0:c.W]
+    cx, cy = (pen.x(x) * U + c.pad) * c.s, (pen.y(y) * U + c.pad) * c.s
+    g = np.clip(1 - np.hypot(xx - cx, yy - cy) / (r * U * c.s), 0, 1) ** 2
+    c.over(np.broadcast_to(WARM, c.rgb.shape), g * np.clip(c.a, 0, 1) * k)
 
 
-# --- the joints: the divider (y 16) meeting the groove (x 44..52); each ends
-# in a plate the groove is carved through, so its two halves are one piece
-# round the groove, as the caps' sockets are -----------------------------------
-
-def plate(cx=48, cy=16, hw=10.5, hh=8.0, r=3.0, n=0):
-    """A plate round the groove: corners cut by r, or a superellipse of power n."""
-    if n:
-        t = np.linspace(0, 2 * np.pi, 120, endpoint=False)
-        c, s = np.cos(t), np.sin(t)
-        return [(cx + hw * np.sign(a) * abs(a) ** (2 / n), cy + hh * np.sign(b) * abs(b) ** (2 / n)) for a, b in zip(c, s)]
-    return [(cx - hw + r, cy - hh), (cx + hw - r, cy - hh), (cx + hw, cy - hh + r), (cx + hw, cy + hh - r),
-            (cx + hw - r, cy + hh), (cx - hw + r, cy + hh), (cx - hw, cy + hh - r), (cx - hw, cy - hh + r)]
+def flush(pen, pieces, pal):
+    """Pieces of bronze inlaid flush in the stone: a hairline seam, no shadow."""
+    c = pen.c
+    m = pen.mask(pieces)
+    k = U * c.s
+    seam = np.clip(ndimage.gaussian_filter(ndimage.maximum_filter(m, size=int(k * 0.7) | 1), k * 0.1) - m, 0, 1)
+    c.over(np.broadcast_to(np.array((10, 8, 6), float), c.rgb.shape), seam * 0.8)
+    c.metal(m, pal, bevel=0.35 * U, outline=0, shadow=False, sheen=False, paint=True, gloss=0.5)
+    shows(c, m)
+    return m
 
 
-def iron_joint(c, pal):
-    """Blizzard's iron divider ends under a collar (x 20..25); a bar runs on
-    into a riveted plate round the groove, scrolls curling off its corners."""
-    parts = [[(20, 11.2), (25, 11.2), (25, 20.8), (20, 20.8)], ribbon([(24, 16), (40, 16)], 1.3), plate()]
-    for up in (1, -1):
-        lead = bez((38.4, 16 - up * 6.4), (37.4, 16 - up * 8.4), (35.4, 16 - up * 9.6), (33.4, 16 - up * 9.0), n=16)
-        parts += pieces_of(tapered(scroll_path(lead, 1.8, up * 0.85, 0.42), 1.0, 0.6))
-    forged(c, parts, pal, bevel=1.0)
-    for x in (21.4, 23.6):  # the collar's two rings
-        c.metal(umask(c, [[(x - 0.55, 11.6), (x + 0.55, 11.6), (x + 0.55, 20.4), (x - 0.55, 20.4)]]), pal,
-                bevel=0.3 * U, outline=0, shadow=False, gloss=0.6, sheen=False, paint=True)
-    for x in (40.4, 55.6):
-        for y in (12.0, 20.0):
-            c.metal(umask(c, circles=[(x, y, 0.9)]), pal, bevel=0.5 * U, outline=0.3, shadow=False, dome=True,
-                    glow=False, gloss=0.5, sheen=False, paint=True)
+# --- 1. Spear in the groove: the groove is the spear's sheath --------------------
+
+def spear_cap(c, down, mode):
+    pen = Pen(c, 32, down, PRESS if mode == "Pushed" else 0, cap=True)
+    if mode != "Bare":
+        carve(c, groove_end(Pen(c, 32, down), GT))
+    blade = [(1.4, 0), (4.2, 2.3), (8.2, 5.0), (11.4, 6.3), (13.0, 5.2), (14.3, 2.9)] if not down else \
+            [(1.4, 0), (4.6, 1.7), (8.6, 3.7), (11.4, 4.7), (13.0, 4.1), (14.3, 2.9)]  # the butt-spike, slimmer
+    under = c.rgb.copy()
+    raised(pen, [profile([(13.6, 2.9), (17, 2.75), (36, 2.5)])], BRZ, bevel=1.4)
+    raised(pen, [[(16 - 3.5, 14.4), (16 + 3.5, 14.4), (16 + 3.5, 15.7), (16 - 3.5, 15.7)]], BRZ, bevel=0.5, cast=0.4)
+    parts = [profile(blade)]
+    for sgn in (1, -1):  # the barbs, hooked back from the shoulders, their curls lying on the groove's lips
+        parts += stroke(scroll(bez((X(sgn, 20.2), 12.4), (X(sgn, 21.6), 13.2), (X(sgn, 22.2), 14.8), (X(sgn, 21.9), 16.6), n=20),
+                               0.8, sgn * 0.75, 0.45), 0.8, 0.42)
+    raised(pen, parts, BRZ, bevel=1.1)
+    raised(pen, [profile([(2.6, 0), (6, 0.55), (11, 0.7), (14, 0.6)])], BRZ, bevel=0.35, cast=0, gloss=0.8)  # the midrib
+    sink(c, pen, GT, under)
+    if mode == "Pushed":
+        glint(c, pen, 16, 3.2)
 
 
-def vine_joint(c, pal):
-    """The vine runs in and swells into a knot round the groove; a leaf hangs
-    from it and a tendril curls up off its near side."""
-    stem = ribbon([(-10, 16), (40, 16)], 1.05)
-    up = scroll_path(bez((39.0, 10.6), (38.0, 8.6), (36.4, 7.6), (34.6, 8.0), n=16), 1.6, 0.85, 0.42)
-    forged(c, [stem, plate(hw=10.2, hh=7.8, n=2)] + pieces_of(tapered(up, 0.9, 0.5)), WOOD, bevel=1.4)
-    for base, tip, w in (((39.0, 21.0), (34.4, 27.6), 4.2), ((28.0, 16.4), (24.2, 10.8), 3.2)):
-        forged(c, [leaf_poly(base, tip, w)], pal, bevel=1.4)
+def spear_thumb(c):
+    pen = Pen(c, 48)
+    raised(pen, [profile([(0.6, 0), (1.4, 1.9), (3.0, 2.75), (45.0, 2.75), (46.6, 1.9), (47.4, 0)])], dim(BRZ, 0.8), bevel=1.4, cast=0.4)
+    m = raised(pen, [[(16 - 3.0, 18.6), (16 + 3.0, 18.6), (16 + 3.0, 29.4), (16 - 3.0, 29.4)]], LEATHER, bevel=1.2, cast=0.3)
+    turns = []
+    for y in np.arange(18.0, 30.5, 1.5):  # the binding, wound at a slant
+        turns.append([(12.6, y + 1.1), (19.4, y - 0.1), (19.4, y + 0.35), (12.6, y + 1.55)])
+    c.over(np.zeros_like(c.rgb), pen.mask(turns) * m * 0.55)
+    for y in (18.6, 29.4):
+        raised(pen, [[(16 - 3.3, y - 0.65), (16 + 3.3, y - 0.65), (16 + 3.3, y + 0.65), (16 - 3.3, y + 0.65)]], dim(BRZ, 0.8), bevel=0.45, cast=0.3)
 
 
-def gold_joint(c, pal):
-    """The gold rod passes a ruby set in a lozenge and ends in a cartouche
-    round the groove."""
-    parts = [ribbon([(-10, 16), (40, 16)], 0.9), plate(hw=10.0, hh=7.4, n=3.2), plate(hw=7.6, hh=9.6, n=3.2),
-             [(30.4, 12.4), (35.4, 12.4), (36.4, 16), (35.4, 19.6), (30.4, 19.6), (29.4, 16)]]
-    forged(c, parts, pal, bevel=0.9)
-    c.gem(32.9 * U, 16 * U, 1.5 * U, RUBY)
+def spear_joint(c):
+    """Blizzard's divider stops at the column's edge (x 6); its rod runs on
+    and sinks into the stone, a cut as thick as it is, into the groove."""
+    pen = Pen(c, 16)
+    rod = raised(pen, [ribbon([(4.6, 8), (12.8, 8)], 0.8)], ROD, bevel=0.6, cast=0.3)
+    xx = (np.arange(c.W)[None, :] / c.s - c.pad) / U
+    k = np.clip((xx - 7.5) / 3.5, 0, 1)  # going down into the cut: dark, then gone
+    c.rgb *= 1 - k[..., None]
+    lit = pen.mask([ribbon([(7.0, 8.95), (12.6, 8.95)], 0.16)])  # the cut's far edge catching light
+    c.over(np.broadcast_to(np.array(ROD[2], float), c.rgb.shape), lit * 0.3)
+    c.a *= 1 - groove_run(c) * np.clip((xx - 11.5), 0, 1)
 
 
-# --- our own dividers: the left end, the line, the middle (line at y 8) ------
+# --- 2. One twist of iron: the bar rises, twists once, splits into two scrolls -
 
-def vine_rules(c, piece, pal):
+def twist_cap(c, down, mode):
+    pen = Pen(c, 32, down, PRESS if mode == "Pushed" else 0, cap=True)
+    if mode != "Bare":
+        carve(c, groove_end(Pen(c, 32, down), GT))
+    under = c.rgb.copy()
+    raised(pen, [[(16 - 2.9, 10.0), (16 + 2.9, 10.0), (16 + 2.9, 36), (16 - 2.9, 36)]], IRN, bevel=1.2)
+    twist_marks(c, pen, 10.4, 15.4, 2.9)
+    parts = [profile([(1.0, 0), (3.4, 1.7), (6.4, 3.5), (8.8, 4.4), (10.0, 3.6), (10.6, 2.9)])]
+    for sgn in (1, -1):  # the scrolls, out and down onto the groove's lips like shoulders
+        parts += stroke(scroll(bez((X(sgn, 19.0), 9.0), (X(sgn, 21.8), 9.6), (X(sgn, 23.8), 11.4), (X(sgn, 23.4), 14.2), n=24),
+                               1.3, sgn * 0.85, 0.4), 1.0, 0.55)
+    raised(pen, parts, IRN, bevel=1.0)
+    sink(c, pen, GT, under)
+    glint(c, pen, 16, 2.8, 2.2, 0.8 if mode == "Pushed" else 0.6)  # the point's one warm light
+
+
+def twist_marks(c, pen, y0, y1, hw):
+    """The twist: a square bar's faces turning, as broad slanted bands."""
+    bar = pen.mask([[(16 - hw, y0), (16 + hw, y0), (16 + hw, y1), (16 - hw, y1)]])
+    dark, light = [], []
+    for y in np.arange(y0 - 1.2, y1 - 1.0, 2.6):
+        dark.append([(16 - hw, y + 1.2), (16 + hw, y - 0.8), (16 + hw, y + 0.7), (16 - hw, y + 2.7)])
+        light.append([(16 - hw, y + 2.5), (16 + hw, y + 0.5), (16 + hw, y + 0.85), (16 - hw, y + 2.85)])
+    blur = U * c.s * 0.12
+    c.over(np.zeros_like(c.rgb), ndimage.gaussian_filter(pen.mask(dark), blur) * bar * 0.62)
+    c.over(np.broadcast_to(np.array(IRN[2], float), c.rgb.shape), ndimage.gaussian_filter(pen.mask(light), blur) * bar * 0.45)
+
+
+def twist_thumb(c):
+    pen = Pen(c, 48)
+    raised(pen, [profile([(0.6, 0), (1.3, 1.8), (2.8, 2.6), (45.2, 2.6), (46.7, 1.8), (47.4, 0)])], IRN, bevel=1.2, cast=0.4)
+    raised(pen, [[(16 - 2.9, 19.0), (16 + 2.9, 19.0), (16 + 2.9, 29.0), (16 - 2.9, 29.0)]], IRN, bevel=1.2, cast=0.3)
+    twist_marks(c, pen, 19.0, 29.0, 2.9)
+
+
+def twist_rule(c, piece):
+    """Our own divider: a hammered iron rod (line at y 8) in the divider's own
+    olive iron, drawn out to a point at its left end, swelling in its middle
+    (RuleMid, stretched whole), and at the Joint a hook over the groove's lip."""
+    pen = Pen(c, 16)
+    if piece == "Mid":  # 64 wide, stretched: its swell stretches with it
+        raised(pen, [[(x, 8 + w) for x, w in SWELL] + [(x, 8 - w) for x, w in SWELL[::-1]]], IRN, bevel=0.7, cast=0.45)
+    elif piece == "Left":
+        raised(pen, [[(x, 8 + w) for x, w in POINT] + [(x, 8 - w) for x, w in POINT[::-1]]], IRN, bevel=0.7, cast=0.45)
+    else:  # the joint
+        hook = scroll(bez((-10, 8), (8, 8), (11.6, 8.0), (12.6, 9.4), n=40), 0.9, 0.7, 0.42)
+        raised(pen, stroke(hook, 0.75, 0.5), IRN, bevel=0.7, cast=0.45)
+
+
+def taper(knots, x0, x1, n=120):
+    from scipy.interpolate import PchipInterpolator
+    xs = np.linspace(x0, x1, n)
+    return list(zip(xs, PchipInterpolator([k[0] for k in knots], [k[1] for k in knots])(xs)))
+
+
+POINT = taper([(2.5, 0.12), (12, 0.5), (34, 0.75)], 2.5, 34)
+SWELL = taper([(-2, 0.75), (20, 1.0), (44, 1.0), (66, 0.75)], -2, 66)
+
+
+# --- 3. Vine and bud: a vine in the groove, seen only where it surfaces --------
+
+def bud_cap(c, down, mode):
+    pen = Pen(c, 32, down, PRESS if mode == "Pushed" else 0, cap=True)
+    t = []  # two tendrils, not a pair: each leaves the stem, crosses the lip and coils on the stone
+    t += stroke(scroll(bez((15.2, 14.0), (13.8, 13.4), (12.0, 13.8), (11.6, 15.6), n=24), 1.0, -1.0, 0.35), 0.55, 0.32, knob=False)
+    t += stroke(scroll(bez((16.8, 15.0), (18.4, 14.7), (20.2, 15.4), (20.5, 17.4), n=24), 0.9, 1.0, 0.35), 0.5, 0.3, knob=False)
+    raised(pen, t, BARK, bevel=0.5, cast=0.45)
+    if mode != "Bare":
+        carve(c, groove_end(Pen(c, 32, down), GT))
+    under = c.rgb.copy()
+    stalk = raised(pen, [profile([(11.0, 2.0), (14, 2.6), (36, 2.8)])], dim(BARK, 0.6), bevel=2.6)
+    grain = [ribbon([(x, 10.5), (x + 0.2, 36)], 0.12) for x in (15.0, 16.3, 17.4)]  # the bark's grain
+    c.over(np.broadcast_to(np.array(BARK[0], float), c.rgb.shape), pen.mask(grain) * stalk * 0.55)
+    raised(pen, [profile([(0.8, 0), (3.2, 2.2), (6.8, 4.6), (10.0, 5.6), (12.4, 4.2), (13.8, 1.7)])], BUD, bevel=2.2)
+    seam = pen.mask([ribbon(bez((16, 2.6), (16.4, 5.2), (16.6, 8.0), (16.2, 11.2), n=20), np.linspace(0.14, 0.3, 20))])
+    c.over(np.broadcast_to(np.array(BUD[0], float), c.rgb.shape), seam * 0.6)
+    raised(pen, [leaf((X(s, 16.6), 13.6), (X(s, 20.0), 10.6), 2.0) for s in (1, -1)], dim(BUD, 0.7), bevel=0.6, cast=0.35)
+    sink(c, pen, GT, under)
+    if mode == "Pushed":
+        glint(c, pen, 16, 3.0, 1.6, 0.5)
+
+
+def bud_thumb(c):
+    pen = Pen(c, 48)
+    raised(pen, [profile([(0.6, 0), (1.4, 1.8), (3.0, 2.5), (45.0, 2.5), (46.6, 1.8), (47.4, 0)])], dim(BARK, 0.85), bevel=1.3, cast=0.4)
+    raised(pen, [profile([(23.0, 2.7), (23.6, 3.05), (24.4, 3.05), (25.0, 2.7)])], BARK, bevel=0.6, cast=0.35)  # the node, a ring
+
+
+def bud_joint(c):
+    """Blizzard's divider stops at the column's edge; a tendril comes out from
+    under the groove's lip and runs up under the divider's end, so the
+    divider's own curl and the vine are one gesture."""
+    pen = Pen(c, 16)
+    t = stroke(bez((13.4, 9.6), (10.6, 9.9), (8.0, 9.8), (5.0, 8.9), n=30), 0.6, 0.3, knob=False)
+    raised(pen, t, BARK, bevel=0.6, cast=0.45)
+    c.a *= 1 - groove_run(c)  # where it comes out from under the groove's edge
+
+
+# --- 4. Engraved, not cast: bronze inlaid flush, the ornament engraved -----------
+
+ARCH = [(1.0, 0), (3.5, 1.5), (6.5, 3.3), (9.5, 4.8), (12.5, 5.8), (15.0, 6.2), (16.8, 6.0), (17.8, 5.2)]  # a pointed arch, its base corners rounded
+
+
+def inlay_cap(c, down, mode):
+    pen = Pen(c, 32, down, cap=True)
+    flush(pen, [profile(ARCH)], BRZ)
+    lines = []
+    for sgn in (1, -1):  # each edge followed by an engraved line, open at the point, a small scroll out at the base
+        lead = profile([(5.0, 0.8), (6.5, 1.6), (9.5, 2.9), (12.5, 3.6), (14.6, 3.8)])[:200]  # twice the size: it must read on a TV
+        lead = [(X(sgn, x), y) for x, y in lead]
+        lines += stroke(scroll(lead, 0.7, -sgn * 1.3, 0.45), 0.45, 0.36)
+    engrave(c, pen.mask(lines), lit=mode == "Pushed")
+    if mode != "Bare":
+        carve(c, groove_end(Pen(c, 32, down), GT + 0.2))
+
+
+def inlay_thumb(c):
+    pen = Pen(c, 48)
+    raised(pen, [profile([(0.6, 0), (1.6, 2.2), (3.4, 3.0), (44.6, 3.0), (46.4, 2.2), (47.4, 0)])], dim(BRZ, 0.8), bevel=0.9, cast=0.4)
+    line = [ribbon([(16, 3.6), (16, 20.6)], 0.4), ribbon([(16, 27.4), (16, 44.4)], 0.4),
+            ribbon([(16, 20.6), (17.6, 24.0), (16, 27.4), (14.4, 24.0), (16, 20.6)], 0.38)]
+    engrave(c, pen.mask(line))
+
+
+INLAY = dim(BRZ, 0.62)  # the dividers' bronze, below the text's value
+INLAY_END = [(x, 0.08 + 0.42 * min(1, (x - 2) / 20) ** 0.7) for x in np.linspace(2, 42, 80)]  # drawn out to a point
+
+
+def inlay_rule(c, piece):
+    """Our own divider: a thin bronze line inlaid flush (y 8); its left end
+    drawn out to a point; at the Joint the groove is cut through it, the
+    bronze bright on the groove's wall, and it stops there."""
+    pen = Pen(c, 16)
     if piece == "Mid":
-        forged(c, [ribbon([(-10, 8), (42, 8)], 1.05)], WOOD, bevel=0.75)
-        return
-    if piece == "Left":
-        lead = bez((42, 8), (20, 8), (10.0, 8.0), (6.0, 8.0), n=40)
-        forged(c, pieces_of(tapered(lead, 1.05, 0.7)), WOOD, bevel=0.75)
-        for base, tip, w in (((6.6, 8.0), (1.0, 6.4), 3.6), ((13.0, 8.6), (17.6, 14.2), 3.6), ((19.0, 7.6), (23.2, 2.4), 3.2)):
-            forged(c, [leaf_poly(base, tip, w)], pal, bevel=1.4)
-        return
-    forged(c, [ribbon([(-10, 8), (42, 8)], 1.05)], WOOD, bevel=0.75)  # the knot: a bud and a leaf pair
-    for base, tip, w in (((15.4, 7.6), (9.0, 2.2), 4.0), ((16.6, 8.4), (23.0, 13.8), 4.0)):
-        forged(c, [leaf_poly(base, tip, w)], pal, bevel=1.4)
-    forged(c, [(16, 8, 1.8)], WOOD, bevel=0.8)
+        flush(pen, [ribbon([(-10, 8), (74, 8)], 0.5)], INLAY)
+    elif piece == "Left":
+        flush(pen, [[(x, 8 + w) for x, w in INLAY_END] + [(x, 8 - w) for x, w in INLAY_END[::-1]]], INLAY)
+    else:
+        flush(pen, [ribbon([(-10, 8), (13.0, 8)], 0.5)], INLAY)
+        c.a *= 1 - groove_run(c)
+        for x in (12.35,):  # the cut end, catching light on the groove's wall
+            c.over(np.broadcast_to(np.array(INLAY[2], float), c.rgb.shape), pen.mask([(x, 8, 0.5)]))
+            glint(c, pen, x, 8, 0.7, 0.4)
 
 
-def gold_rules(c, piece, pal):
-    if piece == "Mid":
-        forged(c, [ribbon([(-10, 8), (42, 8)], 0.9)], pal, bevel=0.8)
-        return
-    if piece == "Left":
-        tip = profile([(1.0, 0), (3.6, 2.4), (6.4, 3.0), (8.4, 1.4), (9.6, 0.9)], cx=8)
-        tip = [(y, x) for x, y in tip]  # pointing left
-        forged(c, [ribbon([(9.0, 8), (42, 8)], 0.9), [(9.2, 5.2), (11.4, 5.2), (11.4, 10.8), (9.2, 10.8)]], pal, bevel=0.8)
-        forged(c, [tip], pal, bevel=1.0)
-        return
-    forged(c, [ribbon([(-10, 8), (42, 8)], 0.9), [(16, 2.4), (21.0, 8), (16, 13.6), (11.0, 8)]], pal, bevel=0.9)
-    c.gem(16 * U, 8 * U, 2.0 * U, RUBY)
-
-
-ORNATE = {
-    # name: (cap, joint, rules or None for Blizzard's divider, palette)
-    "Iron": (iron_cap, iron_joint, None, IRON),
-    "Vine": (vine_cap, vine_joint, vine_rules, LEAF),
-    "Finial": (gold_cap, gold_joint, gold_rules, GOLD),
+DESIGNS5 = {
+    # name: (cap, thumb, joint, own divider or None for Blizzard's)
+    "Sheath": (spear_cap, spear_thumb, spear_joint, None),
+    "Twist": (twist_cap, twist_thumb, lambda c: twist_rule(c, "Joint"), twist_rule),
+    "Bud": (bud_cap, bud_thumb, bud_joint, None),
+    "Inlay": (inlay_cap, inlay_thumb, lambda c: inlay_rule(c, "Joint"), inlay_rule),
 }
 
 
-def ornate_cap(name, down, mode):
-    """A cap in one state: the ornament (the down cap's drawn flipped with its
-    light kept), the groove then carved through its socket."""
-    cap, _, _, pal = ORNATE[name]
-    c = ucanvas(32, 64)
-    if mode == "Pushed":
-        pal = dim(pal, 0.62)
-    elif mode == "Disabled":
-        pal = GREY
-    draw_flipped(c, cap, pal, down, 64, nudge=1.0 if mode == "Pushed" else 0)
-    if mode == "Pushed":
-        c.rgb *= 0.85
-    if mode == "Disabled":
-        g = c.rgb @ np.array([0.3, 0.59, 0.11]); c.rgb = np.repeat(g[..., None], 3, -1) * 0.8
-    carve4(c, groove_mask(c, GROOVE_TOP, 80, round_top=GROOVE_TOP) if not down else groove_mask(c, -16, 64 - GROOVE_TOP, round_bottom=64 - GROOVE_TOP))
-    return c.final()
-
-
-def draw_flipped(o, fn, pal, down, h, nudge=0):
-    """Draw fn's up shape, flipped for down, by remapping umask's units."""
-    global umask
-    base = umask
-
-    def mapped(c, polys=(), circles=()):
-        f = (lambda y: h - y + nudge) if down else (lambda y: y + nudge)
-        return base(c, [[(x, f(y)) for x, y in p] for p in polys], [(x, f(y), r) for x, y, r in circles])
-    umask = mapped
-    gem = o.gem
-    if down or nudge:
-        o.gem = lambda cx, cy, r, p, bezel=None: gem(cx, ((h * U - cy) if down else cy) + nudge * U, r, p, bezel)
-    try:
-        fn(o, pal)
-    finally:
-        umask = base
-        o.gem = gem
-
-
-def dim(pal, k):
-    return tuple(tuple(int(x * k) for x in col) for col in pal)
-
-
-GREY = ((22, 22, 22), (88, 88, 88), (160, 160, 160))
-
-
-def glow(inlay):
+def glow(bare):
     """The highlight, drawn for ADD: a warm rim round the ornament."""
-    a = inlay[..., 3] / 255
+    a = bare[..., 3] / 255
     halo = np.clip(ndimage.gaussian_filter(a, U * 0.8) * 1.8, 0, 1)
     inner = ndimage.gaussian_filter(ndimage.minimum_filter(a, size=int(U * 1.4) | 1), U * 0.4)
-    hl = np.zeros_like(inlay)
+    hl = np.zeros_like(bare)
     hl[..., 0], hl[..., 1], hl[..., 2] = 255, 196, 90
-    hl[..., 3] = halo * (1 - inner * 0.6) * 0.85 * 255
+    hl[..., 3] = halo * (1 - inner * 0.6) * 0.8 * 255
     return hl
 
 
-def ornate_joint(name):
-    _, joint, _, pal = ORNATE[name]
-    c = ucanvas(64, 32)
-    joint(c, pal)  # its bar runs on behind the groove, cut over it
-    carve4(c, umask(c, [[(44, -16), (52, -16), (52, 48), (44, 48)]]))
-    return c.final()
-
-
-def render4_one(name):
-    out = {}
-    for down in (False, True):
-        d = "Down" if down else "Up"
-        for mode in ("Normal", "Pushed", "Disabled"):
-            out["Scroll-%s-%s-%s" % (name, d, mode)] = ornate_cap(name, down, mode)
-        c = ucanvas(32, 64)
-        draw_flipped(c, ORNATE[name][0], ORNATE[name][3], down, 64)
-        hl = glow(c.final())
-        g = ucanvas(32, 64)
-        carve4(g, groove_mask(g, GROOVE_TOP, 80, round_top=GROOVE_TOP) if not down else groove_mask(g, -16, 64 - GROOVE_TOP, round_bottom=64 - GROOVE_TOP))
-        hl[..., 3] *= 1 - g.final()[..., 3] / 255
-        out["Scroll-%s-%s-Highlight" % (name, d)] = hl
-    c = ucanvas(32, 8)
-    carve4(c, groove_mask(c, -16, 24))
-    out["Scroll-%s-Mid" % name] = c.final()
-    out["Scroll-%s-Joint" % name] = ornate_joint(name)
-    rules = ORNATE[name][2]
-    if rules:
-        for piece in ("Left", "Mid", "Knot"):
-            c = ucanvas(32, 16)
-            rules(c, piece, ORNATE[name][3])
-            out["Scroll-%s-%s" % (name, "Knot" if piece == "Knot" else "Rule" + piece)] = c.final()
-        # the line is stretched: its tile the same in every column, and the
-        # left end's last columns easing into it so the two meet unseen
-        mid = out["Scroll-%s-RuleMid" % name]
-        mid[:] = mid.mean(1, keepdims=True)
-        left = out["Scroll-%s-RuleLeft" % name]
-        k = np.clip((np.arange(left.shape[1]) - 96) / 24, 0, 1)[None, :, None]
-        left[:] = left * (1 - k) + mid[:, :1] * k
+def greyed(img):
+    out = img.copy()
+    g = img[..., :3] @ np.array([0.3, 0.59, 0.11])
+    out[..., :3] = (g[..., None] * 0.7 + 10)
     return out
 
 
-# --- the comparison sheet ---------------------------------------------------
+def flat_grain(c):
+    """The canvas's grain made the same down every column, so a slice of it
+    can be stretched without a seam."""
+    g = c.grain()
+    c._grain = np.repeat(g.mean(0, keepdims=True), g.shape[0], 0)
+
+
+def render5_one(name):
+    cap, thumb, joint, rule = DESIGNS5[name]
+    out = {}
+    for down in (False, True):
+        d = "Down" if down else "Up"
+        imgs = {}
+        for mode in ("Normal", "Pushed", "Bare"):
+            c = ucanvas(32, 32)
+            cap(c, down, mode)
+            imgs[mode] = c.final()
+            if mode == "Normal":
+                metal = c.shown
+        if name != "Inlay":  # a pressed piece sits a little deeper in shadow
+            imgs["Pushed"][..., :3] *= 0.84
+        out["%s-Normal" % d] = imgs["Normal"]
+        out["%s-Pushed" % d] = imgs["Pushed"]
+        out["%s-Disabled" % d] = greyed(imgs["Normal"])
+        g = ucanvas(32, 32)  # the glow stops at the groove: in it, only on metal lying above its shadow
+        cut = ndimage.maximum_filter(groove_end(Pen(g, 32, down), GT), size=int(U * g.s * 1.2) | 1)  # its walls and lip too
+        g.a = cut * (1 - metal * (1 - np.clip(deep(g, down) / 0.55, 0, 1)))
+        hl = glow(imgs["Bare"])
+        hl[..., 3] *= 1 - g.final()[..., 3] / 255
+        out["%s-Highlight" % d] = hl
+    c = ucanvas(32, 8)
+    carve(c, groove_run(c))
+    out["Mid"] = c.final()
+    c = ucanvas(32, 48)
+    flat_grain(c)
+    thumb(c)
+    t = c.final()
+    p = 8 * U
+    out["Thumb-Top"] = t[:p]
+    out["Thumb-Mid"] = np.repeat(t[p:2 * p].mean(0, keepdims=True), p, 0)
+    out["Thumb-Centre"] = t[2 * p:4 * p]
+    out["Thumb-Bottom"] = t[5 * p:]
+    c = ucanvas(32, 16)
+    joint(c)
+    out["Joint"] = c.final()
+    if rule:
+        for piece, w in (("Left", 32), ("Mid", 64)):  # the Mid stretched whole between the Left and the Joint
+            c = ucanvas(w, 16)
+            rule(c, piece)
+            out["Rule" + piece] = c.final()
+    return {"Scroll-%s-%s" % (name, k): v for k, v in out.items()}
+
 
 def blizzard_divider():
     """QuestLog-frame-devider as the game drew it at 2x on magenta
@@ -716,162 +795,158 @@ def blizzard_divider():
     return Image.fromarray(out.astype(np.uint8), "RGBA")
 
 
+# --- the comparison sheet ---------------------------------------------------
+
 SHOT = os.path.join(os.environ.get("LOCALAPPDATA", ""), "wow-companion", "shots", "round4-panes.png")
+UG = 2.7  # px per UI unit in the game's grab (4K)
+# the spearhead's pane in the grab: its column's right edge, the transcript's
+# left, top and bottom, and the dividers' lines
+RIGHT, INNER, TOP, BOTTOM, LINES = 487, 44, 200, 1219, (335, 540, 675)
 
 
-def ingame(art, img):
-    """Each candidate drawn into the game's own grab of its gallery pane
-    (round 4's, 2.7 px per unit), round 4's art painted out with the pane's own
-    stone first: the true size, against the true stone, font and frame."""
-    shot = Image.open(SHOT).convert("RGBA")
-    u, top, bottom, lines = 2.7, 200, 1219, (335, 540, 675)
-    H = (bottom - top) / u
-    out = []
-    for name, right in zip(ORNATE, (972, 1457, 1942)):
-        p = shot.copy()
-        cl, jl = round(right - 32 * u), round(right - 64 * u)
-        inner = right - 425
-        a = np.asarray(p).copy()
-        own = ORNATE[name][2]
-        for y, below in zip(lines, (470, 625, 820)):  # the dividers' rows, from free rows of the same bands
-            x0 = inner if own else round(right - 40 * u)
-            a[y - 22:y, x0:cl] = a[y - 48:y - 26, x0:cl]
-            a[y:y + 22, x0:cl] = a[below:below + 22, x0:cl]
-        src = a[830:1200, cl - 100:right - 100]
-        for y in range(top, bottom, src.shape[0]):  # the column, from empty stone
-            n = min(src.shape[0], bottom - y)
-            a[y:y + n, cl:right] = src[:n]
-        p = Image.fromarray(a)
-
-        def put(im, x, y, w, h):
-            t = im.resize((max(1, round(w * u)), max(1, round(h * u))), Image.LANCZOS)
-            p.alpha_composite(t, (round(cl + x * u), round(top + y * u)))
-        ys = [(y - top) / u for y in lines]
-        for y in ys:
-            if own:
-                put(img("Scroll-%s-RuleLeft" % name), (inner - cl) / u, y - 8, 32, 16)
-                put(img("Scroll-%s-RuleMid" % name), (inner - cl) / u + 28, y - 8, (cl - inner) / u - 52, 16)
-                put(img("Scroll-%s-Knot" % name), (inner - cl) / u / 2 - 16, y - 8, 32, 16)
-        tops, bottoms = [64] + [y + 16 for y in ys], [y - 16 for y in ys] + [H - 64]
-        for t, b in zip(tops, bottoms):
-            put(img("Scroll-%s-Mid" % name), 0, t, 32, b - t)
-        for y in ys:
-            put(img("Scroll-%s-Joint" % name), -32, y - 16, 64, 32)
-        put(img("Scroll-%s-Up-Normal" % name), 0, 0, 32, 64)
-        put(img("Scroll-%s-Down-Normal" % name), 0, H - 64, 32, 64)
-        thumb = Image.open(os.path.join(ROOT, "target", "minimal-thumb.png"))
-        tw, room = thumb.width, H - 128
-        ty, th = 64 + room / 6, room / 3
-        put(thumb.crop((0, 0, tw, tw)), 12, ty, 8, 8)
-        put(thumb.crop((0, tw, tw, thumb.height - tw)), 12, ty + 8, 8, th - 16)
-        put(thumb.crop((0, thumb.height - tw, tw, thumb.height)), 12, ty + th - 8, 8, 8)
-        out.append(p.crop((right - 465, 150, right + 10, 1230)))
-    return out
+def clean_pane():
+    """The grab's first pane with round 1's bar, joints and dividers painted
+    out with the pane's own stone: the true stone, font and frame to draw on."""
+    a = np.asarray(Image.open(SHOT).convert("RGBA")).copy()
+    cl = RIGHT - round(20 * UG)
+    for y, below in zip(LINES, (470, 625, 820)):  # rows of the same bands with nothing on them
+        a[y - 22:y, INNER:RIGHT] = a[y - 48:y - 26, INNER:RIGHT]
+        a[y:y + 22, INNER:RIGHT] = a[below:below + 22, INNER:RIGHT]
+    x0 = cl - 30  # the column and the art's reach left of it; its stone is the last band's
+    src = a[830:1200, x0 - 130:RIGHT - 130]
+    for y in range(TOP, BOTTOM, src.shape[0]):
+        n = min(src.shape[0], BOTTOM - y)
+        a[y:y + n, x0:RIGHT] = src[:n]
+    return a
 
 
-def sheet4(art):
-    """Each candidate as a gallery pane: three dividers meeting the groove,
-    at the game's 4K size (2.8 px per unit, measured from round 3's panes) and
-    4x; then every cap state at 4x, Highlight added over Normal as the game
-    does. The thumb is Blizzard's minimal thumb as the game drew it."""
-    slate = np.asarray(Image.open(os.path.join(ROOT, "addon", "WowCompanion", "Art", "SlateLight-6.tga")).convert("RGB"), float)
-    bliz = blizzard_divider()
-    thumb = Image.open(os.path.join(ROOT, "target", "minimal-thumb.png"))
-    tw = thumb.width
+def six_turns(a):
+    """The cleaned pane restacked as six shorter turns, as the chat shows a
+    long conversation: its lines."""
+    you, claude = a[TOP:LINES[0]], a[LINES[0]:LINES[0] + (LINES[0] - TOP)]
+    out = a.copy()
+    y, lines = TOP, []
+    for i, band in enumerate([you, claude, you, claude, you, claude]):
+        n = min(band.shape[0], BOTTOM - y)
+        out[y:y + n] = band[:n] if i < 5 else a[LINES[2]:LINES[2] + n]
+        if i:
+            lines.append(y)
+        y += n
+    rest = BOTTOM - y
+    if rest > 0:
+        out[y:BOTTOM] = a[BOTTOM - rest:BOTTOM]
+    return out, lines
 
+
+def draw_set(base, art, name, u, ox, oy, lines, thumb=None):
+    """A design onto `base` (PIL RGBA) at u px per unit; ox, oy: where the
+    pane's (RIGHT, TOP) lands; lines: the dividers' y in the grab's px."""
     def img(stem):
-        return Image.fromarray(art[stem].astype(np.uint8), "RGBA")
+        return Image.fromarray(art["Scroll-%s-%s" % (name, stem)].astype(np.uint8), "RGBA")
 
-    def put(base, im, x, y, w, h, u):
-        t = im.resize((max(1, round(w * u)), max(1, round(h * u))), Image.LANCZOS)
-        base.alpha_composite(t, (round(x * u), round(y * u)))
+    def put(im, x, y, w, h):  # x, y in units from the column's left, top; edges on whole px as the game snaps them
+        x0, y0 = round(ox - 20 * u + x * u), round(oy + y * u)
+        x1, y1 = round(ox - 20 * u + (x + w) * u), round(oy + (y + h) * u)
+        if x1 <= x0 or y1 <= y0:
+            return
+        base.alpha_composite(im.resize((x1 - x0, y1 - y0), Image.LANCZOS), (x0, y0))
+    H = (BOTTOM - TOP) / UG
+    ys = [(y - TOP) / UG for y in lines]
+    inner = -(RIGHT - INNER) / UG + 20
+    own = DESIGNS5[name][3]
+    for y in ys:
+        if own:
+            put(img("RuleLeft"), inner, y - 8, 32, 16)
+            put(img("RuleMid"), inner + 32, y - 8, -6 - inner - 32, 16)
+        else:
+            put(BLIZ, inner, y - 7.5, -inner, 15)
+    put(img("Mid"), -6, 32, 32, H - 64)
+    for y in ys:
+        put(img("Joint"), -6, y - 8, 32, 16)
+    ty, th = thumb or (32 + (H - 64) / 6, (H - 64) / 3)
+    put(img("Thumb-Top"), -6, ty, 32, 8)
+    put(img("Thumb-Mid"), -6, ty + 8, 32, th / 2 - 16)
+    put(img("Thumb-Centre"), -6, ty + th / 2 - 8, 32, 16)
+    put(img("Thumb-Mid"), -6, ty + th / 2 + 8, 32, th / 2 - 16)
+    put(img("Thumb-Bottom"), -6, ty + th - 8, 32, 8)
+    put(img("Up-Normal"), -6, 0, 32, 32)
+    put(img("Down-Normal"), -6, H - 32, 32, 32)
 
-    def stone(w, h, k=1.0):
-        reps = (h // 256 + 1, w // 256 + 1, 1)
-        return Image.fromarray((np.tile(slate, reps)[:h, :w] * k).astype(np.uint8)).convert("RGBA")
 
-    def pane(name, u, W=170, H=330):
-        col = W - 32
-        base = stone(int(W * u), int(H * u))
-        dark = stone(int(col * u), int(H * u), 0.8)
-        lines = (70, 150, 236)
-        for i, y in enumerate(lines):  # the player's turns on the darker stone
-            if i % 2 == 0:
-                base.alpha_composite(dark.crop((0, 0, int(col * u), int((lines[i + 1] if i + 1 < len(lines) else H) * u - y * u))), (0, round(y * u)))
-        for y in lines:
-            if ORNATE[name][2]:
-                put(base, img("Scroll-%s-RuleLeft" % name), 0, y - 8, 32, 16, u)
-                put(base, img("Scroll-%s-RuleMid" % name), 28, y - 8, col - 52, 16, u)
-                put(base, img("Scroll-%s-Knot" % name), col / 2 - 16, y - 8, 32, 16, u)
-            else:
-                put(base, bliz, 0, y - 7.5, col - 10, 15, u)
-        tops = [64] + [y + 16 for y in lines]
-        bottoms = [y - 16 for y in lines] + [H - 64]
-        for t, b in zip(tops, bottoms):
-            put(base, img("Scroll-%s-Mid" % name), col, t, 32, b - t, u)
-        for y in lines:
-            put(base, img("Scroll-%s-Joint" % name), col - 32, y - 16, 64, 32, u)
-        put(base, img("Scroll-%s-Up-Normal" % name), col, 0, 32, 64, u)
-        put(base, img("Scroll-%s-Down-Normal" % name), col, H - 64, 32, 64, u)
-        ty, th = 90, 80
-        put(base, thumb.crop((0, 0, tw, tw)), col + 12, ty, 8, 8, u)
-        put(base, thumb.crop((0, tw, tw, thumb.height - tw)), col + 12, ty + 8, 8, th - 16, u)
-        put(base, thumb.crop((0, thumb.height - tw, tw, thumb.height)), col + 12, ty + th - 8, 8, 8, u)
-        return base
+def sheet5(art):
+    """Row 1: each set drawn into the game's own grab at its true size (2.7 px
+    a unit), the spearhead as the game drew it first; row 2: the same with six
+    turns; row 3: the top of each at 4x; then every button state at 4x, the
+    Highlight added over Normal as the game does."""
+    global BLIZ
+    BLIZ = blizzard_divider()
+    shot = Image.open(SHOT).convert("RGBA")
+    clean = clean_pane()
+    six, six_lines = six_turns(clean)
+    L, R = INNER - 12, RIGHT + 14
 
-    def row(cells, gap=12):
-        r = Image.new("RGBA", (sum(c.width for c in cells) + gap * len(cells), max(c.height for c in cells)), (0, 0, 0, 255))
-        x = 0
-        for c in cells:
-            r.paste(c, (x, 0)); x += c.width + gap
-        return r
-
-    big = [pane(n, 4 * 2.8 / 2) for n in ORNATE]  # 2x the game's 4K size, to see
-    big = [b.crop((b.width - round(110 * 5.6), 0, b.width, round(180 * 5.6))) for b in big]
-    true = ingame(art, img)
-    for n, t in zip(ORNATE, true):
-        t.convert("RGB").save(os.path.join(ROOT, "target", "scrollbar-true-%s.png" % n))
-    rows = [row(true), row(big)]
-    for n in ORNATE:
+    def crop(a, y0=TOP - 12, y1=BOTTOM + 10):
+        return a.crop((L, y0, R, y1))
+    true, sixes, zooms = [crop(shot)], [crop(shot)], []
+    for name in DESIGNS5:
+        for src, lines, out in ((clean, LINES, true), (six, six_lines, sixes)):
+            b = Image.fromarray(src)
+            draw_set(b, art, name, UG, RIGHT, TOP, lines)
+            out.append(crop(b))
+        k = 4
+        z = Image.fromarray(six).crop((RIGHT - 70, TOP, RIGHT + 8, TOP + 300)).resize((78 * k, 300 * k), Image.LANCZOS)
+        draw_set(z, art, name, UG * k, 70 * k, 0, six_lines[:2], thumb=(44, 50))
+        zooms.append(z)
+    for name, t in zip(DESIGNS5, true[1:]):
+        t.convert("RGB").save(os.path.join(ROOT, "target", "scrollbar-true-%s.png" % name))
+    rows = [row(true), row(sixes), row(zooms)]
+    for name in DESIGNS5:
         cells = []
         for d in ("Up", "Down"):
             for s in ("Normal", "Pushed", "Highlight", "Disabled"):
-                cell = stone(128, 256)
+                cell = Image.fromarray(clean).crop((RIGHT - 60, 880, RIGHT - 60 + 47, 927)).resize((32 * 11, 32 * 11), Image.LANCZOS)
+                over = art["Scroll-%s-%s-%s" % (name, d, "Normal" if s == "Highlight" else s)]
+                cell.alpha_composite(Image.fromarray(over.astype(np.uint8), "RGBA").resize(cell.size, Image.LANCZOS))
                 if s == "Highlight":
-                    cell.alpha_composite(img("Scroll-%s-%s-Normal" % (n, d)).resize((128, 256), Image.LANCZOS))
-                    hl = np.asarray(img("Scroll-%s-%s-Highlight" % (n, d)).resize((128, 256), Image.LANCZOS), float)
-                    c = np.asarray(cell, float)
+                    hl = np.asarray(Image.fromarray(art["Scroll-%s-%s-Highlight" % (name, d)].astype(np.uint8), "RGBA").resize(cell.size, Image.LANCZOS), float)
+                    c = np.asarray(cell, float).copy()
                     c[..., :3] = np.clip(c[..., :3] + hl[..., :3] * hl[..., 3:] / 255, 0, 255)
                     cell = Image.fromarray(c.astype(np.uint8), "RGBA")
-                else:
-                    cell.alpha_composite(img("Scroll-%s-%s-%s" % (n, d, s)).resize((128, 256), Image.LANCZOS))
                 cells.append(cell)
-        rows.append(row(cells, 4))
+        rows.append(row(cells, 6))
     W = max(r.width for r in rows)
-    out = Image.new("RGBA", (W, sum(r.height + 12 for r in rows)), (0, 0, 0, 255))
+    out = Image.new("RGBA", (W, sum(r.height + 16 for r in rows)), (0, 0, 0, 255))
     y = 0
     for r in rows:
-        out.paste(r, (0, y)); y += r.height + 12
-    path = os.path.join(ROOT, "target", "scrollbar-sheet-4b.png")
+        out.paste(r, (0, y)); y += r.height + 16
+    path = os.path.join(ROOT, "target", "scrollbar-sheet-5.png")
     out.convert("RGB").save(path)
     return path
+
+
+def row(cells, gap=12):
+    r = Image.new("RGBA", (sum(c.width for c in cells) + gap * len(cells), max(c.height for c in cells)), (0, 0, 0, 255))
+    x = 0
+    for c in cells:
+        r.paste(c, (x, 0)); x += c.width + gap
+    return r
 
 
 def main():
     from concurrent.futures import ProcessPoolExecutor
     with ProcessPoolExecutor() as pool:  # every design at once
         spear = pool.submit(render)
-        art4 = {}
-        for part in pool.map(render4_one, ORNATE):
-            art4.update(part)
+        art5 = {}
+        for part in pool.map(render5_one, DESIGNS5):
+            art5.update(part)
         art = spear.result()
     for old in glob.glob(os.path.join(OUT, "Scroll-*.tga")):
         os.remove(old)
     for stem, rgba in art.items():
         write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, VERSION)), rgba)
-    for stem, rgba in art4.items():
-        write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, VERSION4)), rgba)
-    print(len(art) + len(art4), "textures;", sheet4(art4))
+    for stem, rgba in art5.items():
+        write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, VERSION5)), rgba)
+    print(len(art) + len(art5), "textures;", sheet5(art5))
 
 
 if __name__ == "__main__":
