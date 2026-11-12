@@ -21,6 +21,8 @@ mod audit;
 mod strip;
 #[cfg(windows)]
 mod duplication;
+#[cfg(windows)]
+mod composited;
 mod crash;
 mod lifecycle;
 mod logfile;

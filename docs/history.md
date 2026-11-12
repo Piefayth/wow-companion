@@ -574,3 +574,19 @@ which bytes stayed still (a counter byte fooled it); buttons now come from the
 pad's report descriptor, Sony's layout or the XInput word. Built the same day:
 the Lua half 3e9b04f (Main), the Rust half after it. The fallback tag is
 `settings-in-game-before`.
+
+## The strip's reads cost frames; a window of ours keeps the game composited (2026-11-12)
+
+With the command-strip watcher on, WoW ran at 116 fps instead of 120, and the
+player felt it as stutter (with vsync, a frame shown twice about four times a
+second). Lowering every graphics setting to the minimum still gave 116, so it was
+not GPU headroom. Turning the watcher off gave 120. The cause: a game in
+independent flip hands its frames straight to the display, and every Desktop
+Duplication capture made Windows switch it onto the compositor and back, losing
+frames at each switch. A 2x2, alpha-2, click-through, never-activated topmost
+window over the screen's corner keeps WoW composited all the time, so a capture
+switches nothing: 120 fps with the watcher looking twice a second, and 116 again
+the moment the window closed. The window now lives with the capture session
+(`src/composited.rs`). The cost is a frame reaching the screen up to one refresh
+later. Considered and left for later: hearing the game through its file opens
+(ETW, docs/proposals/etw-signals.md), which needs no capture at all.

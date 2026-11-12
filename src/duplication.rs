@@ -131,6 +131,9 @@ unsafe fn open() -> io::Result<Session> {
         // DuplicateOutput1 is for per-monitor DPI-aware processes, and the strip
         // is read in real pixels. Refused when already set: not an error.
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        // the game composited for as long as this process reads the screen, so
+        // no capture switches it (composited.rs)
+        crate::composited::hold();
         let factory: IDXGIFactory1 = CreateDXGIFactory1().map_err(|e| failed("no DXGI factory", e))?;
         let mut adapter_index = 0;
         loop {
