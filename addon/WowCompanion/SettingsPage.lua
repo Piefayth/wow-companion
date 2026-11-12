@@ -6,7 +6,8 @@
 -- from the spine to the right edge, name at the spine, control at the edge,
 -- a quest log divider between sections growing out of the spine's edge (the
 -- player's pick from the Settings looks sheet, 2026-11-11). The focused row's
--- note is read in a band at the foot, where Blizzard shows a tooltip.
+-- note is read where the spine turns along the foot, its name in gold, where
+-- Blizzard shows a tooltip.
 -- Owned by Core so it works without the Agent; each addon adds its own rows.
 -- Shown in a window of its own (the minimap mark, Blizzard's AddOns settings)
 -- or inside another frame (the Companion window's Settings tab).
@@ -40,35 +41,60 @@ local function stone(tex, which)
 	tex:SetVertTile(true)
 end
 
--- the spine, to the backing's edges (9 px outside the page left, 7 above and
--- below), fixed while the rows scroll
+-- The dark stone is one shape: the spine down the left, turning along the
+-- foot into the band that holds the focused row's note (its name in gold, the
+-- note under it), so the note has a place of its own. To the backing's edges
+-- (9 px outside the page each side, 7 above and below); fixed while the rows
+-- scroll. A column rule edges it where it meets the light stone, turned on
+-- its side along the band's top.
+local FOOT = 58
+local band = CreateFrame("Frame", nil, page)
+band:SetPoint("BOTTOMLEFT", 0, 0)
+band:SetPoint("BOTTOMRIGHT", 0, 0)
+band:SetHeight(FOOT)
+local foot = page:CreateTexture(nil, "BACKGROUND", nil, 1)
+stone(foot, "you")
+foot:SetPoint("TOPLEFT", band, "TOPLEFT", -9, 0)
+foot:SetPoint("BOTTOMRIGHT", band, "BOTTOMRIGHT", 9, -7)
 local spine = page:CreateTexture(nil, "BACKGROUND", nil, 1)
 stone(spine, "you")
 spine:SetPoint("TOPLEFT", -9, 7)
-spine:SetPoint("BOTTOMRIGHT", page, "BOTTOMLEFT", SPINE - 2, -7)
+spine:SetPoint("BOTTOMRIGHT", band, "TOPLEFT", SPINE - 2, 0)
+local RULE = C_Texture.GetAtlasInfo("spec-columndivider")
 local spineRule = page:CreateTexture(nil, "ARTWORK")
 spineRule:SetAtlas("spec-columndivider")
 spineRule:SetWidth(7)
 spineRule:SetPoint("TOPLEFT", spine, "TOPRIGHT", -3, 0)
 spineRule:SetPoint("BOTTOMLEFT", spine, "BOTTOMRIGHT", -3, 0)
-
--- the band at the foot, right of the spine: the note of the row under the
--- cursor or the mouse
-local band = CreateFrame("Frame", nil, page)
-band:SetPoint("BOTTOMLEFT", SPINE, 0)
-band:SetPoint("BOTTOMRIGHT", 0, 0)
-band:SetHeight(48)
+-- the same rule along the band's top, from the spine's rule to the right
+-- edge: the atlas's corners given turned a quarter (its top runs left)
+local footRule = page:CreateTexture(nil, "ARTWORK")
+footRule:SetHeight(7)
+footRule:SetPoint("BOTTOMLEFT", foot, "TOPLEFT", SPINE + 6, -3)
+footRule:SetPoint("BOTTOMRIGHT", foot, "TOPRIGHT", 0, -3)
+if RULE then
+	local l, r, t, b = RULE.leftTexCoord, RULE.rightTexCoord, RULE.topTexCoord, RULE.bottomTexCoord
+	footRule:SetTexture(RULE.file)
+	-- corners: upper left, lower left, upper right, lower right of the region
+	footRule:SetTexCoord(l, t, r, t, l, b, r, b)
+end
+local bandName = band:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+bandName:SetPoint("TOPLEFT", 14, -10)
+bandName:SetPoint("RIGHT", -EDGE, 0)
+bandName:SetJustifyH("LEFT")
 local bandText = band:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
-bandText:SetPoint("TOPLEFT", LABEL_X, -8)
-bandText:SetPoint("BOTTOMRIGHT", -EDGE, 4)
+bandText:SetPoint("TOPLEFT", bandName, "BOTTOMLEFT", 0, -4)
+bandText:SetPoint("BOTTOMRIGHT", -EDGE, 2)
 bandText:SetJustifyH("LEFT")
 bandText:SetJustifyV("TOP")
 -- with no row under the cursor, what the band is for, dimmed
 local function describe(row)
 	if row and row.text then
+		bandName:SetText(row.label)
 		bandText:SetText(row.text)
 		bandText:SetTextColor(1, 1, 1)
 	else
+		bandName:SetText("")
 		bandText:SetText("Move onto a setting to read what it does.")
 		bandText:SetTextColor(0.5, 0.5, 0.5)
 	end
@@ -79,7 +105,7 @@ end
 -- each side than the page so the dividers reach the backing's edge
 local scroll = CreateFrame("ScrollFrame", nil, page)
 scroll:SetPoint("TOPLEFT", -9, 0)
-scroll:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", 9, 50)
+scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, 6)
 local content = CreateFrame("Frame", nil, scroll)
 content:SetSize(1, 1)
 scroll:SetScrollChild(content)
