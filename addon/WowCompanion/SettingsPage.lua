@@ -45,8 +45,9 @@ end
 -- foot into the band that holds the focused row's note (its name in gold, the
 -- note under it), so the note has a place of its own. To the backing's edges
 -- (9 px outside the page each side, 7 above and below); fixed while the rows
--- scroll. A column rule edges it where it meets the light stone, turned on
--- its side along the band's top.
+-- scroll. A column rule edges the spine where it meets the light stone; the
+-- band's top has none (the rule turned on its side looked bad, the player,
+-- 2026-11-11), until the art in the making gives us a horizontal edge.
 local FOOT = 58
 local band = CreateFrame("Frame", nil, page)
 band:SetPoint("BOTTOMLEFT", 0, 0)
@@ -60,24 +61,11 @@ local spine = page:CreateTexture(nil, "BACKGROUND", nil, 1)
 stone(spine, "you")
 spine:SetPoint("TOPLEFT", -9, 7)
 spine:SetPoint("BOTTOMRIGHT", band, "TOPLEFT", SPINE - 2, 0)
-local RULE = C_Texture.GetAtlasInfo("spec-columndivider")
 local spineRule = page:CreateTexture(nil, "ARTWORK")
 spineRule:SetAtlas("spec-columndivider")
 spineRule:SetWidth(7)
 spineRule:SetPoint("TOPLEFT", spine, "TOPRIGHT", -3, 0)
 spineRule:SetPoint("BOTTOMLEFT", spine, "BOTTOMRIGHT", -3, 0)
--- the same rule along the band's top, from the spine's rule to the right
--- edge: the atlas's corners given turned a quarter (its top runs left)
-local footRule = page:CreateTexture(nil, "ARTWORK")
-footRule:SetHeight(7)
-footRule:SetPoint("BOTTOMLEFT", foot, "TOPLEFT", SPINE + 6, -3)
-footRule:SetPoint("BOTTOMRIGHT", foot, "TOPRIGHT", 0, -3)
-if RULE then
-	local l, r, t, b = RULE.leftTexCoord, RULE.rightTexCoord, RULE.topTexCoord, RULE.bottomTexCoord
-	footRule:SetTexture(RULE.file)
-	-- corners: upper left, lower left, upper right, lower right of the region
-	footRule:SetTexCoord(l, t, r, t, l, b, r, b)
-end
 local bandName = band:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 bandName:SetPoint("TOPLEFT", 14, -10)
 bandName:SetPoint("RIGHT", -EDGE, 0)
