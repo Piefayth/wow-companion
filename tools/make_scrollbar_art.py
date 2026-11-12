@@ -21,7 +21,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 # the vine dividers are every window's (Style.lua's WC.Style.Vine), so Core's
 CORE_OUT = os.path.join(ROOT, "addon", "WowCompanion", "Art")
-VINE_VERSION = 8  # Style.lua's VINE_VERSION
+VINE_VERSION = 9  # Style.lua's VINE_VERSION
 LIGHT = np.array([-0.55, -0.75, 0.9]); LIGHT /= np.linalg.norm(LIGHT)
 HALF = LIGHT + np.array([0, 0, 1.0]); HALF /= np.linalg.norm(HALF)
 
@@ -494,9 +494,8 @@ def rule_pieces(weight):
 #             run; on the far side a stem leaves it each way, sweeps out into
 #             a big volute curling back over it, and two satellites bud off
 #             the outside of its sweep, a heart of scrolls round the arm's end
-#   FromMedium (Vine-ThickTRightFromMedium) a medium vine growing out of the
-#             thick: the same, smaller, beside it: a stem each way bowing out
-#             from the root into a volute, a satellite curling off near the run
+#   FromMedium (Vine-ThickTRightFromMedium) a medium vine through a thick one:
+#             the same flourish at SMALL (flourish())
 #   BigPlain, FromMediumPlain (Vine-ThickTRight...Plain) each kind's join
 #             with no ornament, for tight places (the Status rows): every
 #             size comes ornamental and plain (the player, 2026-11-12)
@@ -626,19 +625,38 @@ def mirror_pair(m, wires):
     return [q for wire, w0, w1 in wires for v in (wire, wire.mirrored(m)) for q in v.pieces(w0, w1)]
 
 
-def junction(big):
+SMALL = 0.7  # a branch's flourish: the trunks' own, at this scale (the player, 2026-11-12: the trunks' are nice)
+
+
+def flourish(big, draw):
+    """A joint whose flourish stands on the run's far (left) side, the arm
+    running through to it: two trunks' at full size, a branch's (a medium arm)
+    the same flourish at SMALL, so both kinds are one family and differ by
+    the arm's weight and the flourish's size. draw(m, x0, P, k, e, w) returns
+    the work: P places an offset from the meeting at this scale, e scales an
+    eye (kept open), w a wire's half-width, t a volute's turns (fewer when
+    small, so its turns stay open)."""
     N = JOIN_SIZE[big]
     m, R = N / 2, WEIGHTS["Thick"][0]
-    if big:
-        x0 = m - R - 3  # where the stems leave the arm, past the run
-        stem = Wire((x0, m + 0.6), 165).volute((m - 36, m + 11), 9.0, 90, 1, 2.0, eye=2.1, out=0.35, inn=0.45)
-        far = stem.fork(0.30).volute((m - 23, m + 22), 5.2, 180, -1, 1.0, eye=1.9)
-        near = stem.fork(0.12).volute((m - 12, m + 15), 5.0, 180, -1, 1.0, eye=1.9)
-        return forge(N, True, mirror_pair(m, [(stem, 1.45, 0.95), (far, 1.15, 0.85), (near, 1.0, 0.8)]), arm_from=x0 - 1)
-    x0 = m + R + 1.5
-    stem = Wire((x0, m + 0.8), 75).volute((m + 22, m + 9.5), 7.0, 90, -1, 1.5, eye=2.0)
-    bud = stem.fork(0.25).volute((m + 9.5, m + 17.5), 5.0, 0, 1, 1.0, eye=1.8)
-    return forge(N, False, mirror_pair(m, [(stem, 1.2, 0.85), (bud, 1.0, 0.8)]))
+    k = 1.0 if big else SMALL
+    x0 = m - R - 3 * k  # where the work leaves the arm, past the run
+
+    def P(dx, dy):
+        return (m + k * dx, m + k * dy)
+    return forge(N, big, draw(m, x0, P, k, lambda eye: max(eye * k, 1.4), lambda hw: hw * (0.75 + 0.25 * k),
+                      lambda n: n * k),
+                 arm_from=x0 - 1)
+
+
+def junction(big):
+    """Cascade, the settings page's: a stem each way from the arm sweeping out
+    into a big volute curling back over it, two satellites off its sweep."""
+    def draw(m, x0, P, k, e, w, t):
+        stem = Wire((x0, m + 0.6 * k), 165).volute(P(-36, 11), 9.0 * k, 90, 1, t(2.0), eye=e(2.1), out=0.35, inn=0.45)
+        far = stem.fork(0.30).volute(P(-23, 22), 5.2 * k, 180, -1, t(1.0), eye=e(1.9))
+        near = stem.fork(0.12).volute(P(-12, 15), 5.0 * k, 180, -1, t(1.0), eye=e(1.9))
+        return mirror_pair(m, [(stem, w(1.45), w(0.95)), (far, w(1.15), w(0.85)), (near, w(1.0), w(0.8))])
+    return flourish(big, draw)
 
 
 def joint(c):

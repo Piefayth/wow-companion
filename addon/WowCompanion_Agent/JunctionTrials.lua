@@ -1,14 +1,16 @@
 -- Junction trials, temporary: three directions of scroll ornament for where
--- the vine dividers meet, side by side at real size on the window's slate,
--- while the player chooses (art: tools/make_junction_trials.py; Cascade is
--- the settings page's). Goes with its art when one is chosen.
+-- the vine dividers meet, and the plain joints beside them, at real size on
+-- the window's slate, while the player chooses (art:
+-- tools/make_junction_trials.py; Cascade and Plain are Core's own, through
+-- WC.Style.VineJoin). Goes with its art when one is chosen.
 local TRIALS = {
 	{ "Lyre", "the fleur grown ornate: a lance through the run, horns dropping into big volutes, S scrolls off them" },
 	{ "Cascade", "on the settings page: a stem each way curling back into a big volute, smaller scrolls budding off it" },
 	{ "Triskele", "Celtic spirals: three volutes a side, linked by S curves, turning in turn" },
+	{ "Plain", "no ornament: the forged join alone, for tight places (the Status rows)", plain = true },
 }
 local SIZE = { Big = 112, Small = 80 }
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Try-%s-%s-3]]
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Try-%s-%s-4]]
 local CELL, GAP = 150, 16
 local AT = -25 -- the trunk, left of the cell's centre so a big one's left side stays inside it
 
@@ -49,11 +51,16 @@ WC.Companion.AddTab("Junctions", function(page)
 				WC.Style.VineLine(arm, size == "Big" and "Thick" or "", false, false, true)
 				local join = CreateFrame("Frame", nil, cell)
 				join:SetFrameLevel(above + 3)
-				join:SetAllPoints()
-				local t = join:CreateTexture(nil, "OVERLAY")
-				t:SetTexture(ART:format(trial[1], size), "CLAMP", "CLAMP")
-				t:SetSize(SIZE[size], SIZE[size])
-				t:SetPoint("CENTER", cell, "CENTER", AT, 0)
+				join:SetSize(1, 1)
+				join:SetPoint("CENTER", cell, "CENTER", AT, 0)
+				if trial.plain then
+					WC.Style.VineJoin(join, "Thick", size == "Big" and "TRightBigPlain" or "TRightFromMediumPlain", "CENTER")
+				else
+					local t = join:CreateTexture(nil, "OVERLAY")
+					t:SetTexture(ART:format(trial[1], size), "CLAMP", "CLAMP")
+					t:SetSize(SIZE[size], SIZE[size])
+					t:SetPoint("CENTER")
+				end
 				local tag = box:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 				tag:SetPoint("TOPLEFT", cell, "BOTTOMLEFT", 0, -2)
 				tag:SetText(size == "Big" and "thick into thick" or "medium into thick")

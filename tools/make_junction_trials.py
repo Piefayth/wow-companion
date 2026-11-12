@@ -21,16 +21,16 @@ import make_scrollbar_art as M  # noqa: E402
 from make_scrollbar_art import Wire, forge, mirror_pair, write_tga, WEIGHTS  # noqa: E402
 
 OUT = os.path.join(M.ROOT, "addon", "WowCompanion_Agent", "Art")
-TRIAL_VERSION = 3
+TRIAL_VERSION = 4
 R = WEIGHTS["Thick"][0]
 
 
-def lance(base, y, L):
+def lance(base, y, L, k=1.0):
     """The fleur's lance lying on its side, its base at x `base`, its point L
-    to the left."""
+    to the left, its width at scale k."""
     from scipy.interpolate import PchipInterpolator
     knots = [(0, 1.5), (L * 0.22, 2.4), (L * 0.45, 2.64), (L * 0.72, 2.0), (L * 0.92, 0.9), (L, 0.45)]
-    f = PchipInterpolator([q[0] for q in knots], [q[1] for q in knots])
+    f = PchipInterpolator([q[0] for q in knots], [q[1] * (0.6 + 0.4 * k) for q in knots])
     t = np.linspace(0, L, 120)
     hw = f(t)
     return [(base - u, y - w) for u, w in zip(t, hw)] + [(base - u, y + w) for u, w in zip(t[::-1], hw[::-1])]
@@ -40,16 +40,11 @@ def lance(base, y, L):
 # into a lance; two horns drop from it into big volutes, and off the bottom
 # of each an S satellite turns the other way
 def lyre(N, big):
-    m = N / 2
-    if big:
-        x0 = m - R - 3
-        horn = Wire((x0, m + 1.0), 125).volute((m - 21, m + 14), 9.0, 0, 1, 2.0, eye=2.1, out=0.5, inn=0.5)
-        sat = horn.fork(0.34).volute((m - 34, m + 23), 5.0, 270, -1, 1.0, eye=1.9)
-        return forge(N, True, mirror_pair(m, [(horn, 1.45, 0.95), (sat, 1.15, 0.85)]) + [lance(x0, m, 28)], arm_from=x0 - 1)
-    x0 = m + R + 1.5
-    horn = Wire((x0, m + 1.0), 70).volute((m + 15, m + 12), 7.5, 270, 1, 1.5, eye=2.0)
-    sat = horn.fork(0.42).volute((m + 28, m + 16), 5.0, 180, -1, 1.0, eye=1.8)
-    return forge(N, False, mirror_pair(m, [(horn, 1.2, 0.85), (sat, 1.0, 0.8)]))
+    def draw(m, x0, P, k, e, w, t):
+        horn = Wire((x0, m + 1.0 * k), 125).volute(P(-21, 14), 9.0 * k, 0, 1, t(2.0), eye=e(2.1), out=0.5, inn=0.5)
+        sat = horn.fork(0.34).volute(P(-34, 23), 5.0 * k, 270, -1, t(1.0), eye=e(1.9))
+        return mirror_pair(m, [(horn, w(1.45), w(0.95)), (sat, w(1.15), w(0.85))]) + [lance(x0, m, 28 * k, k)]
+    return M.flourish(big, draw)
 
 
 # --- B. Cascade (Victorian filigree, the swirl flourish): the settings page's
@@ -61,17 +56,12 @@ def cascade(N, big):
 # and the one beyond it of opposite hands, linked by an S, a third hanging
 # from the first between them
 def triskele(N, big):
-    m = N / 2
-    if big:
-        x0 = m - R - 3
-        a = Wire((x0, m + 0.6), 175).volute((m - 14, m + 10), 8.0, 270, -1, 1.75, eye=2.1)
-        b = a.fork(0.2).volute((m - 34, m + 11), 7.5, 90, 1, 1.75, eye=2.0)
-        c = a.fork(0.3).volute((m - 27.5, m + 22), 5.2, 0, 1, 1.0, eye=1.9)
-        return forge(N, True, mirror_pair(m, [(a, 1.4, 0.95), (b, 1.25, 0.9), (c, 1.05, 0.8)]), arm_from=x0 - 1)
-    x0 = m + R + 1.5
-    a = Wire((x0, m + 1.0), 30).volute((m + 11, m + 11), 7.5, 270, 1, 1.5, eye=2.0)
-    b = a.fork(0.3).volute((m + 27, m + 11), 5.5, 90, -1, 1.25, eye=1.8)
-    return forge(N, False, mirror_pair(m, [(a, 1.2, 0.85), (b, 1.05, 0.8)]))
+    def draw(m, x0, P, k, e, w, t):
+        a = Wire((x0, m + 0.6 * k), 175).volute(P(-14, 10), 8.0 * k, 270, -1, t(1.75), eye=e(2.1))
+        b = a.fork(0.2).volute(P(-34, 11), 7.5 * k, 90, 1, t(1.75), eye=e(2.0))
+        c = a.fork(0.3).volute(P(-27.5, 22), 5.2 * k, 0, 1, t(1.0), eye=e(1.9))
+        return mirror_pair(m, [(a, w(1.4), w(0.95)), (b, w(1.25), w(0.9)), (c, w(1.05), w(0.8))])
+    return M.flourish(big, draw)
 
 
 DIRECTIONS = {"Lyre": lyre, "Cascade": cascade, "Triskele": triskele}  # JunctionTrials.lua's order
@@ -119,7 +109,7 @@ def preview(made):
         for x in range(0, W, slate.width):
             for y in range(0, W, slate.height):
                 bg.paste(slate, (x, y))
-        cx = W // 2 + 8 * k if big else W // 2 - 30 * k
+        cx = W // 2 + 8 * k  # the flourish on the left, the arm right
         bg.paste(vm["ThickVMid"].resize((16 * k, W)), (cx - 8 * k, 0), vm["ThickVMid"].resize((16 * k, W)))
         arm = vm["ThickMid" if big else "Mid"].resize((W - cx, 16 * k))
         bg.paste(arm, (cx, W // 2 - 8 * k), arm)

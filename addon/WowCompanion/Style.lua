@@ -240,7 +240,7 @@ WowCompanion_Style.STONE = {
 -- on the run's far side), ThickTRightFromMedium (a medium vine growing out of
 -- the thick, scrolls beside it) and ThickTRightFromMediumPlain (no scrolls),
 -- each for a run going down and an arm leaving right.
-local VINE_VERSION = 8 -- the generator's VINE_VERSION
+local VINE_VERSION = 9 -- the generator's VINE_VERSION
 function WowCompanion_Style.Vine(piece)
 	return ART .. "Vine-" .. piece .. "-" .. VINE_VERSION
 end
