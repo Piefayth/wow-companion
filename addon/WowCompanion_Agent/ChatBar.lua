@@ -55,10 +55,10 @@ end
 function WC.ChatBar.Build(well, scroll, edge, level)
 	local column = CreateFrame("Frame", nil, well)
 	-- Shorter than the well, with the same clear stone past each tip, measured
-	-- at 4K: the inset's top border reads thicker than its bottom one, and the
-	-- down arrow's art carries its cast shadow below the tip.
+	-- at 4K (2026-11-12: 4 left the down tip nearly on the border while the up
+	-- tip stood well clear; the down arrow's art carries its shadow below it).
 	column:SetPoint("TOPRIGHT", -edge, -9)
-	column:SetPoint("BOTTOMRIGHT", -edge, 4)
+	column:SetPoint("BOTTOMRIGHT", -edge, 12)
 	column:SetWidth(WIDTH)
 	column:SetFrameLevel(level + 3)
 
