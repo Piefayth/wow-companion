@@ -30,7 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 
-VERSION = 12
+VERSION = 13
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -243,7 +243,7 @@ LINE_IN = np.array((5, 4, 3.0))  # the creases at the wall's top and foot
 WALL_FOOT = 3.3  # where the wall meets the floor, its contact shadow on to INSET
 
 
-def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0):
+def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0, rim_pal=BRONZE):
     """A well's border painted on a depth field d (units into the cavity from
     its edge, negative outside). The wall: opaque stone carved down from the
     panel, a dark crease where the panel breaks, a rounded, worn wall lit by
@@ -276,7 +276,7 @@ def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0):
         u = np.clip(d / w, 0, 1)
         sh = np.clip(np.minimum(d, w - d) / 0.5, 0, 1)
         bh = ndimage.gaussian_filter(((1 - (1 - sh) ** 2) * 0.9 + 0.15 * bead(2 * u - 1)) * (d < w), k * 0.08)
-        col = shade(bh, BRONZE, k, gloss=0.22, power=14) * (1 + 0.09 * brushed(d * 8))[..., None] * rim_dim
+        col = shade(bh, rim_pal, k, gloss=0.22, power=14) * (1 + 0.09 * brushed(d * 8))[..., None] * rim_dim
         lay.over(col, ((d >= 0) & (d < w)).astype(float))
         lay.over(LINE, np.clip(1 - d / 0.25, 0, 1) * inside * 0.9)
         lay.over(LINE, np.clip(1 - np.abs(d - w) / 0.3, 0, 1) * 0.9)
@@ -286,16 +286,18 @@ def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0):
     return np.stack([ndimage.gaussian_filter(pre[..., i], k * 0.25) for i in range(4)], -1)
 
 
-# The wells' border, five ways while the player chooses (Window.lua's
+# The wells' border, six ways while the player chooses (Window.lua's
 # WC.Window.WellStyle): A the dark wall with a bronze lip, C the dark wall
 # alone, its light evened (the top a shade lighter, the bottom a shade darker
 # than DARK gives), D the grey wall the wells had before, E the dark wall
-# framed by a bar of the window's rim, F that bar thinner and darker.
+# framed by a bar of the window's rim, F that bar thinner and darker, G F's
+# bar in the wall's own grey stone, no bronze: there, but barely seen.
 DARK = (np.array((7, 7, 9.0)), np.array((20, 21, 24.0)), np.array((46, 47, 52.0)))
 EVEN = (np.array((13, 13, 16.0)), np.array((22, 23, 26.0)), np.array((36, 37, 41.0)))
 GREY = (np.array((11, 11, 13.0)), np.array((32, 33, 37.0)), np.array((70, 71, 76.0)))
 WELLS = {"A": dict(wall=DARK, lip=True), "C": dict(wall=EVEN), "D": dict(wall=GREY), "E": dict(wall=DARK, rim=True),
-         "F": dict(wall=DARK, rim=True, rim_w=1.1, rim_dim=0.62)}
+         "F": dict(wall=DARK, rim=True, rim_w=1.1, rim_dim=0.62),
+         "G": dict(wall=DARK, rim=True, rim_w=1.1, rim_pal=GREY)}
 
 
 def inset(style):
