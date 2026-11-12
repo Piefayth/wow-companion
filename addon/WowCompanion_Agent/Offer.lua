@@ -166,12 +166,18 @@ login:SetScript("OnEvent", function()
 end)
 
 -- R3 with a conversation's chord held picks that conversation, as minus does
--- to talk to it; R3 alone is Main (Jobs.lua binds it while the window has focus)
+-- to talk to it; R3 alone is Main. From any tab: it brings up Chat (Jobs.lua
+-- binds it while the window has focus)
 local pick = CreateFrame("Button", "WCConversationPick", UIParent)
 pick:SetScript("OnClick", function()
 	local slot = WowCompanion_PadSlot()
 	for _, known in ipairs(WC.Conversations.list) do
-		if known == slot then WowCompanion_SetConversation(slot) return end
+		if known == slot then
+			local frame = logFrame()
+			if frame and frame.SelectTab and (frame.currentTab or 1) ~= 1 then frame.SelectTab(1) end
+			WowCompanion_SetConversation(slot)
+			return
+		end
 	end
 end)
 
