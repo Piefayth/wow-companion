@@ -161,7 +161,7 @@ class Canvas:
 #   RuleLeft 32x16, RuleMid 64x16: the divider's left end and its line,
 #     stretched whole to the Joint
 
-VERSION = 16
+VERSION = 17
 PRESS = 1.25  # how far a pressed arrow sinks toward the groove, in units
 GT = 24.0  # the arrows' groove end (its round end's centre)
 FOOT = GT - 4.0 - PRESS  # an arrow's foot: under the border's arc, pressed or not
@@ -415,7 +415,7 @@ def fleur_cap(c, down, mode):
 def bud_rule(c, piece, hw=1.0, pal=dim(BARK, 0.88)):
     """The divider: a vine nearer the quest log divider's weight than a hairline
     (the player, 2026-11-12), a shade darker than the bark so its width does
-    not read brighter. Its left end the vine curling into a coil (no leaf: noise beside the text); at
+    not read brighter. Its left end a tapered tip a little in from the turn's edge; at
     the Joint a node where it grows into the left border, a tendril coiling off it."""
     pen = Pen(c, 16)
     vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], hw)]
@@ -423,12 +423,11 @@ def bud_rule(c, piece, hw=1.0, pal=dim(BARK, 0.88)):
     if piece == "Mid":
         raised(pen, vine(-12, 76), pal, bevel=bevel, cast=0.4, grain=False)
     elif piece == "Left":
-        # the coil is the vine itself curling: one piece with it, leaving it at
-        # the vine's own width, no seam where they meet
-        k = hw / 0.55
-        coil = stroke(scroll(bez((9.5, 8), (6.5, 8), (4.0, 7.6), (3.0, 8 - 2.2 * k ** 0.5), n=24), 1.1 * k ** 0.5, 1.0, 0.35),
-                      hw, 0.26 * k, knob=False)
-        raised(pen, vine(9.0, 44) + coil, pal, bevel=bevel, cast=0.4, grain=False)
+        # it starts a little in from the turn's edge, tapering to a point as a
+        # shoot does, one piece with the vine (no curl: plain beside the text)
+        t = np.linspace(0, 1, 40)
+        tip = [ribbon(np.stack([15.0 - 6.0 * t, np.full_like(t, 8.0)], 1), hw * np.sqrt(np.clip(1 - t, 0.02, 1)))]  # rounding off, not a cone
+        raised(pen, vine(14.5, 44) + tip, pal, bevel=bevel, cast=0.4, grain=False)
     else:
         raised(pen, vine(-12, RAIL[0]) + vine(RAIL[1], 26), pal, bevel=bevel, cast=0.4, grain=False)
         raised(pen, stroke(scroll(bez((8.6, 7.6), (8.0, 6.0), (6.6, 4.8), (5.0, 5.0), n=24), 0.9, -1.0, 0.35), 0.45, 0.24, knob=False),
