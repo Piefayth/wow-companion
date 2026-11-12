@@ -412,27 +412,73 @@ def fleur_cap(c, down, mode):
 # --- the divider: a vine
 
 
-def bud_rule(c, piece, hw=1.0, pal=dim(BARK, 0.88)):
-    """The divider: a vine nearer the quest log divider's weight than a hairline
-    (the player, 2026-11-12), a shade darker than the bark so its width does
-    not read brighter. Its left end round, near the turn's edge; at
-    the Joint a node where it grows into the left border, a tendril coiling off it."""
+# The divider's weights: half-width and bark. The medium is the chat's (the
+# player, 2026-11-12: nearer the quest log divider's weight than a hairline, a
+# shade darker than the bark so its width does not read brighter); the thin
+# and thick are for other windows (the settings page), the thick darker still.
+WEIGHTS = {"Thin": (0.55, BARK), "": (1.0, dim(BARK, 0.88)), "Thick": (1.6, dim(BARK, 0.8))}
+
+
+def vine(c, h, runs, ends=(), node=None, hw=1.0, pal=WEIGHTS[""][1]):
+    """Vine on a canvas h units tall, painted as one piece: `runs` the straight
+    stretches ((x0, y0), (x1, y1)), `ends` round ends (x, y), `node` a swelling
+    where runs cross. Drawn where it lies, never rotated, so its light is the
+    frame's, from the top left, whichever way it runs."""
+    pen = Pen(c, h)
+    pieces = [ribbon([a, b], hw) for a, b in runs] + [(x, y, hw) for x, y in ends]
+    if node:
+        pieces.append((node[0], node[1], hw + 0.5))
+    raised(pen, pieces, pal, bevel=0.5 * hw / 0.55, cast=0.4, grain=False)
+
+
+def rule_pieces(weight):
+    """A weight's pieces, its line on each piece's middle. Horizontal, 16 tall:
+    Left and Right (32 wide, a round end 1.2 + hw from the piece's outer edge)
+    and Mid (64, stretched). Vertical, 16 wide: Top and Bottom (32 tall) and
+    VMid (64, stretched). Junctions, 32 square, centred: Cross, and the T's,
+    named for the arm that leaves the straight run (TDown: a horizontal run
+    with an arm down; TRight: a vertical run with an arm right)."""
+    hw, pal = WEIGHTS[weight]
+    e = 1.2 + hw
+    far = -12, 44  # runs leave the piece, so a stretched Mid meets them seamlessly
+    m = 16  # a junction's middle
+    specs = {
+        "Left": (32, 16, [((e, 8), (44, 8))], [(e, 8)], None),
+        "Mid": (64, 16, [((-12, 8), (76, 8))], [], None),
+        "Right": (32, 16, [((-12, 8), (32 - e, 8))], [(32 - e, 8)], None),
+        "Top": (16, 32, [((8, e), (8, 44))], [(8, e)], None),
+        "VMid": (16, 64, [((8, -12), (8, 76))], [], None),
+        "Bottom": (16, 32, [((8, -12), (8, 32 - e))], [(8, 32 - e)], None),
+        "Cross": (32, 32, [((far[0], m), (far[1], m)), ((m, far[0]), (m, far[1]))], [], (m, m)),
+        "TDown": (32, 32, [((far[0], m), (far[1], m)), ((m, m), (m, far[1]))], [], (m, m)),
+        "TUp": (32, 32, [((far[0], m), (far[1], m)), ((m, far[0]), (m, m))], [], (m, m)),
+        "TRight": (32, 32, [((m, far[0]), (m, far[1])), ((m, m), (far[1], m))], [], (m, m)),
+        "TLeft": (32, 32, [((m, far[0]), (m, far[1])), ((far[0], m), (m, m))], [], (m, m)),
+    }
+    out = {}
+    for piece, (w, h, runs, ends, node) in specs.items():
+        c = ucanvas(w, h)
+        vine(c, h, runs, ends, node, hw, pal)
+        img = c.final()
+        if piece == "Mid":  # stretched sideways: the same in every column
+            img = np.repeat(img.mean(1, keepdims=True), img.shape[1], 1)
+        elif piece == "VMid":  # stretched lengthwise: the same in every row
+            img = np.repeat(img.mean(0, keepdims=True), img.shape[0], 0)
+        out["Rule" + weight + piece] = img
+    return out
+
+
+def joint(c):
+    """Where the chat's divider grows into the scroll bar's left border: a
+    node, a tendril coiling off it, a leaf below; the vine on past the
+    groove to the column's edge."""
+    hw, pal = WEIGHTS[""]
+    vine(c, 16, [((-12, 8), (RAIL[0], 8)), ((RAIL[1], 8), (26, 8))], hw=hw, pal=pal)
     pen = Pen(c, 16)
-    vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], hw)]
-    bevel = 0.5 * hw / 0.55
-    if piece == "Mid":
-        raised(pen, vine(-12, 76), pal, bevel=bevel, cast=0.4, grain=False)
-    elif piece == "Left":
-        # it runs from near the turn's edge (covering the seam between the
-        # turns' stones) and ends round, one piece with the vine
-        x0 = 1.2 + hw
-        raised(pen, vine(x0, 44) + [(x0, 8, hw)], pal, bevel=bevel, cast=0.4, grain=False)
-    else:
-        raised(pen, vine(-12, RAIL[0]) + vine(RAIL[1], 26), pal, bevel=bevel, cast=0.4, grain=False)
-        raised(pen, stroke(scroll(bez((8.6, 7.6), (8.0, 6.0), (6.6, 4.8), (5.0, 5.0), n=24), 0.9, -1.0, 0.35), 0.45, 0.24, knob=False),
-               BARK, bevel=0.45, cast=0.45)
-        raised(pen, [leaf((8.4, 8.6), (5.6, 11.4), 1.3)], dim(BUD, 0.8), bevel=0.4, cast=0.4)
-        raised(pen, [(9.3, 8, hw + 0.5)], pal, bevel=bevel, cast=0.4)  # the node
+    raised(pen, stroke(scroll(bez((8.6, 7.6), (8.0, 6.0), (6.6, 4.8), (5.0, 5.0), n=24), 0.9, -1.0, 0.35), 0.45, 0.24, knob=False),
+           BARK, bevel=0.45, cast=0.45)
+    raised(pen, [leaf((8.4, 8.6), (5.6, 11.4), 1.3)], dim(BUD, 0.8), bevel=0.4, cast=0.4)
+    raised(pen, [(9.3, 8, hw + 0.5)], pal, bevel=0.5 * hw / 0.55, cast=0.4)  # the node
 
 
 # --- the thumb, riding the groove. A thumb's middle eight
@@ -540,13 +586,11 @@ def render_set():
     out["Thumb-Mid"] = np.repeat(t[p:2 * p].mean(0, keepdims=True), p, 0)
     out["Thumb-Centre"] = t[2 * p:4 * p]
     out["Thumb-Bottom"] = t[5 * p:]
-    for piece, w in (("Left", 32), ("Mid", 64), ("Joint", 32)):
-        c = ucanvas(w, 16)
-        bud_rule(c, piece)
-        img = c.final()
-        if piece == "Mid":  # stretched sideways: the same in every column
-            img = np.repeat(img.mean(1, keepdims=True), img.shape[1], 1)
-        out["Joint" if piece == "Joint" else "Rule" + piece] = img
+    for weight in WEIGHTS:
+        out.update(rule_pieces(weight))
+    c = ucanvas(32, 16)
+    joint(c)
+    out["Joint"] = c.final()
     return {"Scroll-%s" % k: v for k, v in out.items()}
 
 
