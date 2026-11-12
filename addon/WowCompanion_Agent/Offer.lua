@@ -13,7 +13,7 @@
 -- step is a secure snippet that moves the button's macro along macros written
 -- beforehand, and only the label is redrawn by plain code.
 local BUTTON = "WowCompanionDo"
-local offers = {} -- { slot, label, macro }, newest first
+local offers = {} -- { slot, label, macro }, newest first; saved at login (below)
 local picked = 1
 local actionButton
 local showOffer
@@ -172,6 +172,21 @@ function handlers.press(inbox)
 	return offer(inbox.label or "Do it", inbox.macro or "", inbox.slot)
 end
 for kind, fn in pairs(handlers) do WC.Link.Handle(kind, fn) end
+
+-- Waiting offers outlive a reload: the list is kept in the saved table. A
+-- reload offer is done by the reload that just happened, whoever offered it.
+local login = CreateFrame("Frame")
+login:RegisterEvent("PLAYER_LOGIN")
+login:SetScript("OnEvent", function()
+	local kept = {}
+	for _, o in ipairs(offers) do kept[#kept + 1] = o end -- any that came before login
+	for _, o in ipairs(type(WowCompanionAgentDB.offers) == "table" and WowCompanionAgentDB.offers or {}) do
+		if type(o) == "table" and o.macro and o.macro ~= "/reload" then kept[#kept + 1] = o end
+	end
+	offers = kept
+	WowCompanionAgentDB.offers = offers
+	WC.AfterCombat(showOffer)
+end)
 
 WC.Offer = {
 	BUTTON = BUTTON,
