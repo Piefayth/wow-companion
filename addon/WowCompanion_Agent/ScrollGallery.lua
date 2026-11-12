@@ -19,7 +19,7 @@ end
 -- the borders closing round its ends under the arrows and the set's own
 -- dividers joining the left border (docs/proposals/scrollbar-concepts.md).
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-]]
-local ROUND6 = 6 -- the generator's VERSION6
+local ROUND6 = 7 -- the generator's VERSION6
 local function art(design, piece)
 	return ART .. design .. "-" .. piece .. "-" .. (design == "Spear" and 1 or ROUND6)
 end
@@ -170,9 +170,9 @@ local OPTIONS = {
 	{ "Bronze lance", groove, "Lance" },
 	{ "Iron fleur-de-lis", groove, "Fleur" },
 	{ "Vine and leaf-bud", groove, "Bud" },
-	{ "Fern frond on the vine", groove, "Bud2" },
-	{ "Acorn on the vine", groove, "Bud3" },
-	{ "Briar rosebud", groove, "Bud4" },
+	{ "Vine: bound strands thumb", groove, "Bud2" },
+	{ "Vine: heartwood capsule thumb", groove, "Bud3" },
+	{ "Vine: furled leaf thumb", groove, "Bud4" },
 	{ "Inlaid lancet", groove, "Lancet" },
 }
 

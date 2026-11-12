@@ -284,7 +284,7 @@ def render():
 #   RuleLeft 32x16, RuleMid 64x16: the divider's left end and its line,
 #     stretched whole to the Joint
 
-VERSION6 = 6
+VERSION6 = 7
 PRESS = 1.25  # how far a pressed arrow sinks toward the groove, in units
 GT = 24.0  # the arrows' groove end (its round end's centre)
 FOOT = GT - 4.0 - PRESS  # an arrow's foot: under the border's arc, pressed or not
@@ -893,21 +893,10 @@ def fleur_thick(c, piece):
         clip_right(c, 26)
 
 
-FURROWS = ((-0.6, 0.3), (0.55, 0.15))  # the bark's furrows (y, half-width): unequal, a third and two thirds down
-RIDGES = ((-1.15, 0.22, 0.3), (0.0, 0.25, 0.12))  # the bark between them (y, half-width, light): one lit, one dull
-
-
 def bud_bar(pen, x0, x1):
-    """A grown branch: round, its bark furrowed along its length."""
-    c = pen.c
-    row_grain(c, 2.0, seed=3)
-    m = raised(pen, hbar(x0, x1, TH - 0.05), BARK, bevel=1.6, cast=0.6, gloss=0.15)
-    plain_grain(c)
-    for y, hw, k in RIDGES:
-        stripe(pen, x0, x1, 8 + y - hw, 8 + y + hw, (160, 124, 82), k, m, blur=0.12)
-    for y, hw in FURROWS:
-        stripe(pen, x0, x1, 8 + y - hw, 8 + y + hw, BARK[0], 0.8, m, blur=0.04)
-    stripe(pen, x0, x1, 8 + 1.1, 8 + TH, (0, 0, 0), 0.35, m)  # the underside
+    """A grown branch: the thin vine at the thick divider's weight, painted as
+    the vine is (its palette, no grain), so thin and thick are one bark."""
+    raised(pen, hbar(x0, x1, TH - 0.05), BARK, bevel=1.6, cast=0.6, grain=False)
 
 
 def knot(cx, cy, rx, top, bottom, phase=0.0, n=120):
@@ -937,7 +926,7 @@ def bud_thick(c, piece):
         bud_bar(pen, -12, 76)
     elif piece == "Left":
         bud_bar(pen, 5.0, 44)
-        m = raised(pen, [knot(3.9, 8.3, 2.9, 2.1, 2.7)], BARK, bevel=1.6, cast=0.55, gloss=0.15)  # the knot
+        m = raised(pen, [knot(3.9, 8.3, 2.9, 2.1, 2.7)], BARK, bevel=1.6, cast=0.55)  # the knot
         bark_marks(c, pen, m, [ribbon(bez((3.0, 5.9), (3.9, 7.4), (4.4, 9.0), (5.6, 10.6), n=20), 0.15),
                                ribbon(bez((4.6, 6.0), (5.4, 7.2), (6.0, 8.0), (6.8, 8.6), n=20), 0.12)])
         face = pen.mask([knot(1.55, 8.3, 0.75, 1.75, 2.1, 1.0)])  # the cut's end grain
@@ -961,258 +950,92 @@ def bud_thick(c, piece):
         clip_right(c, 26)
 
 
-# --- 4b-d. The Bud's variants: the same bark groove, vines and olive leaves,
-# each its own arrow end, thumb and dividers
+# --- 4b-d. The Bud's variants: the Bud's arrows, groove, borders and
+# dividers, each its own thumb body riding the groove. A thumb's middle eight
+# units are stretched (one row averaged), so what runs along a body is
+# lengthwise; its ends (the first and last eight) and its centre (16..32) may
+# carry more.
 
-ROSE = ((26, 12, 13), (92, 48, 46), (164, 116, 104))  # a briar's closed bud, muted
-CUP = ((30, 17, 7), (96, 60, 28), (170, 122, 70))  # an acorn's cup, warmer than the bark
-
-
-def hatch(c, pen, m, step=0.9, k=0.55):
-    """An acorn cup's scales: two sets of fine lines crossing, cut into `m`."""
-    lines = [ribbon([(d - 40, -40), (d + 40, 40)], 0.11) for d in np.arange(-40, 40, step)]
-    lines += [ribbon([(d - 40, 40), (d + 40, -40)], 0.11) for d in np.arange(-40, 40, step)]
-    c.over(np.broadcast_to(np.array(BARK[0], float), c.rgb.shape), pen.mask(lines) * m * k)
+THUMB_HW = 2.55  # a body's half-width along its length
+END = 3.7  # an end's length: round once the gallery widens the art to the groove's floor (about 1.45)
+_t = np.linspace(0, np.pi / 2, 9)[1:]
+THUMB_ENDS = [(0.6, 0)] + [(0.6 + END * (1 - np.cos(a)), THUMB_HW * np.sin(a)) for a in _t] + [(24.0, THUMB_HW)] +              [(47.4 - END * (1 - np.cos(a)), THUMB_HW * np.sin(a)) for a in _t[::-1]] + [(47.4, 0)]
 
 
-def thorn(base, out, back, size):
-    """A hooked thorn on a stem's surface at `base`, standing out along `out`,
-    its point hooked along `back` (toward the stem's root)."""
-    b, o, k = np.array(base, float), np.array(out, float), np.array(back, float)
-    tip = b + o * size * 1.1 + k * size * 0.6
-    a = bez(b - k * size * 0.7, b - k * size * 0.1 + o * size * 0.7, tip - k * size * 0.15, tip, n=16)
-    z = bez(tip, b + k * size * 0.35 + o * size * 0.45, b + k * size * 0.55 + o * size * 0.1, b + k * size * 0.7, n=16)
-    return [tuple(p) for p in np.vstack([a, z[1:]])] + [tuple(b - o * 0.4)]
+def half_width(knots):
+    """A profile's half-width as a function of y."""
+    from scipy.interpolate import PchipInterpolator
+    f = PchipInterpolator([k[0] for k in knots], [k[1] for k in knots])
+    return lambda y: np.maximum(f(np.clip(y, knots[0][0], knots[-1][0])), 0)
 
 
-def pinna(base, length, width, sgn, ang):
-    """One leaflet of a fern frond on a vertical rachis, leaning `ang` degrees
-    toward the frond's tip (negative: swept back)."""
-    a = np.radians(ang)
-    return leaf(base, (base[0] + sgn * length * np.cos(a), base[1] - length * np.sin(a)), width)
+def tint(c, m, rgb, k):
+    c.over(np.broadcast_to(np.array(rgb, float), c.rgb.shape), np.clip(m, 0, 1) * k)
 
 
-def fern(c, pen):
-    """A fern frond's tip: leaflets in pairs swept back, shortening to a
-    pointed tip leaflet, the outline an arrowhead."""
-    leaves = [leaf((16, 4.4), (16, 0.6), 1.3)]
-    for y, L, w in ((3.6, 1.3, 0.85), (5.0, 1.8, 1.0), (6.6, 2.3, 1.1), (8.3, 2.7, 1.2), (10.1, 2.9, 1.25)):
-        leaves += [pinna((X(s, 16.3), y), L, w, s, -38) for s in (1, -1)]
-    raised(pen, leaves, BUD, bevel=0.5, cast=0.45)
-    raised(pen, [profile([(2.6, 0.22), (8.0, 0.4), (12.5, 0.6), (FOOT, 0.85)])], dim(BARK, 0.75), bevel=0.5, cast=0.3)  # the rachis
-
-
-def fern_cap(c, down, mode):
-    vine_cap(c, down, mode, fern, tip=2.2)
-
-
-def fern_thumb(c):
+def strands_thumb(c):
+    """Three vine strands laid close side by side, drawn together and bound
+    with a grass cord near both ends; the middle strand runs longest, so the
+    tips round off in the groove's ends."""
     pen = Pen(c, 48)
-    raised(pen, [profile([(0.6, 0), (1.4, 1.8), (3.0, 2.5), (45.0, 2.5), (46.6, 1.8), (47.4, 0)])], dim(BARK, 0.85), bevel=1.3, cast=0.4)
-    for y in (22.6, 24.6):  # a node of two rings
-        raised(pen, [profile([(y, 2.65), (y + 0.4, 2.9), (y + 0.9, 2.9), (y + 1.3, 2.65)])], BARK, bevel=0.5, cast=0.35)
+    for k, pal in ((-1, dim(BARK, 0.9)), (1, dim(BARK, 0.8)), (0, BARK)):  # the middle strand on top
+        end = 0.7 + 1.1 * abs(k)
+        ys = np.linspace(end, 48 - end, 200)
+        gather = np.clip(np.minimum(ys - 1.0, 47.0 - ys) / 6.5, 0, 1)
+        spread = 1.05 + 0.6 * (3 * gather ** 2 - 2 * gather ** 3)  # 1.65 apart where they lie straight
+        hw = 0.75 + 0.22 * np.sqrt(gather)
+        path = np.stack([16 + k * spread, ys], 1)
+        raised(pen, [ribbon(path, hw), (path[0][0], end, hw[0]), (path[-1][0], 48 - end, hw[-1])], pal, bevel=0.8, cast=0.25)
+    for y0, y1 in ((3.8, 6.2), (41.8, 44.2)):  # the bindings, a cord wound three times
+        m = raised(pen, [[(16 - 2.2, y0), (16 + 2.2, y0), (16 + 2.2, y1), (16 - 2.2, y1)]], dim(BUD, 0.8), bevel=0.5, cast=0.4)
+        turns = [[(13.6, y + 0.5), (18.4, y - 0.05), (18.4, y + 0.12), (13.6, y + 0.67)] for y in np.linspace(y0 + 0.4, y1 - 0.5, 3)]
+        tint(c, pen.mask(turns) * m, BUD[0], 0.7)
 
 
-def fern_rule(c, piece):
-    """A thin vine; its left end a fiddlehead and a leaflet; at the Joint a
-    node where it grows into the left border, a pair of leaflets off it."""
-    pen = Pen(c, 16)
-    vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.55)]
-    if piece == "Mid":
-        raised(pen, vine(-12, 76), BARK, bevel=0.5, cast=0.4, grain=False)
-    elif piece == "Left":
-        raised(pen, vine(6.0, 44), BARK, bevel=0.5, cast=0.4, grain=False)
-        raised(pen, stroke(scroll(bez((6.4, 8), (4.8, 8), (3.4, 7.6), (2.8, 6.2), n=24), 1.0, 1.0, 0.3), 0.55, 0.28, knob=False),
-               dim(BUD, 0.9), bevel=0.45, cast=0.45)  # the fiddlehead
-        raised(pen, [leaf((9.6, 8.5), (12.8, 11.0), 1.3)], dim(BUD, 0.8), bevel=0.4, cast=0.4)
-    else:
-        raised(pen, vine(-12, RAIL[0]) + vine(RAIL[1], 26), BARK, bevel=0.5, cast=0.4, grain=False)
-        raised(pen, [leaf((8.8, 8 + s * 0.4), (5.9, 8 + s * 3.4), 1.2) for s in (1, -1)]
-               + [leaf((6.6, 8 + s * 0.3), (4.4, 8 + s * 2.3), 0.9) for s in (1, -1)], dim(BUD, 0.85), bevel=0.4, cast=0.4)
-        raised(pen, [(9.3, 8, 1.05)], BARK, bevel=0.5, cast=0.4)  # the node
-
-
-def fern_thick(c, piece):
-    """A branch; its left end a knot where it was cut, a fiddlehead curled up
-    from it and two leaflets below; at the Joint a swelling node where it
-    grows into the left border, a pair of leaflets off it."""
-    pen = Pen(c, 16)
-    if piece == "Mid":
-        bud_bar(pen, -12, 76)
-    elif piece == "Left":
-        bud_bar(pen, 5.0, 44)
-        raised(pen, stroke(scroll(bez((5.2, 6.6), (5.0, 4.6), (4.0, 3.2), (2.6, 3.0), n=30), 1.0, -1.0, 0.3), 0.8, 0.35, knob=False),
-               dim(BUD, 0.9), bevel=0.5, cast=0.5)  # the fiddlehead
-        raised(pen, [leaf((4.4, 9.8), (1.0, 12.8), 1.7), leaf((6.6, 10.0), (5.2, 13.8), 1.4)], dim(BUD, 0.85), bevel=0.55, cast=0.5)
-        vein(c, pen, (4.6, 10.0), (1.6, 12.4))
-        m = raised(pen, [knot(4.6, 8.3, 1.8, 2.0, 2.4)], BARK, bevel=1.4, cast=0.5, gloss=0.15)  # the knot
-        bark_marks(c, pen, m, [ribbon(bez((3.8, 6.6), (4.4, 7.6), (4.8, 8.8), (5.6, 10.2), n=20), 0.13)])
-    else:
-        bud_bar(pen, -12, RAIL[0])
-        bud_bar(pen, RAIL[1], 26)
-        raised(pen, [leaf((7.8, 8 + s * 1.2), (4.0, 8 + s * 5.4), 1.9) for s in (1, -1)]
-               + [leaf((5.4, 8 + s * 1.3), (2.6, 8 + s * 4.4), 1.4) for s in (1, -1)], dim(BUD, 0.85), bevel=0.55, cast=0.5)
-        for s in (1, -1):
-            vein(c, pen, (7.6, 8 + s * 1.5), (4.6, 8 + s * 4.8))
-        m = raised(pen, [knot(8.5, 8.25, 1.9, 2.1, 2.6, 2.0)], BARK, bevel=1.4, cast=0.45)  # the node
-        bark_marks(c, pen, m, [ribbon(bez((7.6, 6.2), (8.2, 7.4), (8.8, 8.8), (9.6, 10.4), n=20), 0.13)])
-        clip_right(c, 26)
-
-
-def cup(c, pen, pieces):
-    """An acorn's cup: warm brown, its scales cross-hatched."""
-    m = raised(pen, pieces, CUP, bevel=0.6, cast=0.45, gloss=0.2)
-    hatch(c, pen, m)
-    return m
-
-
-def acorn(c, pen):
-    """A closed acorn, slender, its point the arrow's."""
-    raised(pen, [profile([(11.0, 0.85), (14, 0.95), (FOOT, 1.1)])], dim(BARK, 0.75), bevel=0.9)
-    raised(pen, [profile([(1.4, 0), (2.4, 0.45), (3.6, 1.05), (5.2, 1.65), (7.0, 2.0), (8.4, 1.95), (9.2, 1.7)])], BUD, bevel=1.3)
-    cup(c, pen, [profile([(7.6, 1.95), (8.2, 2.35), (9.4, 2.45), (10.6, 2.1), (11.4, 1.4), (11.9, 1.0)])])
-    raised(pen, [profile([(0.4, 0), (1.0, 0.2), (1.9, 0.36), (2.5, 0.3)])], dim(BARK, 0.7), bevel=0.25, cast=0.25)  # the point
-
-
-def acorn_cap(c, down, mode):
-    vine_cap(c, down, mode, acorn)
-
-
-def acorn_thumb(c):
+def heart_thumb(c):
+    """A capsule of turned heartwood: a dark ring near each end where the
+    bark was turned off, the grain running its length and parting round one
+    eye at the centre."""
     pen = Pen(c, 48)
-    raised(pen, [profile([(0.6, 0), (1.4, 1.8), (3.0, 2.5), (45.0, 2.5), (46.6, 1.8), (47.4, 0)])], dim(BARK, 0.85), bevel=1.3, cast=0.4)
-    cup(c, pen, [profile([(22.2, 2.6), (22.8, 3.0), (25.2, 3.0), (25.8, 2.6)])])  # a band of cup scales
+    m = raised(pen, [profile(THUMB_ENDS)], HEART, bevel=1.5, cast=0.4, gloss=0.2)
+    hw = half_width(THUMB_ENDS)
+    ys = np.linspace(1.6, 46.4, 300)
+    ex, ey = 16.5, 24.0
+    lines = []
+    for f in (-0.62, -0.2, 0.2, 0.62):
+        x = 16 + f * hw(ys)
+        side = 1 if 16 + f * THUMB_HW > ex else -1
+        part = np.exp(-((ys - ey) / 2.8) ** 2) * 0.5 * np.exp(-((16 + f * THUMB_HW - ex) / 1.4) ** 2)
+        lines.append(ribbon(np.stack([x + side * part, ys], 1), 0.11))
+    tint(c, pen.mask(lines) * m, HEART[0], 0.4)
+    eye = profile([(ey - 1.6, 0), (ey - 0.7, 0.55), (ey + 0.7, 0.55), (ey + 1.6, 0)], ex)
+    tint(c, pen.mask([eye]) * m, HEART[0], 0.45)
+    for y in (5.0, 43.0):  # the turned rings
+        tint(c, pen.mask([[(12, y - 0.3), (20, y - 0.3), (20, y + 0.3), (12, y + 0.3)]]) * m, HEART[0], 0.6)
+        tint(c, pen.mask([[(12, y + 0.3), (20, y + 0.3), (20, y + 0.6), (12, y + 0.6)]]) * m, HEART[2], 0.3)
 
 
-def acorn_rule(c, piece):
-    """A thin vine; its left end a small acorn in its cup, a leaf behind; at
-    the Joint an empty cup gripping the left border, a tendril above and a
-    leaf below."""
-    pen = Pen(c, 16)
-    vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.55)]
-    if piece == "Mid":
-        raised(pen, vine(-12, 76), BARK, bevel=0.5, cast=0.4, grain=False)
-    elif piece == "Left":
-        raised(pen, vine(7.6, 44) + stroke([(10.0, 8.2), (11.0, 9.2)], 0.24, 0.2, knob=False), BARK, bevel=0.5, cast=0.4, grain=False)
-        raised(pen, [leaf((10.8, 9.0), (14.0, 11.6), 1.4)], dim(BUD, 0.8), bevel=0.4, cast=0.4)
-        raised(pen, [hprofile([(1.6, 0), (2.4, 0.4), (3.4, 0.85), (4.8, 1.2), (6.2, 1.15)])], BUD, bevel=0.7, cast=0.4)
-        cup(c, pen, [hprofile([(5.6, 1.05), (6.1, 1.45), (7.2, 1.35), (7.9, 0.8), (8.3, 0.6)])])
-        raised(pen, [hprofile([(0.8, 0), (1.2, 0.16), (1.9, 0.26), (2.3, 0.22)])], dim(BARK, 0.7), bevel=0.2, cast=0.2)
-    else:
-        raised(pen, vine(-12, RAIL[0]) + vine(RAIL[1], 26), BARK, bevel=0.5, cast=0.4, grain=False)
-        raised(pen, stroke(scroll(bez((8.0, 7.2), (7.6, 5.8), (6.4, 4.8), (5.0, 5.0), n=24), 0.85, -1.0, 0.35), 0.42, 0.22, knob=False),
-               BARK, bevel=0.45, cast=0.45)
-        raised(pen, [leaf((8.0, 8.7), (5.2, 11.6), 1.3)], dim(BUD, 0.8), bevel=0.4, cast=0.4)
-        cup(c, pen, [hprofile([(7.4, 0.55), (8.0, 0.85), (9.0, 1.3), (10.0, 1.5), (10.4, 1.4)])])
-
-
-def acorn_thick(c, piece):
-    """A branch; its left end an acorn in its cup, a leaf behind; at the Joint
-    an empty cup gripping the left border, a tendril above and a leaf below."""
-    pen = Pen(c, 16)
-    if piece == "Mid":
-        bud_bar(pen, -12, 76)
-    elif piece == "Left":
-        bud_bar(pen, 8.4, 44)
-        raised(pen, [leaf((11.6, 9.6), (15.6, 13.4), 2.1)], dim(BUD, 0.85), bevel=0.55, cast=0.5)
-        vein(c, pen, (11.9, 9.9), (14.8, 12.7))
-        raised(pen, [hprofile([(1.0, 0), (2.0, 0.6), (3.2, 1.35), (4.6, 1.9), (6.0, 2.05), (7.0, 1.9)])], BUD, bevel=1.1, cast=0.55)
-        cup(c, pen, [hprofile([(6.2, 1.9), (6.8, 2.45), (8.2, 2.55), (9.4, 2.2), (10.0, 1.9)])])
-        raised(pen, [hprofile([(0.1, 0), (0.6, 0.2), (1.4, 0.36), (2.0, 0.3)])], dim(BARK, 0.7), bevel=0.25, cast=0.25)
-    else:
-        bud_bar(pen, -12, RAIL[0])
-        bud_bar(pen, RAIL[1], 26)
-        raised(pen, stroke(scroll(bez((7.4, 6.4), (6.6, 4.4), (4.8, 3.0), (3.0, 3.4), n=30), 1.1, -1.0, 0.35), 0.9, 0.32, knob=False),
-               BARK, bevel=0.55, cast=0.5)
-        raised(pen, [leaf((7.0, 9.4), (3.0, 13.4), 2.2)], dim(BUD, 0.85), bevel=0.55, cast=0.5)
-        vein(c, pen, (6.8, 9.6), (3.7, 12.7))
-        cup(c, pen, [hprofile([(6.2, 1.7), (7.0, 2.0), (8.4, 2.3), (9.6, 2.45), (10.3, 2.3)])])
-        clip_right(c, 26)
-
-
-def petal_lines(c, pen, lines):
-    """The petals' edges wrapped round a closed bud: dark, lit just under."""
-    m = pen.mask([ribbon(l, 0.13) for l in lines])
-    c.over(np.broadcast_to(np.array(ROSE[0], float), c.rgb.shape), m * 0.7)
-    k = U * c.s
-    lit = np.clip(ndimage.shift(m, (k * 0.25, 0), order=1) - m, 0, 1)
-    c.over(np.broadcast_to(np.array(ROSE[2], float), c.rgb.shape), lit * np.clip(c.a, 0, 1) * 0.35)
-
-
-def briar(c, pen):
-    """A thorned briar: a closed rosebud in its sepals on a thorny stem."""
-    raised(pen, [profile([(10.6, 0.8), (12.5, 0.85), (FOOT, 1.05)])], dim(BARK, 0.75), bevel=0.8)
-    raised(pen, [profile([(0.8, 0), (2.0, 0.75), (4.2, 1.7), (6.6, 2.2), (8.4, 2.15), (9.8, 1.6), (10.6, 1.1)])], ROSE, bevel=1.2)
-    petal_lines(c, pen, [bez((14.8, 2.6), (16.8, 3.4), (18.0, 5.6), (17.9, 8.6), n=20), bez((17.6, 5.0), (15.8, 5.9), (14.4, 7.6), (14.3, 9.4), n=20)])
-    raised(pen, [leaf((X(s, 16.3), 10.9), (X(s, 17.5), 8.0), 1.0) for s in (1, -1)], dim(BUD, 0.8), bevel=0.4, cast=0.35)  # the sepals, short and tight
-    raised(pen, [profile([(10.0, 0.7), (10.6, 1.3), (11.3, 1.15), (11.8, 0.85)])], dim(BUD, 0.7), bevel=0.5, cast=0.3)  # the hip
-
-
-def briar_cap(c, down, mode):
-    vine_cap(c, down, mode, briar, tip=2.6)
-
-
-def briar_thumb(c):
+def furl_thumb(c):
+    """A leaf rolled into a quill: its pale underside the inner turn, the
+    outer layer wrapping from the left to an edge right of the middle, its
+    midrib along it; at the top the leaf's tip
+    unrolls, its edge sweeping across the end."""
     pen = Pen(c, 48)
-    raised(pen, [profile([(0.6, 0), (1.4, 1.8), (3.0, 2.5), (45.0, 2.5), (46.6, 1.8), (47.4, 0)])], dim(BARK, 0.85), bevel=1.3, cast=0.4)
-    spurs = [[(X(s, 18.2), 23.2), (X(s, 18.5), 22.4), (X(s, 18.95), 20.6), (X(s, 18.95), 22.8), (X(s, 18.8), 24.7), (X(s, 18.2), 24.7)] for s in (1, -1)]
-    raised(pen, [profile([(23.0, 2.7), (23.6, 3.05), (24.4, 3.05), (25.0, 2.7)])] + spurs, BARK, bevel=0.5, cast=0.4)  # the node, a ring thorned each side
+    raised(pen, [profile(THUMB_ENDS)], LEAF_UNDER, bevel=1.5, cast=0.4)
+    hw = half_width(THUMB_ENDS)
+    ys = np.linspace(0.6, 47.4, 300)
+    t = np.clip((ys - 1.2) / 7.0, 0, 1)
+    edge = 16 + hw(ys) * (-0.9 + 1.25 * (3 * t ** 2 - 2 * t ** 3))  # 0.35 along the shaft; across to the left at the tip
+    left = 16 - hw(ys)
+    keep = edge > left + 0.05
+    outer = [(x, y) for x, y in zip(left[keep], ys[keep])] + [(x, y) for x, y in zip(edge[keep][::-1], ys[keep][::-1])]
+    m = raised(pen, [outer], dim(BUD, 0.9), bevel=1.0, cast=0.6)
+    rib = ribbon(np.stack([16 - 0.3 * hw(ys[ys > 7]), ys[ys > 7]], 1), 0.12)
+    tint(c, pen.mask([rib]) * m, BUD[0], 0.5)
 
 
-def briar_bud(x0, L, hw):
-    """A closed rosebud lying on its side, its point at x0, `L` long."""
-    return [hprofile([(x0, 0), (x0 + L * 0.15, hw * 0.45), (x0 + L * 0.42, hw * 0.88), (x0 + L * 0.66, hw), (x0 + L * 0.88, hw * 0.85), (x0 + L, hw * 0.65)])]
-
-
-def briar_rule(c, piece):
-    """A thin briar stem, a thorn on its top; its left end a closed rosebud
-    in its sepals; at the Joint a node where it grows into the left border, a
-    tendril above and a leaf below."""
-    pen = Pen(c, 16)
-    vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.55)]
-    hooks = lambda xs: [thorn((x, 8 + s * 0.5), (0, s), (1, 0), 1.15) for x, s in xs]
-    if piece == "Mid":
-        raised(pen, vine(-12, 76), BARK, bevel=0.5, cast=0.4, grain=False)
-    elif piece == "Left":
-        raised(pen, vine(6.0, 44) + hooks(((11.0, -1),)), BARK, bevel=0.5, cast=0.4, grain=False)
-        raised(pen, briar_bud(1.0, 5.2, 1.15), ROSE, bevel=0.6, cast=0.4)
-        petal_lines(c, pen, [bez((1.6, 7.6), (2.6, 7.2), (4.0, 7.3), (5.0, 8.4), n=16)])
-        raised(pen, [leaf((6.2, 8 + s * 0.3), (3.4, 8 + s * 1.3), 0.75) for s in (1, -1)], dim(BUD, 0.8), bevel=0.35, cast=0.35)
-    else:
-        raised(pen, vine(-12, RAIL[0]) + vine(RAIL[1], 26), BARK, bevel=0.5, cast=0.4, grain=False)
-        raised(pen, stroke(scroll(bez((8.6, 7.6), (8.0, 6.0), (6.6, 4.8), (5.0, 5.0), n=24), 0.9, -1.0, 0.35), 0.45, 0.24, knob=False),
-               BARK, bevel=0.45, cast=0.45)
-        raised(pen, [leaf((8.4, 8.6), (5.6, 11.4), 1.3)], dim(BUD, 0.8), bevel=0.4, cast=0.4)
-        raised(pen, [(9.3, 8, 1.05)], BARK, bevel=0.5, cast=0.4)  # the node
-
-
-def briar_thick(c, piece):
-    """A branch, a thorn on its top; its left end a small knot, a closed
-    rosebud grown from it; at the Joint a swelling node where it grows into
-    the left border, a tendril above and a leaf below."""
-    pen = Pen(c, 16)
-    hooks = lambda xs: [thorn((x, 8 + s * (TH - 0.2)), (0, s), (1, 0), 1.7) for x, s in xs]
-    if piece == "Mid":
-        bud_bar(pen, -12, 76)
-    elif piece == "Left":
-        raised(pen, hooks(((12.5, -1),)), BARK, bevel=0.45, cast=0.5)
-        bud_bar(pen, 7.0, 44)
-        raised(pen, [leaf((5.4, 8 + s * 0.8), (1.8, 8 + s * 2.7), 1.05) for s in (1, -1)], dim(BUD, 0.8), bevel=0.45, cast=0.45)  # the outer sepals
-        raised(pen, briar_bud(0.6, 5.0, 1.85), ROSE, bevel=1.0, cast=0.5)
-        petal_lines(c, pen, [bez((1.4, 7.0), (2.6, 6.4), (4.2, 6.6), (5.2, 8.2), n=16), bez((3.0, 9.4), (3.8, 8.6), (4.6, 8.0), (5.4, 8.0), n=16)])
-        raised(pen, [hprofile([(4.8, 0.9), (5.4, 1.5), (6.4, 1.35), (7.2, 1.0)])], dim(BUD, 0.7), bevel=0.55, cast=0.4)  # the hip
-        m = raised(pen, [knot(7.4, 8.3, 1.2, 1.95, 2.2)], BARK, bevel=1.2, cast=0.45, gloss=0.15)
-        bark_marks(c, pen, m, [ribbon(bez((7.0, 6.6), (7.4, 7.6), (7.6, 8.8), (8.0, 10.0), n=20), 0.12)])
-    else:
-        bud_bar(pen, -12, RAIL[0])
-        bud_bar(pen, RAIL[1], 26)
-        raised(pen, stroke(scroll(bez((8.2, 6.6), (7.2, 4.4), (5.2, 3.0), (3.2, 3.4), n=30), 1.1, -1.0, 0.35), 1.0, 0.32, knob=False),
-               BARK, bevel=0.55, cast=0.5)
-        raised(pen, [leaf((7.6, 9.2), (3.2, 13.4), 2.2)], dim(BUD, 0.85), bevel=0.55, cast=0.5)
-        vein(c, pen, (7.4, 9.4), (3.9, 12.7))
-        m = raised(pen, [knot(8.5, 8.25, 1.9, 2.1, 2.6, 2.0)], BARK, bevel=1.4, cast=0.45)  # the node
-        bark_marks(c, pen, m, [ribbon(bez((7.6, 6.2), (8.2, 7.4), (8.8, 8.8), (9.6, 10.4), n=20), 0.13)])
-        clip_right(c, 26)
+HEART = ((32, 23, 14), (100, 80, 56), (152, 128, 96))  # heartwood, warm and muted
+LEAF_UNDER = ((40, 42, 30), (104, 108, 82), (156, 156, 124))  # a leaf's paler underside
 
 
 LANCET_CH = 1.95  # the channel's half-width
@@ -1285,9 +1108,9 @@ DESIGNS6 = {
     "Lance": (lance_cap, spear_thumb, lance_rule, lance_thick, BRZ),
     "Fleur": (fleur_cap, twist_thumb, fleur_rule, fleur_thick, IRN),
     "Bud": (bud_cap, bud_thumb, bud_rule, bud_thick, BARK),
-    "Bud2": (fern_cap, fern_thumb, fern_rule, fern_thick, BARK),
-    "Bud3": (acorn_cap, acorn_thumb, acorn_rule, acorn_thick, BARK),
-    "Bud4": (briar_cap, briar_thumb, briar_rule, briar_thick, BARK),
+    "Bud2": (bud_cap, strands_thumb, bud_rule, bud_thick, BARK),
+    "Bud3": (bud_cap, heart_thumb, bud_rule, bud_thick, BARK),
+    "Bud4": (bud_cap, furl_thumb, bud_rule, bud_thick, BARK),
     "Lancet": (lancet_cap, inlay_thumb, lancet_rule, lancet_thick, "flush"),
 }
 
@@ -1504,8 +1327,8 @@ def panes6(art, names):
     return base
 
 
-LABELS = {"Lance": "Bronze lance", "Fleur": "Wrought-iron fleur-de-lis", "Bud": "Vine and leaf-bud", "Bud2": "Fern frond on the vine",
-          "Bud3": "Acorn on the vine", "Bud4": "Briar rosebud", "Lancet": "Inlaid bronze lancet"}
+LABELS = {"Lance": "Bronze lance", "Fleur": "Wrought-iron fleur-de-lis", "Bud": "Vine and leaf-bud", "Bud2": "Vine: bound strands thumb",
+          "Bud3": "Vine: heartwood capsule thumb", "Bud4": "Vine: furled leaf thumb", "Lancet": "Inlaid bronze lancet"}
 
 
 def sheet6(art):
