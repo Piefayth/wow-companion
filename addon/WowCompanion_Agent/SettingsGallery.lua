@@ -1,7 +1,6 @@
--- A design sheet, for now: the Settings page's edge between the dark stone
--- (the spine and the note's footer, one L) and the light stone the rows sit
--- on, four ways, each a full-size mock-up drawn small so the player compares
--- them at once. Shown only; nothing here is a stop or changes a setting.
+-- A design sheet, for now: the Settings page built from wells like the Chat
+-- tab's, four ways, each a full-size mock-up drawn small so the player
+-- compares them at once. Shown only; nothing here is a stop or changes a setting.
 -- Goes when one is chosen.
 
 local W, H = 700, 420                -- the page in each mock-up
@@ -65,52 +64,80 @@ local function control(parent, spec)
 	return b
 end
 
--- The page as built: dark stone over the whole backing (the L shows where
--- the light does not), the light stone's rectangle given by inset (from the
--- backing's top and right; 0 runs it to the edge), the section names on the
--- spine, the rows on the light, the focused row's note on the footer.
--- edge(mock, light) dresses the edge between them.
-local function page(mock, inset, edge)
-	local dark = mock:CreateTexture(nil, "BACKGROUND", nil, 0)
-	stone(dark, "you")
-	dark:SetAllPoints()
-	local light = CreateFrame("Frame", nil, mock)
-	light:SetPoint("TOPLEFT", 9 + SPINE, -inset)
-	light:SetPoint("BOTTOMRIGHT", -inset, 7 + FOOT)
-	local back = light:CreateTexture(nil, "BACKGROUND", nil, 1)
-	stone(back, "claude")
-	back:SetAllPoints()
-	edge(mock, light)
-	local p = CreateFrame("Frame", nil, mock)
-	p:SetPoint("TOPLEFT", 9, -7)
-	p:SetSize(W, H)
-	p:SetFrameLevel(light:GetFrameLevel() + 10)
-	local y = 6 + inset
+-- Round 2: the page built from the Companion window's own wells. The panel's
+-- rock shows in the 2 px between wells, as between the chat and the
+-- conversation list; each well is Blizzard's inner bevel with a stone in it.
+-- A layout is a list of wells, each { x, y, w, h, stone, role } in the area
+-- the Chat tab's two wells take (TW x TH); role says what it holds: names
+-- (the section names), rows, note, or names+rows (the spine inside the well).
+local TW, TH, SEP = W + 18, H + 14, 2
+
+local function well(mock, w)
+	local f = CreateFrame("Frame", nil, mock, "InsetFrameTemplate")
+	f:SetPoint("TOPLEFT", w[1], -w[2])
+	f:SetSize(w[3], w[4])
+	local back = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+	stone(back, w[5])
+	back:SetPoint("TOPLEFT", 3, -3)
+	back:SetPoint("BOTTOMRIGHT", -3, 3)
+	return f
+end
+
+local function layout(mock, wells)
+	local rock = mock:CreateTexture(nil, "BACKGROUND", nil, -8)
+	rock:SetTexture([[Interface\FrameGeneral\UI-Background-Rock]], "REPEAT", "REPEAT")
+	rock:SetHorizTile(true)
+	rock:SetVertTile(true)
+	rock:SetAllPoints()
+	local at = {}
+	for _, w in ipairs(wells) do
+		local f = well(mock, w)
+		for role in w[6]:gmatch("[^+]+") do at[role] = f end
+		if w[6] == "names+rows" then
+			-- the spine inside the well, its dark stone to a column rule
+			local spine = f:CreateTexture(nil, "BACKGROUND", nil, 2)
+			stone(spine, "you")
+			spine:SetPoint("TOPLEFT", 3, -3)
+			spine:SetPoint("BOTTOMRIGHT", f, "BOTTOMLEFT", SPINE, 3)
+			local rule = f:CreateTexture(nil, "ARTWORK")
+			rule:SetAtlas("spec-columndivider")
+			rule:SetWidth(7)
+			rule:SetPoint("TOPLEFT", spine, "TOPRIGHT", -3, 0)
+			rule:SetPoint("BOTTOMLEFT", spine, "BOTTOMRIGHT", -3, 0)
+		end
+	end
+	local names, rows, note = at.names, at.rows, at.note
+	local nameRight = names == rows and SPINE - 16 or names:GetWidth() - 16
+	local rowLeft = names == rows and SPINE + 4 or 6
+	local y = 10
 	for i, section in ipairs(SECTIONS) do
 		if i > 1 then
 			y = y + GAP
-			local d = p:CreateTexture(nil, "ARTWORK")
+			local d = rows:CreateTexture(nil, "ARTWORK")
 			d:SetAtlas("QuestLog-frame-devider")
 			d:SetAlpha(0.8)
 			d:SetHeight(15)
-			d:SetPoint("LEFT", p, "TOPLEFT", SPINE + 2, -y + GAP / 2)
-			d:SetPoint("RIGHT", p, "TOPRIGHT", 9 - inset - 2, -y + GAP / 2)
+			d:SetPoint("LEFT", rows, "TOPLEFT", rowLeft - 2, -y + GAP / 2)
+			d:SetPoint("RIGHT", rows, "TOPRIGHT", -3, -y + GAP / 2)
 		end
-		local head = text(p, "GameFontHighlightMed2", section[1])
-		head:SetPoint("TOPRIGHT", p, "TOPLEFT", SPINE - 18, -y - 10)
+		local head = text(names, "GameFontHighlightMed2", section[1])
+		head:SetPoint("TOPRIGHT", names, "TOPLEFT", nameRight, -y - 10)
 		for _, spec in ipairs(section[2]) do
-			local row = CreateFrame("Frame", nil, p)
-			row:SetPoint("TOPLEFT", SPINE, -y)
-			row:SetPoint("RIGHT", -inset, 0)
+			local row = CreateFrame("Frame", nil, rows)
+			row:SetPoint("TOPLEFT", rowLeft, -y)
+			row:SetPoint("RIGHT", -6, 0)
 			row:SetHeight(ROW)
 			if spec.focus then
-				local hover = row:CreateTexture(nil, "BACKGROUND")
-				hover:SetPoint("TOPLEFT", 2, -3)
-				hover:SetPoint("BOTTOMRIGHT", 9, 3)
+				local hover = row:CreateTexture(nil, "BACKGROUND", nil, 3)
+				hover:SetPoint("TOPLEFT", 0, -3)
+				hover:SetPoint("BOTTOMRIGHT", 3, 3)
 				hover:SetColorTexture(1, 1, 1, 0.1)
-				local name = text(p, "GameFontNormal", spec[1])
-				name:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 14, FOOT - 22)
-				text(p, "GameFontHighlightMed2", spec.note):SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -4)
+				local name = text(note, "GameFontNormal", spec[1])
+				name:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 14, FOOT - 6)
+				local body = text(note, "GameFontHighlightMed2", spec.note)
+				body:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -4)
+				body:SetPoint("RIGHT", note, "RIGHT", -10, 0)
+				body:SetJustifyH("LEFT")
 			end
 			text(row, "GameFontNormal", spec[1]):SetPoint("LEFT", 10, 0)
 			control(row, spec)
@@ -119,44 +146,41 @@ local function page(mock, inset, edge)
 	end
 end
 
-local function nineSlice(light, layout, out)
-	local f = CreateFrame("Frame", nil, light)
-	f:SetPoint("TOPLEFT", -out, out)
-	f:SetPoint("BOTTOMRIGHT", out, -out)
-	f:SetFrameLevel(light:GetFrameLevel() + 5)
-	NineSliceUtil.ApplyLayoutByName(f, layout)
-	return f
-end
+local FW = FOOT + 6 -- a note well's height
 
 local CANDIDATES = {
-	-- A. the light page sunk into the dark stone: Blizzard's inner bevel
-	-- (the window's own wells) around it, a margin of dark all round
-	{ "Sunk: the light page set into the dark", function(mock)
-		page(mock, 8, function(_, light) nineSlice(light, "InsetFrameTemplate", 0) end)
+	-- A. two wells as on the Chat tab, mirrored: the spine its own well on the
+	-- left, the rows in the big one, the note at the foot of the spine's well
+	{ "Two wells: names and note | settings", function(mock)
+		layout(mock, {
+			{ 0, 0, SPINE + 6, TH, "you", "names+note" },
+			{ SPINE + 6 + SEP, 0, TW - SPINE - 6 - SEP, TH, "claude", "rows" },
+		})
 	end },
-	-- B. the light page raised over the dark: it casts a shadow onto the
-	-- spine and the footer, running to the backing's edge
-	{ "Raised: the light page casts a shadow", function(mock)
-		page(mock, 0, function(m, light)
-			local left = m:CreateTexture(nil, "BORDER")
-			left:SetTexture([[Interface\Common\ShadowOverlay-Right]])
-			left:SetWidth(18)
-			left:SetPoint("TOPRIGHT", light, "TOPLEFT")
-			left:SetPoint("BOTTOMRIGHT", light, "BOTTOMLEFT")
-			local below = m:CreateTexture(nil, "BORDER")
-			below:SetTexture([[Interface\Common\ShadowOverlay-Top]])
-			below:SetHeight(18)
-			below:SetPoint("TOPLEFT", light, "BOTTOMLEFT", -18, 0)
-			below:SetPoint("TOPRIGHT", light, "BOTTOMRIGHT")
-		end)
+	-- B. three wells: the spine down the left, the rows above the note's well
+	{ "Three wells: names | settings over the note", function(mock)
+		layout(mock, {
+			{ 0, 0, SPINE + 6, TH, "you", "names" },
+			{ SPINE + 6 + SEP, 0, TW - SPINE - 6 - SEP, TH - FW - SEP, "claude", "rows" },
+			{ SPINE + 6 + SEP, TH - FW, TW - SPINE - 6 - SEP, FW, "you", "note" },
+		})
 	end },
-	-- C. a thin band of Blizzard's dark metal frames the light page
-	{ "Framed: dark metal round the light page", function(mock)
-		page(mock, 12, function(_, light) nineSlice(light, "Dialog", 6) end)
+	-- C. three wells: the spine and the rows side by side, the note's well
+	-- the full width under both
+	{ "Three wells: names | settings, the note under both", function(mock)
+		layout(mock, {
+			{ 0, 0, SPINE + 6, TH - FW - SEP, "you", "names" },
+			{ SPINE + 6 + SEP, 0, TW - SPINE - 6 - SEP, TH - FW - SEP, "claude", "rows" },
+			{ 0, TH - FW, TW, FW, "you", "note" },
+		})
 	end },
-	-- D. the heavy metal frame Blizzard uses on its big panels
-	{ "Framed: heavy metal round the light page", function(mock)
-		page(mock, 14, function(_, light) nineSlice(light, "GenericMetal", 0) end)
+	-- D. two wells: the spine inside the settings' well as now, the note in a
+	-- well of its own under it
+	{ "Two wells: names and settings over the note", function(mock)
+		layout(mock, {
+			{ 0, 0, TW, TH - FW - SEP, "claude", "names+rows" },
+			{ 0, TH - FW, TW, FW, "you", "note" },
+		})
 	end },
 }
 
