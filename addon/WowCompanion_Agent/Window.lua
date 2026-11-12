@@ -565,7 +565,7 @@ local function buildLog()
 	end
 	local grip = CreateFrame("Button", nil, frame)
 	grip:SetSize(16, 16)
-	grip:SetPoint("BOTTOMRIGHT", -4, 4)
+	grip:SetPoint("BOTTOMRIGHT", -7, 7)
 	-- Blizzard's only corner grip is the chat frame's 16px file, blurry when
 	-- scaled; this draws its three diagonal ridges as lines (crisp at any scale),
 	-- cut into the panel: each groove is a dark line with a faint light lip on its
@@ -583,8 +583,18 @@ local function buildLog()
 			if part[5] == 1 then lips[#lips + 1] = l end
 		end
 	end
-	grip:SetScript("OnEnter", function() for _, l in ipairs(lips) do l:SetColorTexture(unpack(LIP_LIT)) end end)
-	grip:SetScript("OnLeave", function() for _, l in ipairs(lips) do l:SetColorTexture(unpack(LIP)) end end)
+	-- the grooves are quiet, so hovering also says what they are, in a tooltip
+	grip:SetScript("OnEnter", function(self)
+		for _, l in ipairs(lips) do l:SetColorTexture(unpack(LIP_LIT)) end
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText("Resize")
+		GameTooltip:AddLine("Drag to resize, or press for the next size.", 1, 1, 1, true)
+		GameTooltip:Show()
+	end)
+	grip:SetScript("OnLeave", function()
+		for _, l in ipairs(lips) do l:SetColorTexture(unpack(LIP)) end
+		GameTooltip:Hide()
+	end)
 	-- A mouse drags it; the controller can only click it, so a
 	-- click that did not resize steps through three sizes. A drag
 	-- also ends in a click, which is why the size at mouse-down is compared.
