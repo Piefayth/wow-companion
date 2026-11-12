@@ -9,7 +9,7 @@
 use std::{
     io,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{Mutex, OnceLock},
     time::Instant,
 };
 
@@ -198,7 +198,19 @@ fn apply(key: &str, value: &str, running: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
-/// `mics`: the inputs Windows lists now, for the page's mic row.
+/// The mic list last sent, and the UI session it went to: the game keeps the
+/// list it has, so the same one is not sent again in that session.
+static SENT_MICS: Mutex<Option<(Option<String>, Vec<String>)>> = Mutex::new(None);
+
+/// `mics`: the inputs Windows lists now, for the page's mic row, unless this UI
+/// session already has that list (the page asks each time it is shown).
 pub(crate) fn mics(addons: &Path) -> io::Result<()> {
-    crate::send(addons, &Msg::new("mics").texts("mics", voice::input_names()))
+    let now = (crate::saved_variables_stamp(addons), voice::input_names());
+    let mut sent = SENT_MICS.lock().unwrap();
+    if sent.as_ref() == Some(&now) {
+        return Ok(());
+    }
+    crate::send(addons, &Msg::new("mics").texts("mics", now.1.clone()))?;
+    *sent = Some(now);
+    Ok(())
 }

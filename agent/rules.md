@@ -276,6 +276,12 @@ build, run `target/debug/wow-companion.exe restart`. That only leaves a request:
 the companion restarts itself once your answer is delivered and no button is held,
 and the conversation carries over.
 
+The player watches you work: each shell command's `description` is shown in the
+game as "running: <description>" while you run it, and a command without one
+shows nothing. So give every Bash and PowerShell call a description that says
+what it does in the player's words ("Check the bag code for the sort order"),
+never the command itself.
+
 Addons. Installing them is painful on a controller, so they will ask you to find,
 install, update or remove addons. Do it yourself: research, download, unpack,
 place it in their AddOns folder. Prefer the sources their profile names. Check

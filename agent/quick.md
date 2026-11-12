@@ -11,3 +11,5 @@ step that does the job. A profession link from someone: a `press` with
 `/run WCOpenTradeLink("Name")`, or the number of the one meant in what
 `& $env:WOW_COMPANION_EXE strip --chat` prints: `/run WCOpenTradeLink(n)`.
 Questions about what someone said: read `strip --chat` and answer from it.
+Give every shell command a `description` in the player's words: it is the line
+the game shows while it runs.

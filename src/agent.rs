@@ -253,28 +253,27 @@ struct Answer {
     thread: Option<String>,
 }
 
-/// One line for the player about a tool call: what, not how.
-fn describe(tool: &str, input: &Value) -> String {
+/// One line for the player about a tool call: what, not how. None for a call
+/// with nothing to say to them: a command the agent gave no description (its
+/// first line is `python - <<'EOF'` or `cd \`), a tool they would not know.
+fn describe(tool: &str, input: &Value) -> Option<String> {
     let get = |key: &str| input.get(key).and_then(Value::as_str).unwrap_or("");
     let short = |text: &str| -> String {
         let text = text.lines().next().unwrap_or("").trim();
         if text.chars().count() > 70 { format!("{}...", text.chars().take(70).collect::<String>()) } else { text.to_string() }
     };
     let file = |path: &str| path.rsplit(['/', '\\']).next().unwrap_or(path).to_string();
-    match tool {
+    Some(match tool {
         "Read" => format!("reading {}", file(get("file_path"))),
         "Grep" => format!("searching for {}", short(get("pattern"))),
         "Glob" => format!("looking for {}", short(get("pattern"))),
         "WebSearch" => format!("searching the web: {}", short(get("query"))),
         "WebFetch" => format!("reading {}", short(get("url").trim_start_matches("https://"))),
         "Edit" | "Write" | "MultiEdit" => format!("editing {}", file(get("file_path"))),
-        "Bash" | "PowerShell" => {
-            let what = if get("description").is_empty() { get("command") } else { get("description") };
-            format!("running: {}", short(what))
-        }
+        "Bash" | "PowerShell" if !get("description").is_empty() => format!("running: {}", short(get("description"))),
         "Agent" | "Task" => format!("asking a helper: {}", short(get("description"))),
-        other => other.to_string(),
-    }
+        _ => return None,
+    })
 }
 
 fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer> {
@@ -300,7 +299,9 @@ fn read(mut waiting: Child, mut progress: impl FnMut(&str)) -> io::Result<Answer
                             let name = part.get("name").and_then(Value::as_str).unwrap_or("");
                             // the answer itself arrives as this tool; it is not progress
                             if name != "StructuredOutput" {
-                                progress(&describe(name, part.get("input").unwrap_or(&Value::Null)));
+                                if let Some(line) = describe(name, part.get("input").unwrap_or(&Value::Null)) {
+                                    progress(&line);
+                                }
                             }
                         }
                         Some("text") => {
