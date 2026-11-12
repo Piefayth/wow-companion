@@ -1,7 +1,7 @@
 -- Settings rows the controller reaches the way Blizzard's Settings do: each row
 -- is one stop; while the cursor is on it, d-pad left and right change its
 -- value (a slider steps, a dropdown cycles its choices); confirm opens a
--- dropdown's list; up and down move between rows.
+-- dropdown's menu; up and down move between rows.
 --
 -- Nothing of ours runs from the navigation. A frame of our own polls which row
 -- the cursor is on (its button's highlight is locked while it is the cursor's)

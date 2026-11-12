@@ -1,6 +1,6 @@
 -- The settings page: one column of rows in Blizzard's look, each row one
 -- controller stop (Rows.lua: left and right change it, confirm opens a
--- dropdown's list, up and down move between rows). Owned by Core so it works
+-- dropdown's menu, up and down move between rows). Owned by Core so it works
 -- without the Agent; each addon adds its own rows. Shown in a window of its own
 -- (the minimap mark, Blizzard's AddOns settings) or inside another frame (the
 -- Companion window's Settings tab), one page moved between them.
@@ -43,85 +43,34 @@ local function label(text, height)
 	return top
 end
 
--- A choice from a list, as a dropdown built from parts the controller already
--- reaches: a plain Button in Blizzard's dropdown art showing the current
--- value; confirm opens a list of UIPanelButtons under it, picking one sets it.
-local openList
+-- A choice from a list, as Blizzard's Settings show one: their dropdown with
+-- steppers (SettingsDropdownWithButtonsTemplate's own), its menu the game's.
+-- The row is one stop laid over it, as their settings row is (the control
+-- itself out of the cycle): left and right are the steppers, confirm opens the
+-- menu the way their gamepad footer does (MouseDown, MouseUp).
 local function dropdown(row)
 	local top = label(row.label)
-	local d = CreateFrame("Button", nil, page)
-	d:SetSize(CONTROL_W, 26)
-	d:SetPoint("TOPLEFT", LABEL_W, -top)
-	local bg = d:CreateTexture(nil, "BACKGROUND")
-	bg:SetAtlas("common-dropdown-textholder")
-	bg:SetAllPoints()
-	local arrow = d:CreateTexture(nil, "ARTWORK")
-	arrow:SetAtlas("common-dropdown-a-button", true)
-	arrow:SetPoint("RIGHT", -2, -1)
-	local hl = d:CreateTexture(nil, "HIGHLIGHT")
-	hl:SetAtlas("common-dropdown-textholder")
-	hl:SetAllPoints()
-	hl:SetBlendMode("ADD")
-	hl:SetAlpha(0.35)
-	local value = d:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	value:SetPoint("LEFT", 10, 0)
-	value:SetPoint("RIGHT", arrow, "LEFT", -4, 0)
-	value:SetJustifyH("LEFT")
-	local function show() value:SetText(row.get() or "") end
-	show()
-	local made, list = pcall(CreateFrame, "Frame", nil, page, "InsetFrameTemplate")
-	if not made or not list then list = CreateFrame("Frame", nil, page) end
-	list:SetPoint("TOPLEFT", d, "BOTTOMLEFT", 0, -2)
-	list:SetFrameStrata("DIALOG")
-	list:Hide()
-	local back = list:CreateTexture(nil, "BACKGROUND", nil, -1)
-	back:SetColorTexture(0, 0, 0, 0.92)
-	back:SetAllPoints()
-	local items = {}
-	local function close()
-		list:Hide()
-		if openList == list then openList = nil end
-	end
-	local function choose(name)
-		row.set(name)
-		show()
-	end
-	local function fill()
-		for _, b in ipairs(items) do b:Hide() end
-		local names = row.options()
-		for i, name in ipairs(names) do
-			local b = items[i]
-			if not b then
-				local ok, nb = pcall(CreateFrame, "Button", nil, list, "UIPanelButtonTemplate")
-				if not ok or not nb then return end
-				b = nb
-				b:SetSize(CONTROL_W - 12, 24)
-				b:SetPoint("TOPLEFT", 6, -6 - (i - 1) * 26)
-				WC.MarkFocusable(b)
-				items[i] = b
-			end
-			b:SetText((name == row.get() and "> " or "") .. name)
-			b:SetScript("OnClick", function() choose(name) close() end)
-			b:Show()
+	local control = CreateFrame("Frame", nil, page, "Metal2DropdownWithSteppersAndLabelTemplate")
+	local dd = control.Dropdown
+	dd:SetWidth(CONTROL_W - 50)
+	control:SetSize(CONTROL_W, 26)
+	control:SetPoint("TOPLEFT", LABEL_W, -top + 1)
+	dd:SetupMenu(function(_, root)
+		for _, name in ipairs(row.options()) do
+			root:CreateRadio(name, function(n) return n == row.get() end, function(n) row.set(n) end, name)
 		end
-		list:SetSize(CONTROL_W, 12 + #names * 26)
-	end
-	d:SetScript("OnClick", function()
-		if list:IsShown() then return close() end
-		if openList then openList:Hide() end
-		fill()
-		list:Show()
-		openList = list
 	end)
-	d:SetScript("OnShow", show)
-	page:HookScript("OnHide", close)
-	note(d, row.text)
-	-- one row: left and right cycle the choices, confirm opens the list
-	WC.RowStop(d, function(dir)
-		local names, at = row.options(), 1
-		for i, name in ipairs(names) do if name == row.get() then at = i end end
-		local name = names[(at - 1 + dir) % #names + 1]
-		if name then choose(name) end
+	control:SetSteppersShown(true)
+	WC.MarkIgnored(control)
+	local stop = CreateFrame("Button", nil, page)
+	stop:SetPoint("TOPLEFT", control.DecrementButton, "TOPLEFT", -4, 4)
+	stop:SetPoint("BOTTOMRIGHT", control.IncrementButton, "BOTTOMRIGHT", 4, -4)
+	stop:SetFrameLevel(control:GetFrameLevel() + 5)
+	stop:SetHighlightAtlas("Options_List_Hover", "ADD")
+	stop:SetScript("OnClick", function() dd:MouseDown() dd:MouseUp() end)
+	note(control.IncrementButton, row.text)
+	WC.RowStop(stop, function(dir)
+		if dir < 0 then control.DecrementButton:Click() else control.IncrementButton:Click() end
 	end, "Change")
 end
 
