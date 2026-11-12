@@ -224,7 +224,7 @@ local function pane(page, option)
 	column:SetPoint("TOPRIGHT", -EDGE, -EDGE)
 	column:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
 	column:SetWidth(20)
-	column:SetFrameLevel(box:GetFrameLevel() + 2)
+	column:SetFrameLevel(box:GetFrameLevel() + 3) -- above the top shadow (the lip, below)
 	local text = CreateFrame("Frame", nil, box)
 	text:SetPoint("TOPLEFT", EDGE, -EDGE)
 	text:SetPoint("BOTTOMRIGHT", column, "BOTTOMLEFT")
@@ -255,11 +255,11 @@ local function pane(page, option)
 	end
 	local ok, err = pcall(option[2], column, option[3], ends)
 	-- The chat's top shadow (Blizzard's ShadowOverlay-Top, as Window.lua's lip)
-	-- over the turns only: the bar stands above the chat, unshadowed, as the
-	-- old scroll column did.
+	-- across the whole well's stone, so the stone has no seam; the bar's pieces
+	-- draw above it, unshadowed, standing over the chat as the old column did.
 	local lip = CreateFrame("Frame", nil, box)
 	lip:SetPoint("TOPLEFT", EDGE, -EDGE)
-	lip:SetPoint("TOPRIGHT", column, "TOPLEFT")
+	lip:SetPoint("TOPRIGHT", -EDGE, -EDGE)
 	lip:SetHeight(24)
 	lip:SetFrameLevel(text:GetFrameLevel() + 1)
 	local shade = lip:CreateTexture(nil, "OVERLAY")
