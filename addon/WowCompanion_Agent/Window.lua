@@ -357,14 +357,15 @@ local function buildTabs(frame, messages)
 	pageShade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
 	pageShade:SetAllPoints()
 
-	-- The tabs (tools/make_frame_art.py): raised stone plaques standing on the
+	-- The tabs (tools/make_frame_art.py): blocks of cut stone, hard
+	-- chiselled facets round a tiled stone face (Tab-Face), standing on the
 	-- chat well's outer edge, the well's wall running on unbroken beneath
 	-- them; the chosen one taller, its face lighter. The art carries no margin; the row's spacing is here: every
 	-- tab at least TAB_MIN wide (PanelTemplates_TabResize reads
 	-- frame.minTabWidth), TAB_GAP between them, the first over the well's inner
 	-- edge (EDGE).
 	local names = {}
-	local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s-4]]
+	local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s-5]]
 	local TAB_MIN, TAB_GAP, CAP = 69, 3, 6
 	local TAB_H, TAB_ACTIVE_H = 20.2, 25.6
 	frame.minTabWidth = TAB_MIN
@@ -387,6 +388,11 @@ local function buildTabs(frame, messages)
 				end
 			end
 		end
+		-- the face, under the facets (the template's pieces are BACKGROUND 0)
+		tab.face = tab:CreateTexture(nil, "BACKGROUND", nil, -8)
+		tab.face:SetTexture(TAB_ART:format("Face"), "REPEAT", "REPEAT")
+		tab.face:SetHorizTile(true)
+		tab.face:SetVertTile(true)
 		tab.Left:ClearAllPoints()
 		tab.Left:SetPoint("BOTTOMLEFT")
 		tab.Right:ClearAllPoints()
@@ -427,6 +433,16 @@ local function buildTabs(frame, messages)
 		id = ((id - 1) % #names) + 1
 		frame.currentTab = id
 		PanelTemplates_SetTab(frame, id)
+		-- each tab's face inside its outline, full on the chosen tab, dimmed
+		-- on the rest (FACE_DIM in the art tool)
+		for i, tab in ipairs(frame.Tabs) do
+			local chosen = i == id
+			local face, k = tab.face, chosen and 1 or 0.66
+			face:ClearAllPoints()
+			face:SetPoint("TOPLEFT", tab, "BOTTOMLEFT", 1, (chosen and TAB_ACTIVE_H or TAB_H) - 1)
+			face:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -1, 0)
+			face:SetVertexColor(k, k, k)
+		end
 		local chat = id == 1
 		-- the page's name in the title, as Collections does
 		if frame.SetTitle then frame:SetTitle(chat and "Companion" or names[id]) end

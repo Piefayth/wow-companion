@@ -308,24 +308,34 @@ def inset():
 # --- the tabs -------------------------------------------------------------------
 #
 # Window.lua's tab row (PanelTopTabButtonTemplate's Left, Middle and Right
-# pieces, each state): every tab a raised stone plaque standing on the panel at
+# pieces, each state): every tab a block of cut stone standing on the panel at
 # the well's brink, the inverse of the wells (cut down) so a tab reads as a
-# thing to press. Its top and sides are a rounded, worn bevel in the wells'
-# stone, lit from the top left, with a dark crease at its edge; its foot is cut
-# flat where it stands, so no bevel runs along the well. Its face is the
-# panel's stone, lifted toward the light on the chosen tab, which is also
-# taller; the others are shorter, their bevel dimmed. No coloured rim:
-# height, light and the face's stone say which is chosen.
+# thing to press. Hard, not soft: its top and sides are flat chiselled facets,
+# each one shade, lit from the top left (the top facet brightest, the left one
+# lit, the right one in shadow), its top corners cut off square at 45 degrees,
+# a crisp light arris where a lit facet meets the face and a dark one where the
+# shadowed facet does, and a dark outline round it all. No blur beyond the
+# pixels' own averaging. Its foot is cut flat where it stands, so no facet
+# runs along the well. The face is clear: Window.lua tiles Tab-Face under it,
+# a grey stone (face()), full on the chosen tab, which is also taller, dimmed
+# on the others, which are shorter.
 
-TAB_VERSION = 4
+TAB_VERSION = 5
 TAB_K = 40  # px a unit drawn: every edge below on a whole pixel
 TAB_W, TAB_GAP, TAB_H, TAB_ACTIVE_H, CAP = 69.0, 3.0, 20.2, 25.6, 6.0  # Window.lua's
-CORNER = 2.5  # the plaque's top corners worn round
-BEVEL = 2.4  # the bevel's width, where the face begins
+CHAMFER = 2.6  # the top corners cut off at 45 degrees
+BEVEL = 2.2  # the facets' width, where the face begins
 TAB_MID = 2.0  # the middle piece's width in units
-TAB_DIM = 0.8  # the unchosen tabs' bevel
-FACE = np.array((50, 46, 41.0))  # an unchosen tab's face: the panel's own stone
-FACE_ACTIVE = np.array((78, 72, 63.0))  # the chosen one's, lifted toward the light
+TAB_DIM = 0.78  # the unchosen tabs
+FACE_DIM = 0.66  # their face's tint (Window.lua)
+FACE_PX = 128  # Tab-Face's side, tiled a texel a screen pixel
+FACETS = {  # each facet's one shade, by how it faces the light
+    "top": np.array((128, 120, 106.0)),
+    "left": np.array((96, 89, 79.0)),
+    "corner_l": np.array((116, 108, 96.0)),
+    "corner_r": np.array((70, 64, 57.0)),
+    "right": np.array((30, 27, 24.0)),
+}
 
 
 def edt(mask):
@@ -336,34 +346,47 @@ def tab(active, w, k=TAB_K):
     """A whole tab on a button w units wide as premultiplied RGBA, over the
     button's bounds."""
     h = TAB_ACTIVE_H if active else TAB_H
-    pad = 3.0
-    xx, yy = grid(w + 2 * pad, h + 2 * pad, k)
-    xx, yy = xx - pad, yy - h - pad  # units from the button's foot left, y down
-    # the plaque, its foot running on below the piece so no bevel lies there
-    shape = (xx >= 0) & (xx <= w) & (yy >= -h)
-    r = CORNER * k  # the top corners round: an opening of the shape
-    shape = edt(~(edt(shape) > r)) <= r
-    d = np.where(shape, edt(shape) - 0.5, 0.5 - edt(~shape)) / k
-    # the bevel's height: the panel's level at the edge, rising round and worn
-    # to the face
-    t = np.clip(d / BEVEL, 0, 1)
-    hgt = 1.4 * (1 - (1 - t) ** 2)
+    xx, yy = grid(w, h, k)
+    yy = yy - h  # units from the foot, y down: the top at -h
+    # distances in from each side, and from each corner's cut (a 45-degree
+    # line CHAMFER from the corner along both edges)
+    dt, dl, dr = yy + h, xx, w - xx
+    s2 = np.sqrt(2)
+    dcl = (dt + dl - CHAMFER) / s2
+    dcr = (dt + dr - CHAMFER) / s2
+    dist = np.stack([dt, dl, dr, dcl, dcr])
+    d = dist.min(0)  # into the block from its outline
+    facet = dist.argmin(0)
     lay = Layers(d.shape)
-    # the face: the panel's stone, lighter than the panel on the chosen tab,
-    # a little lighter toward its top as a lit, worn face is
-    face = (FACE_ACTIVE if active else FACE) * (1.08 - 0.16 * np.clip((yy + h) / h, 0, 1))[..., None]
-    lay.over(face, (d >= 0).astype(float))
-    bev = shade(ndimage.gaussian_filter(hgt, k * 0.15), STONE, k, gloss=0.1, power=10)
-    lay.over(bev, ((d >= 0) & (d < BEVEL + 0.3)).astype(float))
-    lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.15) / 0.3, 0, 1) * (d >= -0.2) * 0.95)
-    # a faint crease where the bevel meets the face
-    lay.over(LINE_IN, np.clip(1 - np.abs(d - BEVEL) / 0.25, 0, 1) * 0.35)
+    names = ("top", "left", "right", "corner_l", "corner_r")
+    for n, name in enumerate(names):
+        lay.over(FACETS[name], ((facet == n) & (d >= 0) & (d < BEVEL)).astype(float))
+    # the arrises where the facets meet the face: light under the lit ones,
+    # dark beside the shadowed one
+    edge = (d >= BEVEL - 0.25) & (d < BEVEL + 0.15)
+    lit = (facet == 0) | (facet == 1) | (facet == 3)
+    lay.over(np.array((168, 158, 140.0)), (edge & lit).astype(float) * 0.7)
+    lay.over(LINE_IN, (edge & ~lit).astype(float) * 0.7)
+    # the outline
+    lay.over(LINE_IN, ((d >= 0) & (d < 0.35)).astype(float) * 0.95)
     pre = lay.pre()
-    pre = np.stack([ndimage.gaussian_filter(pre[..., c], k * 0.22) for c in range(4)], -1)
     if not active:
         pre[..., :3] *= TAB_DIM
-    p = int(round(pad * k))
-    return pre[p:-p, p:-p]
+    return pre
+
+
+def face(n=FACE_PX, seed=11):
+    """Tab-Face: a tileable grey stone, n pixels square: cloudy tone and a
+    fine grain, from noise smoothed with wrap-around so it tiles."""
+    rng = np.random.default_rng(seed)
+
+    def cloud(sigma):
+        c = ndimage.gaussian_filter(rng.standard_normal((n, n)), sigma, mode="wrap")
+        return c / c.std()
+    tone = cloud(14) * 0.55 + cloud(5) * 0.3 + cloud(0.8) * 0.25
+    base = np.array((84, 79, 71.0))
+    col = base[None, None] * (1 + 0.075 * tone)[..., None]
+    return np.concatenate([np.clip(col, 0, 255), np.full((n, n, 1), 255.0)], -1)
 
 
 def tab_pieces():
@@ -382,6 +405,7 @@ def tab_pieces():
         c = img.shape[1] // 2
         out[name % "Middle"] = fit(img[:, c - mid // 2:c - mid // 2 + mid], (16, 256))
         assert img.shape[0] == int(round(h * k))
+    out["Tab-Face"] = face()
     return out
 
 
@@ -449,6 +473,17 @@ class Mock:
         im = np.concatenate([rgb, np.full(rgb.shape[:2] + (1,), 255.0)], -1)
         self.im.alpha_composite(Image.fromarray(np.clip(im, 0, 255).astype(np.uint8), "RGBA"), (a, b))
 
+    def tile_art(self, img, k, x0, y0, x1, y1):
+        """A written texture tiled over the rect, a texel a screen pixel (as
+        the game tiles), times k."""
+        a, b = self.px(x0, y0)
+        c, d = self.px(x1, y1)
+        src = img[..., :3]
+        reps = ((d - b) // src.shape[0] + 1, (c - a) // src.shape[1] + 1, 1)
+        rgb = np.tile(src, reps)[:d - b, :c - a] * k
+        im = np.concatenate([rgb, np.full(rgb.shape[:2] + (1,), 255.0)], -1)
+        self.im.alpha_composite(Image.fromarray(np.clip(im, 0, 255).astype(np.uint8), "RGBA"), (a, b))
+
     def nine(self, art, prefix, x0, y0, x1, y1, rim, top):
         """dress(): every piece rim wide, the top ones top tall."""
         self.put(art[prefix + "TopLeftCorner"], x0, y0, x0 + rim, y0 + top)
@@ -511,6 +546,7 @@ def mock(art, backdrop, chosen=0):
         act = i == chosen
         th = TAB_ACTIVE_H if act else TAB_H
         sfx = "-Active" if act else ""
+        m.tile_art(art["Tab-Face"], 1.0 if act else FACE_DIM, x + 1, top - th + 1, x + TAB_W - 1, top)
         m.put(art["Tab-Left" + sfx], x, top - th, x + CAP, top)
         m.put(art["Tab-Middle" + sfx], x + CAP, top - th, x + TAB_W - CAP, top)
         m.put(art["Tab-Right" + sfx], x + TAB_W - CAP, top - th, x + TAB_W, top)
