@@ -19,6 +19,55 @@ function WC.Companion.AddTab(name, fill)
 	if addTab then return addTab(name, fill) end
 	added[#added + 1] = { name = name, fill = fill }
 end
+-- Our own frame art (tools/make_frame_art.py) on the NineSlice pieces of our
+-- window and its wells: the art is cut tight to what it draws, and each
+-- piece's size and place is decided here. corner: the corners' width; top,
+-- bottom: the top and bottom corners' heights (the top edge's too); out:
+-- how far the pieces stand past the owner's left, top, right and bottom
+-- (negative is inside); left, right, foot: the left, right and bottom edges'
+-- widths.
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-1]]
+local FRAME_SLICE = { art = "Frame", corner = 12, top = 28, bottom = 12, out = { -2, 4, 2, -1 },
+	left = 8, right = 6, foot = 6 }
+local INSET_SLICE = { art = "Inset", corner = 4, top = 4, bottom = 4, out = { 0, 0, 0, 0 },
+	left = 4, right = 4, foot = 4 }
+local function dress(owner, l)
+	local slice = owner.NineSlice
+	if not slice then return end
+	local p = {}
+	for _, name in ipairs({ "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
+		"TopEdge", "BottomEdge", "LeftEdge", "RightEdge" }) do
+		local t = slice[name]
+		if not t then return end
+		t:SetTexture(ART:format(l.art, name))
+		t:SetTexCoord(0, 1, 0, 1)
+		t:SetHorizTile(false)
+		t:SetVertTile(false)
+		t:ClearAllPoints()
+		p[name] = t
+	end
+	local ol, ot, orr, ob = unpack(l.out)
+	p.TopLeftCorner:SetPoint("TOPLEFT", owner, "TOPLEFT", -ol, ot)
+	p.TopRightCorner:SetPoint("TOPRIGHT", owner, "TOPRIGHT", orr, ot)
+	p.BottomLeftCorner:SetPoint("BOTTOMLEFT", owner, "BOTTOMLEFT", -ol, -ob)
+	p.BottomRightCorner:SetPoint("BOTTOMRIGHT", owner, "BOTTOMRIGHT", orr, -ob)
+	p.TopLeftCorner:SetSize(l.corner, l.top)
+	p.TopRightCorner:SetSize(l.corner, l.top)
+	p.BottomLeftCorner:SetSize(l.corner, l.bottom)
+	p.BottomRightCorner:SetSize(l.corner, l.bottom)
+	p.TopEdge:SetPoint("TOPLEFT", p.TopLeftCorner, "TOPRIGHT")
+	p.TopEdge:SetPoint("BOTTOMRIGHT", p.TopRightCorner, "BOTTOMLEFT")
+	p.BottomEdge:SetPoint("BOTTOMLEFT", p.BottomLeftCorner, "BOTTOMRIGHT")
+	p.BottomEdge:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "BOTTOMLEFT")
+	p.BottomEdge:SetHeight(l.foot)
+	p.LeftEdge:SetPoint("TOPLEFT", p.TopLeftCorner, "BOTTOMLEFT")
+	p.LeftEdge:SetPoint("BOTTOMLEFT", p.BottomLeftCorner, "TOPLEFT")
+	p.LeftEdge:SetWidth(l.left)
+	p.RightEdge:SetPoint("TOPRIGHT", p.TopRightCorner, "BOTTOMRIGHT")
+	p.RightEdge:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "TOPRIGHT")
+	p.RightEdge:SetWidth(l.right)
+end
+
 local function buildTabs(frame, messages)
 	local pages = {}
 	-- every page but Chat stands in a page well of its own, an inset over
@@ -158,6 +207,7 @@ local function buildTabs(frame, messages)
 	local WELL = 130
 	local made, well = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not made or not well then well = CreateFrame("Frame", nil, frame) end
+	dress(well, INSET_SLICE)
 	-- inside the panel where its own inset would be (ButtonFrameTemplate's
 	-- Inset: 4, -60 to -6, 26), the tabs standing on top
 	well:SetPoint("TOPRIGHT", -6, -60)
@@ -174,6 +224,7 @@ local function buildTabs(frame, messages)
 	-- keeps only the waiting line.
 	local madeChat, chatWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not madeChat or not chatWell then chatWell = CreateFrame("Frame", nil, frame) end
+	dress(chatWell, INSET_SLICE)
 	chatWell:SetPoint("TOPLEFT", 4, -60)
 	chatWell:SetPoint("BOTTOMRIGHT", -(6 + WELL + 2), 26)
 	table.insert(frame.chatParts, chatWell)
@@ -302,6 +353,7 @@ local function buildTabs(frame, messages)
 	-- the page well, over both wells' area, for the other tabs
 	local madePage, pageWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not madePage or not pageWell then pageWell = CreateFrame("Frame", nil, frame) end
+	dress(pageWell, INSET_SLICE)
 	pageWell:SetPoint("TOPLEFT", chatWell, "TOPLEFT")
 	pageWell:SetPoint("BOTTOMRIGHT", well, "BOTTOMRIGHT")
 	pageWell:Hide()
@@ -335,33 +387,49 @@ local function buildTabs(frame, messages)
 	-- in, no more: deeper, they covered the top line of text), drawn under
 	-- the well's top shadow so it falls across their foot as across the text
 	local names = {}
-	local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s%s-1]]
+	-- our art (tools/make_tab_art.py) carries no margin: the unselected
+	-- pieces are the button's own size, the open ones set out by their glow
+	-- (HALO), and the row's spacing is decided here: every tab at least
+	-- TAB_MIN wide (PanelTemplates_TabResize reads frame.minTabWidth), TAB_GAP
+	-- between them, the old row's pitch and gap between rims
+	local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s%s-2]]
+	local TAB_MIN, TAB_GAP, CAP, HALO = 69, 3, 6, 2
+	local TAB_H, TAB_ACTIVE_H = 20.2, 25.6
+	frame.minTabWidth = TAB_MIN
 	local function makeTab(name)
 		local i = #names + 1
 		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTopTabButtonTemplate")
 		if not made or not tab then return end
-		-- our art (tools/make_tab_art.py) on the template's regions, kept on
-		-- its anchors: every piece 36 units tall from the tab's foot, the caps
-		-- 36 wide (together the tab's least width), the highlight the
-		-- unselected art added, as Blizzard's is
+		-- the highlight is the unselected art added, as Blizzard's is, on the
+		-- template's anchors to the unselected pieces
 		for _, part in ipairs({ "Left", "Middle", "Right" }) do
 			for _, state in ipairs({ "", "Active", "Highlight" }) do
 				local t = tab[part .. state]
 				if t then
-					t:SetTexture(TAB_ART:format(part, state == "Active" and "-Active" or ""))
+					local active = state == "Active"
+					t:SetTexture(TAB_ART:format(part, active and "-Active" or ""))
 					t:SetTexCoord(0, 1, 0, 1)
 					t:SetHorizTile(false)
-					if part == "Middle" then t:SetHeight(36) else t:SetSize(36, 36) end
+					t:SetHeight(active and TAB_ACTIVE_H or TAB_H)
+					if part ~= "Middle" then t:SetWidth(active and CAP + HALO or CAP) end
 				end
 			end
 		end
+		tab.Left:ClearAllPoints()
+		tab.Left:SetPoint("BOTTOMLEFT")
+		tab.Right:ClearAllPoints()
+		tab.Right:SetPoint("BOTTOMRIGHT")
+		tab.LeftActive:ClearAllPoints()
+		tab.LeftActive:SetPoint("BOTTOMLEFT", -HALO, 0)
+		tab.RightActive:ClearAllPoints()
+		tab.RightActive:SetPoint("BOTTOMRIGHT", HALO, 0)
 		names[i] = name
 		tab:SetID(i)
 		tab:SetText(name)
 		if i == 1 then
-			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 8, -1)
+			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", 10, -1)
 		else
-			tab:SetPoint("LEFT", frame.Tabs[i - 1], "RIGHT", 0, 0)
+			tab:SetPoint("LEFT", frame.Tabs[i - 1], "RIGHT", TAB_GAP, 0)
 		end
 		tab:SetScript("OnClick", function(self) frame.SelectTab(self:GetID()) end)
 		tab:SetFrameLevel(chatWell:GetFrameLevel() + 2)
@@ -407,9 +475,10 @@ end
 -- Deliberately not registered in UISpecialFrames: Escape handling is where the
 -- gamepad taint lives, and this frame has a close button instead.
 local function buildLog()
-	-- One panel, Blizzard's own: ButtonFrameTemplate, as the macro frame is
-	-- built (its border, background, title bar and close button), with the
-	-- tabs standing on the wells inside it (docs/proposals/companion-window-frame.md).
+	-- One panel, Blizzard's ButtonFrameTemplate, as the macro frame is built
+	-- (its background, title and close button; the border, title bar and the
+	-- close button's art are ours, dress below), with the tabs standing on the
+	-- wells inside it (docs/proposals/companion-window-frame.md).
 	-- CreateFrame throws on a template this build lacks, and an ugly window
 	-- beats an addon that fails to load.
 	local made, frame = pcall(CreateFrame, "Frame", "WowCompanionLog", UIParent, "ButtonFrameTemplate")
@@ -425,10 +494,21 @@ local function buildLog()
 	-- our wells take the template's inset's place
 	if frame.Inset then frame.Inset:Hide() end
 	if frame.SetTitle then frame:SetTitle("Companion") end
-	-- the controller's back button (circle) closes a focused window by
-	-- clicking its frame.CloseButton (SmartNavigation:AttemptClose)
+	-- our border and title bar over the template's, where the game's stood
+	dress(frame, FRAME_SLICE)
+	-- our close button on the rim's top right corner; the controller's back
+	-- button (circle) closes a focused window by clicking its
+	-- frame.CloseButton (SmartNavigation:AttemptClose)
 	if frame.CloseButton then
-		frame.CloseButton:SetScript("OnClick", function()
+		local close = frame.CloseButton
+		close:SetSize(26, 26)
+		close:ClearAllPoints()
+		close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 2, 4)
+		close:SetNormalTexture(ART:format("Close", "Normal"))
+		close:SetPushedTexture(ART:format("Close", "Pushed"))
+		close:SetDisabledTexture(ART:format("Close", "Disabled"))
+		close:SetHighlightTexture(ART:format("Close", "Highlight"), "ADD")
+		close:SetScript("OnClick", function()
 			if WowCompanion_HideWindow then WowCompanion_HideWindow() else frame:Hide() end
 		end)
 	end
