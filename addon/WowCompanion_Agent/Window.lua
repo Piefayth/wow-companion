@@ -41,7 +41,7 @@ local GLOW = { 14, 10.75, 13, 11 }
 -- Our own frame art (tools/make_frame_art.py) on an owner's NineSlice pieces,
 -- on the owner's bounds: every piece rim wide, the top corners and edge top
 -- tall, so a corner and the edge beside it share their pixels on screen.
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-14]]
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-15]]
 local function dress(owner, art, rim, top)
 	local slice = owner.NineSlice
 	if not slice then return end
