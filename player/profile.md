@@ -26,6 +26,9 @@ none of this. When the player states a new preference or changes one, write it h
   contrast; everything else (the frame, other windows) is brought into that
   palette. Painted detail at a scale that reads at TV distance: no fine grooves
   or noise, no over-smoothing, no belts or accents across the middle of a piece.
+  Ornament is wire scrollwork in the vine's bark, never a ball or boss; its
+  wire has weight and never tapers to a hairline (thin ends read as fading
+  into the dark), and errs bigger rather than smaller (2026-11-12).
   Tabs never open into the chat (2026-11-12): its stone is shaded to sit back
   and scrolls, so no tab can join it; tabs stand apart, on its border.
 - **Nothing of ours opens itself** (2026-11-10). The Companion window opens only
