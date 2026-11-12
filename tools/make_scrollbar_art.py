@@ -161,7 +161,7 @@ class Canvas:
 #   RuleLeft 32x16, RuleMid 64x16: the divider's left end and its line,
 #     stretched whole to the Joint
 
-VERSION = 11
+VERSION = 12
 PRESS = 1.25  # how far a pressed arrow sinks toward the groove, in units
 GT = 24.0  # the arrows' groove end (its round end's centre)
 FOOT = GT - 4.0 - PRESS  # an arrow's foot: under the border's arc, pressed or not
@@ -176,6 +176,7 @@ ARC = 16 - RAIL[0]  # their radius round the groove's end
 BARK = ((22, 15, 9), (68, 48, 30), (138, 108, 74))
 BUD = ((20, 22, 15), (62, 68, 48), (128, 132, 100))  # olive-grey, the green all but gone
 WARM = np.array((255, 208, 128), float)
+FLOOR = (31, 30, 33)  # the groove floor's middle: the slate itself in shadow, cool as it is
 
 
 def ucanvas(w, h):
@@ -308,6 +309,10 @@ def carve(c, m, depth=1.0):
     shade = n @ LIGHT - LIGHT[2]
     pale = np.broadcast_to(np.array((205, 196, 178), float), c.rgb.shape)
     c.over(np.broadcast_to(np.array((14, 12, 10), float), c.rgb.shape), m)
+    # the floor is stone in shadow, not a void: the black lifting toward the
+    # slate's own colour in the middle of the dish
+    lift = np.clip((du - 0.6) / 2.4, 0, 1) ** 1.5
+    c.over(np.broadcast_to(np.array(FLOOR, float), c.rgb.shape), m * lift)
     c.over(np.zeros_like(c.rgb), m * np.clip(-shade * 5, 0, 1) * 0.9)
     c.over(pale, m * np.clip(shade * 3.0, 0, 1) * 0.5)
 
@@ -407,24 +412,31 @@ def fleur_cap(c, down, mode):
 # --- the divider: a vine
 
 
-def bud_rule(c, piece):
-    """A thin vine; its left end a tendril's coil and one leaf; at the Joint a
-    node where it grows into the left border, a tendril coiling off it."""
+def bud_rule(c, piece, hw=0.55, pal=BARK):
+    """A vine of half-width hw; its left end a tendril's coil and one leaf; at
+    the Joint a node where it grows into the left border, a tendril coiling off it."""
     pen = Pen(c, 16)
-    vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.55)]
+    vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], hw)]
+    bevel = 0.5 * hw / 0.55
     if piece == "Mid":
-        raised(pen, vine(-12, 76), BARK, bevel=0.5, cast=0.4, grain=False)
+        raised(pen, vine(-12, 76), pal, bevel=bevel, cast=0.4, grain=False)
     elif piece == "Left":
-        raised(pen, vine(9.0, 44), BARK, bevel=0.5, cast=0.4, grain=False)
+        raised(pen, vine(9.0, 44), pal, bevel=bevel, cast=0.4, grain=False)
         raised(pen, stroke(scroll(bez((9.5, 8), (6.5, 8), (4.0, 7.6), (3.0, 5.8), n=24), 1.1, 1.0, 0.35), 0.55, 0.26, knob=False),
                BARK, bevel=0.45, cast=0.45)
         raised(pen, [leaf((10.0, 8.5), (13.4, 11.2), 1.4)], dim(BUD, 0.8), bevel=0.4, cast=0.4)
     else:
-        raised(pen, vine(-12, RAIL[0]) + vine(RAIL[1], 26), BARK, bevel=0.5, cast=0.4, grain=False)
+        raised(pen, vine(-12, RAIL[0]) + vine(RAIL[1], 26), pal, bevel=bevel, cast=0.4, grain=False)
         raised(pen, stroke(scroll(bez((8.6, 7.6), (8.0, 6.0), (6.6, 4.8), (5.0, 5.0), n=24), 0.9, -1.0, 0.35), 0.45, 0.24, knob=False),
                BARK, bevel=0.45, cast=0.45)
         raised(pen, [leaf((8.4, 8.6), (5.6, 11.4), 1.3)], dim(BUD, 0.8), bevel=0.4, cast=0.4)
-        raised(pen, [(9.3, 8, 1.05)], BARK, bevel=0.5, cast=0.4)  # the node
+        raised(pen, [(9.3, 8, hw + 0.5)], pal, bevel=bevel, cast=0.4)  # the node
+
+
+def bud_rule_medium(c, piece):
+    """The vine nearer the quest log divider's weight, a shade darker than the
+    thin one so its greater width does not read brighter."""
+    bud_rule(c, piece, hw=1.0, pal=dim(BARK, 0.88))
 
 
 # --- the thick divider (between parts of a conversation): a heavy piece, the same weight from its left end through the Joint, ornament at
@@ -605,7 +617,7 @@ def render_set():
     out["Thumb-Mid"] = np.repeat(t[p:2 * p].mean(0, keepdims=True), p, 0)
     out["Thumb-Centre"] = t[2 * p:4 * p]
     out["Thumb-Bottom"] = t[5 * p:]
-    for rule, tag in ((bud_rule, ""), (bud_thick, "Thick")):
+    for rule, tag in ((bud_rule, ""), (bud_rule_medium, "Medium"), (bud_thick, "Thick")):
         for piece, w in (("Left", 32), ("Mid", 64), ("Joint", 32)):
             c = ucanvas(w, 16)
             rule(c, piece)

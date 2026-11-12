@@ -5,7 +5,7 @@
 -- Drawn by tools/make_scrollbar_art.py.
 
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-]]
-local VERSION = 11 -- the generator's VERSION
+local VERSION = 12 -- the generator's VERSION
 local function art(piece)
 	return ART .. piece .. "-" .. VERSION
 end
@@ -21,6 +21,25 @@ WC.ChatBar = {}
 -- the text keeps clear of the bar: the column and its border's art beside it
 WC.ChatBar.ROOM = WIDTH + 6
 
+-- The dividers' weight, being chosen with the player (2026-11-12): "" (thin),
+-- "Medium" or "Thick". WC.ChatBar.Weight(w) redraws every divider at once and
+-- keeps the choice across reloads.
+local made = {}
+local function weight()
+	local db = WowCompanionAgentDB
+	return type(db) == "table" and db.dividerWeight or "Medium"
+end
+local function dress(rule)
+	local w = weight()
+	rule.left:SetTexture(art("RuleLeft" .. w))
+	rule.mid:SetTexture(art("RuleMid" .. w))
+	rule.joint:SetTexture(art("Joint" .. w))
+end
+function WC.ChatBar.Weight(w)
+	if type(WowCompanionAgentDB) == "table" then WowCompanionAgentDB.dividerWeight = w end
+	for _, rule in ipairs(made) do dress(rule) end
+end
+
 -- A divider between turns, spanning the turn's full width: the vine's left end,
 -- its middle stretched, and the Joint taking it into the bar's left border. A
 -- frame above the bar's column (the column is its content's level + 1), so the
@@ -31,18 +50,18 @@ function WC.ChatBar.Divider(content)
 	rule:SetHeight(16)
 	rule:SetFrameLevel(content:GetFrameLevel() + 2)
 	local left = rule:CreateTexture(nil, "ARTWORK")
-	left:SetTexture(art("RuleLeft"))
 	left:SetSize(32, 16)
 	left:SetPoint("LEFT")
 	local joint = rule:CreateTexture(nil, "ARTWORK")
-	joint:SetTexture(art("Joint"))
 	joint:SetSize(32, 16)
 	joint:SetPoint("LEFT", rule, "RIGHT", -(WIDTH + 6), 0) -- its x 6 the column's left edge
 	local mid = rule:CreateTexture(nil, "ARTWORK")
-	mid:SetTexture(art("RuleMid"))
 	mid:SetHeight(16)
 	mid:SetPoint("LEFT", left, "RIGHT")
 	mid:SetPoint("RIGHT", joint, "LEFT")
+	rule.left, rule.mid, rule.joint = left, mid, joint
+	dress(rule)
+	made[#made + 1] = rule
 	return rule
 end
 
