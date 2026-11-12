@@ -207,21 +207,6 @@ fn deliver_batch(addons: &Path, batch: Vec<Pending>) {
     if slots_used(addons) + PROGRESS_STOP >= known_slots(addons) {
         batch.retain(|item| item.progress_of().is_none());
     }
-    // A line, a progress line, a reload: read by handlers every version of the
-    // addon has, so a stale UI can still take them. Blocking those is how a
-    // finished answer sat undelivered behind "reload first" while the window spun
-    // "thinking". A reload is the cure for staleness itself.
-    match addon_is_stale(addons) {
-        Ok(true) => {
-            let (keep, stale): (Vec<Pending>, Vec<Pending>) = batch
-                .into_iter()
-                .partition(|item| matches!(item.msg().kind(), Some("log" | "progress" | "reload")));
-            set_aside(addons, stale, "the addon on disk is newer than the running UI session: /reload in game first");
-            batch = keep;
-        }
-        Ok(false) => {}
-        Err(err) => return set_aside(addons, batch, &err.to_string()),
-    }
     if batch.is_empty() {
         return;
     }
@@ -352,24 +337,6 @@ pub(crate) fn session_began(addons: &Path) -> Option<u128> {
         }
     }
     newest
-}
-
-/// Is the game running code we have already replaced?
-///
-/// A version number in SavedVariables cannot answer this: the game saves before it
-/// reloads, so the recorded version always describes the *previous* session. The
-/// timestamps can, because that same ordering makes the save mark where the current
-/// session began. Addon newer than that means the session predates it.
-///
-/// Worth the check: a retired handler stays live in the game until a reload, and
-/// goes on doing what it was retired for.
-pub(crate) fn addon_is_stale(addons: &Path) -> io::Result<bool> {
-    let addon = modified_millis(&addons.join(LINK).join("Link.lua"));
-    Ok(match (addon, session_began(addons)) {
-        (Some(addon), Some(began)) => addon > began,
-        // never saved, or no addon: nothing to compare, so do not block
-        _ => false,
-    })
 }
 
 pub(crate) fn modified_millis(path: &Path) -> Option<u128> {
