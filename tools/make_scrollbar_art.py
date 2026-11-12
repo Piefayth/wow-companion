@@ -284,7 +284,7 @@ def render():
 #   RuleLeft 32x16, RuleMid 64x16: the divider's left end and its line,
 #     stretched whole to the Joint
 
-VERSION6 = 3
+VERSION6 = 4
 PRESS = 1.25  # how far a pressed arrow sinks toward the groove, in units
 GT = 24.0  # the arrows' groove end (its round end's centre)
 FOOT = GT - 4.0 - PRESS  # an arrow's foot: under the border's arc, pressed or not
@@ -563,7 +563,7 @@ def lance_rule(c, piece):
     hooked back; at the Joint a collar where it meets the left border, its
     barbs lying along the border, and past the groove on to the edge."""
     pen = Pen(c, 16)
-    rod = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.55)]
+    rod = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.55 * RULE_W)]
     if piece == "Mid":
         raised(pen, rod(-12, 76), BRZ, bevel=0.5, cast=0.4, grain=False)
     elif piece == "Left":
@@ -629,7 +629,7 @@ def fleur_rule(c, piece):
     """An iron rod; at each end it splits into two volutes: at its left end
     curling back, at the Joint gripping the left border above and below."""
     pen = Pen(c, 16)
-    rod = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.6)]
+    rod = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.6 * RULE_W)]
     if piece == "Mid":
         raised(pen, rod(-12, 76), IRN, bevel=0.5, cast=0.4, grain=False)
     elif piece == "Left":
@@ -678,7 +678,7 @@ def bud_rule(c, piece):
     """A thin vine; its left end a tendril's coil and one leaf; at the Joint a
     node where it grows into the left border, a tendril coiling off it."""
     pen = Pen(c, 16)
-    vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.55)]
+    vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.55 * RULE_W)]
     if piece == "Mid":
         raised(pen, vine(-12, 76), BARK, bevel=0.5, cast=0.4, grain=False)
     elif piece == "Left":
@@ -728,7 +728,7 @@ def lancet_rule(c, piece):
     a point; at the Joint it meets the left border at a lozenge, and runs on
     past the groove to the edge."""
     pen = Pen(c, 16)
-    line = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.45)]
+    line = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.45 * RULE_W)]
     if piece == "Mid":
         flush(pen, line(-12, 76), INLAY)
     elif piece == "Left":
@@ -736,9 +736,15 @@ def lancet_rule(c, piece):
               + [[(4.4, 8), (6.1, 6.4), (7.8, 8), (6.1, 9.6)]], INLAY)
     else:
         flush(pen, line(-12, 7.0) + line(RAIL[1], 26)
-              + [[(6.4, 8), (8.25, 6.25), (10.1, 8), (8.25, 9.75)], ribbon([(9.9, 8), (RAIL[0], 8)], 0.45)]
+              + [[(6.4, 8), (8.25, 6.25), (10.1, 8), (8.25, 9.75)], ribbon([(9.9, 8), (RAIL[0], 8)], 0.45 * RULE_W)]
               + [p for s in (1, -1) for p in stroke(scroll(bez((8.25, 8 - s * 1.9), (8.4, 8 - s * 3.4), (7.4, 8 - s * 4.4), (5.8, 8 - s * 4.2), n=24),
                                                          0.7, s * 0.9, 0.4), 0.42, 0.3)], INLAY)
+
+
+# The dividers' weight: 1 the thin rule, THICK the heavy one (between parts
+# of a conversation); the same ornaments, the rod or line wider.
+RULE_W = 1.0
+THICK = 2.1
 
 
 DESIGNS6 = {
@@ -811,13 +817,17 @@ def render6_one(name):
     out["Thumb-Mid"] = np.repeat(t[p:2 * p].mean(0, keepdims=True), p, 0)
     out["Thumb-Centre"] = t[2 * p:4 * p]
     out["Thumb-Bottom"] = t[5 * p:]
-    for piece, w in (("Left", 32), ("Mid", 64), ("Joint", 32)):
-        c = ucanvas(w, 16)
-        rule(c, piece)
-        img = c.final()
-        if piece == "Mid":  # stretched sideways: the same in every column
-            img = np.repeat(img.mean(1, keepdims=True), img.shape[1], 1)
-        out["Joint" if piece == "Joint" else "Rule" + piece] = img
+    global RULE_W
+    for weight, tag in ((1.0, ""), (THICK, "Thick")):
+        RULE_W = weight
+        for piece, w in (("Left", 32), ("Mid", 64), ("Joint", 32)):
+            c = ucanvas(w, 16)
+            rule(c, piece)
+            img = c.final()
+            if piece == "Mid":  # stretched sideways: the same in every column
+                img = np.repeat(img.mean(1, keepdims=True), img.shape[1], 1)
+            out[("Joint" if piece == "Joint" else "Rule" + piece) + tag] = img
+    RULE_W = 1.0
     return {"Scroll-%s-%s" % (name, k): v for k, v in out.items()}
 
 

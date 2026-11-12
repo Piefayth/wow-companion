@@ -1,5 +1,0 @@
-<Bindings>
-	<Binding name="WOWCOMPANION_WINDOW" category="WoW Companion" runOnUp="true">
-		WowCompanion_TalkBinding(keystate)
-	</Binding>
-</Bindings>

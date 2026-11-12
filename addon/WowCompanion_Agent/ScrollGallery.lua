@@ -19,7 +19,7 @@ end
 -- the borders closing round its ends under the arrows and the set's own
 -- dividers joining the left border (docs/proposals/scrollbar-concepts.md).
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-]]
-local ROUND6 = 3 -- the generator's VERSION6
+local ROUND6 = 4 -- the generator's VERSION6
 local function art(design, piece)
 	return ART .. design .. "-" .. piece .. "-" .. (design == "Spear" and 1 or ROUND6)
 end
@@ -64,11 +64,11 @@ end
 local function spear(c, design, ends)
 	local inset = arrows(c, design)
 	rule(c, design)
-	for _, y in ipairs(ends) do
+	for _, e in ipairs(ends) do
 		local joint = c:CreateTexture(nil, "OVERLAY")
 		joint:SetTexture(art(design, "Joint"))
 		joint:SetSize(16, 16)
-		joint:SetPoint("CENTER", c, "TOPLEFT", 0, y)
+		joint:SetPoint("CENTER", c, "TOPLEFT", 0, e.y)
 	end
 	local width = 8
 	local track = CreateFrame("Frame", nil, c)
@@ -123,11 +123,11 @@ local function groove(c, design, ends)
 	mid:SetWidth(32)
 	mid:SetPoint("TOP", caps.Up, "BOTTOM")
 	mid:SetPoint("BOTTOM", caps.Down, "TOP")
-	for _, y in ipairs(ends) do
+	for _, e in ipairs(ends) do
 		local joint = c:CreateTexture(nil, "ARTWORK")
-		joint:SetTexture(art(design, "Joint"))
+		joint:SetTexture(art(design, "Joint" .. (e.thick and "Thick" or "")))
 		joint:SetSize(32, 16)
-		joint:SetPoint("LEFT", c, "TOPLEFT", -6, y)
+		joint:SetPoint("LEFT", c, "TOPLEFT", -6, e.y)
 	end
 	-- the thumb: its ends, its centre (the set's motif) and the shaft stretched between
 	local room = (c:GetHeight() > 0 and c:GetHeight() or 300) - 64
@@ -178,12 +178,12 @@ local SAMPLE = {
 -- a divider at y across the pane, as the bands run: Blizzard's to the
 -- spearhead's column, its plain middle on under the column to the edge; a
 -- groove's own to its Joint
-local function divider(text, column, y, design)
+local function divider(text, column, y, design, thick)
 	if design == "Spear" then
 		local line = text:CreateTexture(nil, "ARTWORK")
 		line:SetAtlas("QuestLog-frame-devider")
-		line:SetAlpha(0.8)
-		line:SetHeight(15)
+		line:SetAlpha(thick and 1 or 0.8)
+		line:SetHeight(thick and 22 or 15)
 		line:SetPoint("LEFT", text, "TOPLEFT", 0, y)
 		line:SetPoint("RIGHT", column, "TOPLEFT", 0, y)
 		local info = C_Texture.GetAtlasInfo("QuestLog-frame-devider")
@@ -192,19 +192,20 @@ local function divider(text, column, y, design)
 			on:SetTexture(info.file)
 			local l, r = info.leftTexCoord, info.rightTexCoord
 			on:SetTexCoord(l + (r - l) * 0.45, l + (r - l) * 0.55, info.topTexCoord, info.bottomTexCoord)
-			on:SetAlpha(0.8)
-			on:SetHeight(15)
+			on:SetAlpha(thick and 1 or 0.8)
+			on:SetHeight(thick and 22 or 15)
 			on:SetPoint("LEFT", column, "TOPLEFT", 0, y)
 			on:SetPoint("RIGHT", column, "TOPRIGHT", 0, y)
 		end
 		return
 	end
 	local left = text:CreateTexture(nil, "ARTWORK")
-	left:SetTexture(art(design, "RuleLeft"))
+	local weight = thick and "Thick" or ""
+	left:SetTexture(art(design, "RuleLeft" .. weight))
 	left:SetSize(32, 16)
 	left:SetPoint("LEFT", text, "TOPLEFT", 0, y)
 	local line = text:CreateTexture(nil, "ARTWORK")
-	line:SetTexture(art(design, "RuleMid"))
+	line:SetTexture(art(design, "RuleMid" .. weight))
 	line:SetHeight(16)
 	line:SetPoint("LEFT", left, "RIGHT")
 	line:SetPoint("RIGHT", column, "TOPLEFT", -6, y) -- where the Joint takes it on
@@ -245,8 +246,10 @@ local function pane(page, option)
 		band:SetPoint("RIGHT", column) -- on behind the groove, to the pane's edge
 		if n == #SAMPLE then band:SetPoint("BOTTOM") else band:SetHeight(turn[4]) end
 		if n > 1 then
-			divider(text, column, y, option[3])
-			ends[#ends + 1] = y
+			-- the upper dividers thin, the lower ones thick: both weights in view
+			local thick = n > #SAMPLE / 2 + 1
+			divider(text, column, y, option[3], thick)
+			ends[#ends + 1] = { y = y, thick = thick }
 		end
 		y = y - turn[4]
 	end
