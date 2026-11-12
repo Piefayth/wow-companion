@@ -24,19 +24,10 @@ on one file is how replies got lost.
 
 ## Next, in order
 
-1. **Try the companion's settings in game** (built 2026-11-12,
-   docs/proposals/settings-in-game.md; not yet tried): set the talk button and a
-   conversation button by pressing them on our settings page, change the mic,
-   the engine and feedback, and see each one take without a restart. The settings
-   page itself (Core's, in Blizzard's look and the row rule) and the combat-loot
-   addon keybinding were built 2026-11-11 (PC c8dad13, game 5834a61).
-2. **A request outlives the companion copy that started it** (the player,
-   2026-11-12, after an R2 request held a restart for 10 minutes): a restart
-   waits for every request because an agent's answer comes back on a pipe the
-   starting copy owns. Started detached and writing its stream to a file in its
-   job's folder, an agent can be read by any copy: restarts take seconds whatever
-   runs, and a crash no longer loses the reply in flight.
-3. **rc2 for the friend** after an evening of play on 2026-11-12's changes.
+1. **rc2 for the friend** once the in-game UI is a little better (the player,
+   2026-11-12). Built and tried since rc1: the companion's settings in game
+   (docs/proposals/settings-in-game.md), hot settings, the game kept composited
+   while the screen is read, requests that outlive a restart (src/runs.rs).
 
 ## Later
 
