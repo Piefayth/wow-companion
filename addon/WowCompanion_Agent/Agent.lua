@@ -78,6 +78,10 @@ local function slotLabel(slot)
 	return slot == "chat" and "Chat" or WC.Conversations.Label(slot)
 end
 local renderPending
+-- the Companion key held (TALK_DOWN to TALK_UP): `slot` the conversation the
+-- chord names now, `at` when it was pressed
+local talking = _G["WCTalkingWatch"] or CreateFrame("Frame", "WCTalkingWatch")
+talking:Hide()
 -- the last reply or error per conversation, shown in its row for a while
 local recent, RECENT_FOR = {}, 30
 -- opts (optional): state = the word shown instead of replied ("problem" is
@@ -112,6 +116,14 @@ renderPending = function()
 		local g = tonumber(colour:sub(3, 4), 16) / 255
 		local b = tonumber(colour:sub(5, 6), 16) / 255
 		return { slotLabel(slot), state, clip(detail, 90), r, g, b }
+	end
+	-- while the Companion key is held: talking, and where it will go (the
+	-- chord held now; it follows the triggers until the key is let go)
+	if talking.slot then
+		local dictation = talking.slot == WC.Conversations.DICTATION
+		lines[#lines + 1] = row(dictation and "chat" or talking.slot, "ff8080",
+			("talking %ds"):format(math.floor(now - talking.at)),
+			dictation and ("let go to put it in chat: " .. WC.ChatChannel.Name()) or "let go to send it here")
 	end
 	for _, slot in ipairs(SLOT_ORDER) do
 		local heard, running = work(slot)
@@ -431,6 +443,24 @@ local bus = WC.Module("Agent")
 -- a short tap of the talk button opens or closes the window (the game alone
 -- decides a tap: the PC sends nothing for one)
 bus:On("TALK_TAP", function() toggleWindow() end)
+-- a hold is talking: the board's talking row (renderPending) follows the
+-- chord each frame, and goes when the key is let go
+talking:SetScript("OnUpdate", function(self)
+	local slot = WowCompanion_PadSlot()
+	if slot ~= self.slot then
+		self.slot = slot
+		renderPending()
+	end
+end)
+bus:On("TALK_DOWN", function()
+	talking.at, talking.slot = GetTime(), nil
+	talking:Show()
+end)
+bus:On("TALK_UP", function()
+	talking:Hide()
+	talking.slot = nil
+	renderPending()
+end)
 bus:On("LINK_FAILED", function(text) remember("error", text) end)
 -- every job's state, as each message that names one is handled, and the
 -- mailbox's at load: the model is the window's one truth of what runs
