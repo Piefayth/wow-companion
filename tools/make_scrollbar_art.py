@@ -34,6 +34,7 @@ GOLD = ((70, 42, 8), (196, 146, 52), (255, 232, 150))
 BRONZE = ((52, 28, 12), (160, 98, 50), (240, 190, 130))
 IRON = ((14, 12, 9), (62, 55, 42), (150, 136, 108))  # the divider's rod
 SAPPHIRE = ((4, 14, 60), (24, 70, 190), (130, 200, 255))
+GOLD_ROD = ((60, 38, 8), (165, 122, 44), (255, 228, 150))  # the arrows' gold, quieter
 EMERALD = ((0, 40, 16), (14, 140, 60), (120, 255, 160))
 OUTLINE = (10, 7, 4)
 
@@ -156,7 +157,7 @@ def arrow_gilded(c, down):
     y = (lambda v: 32 - v) if down else (lambda v: v)
     chevron = f([(16, 4.5), (27.5, 16), (27.5, 21.5), (16, 11), (4.5, 21.5), (4.5, 16)])
     c.metal(c.mask([chevron]), GOLD, bevel=1.7)
-    c.gem(16, y(11.6), 2.1, EMERALD, bezel=GOLD)
+    c.gem(16, y(11.6), 2.6, EMERALD, bezel=GOLD)
 
 
 def arrow_spear(c, down):
@@ -195,7 +196,7 @@ def arrow_ember(c, down):
     c.metal(inner.astype(float), IRON, bevel=1.6, outline=0, shadow=False, gloss=0.35)
     line = ndimage.binary_erosion(m, iterations=int(3.4 * S)) & ~ndimage.binary_erosion(m, iterations=int(4.2 * S))
     c.metal(line.astype(float), GOLD, bevel=0.4, outline=0, shadow=False)
-    c.metal(c.mask(circles=[(16, y(3.6), 1.8), (4.6, y(22.4), 1.8), (27.4, y(22.4), 1.8)]), GOLD, bevel=0.9)
+    c.metal(c.mask(circles=[(16, y(3.6), 1.8), (6.1, y(21.6), 1.6), (25.9, y(21.6), 1.6)]), GOLD, bevel=0.9)
     c.gem(16, y(16.4), 2.6, SAPPHIRE, bezel=GOLD)
 
 
@@ -265,7 +266,7 @@ def joint_ring(c):
 
 DESIGNS = {
     # name: (arrow, rod tile, caps, joint)
-    "Gilded": (arrow_gilded, lambda c: rod(c, GOLD), lambda c, t: cap_iron(c, t, GOLD), joint_stud),
+    "Gilded": (arrow_gilded, lambda c: rod(c, GOLD_ROD), lambda c, t: cap_iron(c, t, GOLD_ROD, GOLD), joint_stud),
     "Spear": (arrow_spear, lambda c: rod(c, BRONZE), lambda c, t: cap_iron(c, t, BRONZE, BRONZE), joint_lozenge),
     "Fleur": (arrow_fleur, None, None, joint_bud),
     "Ember": (arrow_ember, lambda c: inlaid_rod(c), lambda c, t: (inlaid_rod(c, y0=9 if t else -10, y1=26 if t else 7), cap_iron(c, t, IRON, GOLD)), joint_ring),
