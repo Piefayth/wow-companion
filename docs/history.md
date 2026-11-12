@@ -588,5 +588,6 @@ window over the screen's corner keeps WoW composited all the time, so a capture
 switches nothing: 120 fps with the watcher looking twice a second, and 116 again
 the moment the window closed. The window now lives with the capture session
 (`src/composited.rs`). The cost is a frame reaching the screen up to one refresh
-later. Considered and left for later: hearing the game through its file opens
+later. With looks cheap, the watcher went to ten looks a second (a press waits
+about 50 ms instead of 250), still 120 fps. Considered and left for later: hearing the game through its file opens
 (ETW, docs/proposals/etw-signals.md), which needs no capture at all.
