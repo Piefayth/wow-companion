@@ -161,7 +161,7 @@ class Canvas:
 #   RuleLeft 32x16, RuleMid 64x16: the divider's left end and its line,
 #     stretched whole to the Joint
 
-VERSION = 14
+VERSION = 15
 PRESS = 1.25  # how far a pressed arrow sinks toward the groove, in units
 GT = 24.0  # the arrows' groove end (its round end's centre)
 FOOT = GT - 4.0 - PRESS  # an arrow's foot: under the border's arc, pressed or not
@@ -412,8 +412,10 @@ def fleur_cap(c, down, mode):
 # --- the divider: a vine
 
 
-def bud_rule(c, piece, hw=0.55, pal=BARK):
-    """A vine of half-width hw; its left end a tendril's coil and one leaf; at
+def bud_rule(c, piece, hw=1.0, pal=dim(BARK, 0.88)):
+    """The divider: a vine nearer the quest log divider's weight than a hairline
+    (the player, 2026-11-12), a shade darker than the bark so its width does
+    not read brighter. Its left end a tendril's coil and one leaf; at
     the Joint a node where it grows into the left border, a tendril coiling off it."""
     pen = Pen(c, 16)
     vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], hw)]
@@ -434,85 +436,6 @@ def bud_rule(c, piece, hw=0.55, pal=BARK):
                BARK, bevel=0.45, cast=0.45)
         raised(pen, [leaf((8.4, 8.6), (5.6, 11.4), 1.3)], dim(BUD, 0.8), bevel=0.4, cast=0.4)
         raised(pen, [(9.3, 8, hw + 0.5)], pal, bevel=bevel, cast=0.4)  # the node
-
-
-def bud_rule_medium(c, piece):
-    """The vine nearer the quest log divider's weight, a shade darker than the
-    thin one so its greater width does not read brighter."""
-    bud_rule(c, piece, hw=1.0, pal=dim(BARK, 0.88))
-
-
-# --- the thick divider (between parts of a conversation): a heavy piece, the same weight from its left end through the Joint, ornament at
-# the ends only. What runs along the divider is the same in every column (the
-# RuleMid is stretched sideways), so its texture is rows: grain along the bar.
-
-TH = 1.7  # a thick bar's half-width, in units
-
-
-def clip_right(c, x):
-    """Everything past x (the column's edge) cut away, as the Mid is cut."""
-    c.a[:, int((x * U + c.pad) * c.s):] = 0
-
-
-def hbar(x0, x1, hw=TH):
-    return [ribbon([(x0, 8), (x1, 8)], hw)]
-
-
-def bud_bar(pen, x0, x1):
-    """A grown branch: the thin vine at the thick divider's weight, painted as
-    the vine is (its palette, no grain), so thin and thick are one bark."""
-    raised(pen, hbar(x0, x1, TH - 0.05), BARK, bevel=1.6, cast=0.6, grain=False)
-
-
-def knot(cx, cy, rx, top, bottom, phase=0.0, n=120):
-    """A lumpy swelling of the branch, bulging more below than above."""
-    t = np.linspace(0, 2 * np.pi, n, endpoint=False)
-    lumps = 1 + 0.06 * np.sin(3 * t + phase) + 0.04 * np.sin(5 * t + 2 * phase)
-    ry = np.where(np.sin(t) > 0, bottom, top)
-    return [(cx + rx * np.cos(a) * l, cy + r * np.sin(a) * l) for a, r, l in zip(t, ry, lumps)]
-
-
-def bark_marks(c, pen, m, lines):
-    c.over(np.broadcast_to(np.array(BARK[0], float), c.rgb.shape), pen.mask(lines) * m * 0.75)
-
-
-def vein(c, pen, base, tip):
-    b, t = np.array(base, float), np.array(tip, float)
-    path = bez(b, b + (t - b) * [0.3, 0.4], b + (t - b) * [0.7, 0.75], t, n=20)
-    c.over(np.broadcast_to(np.array(BUD[0], float), c.rgb.shape), pen.mask([ribbon(path, 0.12)]) * 0.55)
-
-
-def bud_thick(c, piece):
-    """A branch; its left end a gnarled knot where it was cut, a tendril grown
-    from it and two leaves; at the Joint a swelling node where it grows into
-    the left border, a leaf below and a tendril above."""
-    pen = Pen(c, 16)
-    if piece == "Mid":
-        bud_bar(pen, -12, 76)
-    elif piece == "Left":
-        bud_bar(pen, 5.0, 44)
-        m = raised(pen, [knot(3.9, 8.3, 2.9, 2.1, 2.7)], BARK, bevel=1.6, cast=0.55)  # the knot
-        bark_marks(c, pen, m, [ribbon(bez((3.0, 5.9), (3.9, 7.4), (4.4, 9.0), (5.6, 10.6), n=20), 0.15),
-                               ribbon(bez((4.6, 6.0), (5.4, 7.2), (6.0, 8.0), (6.8, 8.6), n=20), 0.12)])
-        face = pen.mask([knot(1.55, 8.3, 0.75, 1.75, 2.1, 1.0)])  # the cut's end grain
-        c.over(np.broadcast_to(np.array((178, 142, 98), float), c.rgb.shape), face * m * 0.85)
-        c.over(np.broadcast_to(np.array(BARK[0], float), c.rgb.shape),
-               pen.mask([ribbon(knot(1.6, 8.3, 0.4, 1.0, 1.25, 2.0, n=60) + [knot(1.6, 8.3, 0.4, 1.0, 1.25, 2.0, n=60)[0]], 0.08)]) * face * 0.7)
-        raised(pen, stroke(scroll(bez((4.4, 6.8), (4.2, 4.8), (3.0, 3.4), (1.6, 3.4), n=30), 0.75, -1.1, 0.35), 0.62, 0.26, knob=False),
-               BARK, bevel=0.45, cast=0.45)  # a tendril grown from the knot's top
-        raised(pen, [leaf((8.6, 9.4), (13.2, 13.2), 2.2), leaf((9.8, 6.6), (13.6, 3.0), 1.9)], dim(BUD, 0.85), bevel=0.55, cast=0.5)
-        vein(c, pen, (8.9, 9.7), (12.4, 12.6))
-        vein(c, pen, (10.1, 6.3), (13.0, 3.6))
-    else:
-        bud_bar(pen, -12, RAIL[0])
-        bud_bar(pen, RAIL[1], 26)
-        raised(pen, stroke(scroll(bez((8.2, 6.6), (7.2, 4.4), (5.2, 3.0), (3.2, 3.4), n=30), 1.1, -1.0, 0.35), 1.0, 0.32, knob=False),
-               BARK, bevel=0.55, cast=0.5)
-        raised(pen, [leaf((7.6, 9.2), (3.2, 13.4), 2.2)], dim(BUD, 0.85), bevel=0.55, cast=0.5)
-        vein(c, pen, (7.4, 9.4), (3.9, 12.7))
-        m = raised(pen, [knot(8.5, 8.25, 1.9, 2.1, 2.6, 2.0)], BARK, bevel=1.4, cast=0.45)  # the node
-        bark_marks(c, pen, m, [ribbon(bez((7.6, 6.2), (8.2, 7.4), (8.8, 8.8), (9.6, 10.4), n=20), 0.13)])
-        clip_right(c, 26)
 
 
 # --- the thumb, riding the groove. A thumb's middle eight
@@ -620,14 +543,13 @@ def render_set():
     out["Thumb-Mid"] = np.repeat(t[p:2 * p].mean(0, keepdims=True), p, 0)
     out["Thumb-Centre"] = t[2 * p:4 * p]
     out["Thumb-Bottom"] = t[5 * p:]
-    for rule, tag in ((bud_rule, ""), (bud_rule_medium, "Medium"), (bud_thick, "Thick")):
-        for piece, w in (("Left", 32), ("Mid", 64), ("Joint", 32)):
-            c = ucanvas(w, 16)
-            rule(c, piece)
-            img = c.final()
-            if piece == "Mid":  # stretched sideways: the same in every column
-                img = np.repeat(img.mean(1, keepdims=True), img.shape[1], 1)
-            out[("Joint" if piece == "Joint" else "Rule" + piece) + tag] = img
+    for piece, w in (("Left", 32), ("Mid", 64), ("Joint", 32)):
+        c = ucanvas(w, 16)
+        bud_rule(c, piece)
+        img = c.final()
+        if piece == "Mid":  # stretched sideways: the same in every column
+            img = np.repeat(img.mean(1, keepdims=True), img.shape[1], 1)
+        out["Joint" if piece == "Joint" else "Rule" + piece] = img
     return {"Scroll-%s" % k: v for k, v in out.items()}
 
 
