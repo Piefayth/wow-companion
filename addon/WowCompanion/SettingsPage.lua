@@ -1,6 +1,6 @@
 -- The settings page: Blizzard's Settings list in our window. Rows grouped
--- under section headers (their SettingsListSectionHeaderTemplate), a quest log
--- divider between sections as on the Status tab, each row one controller stop
+-- under section bars, every other row striped (Forever's Character stats pane
+-- art, made for a short list of named values), each row one controller stop
 -- (Rows.lua: left and right change it, confirm opens a dropdown's menu or
 -- presses a button, up and down move between rows). The focused row's note is
 -- read in one band at the foot of the page, where Blizzard shows a tooltip.
@@ -23,24 +23,13 @@ WC.SettingsPage = Page
 
 local rows = {}    -- every row added: { row = the caller's table, frame = once made }
 local headers = {} -- section name -> header frame
-local ROW_H, HEADER_H, CONTROL_W = 36, 36, 250
+local ROW_H, HEADER_H, SECTION_GAP, CONTROL_W = 36, 32, 10, 250
 -- Blizzard's columns: the label from the left to the middle, the control from
 -- just left of the middle (SettingsListElementMixin, SettingsSliderControlMixin)
 local LABEL_X, CONTROL_X = 24, -80
 
 local page = CreateFrame("Frame", "WowCompanionSettingsPage", UIParent)
 page:Hide()
-
-local function divider(parent)
-	local d = parent:CreateTexture(nil, "ARTWORK")
-	d:SetAtlas("QuestLog-frame-devider")
-	d:SetAlpha(0.8)
-	d:SetHeight(15)
-	-- edge to edge of the well's backing (the page sits 9 px inside it)
-	d:SetPoint("LEFT", parent, "TOPLEFT", -9, 0)
-	d:SetPoint("RIGHT", parent, "TOPRIGHT", 9, 0)
-	return d
-end
 
 -- the band at the foot: the note of the row under the cursor or the mouse
 local band = CreateFrame("Frame", nil, page)
@@ -50,7 +39,7 @@ band:SetHeight(48)
 
 -- the rows above it, in a scroll frame the controller's cursor scrolls as it
 -- moves (SmartNavigation's HandleScroll); 9 px wider each side than the page
--- so the dividers reach the backing's edge without being clipped
+-- so the bars and stripes reach the backing's edge without being clipped
 local scroll = CreateFrame("ScrollFrame", nil, page)
 scroll:SetPoint("TOPLEFT", -9, 0)
 scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, 2)
@@ -63,7 +52,12 @@ scroll:SetScript("OnMouseWheel", function(self, delta)
 	local most = math.max(0, content:GetHeight() - self:GetHeight())
 	self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW_H)))
 end)
-local bandLine = divider(band)
+-- the line Forever's Character stats pane draws under its list
+local bandLine = band:CreateTexture(nil, "ARTWORK")
+bandLine:SetAtlas("UI-Character-Info-ScrollLine")
+bandLine:SetHeight(4)
+bandLine:SetPoint("LEFT", band, "TOPLEFT", -9, 0)
+bandLine:SetPoint("RIGHT", band, "TOPRIGHT", 9, 0)
 local bandText = band:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
 bandText:SetPoint("TOPLEFT", LABEL_X, -14)
 bandText:SetPoint("BOTTOMRIGHT", -LABEL_X, 4)
@@ -85,6 +79,12 @@ local function settingRow(row, step, prompt)
 	local r = CreateFrame("Button", nil, content)
 	r:SetPoint("RIGHT", content, "RIGHT", -9, 0)
 	r:SetHeight(ROW_H)
+	-- every other row striped, as the Character stats pane's lines are, so a
+	-- name and its control read as one line
+	r.stripe = r:CreateTexture(nil, "BACKGROUND")
+	r.stripe:SetAtlas("UI-Character-Info-Line-Bounce2")
+	r.stripe:SetPoint("TOPLEFT", -9, -2)
+	r.stripe:SetPoint("BOTTOMRIGHT", 9, 2)
 	local hover = r:CreateTexture(nil, "HIGHLIGHT")
 	hover:SetPoint("TOPLEFT", -9, -3)
 	hover:SetPoint("BOTTOMRIGHT", 9, 3)
@@ -168,19 +168,26 @@ end
 
 local KINDS = { dropdown = dropdown, slider = slider, button = button }
 
+-- a section's title on the Character stats pane's category bar
+-- (CharacterStatFrameCategoryTemplate), the width of the backing
 local function header(name)
 	if headers[name] then return headers[name] end
-	local h = CreateFrame("Frame", nil, content, "SettingsListSectionHeaderTemplate")
-	h:SetPoint("RIGHT", content, "RIGHT", -9, 0)
-	h.Title:SetText(name)
-	h.divider = divider(h)
+	local h = CreateFrame("Frame", nil, content)
+	h:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+	h:SetHeight(HEADER_H)
+	local bar = h:CreateTexture(nil, "BACKGROUND")
+	bar:SetAtlas("UI-Character-Info-Title")
+	bar:SetAllPoints()
+	local title = h:CreateFontString(nil, "ARTWORK", "GameFontHighlightMed2")
+	title:SetPoint("CENTER", 0, 1)
+	title:SetText(name)
 	headers[name] = h
 	return h
 end
 
 -- Every row made once; the page laid out again whenever one is added:
--- sections in the order of their first row, rows in order within each, a
--- divider between sections (over every header but the first).
+-- sections in the order of their first row, rows in order within each,
+-- striped from the first, a gap before every section but the first.
 local function sectionOf(e) return e.row.section or "General" end
 local function orderOf(e) return e.row.order or 50 end
 local function layout()
@@ -204,17 +211,18 @@ local function layout()
 		end
 		return orderOf(a) < orderOf(b)
 	end)
-	local y, section = 0, nil
+	local y, section, n = 0, nil, 0
 	for _, e in ipairs(rows) do
 		if e.frame then
 			local s = sectionOf(e)
 			if s ~= section then
-				local h = header(s)
-				h.divider:SetShown(section ~= nil)
-				section = s
-				h:SetPoint("TOPLEFT", 9, -y)
+				if section then y = y + SECTION_GAP end
+				section, n = s, 0
+				header(s):SetPoint("TOPLEFT", 0, -y)
 				y = y + HEADER_H
 			end
+			n = n + 1
+			e.frame.stripe:SetShown(n % 2 == 1)
 			e.frame:SetPoint("TOPLEFT", 9, -y)
 			y = y + ROW_H
 		end
