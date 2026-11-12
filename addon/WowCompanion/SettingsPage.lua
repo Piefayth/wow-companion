@@ -1,6 +1,6 @@
 -- The settings page: Blizzard's Settings list in our window. Rows grouped
 -- under section headers (their SettingsListSectionHeaderTemplate), a quest log
--- divider between rows as on the Status tab, each row one controller stop
+-- divider between sections as on the Status tab, each row one controller stop
 -- (Rows.lua: left and right change it, confirm opens a dropdown's menu or
 -- presses a button, up and down move between rows). The focused row's note is
 -- read in one band at the foot of the page, where Blizzard shows a tooltip.
@@ -63,14 +63,17 @@ scroll:SetScript("OnMouseWheel", function(self, delta)
 	local most = math.max(0, content:GetHeight() - self:GetHeight())
 	self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW_H)))
 end)
-divider(band)
+local bandLine = divider(band)
 local bandText = band:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
 bandText:SetPoint("TOPLEFT", LABEL_X, -14)
 bandText:SetPoint("BOTTOMRIGHT", -LABEL_X, 4)
 bandText:SetJustifyH("LEFT")
 bandText:SetJustifyV("TOP")
+-- nothing focused, nothing shown: no line over an empty band
 local function describe(row)
-	bandText:SetText(row and row.text or "")
+	local text = row and row.text
+	bandText:SetText(text or "")
+	bandLine:SetShown(text ~= nil)
 end
 
 -- One setting as Blizzard's Settings lay one out (SettingsListElementTemplate):
@@ -86,7 +89,6 @@ local function settingRow(row, step, prompt)
 	hover:SetPoint("TOPLEFT", -9, -3)
 	hover:SetPoint("BOTTOMRIGHT", 9, 3)
 	hover:SetColorTexture(1, 1, 1, 0.1)
-	r.divider = divider(r)
 	local fs = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	fs:SetPoint("LEFT", LABEL_X, 0)
 	fs:SetPoint("RIGHT", r, "CENTER", CONTROL_X - 5, 0)
@@ -171,13 +173,14 @@ local function header(name)
 	local h = CreateFrame("Frame", nil, content, "SettingsListSectionHeaderTemplate")
 	h:SetPoint("RIGHT", content, "RIGHT", -9, 0)
 	h.Title:SetText(name)
+	h.divider = divider(h)
 	headers[name] = h
 	return h
 end
 
 -- Every row made once; the page laid out again whenever one is added:
--- sections in the order of their first row, rows in order within each, the
--- first row under a header without a divider.
+-- sections in the order of their first row, rows in order within each, a
+-- divider between sections (over every header but the first).
 local function sectionOf(e) return e.row.section or "General" end
 local function orderOf(e) return e.row.order or 50 end
 local function layout()
@@ -205,10 +208,11 @@ local function layout()
 	for _, e in ipairs(rows) do
 		if e.frame then
 			local s = sectionOf(e)
-			e.frame.divider:SetShown(s == section)
 			if s ~= section then
+				local h = header(s)
+				h.divider:SetShown(section ~= nil)
 				section = s
-				header(s):SetPoint("TOPLEFT", 9, -y)
+				h:SetPoint("TOPLEFT", 9, -y)
 				y = y + HEADER_H
 			end
 			e.frame:SetPoint("TOPLEFT", 9, -y)
@@ -227,11 +231,12 @@ function Page.Add(row)
 	if page:IsShown() then layout() end
 end
 
+-- frame is the page's area: its holder decides the margin (the Companion
+-- window's pages already sit 12 px inside their well)
 function Page.ShowIn(frame)
 	page:SetParent(frame)
 	page:ClearAllPoints()
-	page:SetPoint("TOPLEFT", 12, -10)
-	page:SetPoint("BOTTOMRIGHT", -12, 10)
+	page:SetAllPoints()
 	page:Show()
 end
 
@@ -249,7 +254,9 @@ local function buildWindow()
 	WC.Style.NoPortrait(f)
 	if f.SetTitle then f:SetTitle("WoW Companion settings") end
 	if f.CloseButton then f.CloseButton:SetScript("OnClick", function() f:Hide() end) end
-	local well = f.Inset or f
+	local well = CreateFrame("Frame", nil, f.Inset or f)
+	well:SetPoint("TOPLEFT", 12, -10)
+	well:SetPoint("BOTTOMRIGHT", -12, 10)
 	WC.MarkFocusable(f)
 	if UIPanelWindows then
 		UIPanelWindows["WowCompanionSettings"] = { area = "left", pushable = 1, whileDead = 1, allowOtherPanels = 1 }
