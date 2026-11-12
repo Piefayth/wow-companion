@@ -1,19 +1,17 @@
 -- The settings page: one column of settings rows in our window, each row one
 -- controller stop (Rows.lua: left and right change it, confirm opens a
 -- dropdown's menu or presses a button, up and down move between rows). The
--- page holds them on a spine: a strip of the dark stone down the left, edged
--- by a column rule, the section names on it beside their rows; the rows run
--- from the spine to the right edge, name at the spine, control at the edge,
--- a quest log divider between sections growing out of the spine's edge (the
--- player's pick from the Settings looks sheet, 2026-11-11). The focused row's
--- note is read where the spine turns along the foot, its name in gold, where
--- Blizzard shows a tooltip.
+-- page is three sunk wells (below): the section names down the left beside
+-- their rows; the rows from there to the right edge, name at the left,
+-- control at the edge, a quest log divider between sections; the focused
+-- row's note in the well under them, its name in gold, where Blizzard shows
+-- a tooltip.
 -- Owned by Core so it works without the Agent; each addon adds its own rows.
 -- Shown in a window of its own (the minimap mark, Blizzard's AddOns settings)
 -- or inside another frame (the Companion window's Settings tab).
 --
 --   WC.SettingsPage.Add(row)     row: { kind = "dropdown" | "slider" | "button",
---                                section (its name on the spine), label, text
+--                                section (its name in the names well), label, text
 --                                (its note), order (lower first; a section goes
 --                                where its first row does), and by kind:
 --                                options()/get()/set(name);
@@ -26,9 +24,9 @@ local Page = {}
 WC.SettingsPage = Page
 
 local rows = {}    -- every row added: { row = the caller's table, frame = once made }
-local headers = {} -- section name -> its name on the spine
+local headers = {} -- section name -> its name in the names well
 local ROW_H, GAP, CONTROL_W = 36, 24, 250
--- the spine's width from the page's left; the name's inset from the spine;
+-- the names well's width from the page's left; a row's name inset from it;
 -- the control's inset from the right edge (a slider's value text after it)
 local SPINE, LABEL_X, EDGE, VALUE_W = 170, 10, 8, 32
 
@@ -41,31 +39,44 @@ local function stone(tex, which)
 	tex:SetVertTile(true)
 end
 
--- The dark stone is one shape: the spine down the left, turning along the
--- foot into the band that holds the focused row's note (its name in gold, the
--- note under it), so the note has a place of its own. To the backing's edges
--- (9 px outside the page each side, 7 above and below); fixed while the rows
--- scroll. A column rule edges the spine where it meets the light stone; the
--- band's top has none (the rule turned on its side looked bad, the player,
--- 2026-11-11), until the art in the making gives us a horizontal edge.
-local FOOT = 58
+-- Three wells, as the Chat tab is made of wells: the section names down the
+-- left on the dark stone, the settings on the light stone, the focused row's
+-- note under them on the dark (its name in gold), so the note has a place of
+-- its own. The window's rock shows in a seam between them; each well is sunk
+-- by a soft shadow inside its top and left edges, light falling from the top
+-- left, no rim (the player's pick from the Settings looks sheet, 2026-11-12).
+-- To the backing's edges (9 px outside the page each side, 7 above and
+-- below); fixed while the rows scroll.
+local FOOT, SEAM, SHADE = 58, 3, 12
 local band = CreateFrame("Frame", nil, page)
-band:SetPoint("BOTTOMLEFT", 0, 0)
+band:SetPoint("BOTTOMLEFT", SPINE, 0)
 band:SetPoint("BOTTOMRIGHT", 0, 0)
 band:SetHeight(FOOT)
-local foot = page:CreateTexture(nil, "BACKGROUND", nil, 1)
-stone(foot, "you")
-foot:SetPoint("TOPLEFT", band, "TOPLEFT", -9, 0)
-foot:SetPoint("BOTTOMRIGHT", band, "BOTTOMRIGHT", 9, -7)
-local spine = page:CreateTexture(nil, "BACKGROUND", nil, 1)
-stone(spine, "you")
-spine:SetPoint("TOPLEFT", -9, 7)
-spine:SetPoint("BOTTOMRIGHT", band, "TOPLEFT", SPINE - 2, 0)
-local spineRule = page:CreateTexture(nil, "ARTWORK")
-spineRule:SetAtlas("spec-columndivider")
-spineRule:SetWidth(7)
-spineRule:SetPoint("TOPLEFT", spine, "TOPRIGHT", -3, 0)
-spineRule:SetPoint("BOTTOMLEFT", spine, "BOTTOMRIGHT", -3, 0)
+local rock = page:CreateTexture(nil, "BACKGROUND", nil, 0)
+rock:SetTexture([[Interface\FrameGeneral\UI-Background-Rock]], "REPEAT", "REPEAT")
+rock:SetHorizTile(true)
+rock:SetVertTile(true)
+rock:SetPoint("TOPLEFT", -9, 7)
+rock:SetPoint("BOTTOMRIGHT", 9, -7)
+local function well(which, left, top, right, bottom)
+	local t = page:CreateTexture(nil, "BACKGROUND", nil, 1)
+	stone(t, which)
+	t:SetPoint("TOPLEFT", left[1], left[2], left[3], top)
+	t:SetPoint("BOTTOMRIGHT", right[1], right[2], right[3], bottom)
+	for _, side in ipairs({ "Top", "Left" }) do
+		local shade = page:CreateTexture(nil, "BACKGROUND", nil, 2)
+		shade:SetTexture([[Interface\Common\ShadowOverlay-]] .. side)
+		shade:SetAlpha(0.7)
+		shade:SetPoint("TOPLEFT", t)
+		shade:SetPoint(side == "Top" and "TOPRIGHT" or "BOTTOMLEFT", t)
+		if side == "Top" then shade:SetHeight(SHADE) else shade:SetWidth(SHADE) end
+	end
+end
+-- names: the left edge to the seam; settings: the seam to the right edge,
+-- down to the note's seam; the note: under the settings
+well("you", { page, "TOPLEFT", -9 }, 7, { page, "BOTTOMLEFT", SPINE - 2 - SEAM }, -7)
+well("claude", { page, "TOPLEFT", SPINE - 2 }, 7, { band, "TOPRIGHT", 9 }, SEAM)
+well("you", { band, "TOPLEFT", -2 }, 0, { band, "BOTTOMRIGHT", 9 }, -7)
 local bandName = band:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 bandName:SetPoint("TOPLEFT", 14, -10)
 bandName:SetPoint("RIGHT", -EDGE, 0)
@@ -93,7 +104,7 @@ end
 -- each side than the page so the dividers reach the backing's edge
 local scroll = CreateFrame("ScrollFrame", nil, page)
 scroll:SetPoint("TOPLEFT", -9, 0)
-scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, 6)
+scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, SEAM + 3)
 local content = CreateFrame("Frame", nil, scroll)
 content:SetSize(1, 1)
 scroll:SetScrollChild(content)
@@ -104,7 +115,7 @@ scroll:SetScript("OnMouseWheel", function(self, delta)
 	self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW_H)))
 end)
 
--- One setting: a row from the spine to the right edge, its name at the spine
+-- One setting: a row from the names well to the right edge, its name at the left
 -- and its control at the edge; the row is the one stop, shaded white at 0.1
 -- while the cursor or the mouse is on it (Blizzard's HoverBackgroundTemplate),
 -- the cursor just left of its name. The control inside is out of the cycle,
@@ -200,9 +211,9 @@ end
 
 local KINDS = { dropdown = dropdown, slider = slider, button = button }
 
--- a section's name on the spine, right-aligned beside its first row, and the
+-- a section's name in the names well, right-aligned beside its first row, and the
 -- divider over the section (shown for every section but the first), from the
--- spine's edge to the backing's right edge
+-- names well to the backing's right edge
 local function header(name)
 	if headers[name] then return headers[name] end
 	local h = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
