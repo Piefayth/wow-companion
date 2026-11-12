@@ -143,8 +143,9 @@ local function valueRow(key, order, label, what, options)
 		options = options,
 		get = function() return current(key) end,
 		set = function(value)
-			local now = settings()
-			if not now or value == now[key] then return end
+			-- against what was last asked for, not what runs: the companion may not
+			-- have restarted onto the last choice yet, and going back must still ask
+			if not settings() or value == current(key) then return end
 			pending[key], errors[key] = value, nil
 			command(("set %s %s"):format(key, value))
 			refresh()
