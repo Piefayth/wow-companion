@@ -1,6 +1,5 @@
--- A design sheet, for now: the Settings page built from wells like the Chat
--- tab's (names down the left, the settings over the note), four weights of
--- edge, each a full-size mock-up drawn small so the player
+-- A design sheet, for now: the Settings page as built (wells like the Chat
+-- tab's), four ways to ground the section names, each a full-size mock-up drawn small so the player
 -- compares them at once. Shown only; nothing here is a stop or changes a setting.
 -- Goes when one is chosen.
 
@@ -98,7 +97,7 @@ local function well(mock, w, style)
 	return f
 end
 
-local function layout(mock, wells, style)
+local function layout(mock, wells, style, dress)
 	local rock = mock:CreateTexture(nil, "BACKGROUND", nil, -8)
 	rock:SetTexture([[Interface\FrameGeneral\UI-Background-Rock]], "REPEAT", "REPEAT")
 	rock:SetHorizTile(true)
@@ -137,6 +136,7 @@ local function layout(mock, wells, style)
 		end
 		local head = text(names, "GameFontHighlightMed2", section[1])
 		head:SetPoint("TOPRIGHT", names, "TOPLEFT", nameRight, -y - 10)
+		local top = y
 		for _, spec in ipairs(section[2]) do
 			local row = CreateFrame("Frame", nil, rows)
 			row:SetPoint("TOPLEFT", rowLeft, -y)
@@ -158,26 +158,105 @@ local function layout(mock, wells, style)
 			control(row, spec)
 			y = y + ROW
 		end
+		if dress then dress(mock, names, rows, top, y, head, i) end
 	end
 end
 
 local FW = FOOT + 6 -- a note well's height
 
--- Round 3: the player's pick, the names down the left in a well of their own
--- and the settings over the note's well, four weights of edge
-local function threeWells(mock, style, sep)
+-- Round 4: the page as built (the names down the left, the settings over
+-- the note, each well sunk by a soft shadow), four ways to ground each
+-- section's name to its section. dress(mock, names, rows, top, bottom, head,
+-- i) gets each section's span, in the wells' own y from their tops.
+local function threeWells(mock, dress)
 	layout(mock, {
 		{ 0, 0, SPINE + 6, TH, "you", "names" },
-		{ SPINE + 6 + sep, 0, TW - SPINE - 6 - sep, TH - FW - sep, "claude", "rows" },
-		{ SPINE + 6 + sep, TH - FW, TW - SPINE - 6 - sep, FW, "you", "note" },
-	}, style)
+		{ SPINE + 6 + 3, 0, TW - SPINE - 9, TH - FW - 3, "claude", "rows" },
+		{ SPINE + 6 + 3, TH - FW, TW - SPINE - 9, FW, "you", "note" },
+	}, "shade", dress)
+end
+
+local function shade(parent, tex)
+	for _, spec in ipairs({ { "Top", "TOPRIGHT" }, { "Left", "BOTTOMLEFT" } }) do
+		local t = parent:CreateTexture(nil, "ARTWORK", nil, -1)
+		t:SetTexture([[Interface\Common\ShadowOverlay-]] .. spec[1])
+		t:SetAlpha(0.7)
+		t:SetPoint("TOPLEFT", tex)
+		t:SetPoint(spec[2], tex)
+		if spec[1] == "Top" then t:SetHeight(12) else t:SetWidth(12) end
+	end
+end
+
+-- a layer over the names well for a candidate's shapes, under the names
+local function over(mock, names)
+	local f = CreateFrame("Frame", nil, mock)
+	f:SetAllPoints(names)
+	f:SetFrameLevel(names:GetFrameLevel() + 1)
+	return f
 end
 
 local CANDIDATES = {
-	{ "Bevelled, as on the Chat tab", function(mock) threeWells(mock, "bevel", SEP) end },
-	{ "No rim: a thin seam of rock between", function(mock) threeWells(mock, "plain", 3) end },
-	{ "No rim: a wider channel of rock", function(mock) threeWells(mock, "plain", 7) end },
-	{ "Shaded: sunk by a soft inner shadow", function(mock) threeWells(mock, "shade", 3) end },
+	-- A. each name on a tab of the light stone that joins its section: the
+	-- seam closes beside it, so name and rows are one shape
+	{ "Tab: the name joined to its rows", function(mock)
+		threeWells(mock, function(m, names, _, top, bottom, head)
+			local f = over(m, names)
+			local tab = f:CreateTexture(nil, "BACKGROUND")
+			stone(tab, "claude")
+			tab:SetPoint("TOPLEFT", names, "TOPLEFT", 10, -top + 2)
+			tab:SetPoint("BOTTOMRIGHT", names, "TOPRIGHT", 3, -bottom - 2)
+			shade(f, tab)
+			head:SetParent(f)
+			head:SetTextColor(1, 0.82, 0)
+		end)
+	end },
+	-- B. the names column split into a sunk well per section, rock between
+	{ "A small well per section in the names column", function(mock)
+		threeWells(mock, function(m, names, _, top, bottom, head)
+			local f = over(m, names)
+			if not names.rocked then
+				names.rocked = true
+				local rock = f:CreateTexture(nil, "BACKGROUND", nil, -2)
+				rock:SetTexture([[Interface\FrameGeneral\UI-Background-Rock]], "REPEAT", "REPEAT")
+				rock:SetHorizTile(true)
+				rock:SetVertTile(true)
+				rock:SetAllPoints(names)
+			end
+			local w = f:CreateTexture(nil, "BACKGROUND")
+			stone(w, "you")
+			w:SetPoint("TOPLEFT", names, "TOPLEFT", 0, -top + 4)
+			w:SetPoint("BOTTOMRIGHT", names, "TOPRIGHT", 0, -bottom - 4)
+			shade(f, w)
+			head:SetParent(f)
+		end)
+	end },
+	-- C. a faint band of light behind each section's span in the names column,
+	-- the name at its top
+	{ "A faint band behind each section's name", function(mock)
+		threeWells(mock, function(m, names, _, top, bottom, head)
+			local f = over(m, names)
+			local band = f:CreateTexture(nil, "BACKGROUND")
+			band:SetColorTexture(1, 1, 1, 0.05)
+			band:SetPoint("TOPLEFT", names, "TOPLEFT", 8, -top + 2)
+			band:SetPoint("BOTTOMRIGHT", names, "TOPRIGHT", 0, -bottom - 2)
+			head:SetParent(f)
+		end)
+	end },
+	-- D. the name centred on its section's span, a slim upright rule from
+	-- the first row to the last beside it
+	{ "Centred on its rows, a slim rule beside", function(mock)
+		threeWells(mock, function(m, names, _, top, bottom, head)
+			local f = over(m, names)
+			local rule = f:CreateTexture(nil, "ARTWORK")
+			rule:SetAtlas("Talents-divider-vertical-c60")
+			rule:SetWidth(2)
+			rule:SetPoint("TOPRIGHT", names, "TOPRIGHT", -8, -top - 6)
+			rule:SetPoint("BOTTOMRIGHT", names, "TOPRIGHT", -8, -bottom + 6)
+			head:SetParent(f)
+			head:ClearAllPoints()
+			head:SetPoint("RIGHT", rule, "LEFT", -10, 0)
+		end)
+	end },
 }
 
 local function cell(parent, i, candidate)
