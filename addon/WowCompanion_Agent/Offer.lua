@@ -8,6 +8,7 @@
 local BUTTON = "WowCompanionDo"
 local offers = {}
 local actionButton
+local showOffer
 local logFrame = WC.Companion.window
 local remember = WC.Companion.remember
 local function toast(...) return WC.Board.toast(...) end
@@ -62,17 +63,20 @@ local function buildActionButton()
 			if self.slot then offers[self.slot] = nil end
 			self:Hide()
 		end)
+		-- it belongs to the Chat tab: another tab takes it away, Chat brings it back
+		if frame.SelectTab then hooksecurefunc(frame, "SelectTab", function() showOffer(viewSlot()) end) end
 	end
 	return frame
 end
 
--- Put the view's offer on the button, or take the button away when it has none.
--- Secure attributes cannot change in combat; the button then stays as it was
--- until the next switch.
-local function showOffer(slot)
+-- Put the view's offer on the button, or take the button away when it has none
+-- or another tab than Chat is up. Secure attributes cannot change in combat; the
+-- button then stays as it was until the next switch.
+showOffer = function(slot)
 	if InCombatLockdown() then return "in combat" end
 	local held = offers[slot]
-	if not held then
+	local frame = logFrame()
+	if not held or (frame and (frame.currentTab or 1) ~= 1) then
 		if actionButton then
 			actionButton.slot = nil
 			actionButton:Hide()
