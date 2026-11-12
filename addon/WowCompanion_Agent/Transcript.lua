@@ -46,7 +46,7 @@ local function take(pool, make)
 	end
 	return make()
 end
-local function text(t, font)
+local function fontString(t, font)
 	local fs = take(t.pool.text, function() return t.content:CreateFontString(nil, "OVERLAY") end)
 	fs:SetFontObject(font)
 	fs:SetTextColor(_G[font]:GetTextColor())
@@ -221,7 +221,7 @@ end
 -- here, before the row is placed: an appended row is placed at once, and a
 -- backing added after that stretched the turn before it instead.
 function Transcript:Row(font, text, indent, gap, r, g, b, owner)
-	local fs = text(self, font)
+	local fs = fontString(self, font)
 	fs:SetJustifyH("LEFT")
 	fs:SetJustifyV("TOP")
 	fs:SetWordWrap(true)
@@ -281,7 +281,7 @@ function Transcript:Markdown(line, r, g, b)
 	if mark then
 		local indent = 18 + math.floor(#lead / 2) * 16
 		local row = self:Row(BODY_FONT, inline(rest), indent, 3, r, g, b)
-		row.marker = text(self, BODY_FONT)
+		row.marker = fontString(self, BODY_FONT)
 		row.marker:SetText((mark == "-" or mark == "*") and "|cffffd100•|r" or ("|cffffd100%s|r"):format(mark))
 		return
 	end
@@ -315,7 +315,7 @@ function Transcript:Add(who, text, continued, at, job)
 		-- what a step did, a probe found, or an error: small notes under the reply
 		local row = self:Row(NOTE_FONT, inline(text), 14, continued and 1 or 5,
 			who == "error" and 1 or 0.72, who == "error" and 0.47 or 0.74, who == "error" and 0.47 or 0.78)
-		row.marker = text(self, NOTE_FONT)
+		row.marker = fontString(self, NOTE_FONT)
 		row.marker:SetText(who == "error" and "|cffff7777!|r" or "|cff5c6370›|r")
 	end
 	-- a long session would grow without end; keep the newest rows
