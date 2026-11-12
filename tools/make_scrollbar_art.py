@@ -284,7 +284,7 @@ def render():
 #   RuleLeft 32x16, RuleMid 64x16: the divider's left end and its line,
 #     stretched whole to the Joint
 
-VERSION6 = 4
+VERSION6 = 5
 PRESS = 1.25  # how far a pressed arrow sinks toward the groove, in units
 GT = 24.0  # the arrows' groove end (its round end's centre)
 FOOT = GT - 4.0 - PRESS  # an arrow's foot: under the border's arc, pressed or not
@@ -563,7 +563,7 @@ def lance_rule(c, piece):
     hooked back; at the Joint a collar where it meets the left border, its
     barbs lying along the border, and past the groove on to the edge."""
     pen = Pen(c, 16)
-    rod = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.55 * RULE_W)]
+    rod = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.55)]
     if piece == "Mid":
         raised(pen, rod(-12, 76), BRZ, bevel=0.5, cast=0.4, grain=False)
     elif piece == "Left":
@@ -629,7 +629,7 @@ def fleur_rule(c, piece):
     """An iron rod; at each end it splits into two volutes: at its left end
     curling back, at the Joint gripping the left border above and below."""
     pen = Pen(c, 16)
-    rod = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.6 * RULE_W)]
+    rod = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.6)]
     if piece == "Mid":
         raised(pen, rod(-12, 76), IRN, bevel=0.5, cast=0.4, grain=False)
     elif piece == "Left":
@@ -678,7 +678,7 @@ def bud_rule(c, piece):
     """A thin vine; its left end a tendril's coil and one leaf; at the Joint a
     node where it grows into the left border, a tendril coiling off it."""
     pen = Pen(c, 16)
-    vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.55 * RULE_W)]
+    vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.55)]
     if piece == "Mid":
         raised(pen, vine(-12, 76), BARK, bevel=0.5, cast=0.4, grain=False)
     elif piece == "Left":
@@ -728,7 +728,7 @@ def lancet_rule(c, piece):
     a point; at the Joint it meets the left border at a lozenge, and runs on
     past the groove to the edge."""
     pen = Pen(c, 16)
-    line = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.45 * RULE_W)]
+    line = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], 0.45)]
     if piece == "Mid":
         flush(pen, line(-12, 76), INLAY)
     elif piece == "Left":
@@ -736,23 +736,291 @@ def lancet_rule(c, piece):
               + [[(4.4, 8), (6.1, 6.4), (7.8, 8), (6.1, 9.6)]], INLAY)
     else:
         flush(pen, line(-12, 7.0) + line(RAIL[1], 26)
-              + [[(6.4, 8), (8.25, 6.25), (10.1, 8), (8.25, 9.75)], ribbon([(9.9, 8), (RAIL[0], 8)], 0.45 * RULE_W)]
+              + [[(6.4, 8), (8.25, 6.25), (10.1, 8), (8.25, 9.75)], ribbon([(9.9, 8), (RAIL[0], 8)], 0.45)]
               + [p for s in (1, -1) for p in stroke(scroll(bez((8.25, 8 - s * 1.9), (8.4, 8 - s * 3.4), (7.4, 8 - s * 4.4), (5.8, 8 - s * 4.2), n=24),
                                                          0.7, s * 0.9, 0.4), 0.42, 0.3)], INLAY)
 
 
-# The dividers' weight: 1 the thin rule, THICK the heavy one (between parts
-# of a conversation); the same ornaments, the rod or line wider.
-RULE_W = 1.0
-THICK = 2.1
+# --- the thick dividers (between parts of a conversation): each set's own
+# heavy piece, the same weight from its left end through the Joint, ornament at
+# the ends only. What runs along the divider is the same in every column (the
+# RuleMid is stretched sideways), so its texture is rows: grain along the bar.
+
+TH = 1.7  # a thick bar's half-width, in units
+
+
+def row_grain(c, k=1.0, seed=11):
+    """Grain running along the divider: one value per row, the same for every
+    piece of its height, so the Left, Mid and Joint meet without a seam."""
+    rng = np.random.default_rng(seed)
+    n = c.H // c.s
+    g = sum(w * ndimage.gaussian_filter(rng.standard_normal(n), r) for w, r in ((0.55, 0.5), (0.45, 1.5)))
+    g = ndimage.zoom(g / g.std(), c.s, order=1)[:c.H] * 0.09 * k
+    c._grain = np.repeat(g[:, None], c.W, 1)
+
+
+def plain_grain(c):
+    if hasattr(c, "_grain"):
+        del c._grain
+
+
+def clip_right(c, x):
+    """Everything past x (the column's edge) cut away, as the Mid is cut."""
+    c.a[:, int((x * U + c.pad) * c.s):] = 0
+
+
+def hbar(x0, x1, hw=TH):
+    return [ribbon([(x0, 8), (x1, 8)], hw)]
+
+
+def stripe(pen, x0, x1, y0, y1, rgb, a, within, blur=0.08):
+    """A band along the bar (rows only) shading what is under `within`."""
+    c = pen.c
+    m = ndimage.gaussian_filter(pen.mask([[(x0, y0), (x1, y0), (x1, y1), (x0, y1)]]), U * c.s * blur)
+    c.over(np.broadcast_to(np.array(rgb, float), c.rgb.shape), m * within * a)
+
+
+def lance_bar(pen, x0, x1):
+    """A bronze shaft: bevelled, a raised rib along its crown catching the light."""
+    c = pen.c
+    row_grain(c, 0.8)
+    m = raised(pen, hbar(x0, x1), BRZ, bevel=0.9, cast=0.6)
+    stripe(pen, x0, x1, 8 + 0.75, 8 + TH, BRZ[0], 0.35, m)  # the underside turned from the light
+    raised(pen, hbar(x0, x1, 0.42), BRZ, bevel=0.35, cast=0.3, gloss=0.8)
+    plain_grain(c)
+
+
+def lance_ring(pen, x0, x1, hw=2.55):
+    """A cast ring round the shaft."""
+    raised(pen, [[(x0, 8 - hw), (x1, 8 - hw), (x1, 8 + hw), (x0, 8 + hw)]], BRZ, bevel=0.45, cast=0.45)
+
+
+def lance_thick(c, piece):
+    """A bronze shaft, ribbed; its left end the lance's butt, a faceted spike
+    in a double collar, two heavy barbs hooked back; at the Joint a socket
+    flush to the left border, its barbs reaching back along the shaft."""
+    pen = Pen(c, 16)
+    if piece == "Mid":
+        lance_bar(pen, -12, 76)
+    elif piece == "Left":
+        lance_bar(pen, 11.0, 44)
+        barbs = [p for s in (1, -1) for p in stroke(scroll(bez((12.4, 8 - s * 1.8), (14.4, 8 - s * 3.6), (13.4, 8 - s * 5.6), (10.6, 8 - s * 5.6), n=24),
+                                                           0.85, s * 0.8, 0.45), 0.7, 0.36)]
+        raised(pen, barbs, BRZ, bevel=0.55, cast=0.5)
+        raised(pen, [hprofile([(0.6, 0), (3.0, 0.9), (6.4, 1.8), (8.8, 1.95), (9.6, 1.9)])], BRZ, bevel=0.9, cast=0.55)  # the spike
+        raised(pen, [hprofile([(1.6, 0), (4.0, 0.25), (8.6, 0.35)])], BRZ, bevel=0.25, cast=0, gloss=0.8)  # its rib
+        lance_ring(pen, 8.4, 9.9)
+        lance_ring(pen, 11.0, 12.5)
+        glint(c, pen, 5.5, 7.0, 1.4, 0.35)
+    else:
+        lance_bar(pen, -12, RAIL[0])
+        lance_bar(pen, RAIL[1], 26)
+        barbs = [p for s in (1, -1) for p in stroke(scroll(bez((8.0, 8 - s * 1.8), (6.0, 8 - s * 3.6), (7.0, 8 - s * 5.6), (9.8, 8 - s * 5.6), n=24),
+                                                           0.85, -s * 0.8, 0.45), 0.7, 0.36)]
+        raised(pen, barbs, BRZ, bevel=0.55, cast=0.5)
+        lance_ring(pen, 7.4, RAIL[0])  # the socket, flush to the border
+        engrave(c, pen.mask([[(9.1, 8 - 2.4), (9.4, 8 - 2.4), (9.4, 8 + 2.4), (9.1, 8 + 2.4)]]))
+        clip_right(c, 26)
+
+
+def htwist(c, pen, x0, x1, hw):
+    """The twist along a bar lying flat: its faces turning, bands at 45 degrees."""
+    bar = pen.mask([[(x0, 8 - hw), (x1, 8 - hw), (x1, 8 + hw), (x0, 8 + hw)]])
+    dark, light = [], []
+    for x in np.arange(x0 - 2 * hw, x1 + 0.4, 1.6):
+        dark.append([(x + 2 * hw, 8 - hw), (x, 8 + hw), (x + 0.75, 8 + hw), (x + 2 * hw + 0.75, 8 - hw)])
+        light.append([(x + 2 * hw + 0.8, 8 - hw), (x + 0.8, 8 + hw), (x + 1.2, 8 + hw), (x + 2 * hw + 1.2, 8 - hw)])
+    blur = U * c.s * 0.08
+    c.over(np.zeros_like(c.rgb), ndimage.gaussian_filter(pen.mask(dark), blur) * bar * 0.6)
+    c.over(np.broadcast_to(np.array((150, 140, 112), float), c.rgb.shape), ndimage.gaussian_filter(pen.mask(light), blur) * bar * 0.5)
+
+
+def fleur_bar(pen, x0, x1):
+    """A square iron bar set on its edge, hammered: the upper face to the light,
+    the lower in shadow, a bright arris between, the hammer's marks along it."""
+    c = pen.c
+    row_grain(c, 1.7, seed=5)
+    m = raised(pen, hbar(x0, x1, TH - 0.1), IRN, bevel=0.45, cast=0.6, gloss=0.25)
+    plain_grain(c)
+    ridge = 8 - (TH - 0.1) * 0.2  # 40% down
+    stripe(pen, x0, x1, 8 - TH, ridge, IRN[2], 0.4, m)
+    stripe(pen, x0, x1, ridge, 8 + TH, (0, 0, 0), 0.55, m)
+    stripe(pen, x0, x1, 8 + TH - 0.55, 8 + TH, (0, 0, 0), 0.5, m, blur=0.04)  # the underside
+    stripe(pen, x0, x1, ridge - 0.24, ridge + 0.06, (178, 168, 138), 0.75, m, blur=0.04)  # the arris
+
+
+def knop(pen, x, hw=2.4, w=1.6):
+    """A forged collar round the bar."""
+    raised(pen, [[(x - w / 2, 8 - hw), (x + w / 2, 8 - hw), (x + w / 2, 8 + hw), (x - w / 2, 8 + hw)]], IRN, bevel=0.6, cast=0.5)
+
+
+def fleur_thick(c, piece):
+    """A square iron bar on its edge; its left end twisted and split into two
+    heavy volutes curling back; at the Joint a twisted length in a forged
+    collar, two volutes from it gripping the left border above and below."""
+    pen = Pen(c, 16)
+    if piece == "Mid":
+        fleur_bar(pen, -12, 76)
+    elif piece == "Left":
+        fleur_bar(pen, 7.0, 44)
+        htwist(c, pen, 7.0, 13.2, TH - 0.1)
+        v = [p for s in (1, -1) for p in stroke(scroll(bez((8.0, 8 - s * 0.4), (5.2, 8 - s * 0.6), (2.6, 8 - s * 1.8), (2.0, 8 - s * 4.2), n=40),
+                                                       1.35, -s * 0.9, 0.6), 0.95, 0.6)]
+        raised(pen, v, IRN, bevel=0.6, cast=0.55)
+        knop(pen, 7.4, 2.2, 1.4)
+        knop(pen, 13.8)
+        glint(c, pen, 2.4, 4.2, 1.2, 0.3)
+    else:
+        fleur_bar(pen, -12, RAIL[0])
+        fleur_bar(pen, RAIL[1], 26)
+        htwist(c, pen, 0.6, 5.4, TH - 0.1)
+        v = [p for s in (1, -1) for p in stroke(scroll(bez((6.0, 8 - s * 1.2), (8.6, 8 - s * 1.8), (10.2, 8 - s * 3.0), (9.8, 8 - s * 5.4), n=40),
+                                                       1.0, s * 0.85, 0.5), 0.85, 0.5)]
+        raised(pen, v, IRN, bevel=0.55, cast=0.55)
+        knop(pen, 0.4, 2.2, 1.4)
+        knop(pen, 5.6)
+        clip_right(c, 26)
+
+
+FURROWS = ((-0.6, 0.3), (0.55, 0.15))  # the bark's furrows (y, half-width): unequal, a third and two thirds down
+RIDGES = ((-1.15, 0.22, 0.3), (0.0, 0.25, 0.12))  # the bark between them (y, half-width, light): one lit, one dull
+
+
+def bud_bar(pen, x0, x1):
+    """A grown branch: round, its bark furrowed along its length."""
+    c = pen.c
+    row_grain(c, 2.0, seed=3)
+    m = raised(pen, hbar(x0, x1, TH - 0.05), BARK, bevel=1.6, cast=0.6, gloss=0.15)
+    plain_grain(c)
+    for y, hw, k in RIDGES:
+        stripe(pen, x0, x1, 8 + y - hw, 8 + y + hw, (160, 124, 82), k, m, blur=0.12)
+    for y, hw in FURROWS:
+        stripe(pen, x0, x1, 8 + y - hw, 8 + y + hw, BARK[0], 0.8, m, blur=0.04)
+    stripe(pen, x0, x1, 8 + 1.1, 8 + TH, (0, 0, 0), 0.35, m)  # the underside
+
+
+def knot(cx, cy, rx, top, bottom, phase=0.0, n=120):
+    """A lumpy swelling of the branch, bulging more below than above."""
+    t = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    lumps = 1 + 0.06 * np.sin(3 * t + phase) + 0.04 * np.sin(5 * t + 2 * phase)
+    ry = np.where(np.sin(t) > 0, bottom, top)
+    return [(cx + rx * np.cos(a) * l, cy + r * np.sin(a) * l) for a, r, l in zip(t, ry, lumps)]
+
+
+def bark_marks(c, pen, m, lines):
+    c.over(np.broadcast_to(np.array(BARK[0], float), c.rgb.shape), pen.mask(lines) * m * 0.75)
+
+
+def vein(c, pen, base, tip):
+    b, t = np.array(base, float), np.array(tip, float)
+    path = bez(b, b + (t - b) * [0.3, 0.4], b + (t - b) * [0.7, 0.75], t, n=20)
+    c.over(np.broadcast_to(np.array(BUD[0], float), c.rgb.shape), pen.mask([ribbon(path, 0.12)]) * 0.55)
+
+
+def bud_thick(c, piece):
+    """A branch; its left end a gnarled knot where it was cut, a tendril grown
+    from it and two leaves; at the Joint a swelling node where it grows into
+    the left border, a leaf below and a tendril above."""
+    pen = Pen(c, 16)
+    if piece == "Mid":
+        bud_bar(pen, -12, 76)
+    elif piece == "Left":
+        bud_bar(pen, 5.0, 44)
+        m = raised(pen, [knot(3.9, 8.3, 2.9, 2.1, 2.7)], BARK, bevel=1.6, cast=0.55, gloss=0.15)  # the knot
+        bark_marks(c, pen, m, [ribbon(bez((3.0, 5.9), (3.9, 7.4), (4.4, 9.0), (5.6, 10.6), n=20), 0.15),
+                               ribbon(bez((4.6, 6.0), (5.4, 7.2), (6.0, 8.0), (6.8, 8.6), n=20), 0.12)])
+        face = pen.mask([knot(1.55, 8.3, 0.75, 1.75, 2.1, 1.0)])  # the cut's end grain
+        c.over(np.broadcast_to(np.array((178, 142, 98), float), c.rgb.shape), face * m * 0.85)
+        c.over(np.broadcast_to(np.array(BARK[0], float), c.rgb.shape),
+               pen.mask([ribbon(knot(1.6, 8.3, 0.4, 1.0, 1.25, 2.0, n=60) + [knot(1.6, 8.3, 0.4, 1.0, 1.25, 2.0, n=60)[0]], 0.08)]) * face * 0.7)
+        raised(pen, stroke(scroll(bez((4.4, 6.8), (4.2, 4.8), (3.0, 3.4), (1.6, 3.4), n=30), 0.75, -1.1, 0.35), 0.62, 0.26, knob=False),
+               BARK, bevel=0.45, cast=0.45)  # a tendril grown from the knot's top
+        raised(pen, [leaf((8.6, 9.4), (13.2, 13.2), 2.2), leaf((9.8, 6.6), (13.6, 3.0), 1.9)], dim(BUD, 0.85), bevel=0.55, cast=0.5)
+        vein(c, pen, (8.9, 9.7), (12.4, 12.6))
+        vein(c, pen, (10.1, 6.3), (13.0, 3.6))
+    else:
+        bud_bar(pen, -12, RAIL[0])
+        bud_bar(pen, RAIL[1], 26)
+        raised(pen, stroke(scroll(bez((8.2, 6.6), (7.2, 4.4), (5.2, 3.0), (3.2, 3.4), n=30), 1.1, -1.0, 0.35), 1.0, 0.32, knob=False),
+               BARK, bevel=0.55, cast=0.5)
+        raised(pen, [leaf((7.6, 9.2), (3.2, 13.4), 2.2)], dim(BUD, 0.85), bevel=0.55, cast=0.5)
+        vein(c, pen, (7.4, 9.4), (3.9, 12.7))
+        m = raised(pen, [knot(8.5, 8.25, 1.9, 2.1, 2.6, 2.0)], BARK, bevel=1.4, cast=0.45)  # the node
+        bark_marks(c, pen, m, [ribbon(bez((7.6, 6.2), (8.2, 7.4), (8.8, 8.8), (9.6, 10.4), n=20), 0.13)])
+        clip_right(c, 26)
+
+
+LANCET_CH = 1.95  # the channel's half-width
+
+
+def channel(pen, cut):
+    """A cut in the stone: its floor dark, the top wall shadowed (softened to
+    the stone's own deepest shade), the bottom wall lit, the top lip catching light."""
+    c = pen.c
+    m = pen.mask(cut)
+    carve(c, m, depth=0.8)
+    k = U * c.s
+    top = np.clip(m - ndimage.shift(m, (k * 0.7, 0), order=1), 0, 1)  # the band under the top edge
+    bottom = np.clip(m - ndimage.shift(m, (-k * 0.7, 0), order=1), 0, 1)
+    c.over(np.broadcast_to(np.array((40, 38, 36), float), c.rgb.shape), ndimage.gaussian_filter(top, k * 0.1) * 0.45)
+    c.over(np.broadcast_to(np.array((128, 124, 114), float), c.rgb.shape), ndimage.gaussian_filter(bottom, k * 0.1) * 0.3)
+    lip = np.clip(ndimage.shift(m, (k * 0.3, 0), order=1) - m, 0, 1)  # the stone just above the cut
+    c.over(np.broadcast_to(np.array((150, 146, 136), float), c.rgb.shape), ndimage.gaussian_filter(lip, k * 0.08) * 0.3)
+
+
+def incise(c, pen, pieces):
+    """A line cut into the bronze: dark, a highlight just under it."""
+    m = pen.mask(pieces)
+    k = U * c.s
+    c.over(np.broadcast_to(np.array((30, 18, 8), float), c.rgb.shape), m * 0.85)
+    under = np.clip(ndimage.shift(m, (k * 0.3, 0), order=1) - m, 0, 1)
+    c.over(np.broadcast_to(np.array((214, 178, 120), float), c.rgb.shape), under * np.clip(c.a, 0, 1) * 0.55)
+
+
+def lancet_bar(pen, x0, x1, pocket=()):
+    """A channel cut in the stone (with a pocket, cut as one with it), a
+    bronze band laid in it, a line incised along its middle."""
+    c = pen.c
+    channel(pen, hbar(x0, x1, LANCET_CH) + list(pocket))
+    row_grain(c, 0.6, seed=9)
+    flush(pen, hbar(x0, x1, 0.95), INLAY)
+    plain_grain(c)
+    incise(c, pen, hbar(x0, x1, 0.18))
+
+
+POCKET = lambda x: [[(x - 3.2, 8), (x, 8 - 3.4), (x + 3.2, 8), (x, 8 + 3.4)]]  # a lozenge's pocket cut in the stone
+LOZENGE = lambda x: [[(x - 2.3, 8), (x, 8 - 2.3), (x + 2.3, 8), (x, 8 + 2.3)]]
+
+
+def lancet_thick(c, piece):
+    """An inlaid band in a carved channel; its left end a large inlaid lozenge
+    in a pocket cut with the channel; at the Joint a lozenge in its pocket
+    against the left border, two inlaid scrolls growing from its points, and
+    on past the groove."""
+    pen = Pen(c, 16)
+    if piece == "Mid":
+        lancet_bar(pen, -12, 76)
+    elif piece == "Left":
+        lancet_bar(pen, 7.2, 44, POCKET(7.2))
+        flush(pen, LOZENGE(7.2), INLAY)
+        incise(c, pen, [ribbon([(6.1, 8), (7.2, 8 - 1.1), (8.3, 8), (7.2, 8 + 1.1), (6.1, 8)], 0.14)])
+    else:
+        x = RAIL[0] - INLAY_HW - 3.2  # the pocket's point at the border
+        lancet_bar(pen, -12, x, POCKET(x))
+        lancet_bar(pen, RAIL[1] + INLAY_HW, 26)
+        flush(pen, LOZENGE(x)
+              + [p for s in (1, -1) for p in stroke(scroll(bez((x, 8 - s * 1.9), (x + 0.2, 8 - s * 4.4), (x - 1.0, 8 - s * 5.8), (x - 3.0, 8 - s * 5.6), n=40),
+                                                         0.85, s * 0.9, 0.45), 0.75, 0.48)], INLAY)
+        incise(c, pen, [ribbon([(x - 1.2, 8), (x, 8 - 1.2), (x + 1.2, 8), (x, 8 + 1.2), (x - 1.2, 8)], 0.14)])
+        clip_right(c, 26)
 
 
 DESIGNS6 = {
-    # name: (cap, thumb, divider, border material ("flush": inlaid))
-    "Lance": (lance_cap, spear_thumb, lance_rule, BRZ),
-    "Fleur": (fleur_cap, twist_thumb, fleur_rule, IRN),
-    "Bud": (bud_cap, bud_thumb, bud_rule, BARK),
-    "Lancet": (lancet_cap, inlay_thumb, lancet_rule, "flush"),
+    # name: (cap, thumb, thin divider, thick divider, border material ("flush": inlaid))
+    "Lance": (lance_cap, spear_thumb, lance_rule, lance_thick, BRZ),
+    "Fleur": (fleur_cap, twist_thumb, fleur_rule, fleur_thick, IRN),
+    "Bud": (bud_cap, bud_thumb, bud_rule, bud_thick, BARK),
+    "Lancet": (lancet_cap, inlay_thumb, lancet_rule, lancet_thick, "flush"),
 }
 
 
@@ -785,7 +1053,7 @@ def flat_grain(c):
 
 
 def render6_one(name):
-    cap, thumb, rule, kind = DESIGNS6[name]
+    cap, thumb, thin, thick, kind = DESIGNS6[name]
     out = {}
     for down in (False, True):
         d = "Down" if down else "Up"
@@ -817,9 +1085,7 @@ def render6_one(name):
     out["Thumb-Mid"] = np.repeat(t[p:2 * p].mean(0, keepdims=True), p, 0)
     out["Thumb-Centre"] = t[2 * p:4 * p]
     out["Thumb-Bottom"] = t[5 * p:]
-    global RULE_W
-    for weight, tag in ((1.0, ""), (THICK, "Thick")):
-        RULE_W = weight
+    for rule, tag in ((thin, ""), (thick, "Thick")):
         for piece, w in (("Left", 32), ("Mid", 64), ("Joint", 32)):
             c = ucanvas(w, 16)
             rule(c, piece)
@@ -827,7 +1093,6 @@ def render6_one(name):
             if piece == "Mid":  # stretched sideways: the same in every column
                 img = np.repeat(img.mean(1, keepdims=True), img.shape[1], 1)
             out[("Joint" if piece == "Joint" else "Rule" + piece) + tag] = img
-    RULE_W = 1.0
     return {"Scroll-%s-%s" % (name, k): v for k, v in out.items()}
 
 
