@@ -133,40 +133,76 @@ local function buildTabs(frame, messages)
 			messages:Clear()
 		end })
 
-	-- Status: what is running, read fresh while the tab is looked at. In the
-	-- chat's look: one row per fact on the replies' stone (one sheet for the page), the label in gold,
-	-- the value beside it, a quest log divider between rows, a light, colour-
-	-- blind-safe word for good or bad (green ok, red problem) and grey detail.
+	-- Status: what is running, read fresh while the tab is looked at. Laid out
+	-- as the Settings page is: the facts' names right-aligned in a well of dark
+	-- stone down the left, their values on the light stone beside it, the thick
+	-- vine down the seam and the chat's vine between rows, each grown out of the
+	-- spine through a joint of the vine's own. A short, colour-blind-safe word
+	-- for good or bad (green ok, red problem) and grey detail.
+	local SPINE, SEAM, SHADE, NAME_W = 170, 3, 12, 150
+	local status = pages[3]
+	local rock = status:CreateTexture(nil, "BACKGROUND", nil, 0)
+	rock:SetTexture([[Interface\FrameGeneral\UI-Background-Rock]], "REPEAT", "REPEAT")
+	rock:SetHorizTile(true)
+	rock:SetVertTile(true)
+	rock:SetPoint("TOPLEFT", -9, 7)
+	rock:SetPoint("BOTTOMRIGHT", 9, -7)
+	local function statusWell(which, tl, br)
+		local t = status:CreateTexture(nil, "BACKGROUND", nil, 1)
+		t:SetTexture(WC.Style.STONE[which], "REPEAT", "REPEAT")
+		t:SetHorizTile(true)
+		t:SetVertTile(true)
+		t:SetPoint("TOPLEFT", status, "TOPLEFT", tl, 7)
+		t:SetPoint("BOTTOMRIGHT", status, br[1], br[2], -7)
+		for _, side in ipairs({ "Top", "Left" }) do
+			local shade = status:CreateTexture(nil, "BACKGROUND", nil, 2)
+			shade:SetTexture([[Interface\Common\ShadowOverlay-]] .. side)
+			shade:SetAlpha(0.7)
+			shade:SetPoint("TOPLEFT", t)
+			shade:SetPoint(side == "Top" and "TOPRIGHT" or "BOTTOMLEFT", t)
+			if side == "Top" then shade:SetHeight(SHADE) else shade:SetWidth(SHADE) end
+		end
+	end
+	statusWell("you", -9, { "BOTTOMLEFT", SPINE - 2 - SEAM })
+	statusWell("claude", SPINE - 2, { "BOTTOMRIGHT", 9 })
+	local vines = CreateFrame("Frame", nil, status)
+	vines:SetAllPoints()
+	vines:SetFrameLevel(status:GetFrameLevel() + 5)
+	local spine = CreateFrame("Frame", nil, vines)
+	spine:SetWidth(16)
+	spine:SetPoint("TOP", status, "TOPLEFT", SPINE - 2 - SEAM / 2, 7)
+	spine:SetPoint("BOTTOM", status, "BOTTOMLEFT", SPINE - 2 - SEAM / 2, -7)
+	WC.Style.VineLine(spine, "Thick", true, true, true)
 	local ROW = 30
 	local rows = {}
 	local function row(i)
 		local r = rows[i]
 		if r then return r end
-		r = CreateFrame("Frame", nil, pages[3])
+		r = CreateFrame("Frame", nil, status)
 		r:SetHeight(ROW)
 		if i > 1 then
-			-- edge to edge of the stone (the page sits 9 px inside it)
-			local divider = r:CreateTexture(nil, "ARTWORK")
-			divider:SetAtlas("QuestLog-frame-devider")
-			divider:SetAlpha(0.8)
-			divider:SetHeight(15)
-			divider:SetPoint("LEFT", r, "TOPLEFT", -9, 0)
-			divider:SetPoint("RIGHT", r, "TOPRIGHT", 9, 0)
+			r.divider = CreateFrame("Frame", nil, vines)
+			r.divider:SetHeight(16)
+			r.divider:SetFrameLevel(vines:GetFrameLevel() + 1)
+			r.divider:SetPoint("LEFT", r, "TOPLEFT", SPINE - 2 - SEAM / 2, 0)
+			r.divider:SetPoint("RIGHT", r, "TOPRIGHT", 9, 0)
+			WC.Style.VineLine(r.divider, "", false, false, true)
+			WC.Style.VineJoin(r.divider, "Thick", "TRightFromMediumCrest", "LEFT")
 		end
-		r.label = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-		r.label:SetPoint("LEFT", 12, 0)
-		r.label:SetWidth(170)
-		r.label:SetJustifyH("LEFT")
+		r.label = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
+		r.label:SetPoint("RIGHT", r, "LEFT", SPINE - 18, 0)
+		r.label:SetWidth(NAME_W)
+		r.label:SetJustifyH("RIGHT")
 		r.value = r:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		r.value:SetPoint("LEFT", r.label, "RIGHT", 8, 0)
-		r.value:SetPoint("RIGHT", -12, 0)
+		r.value:SetPoint("LEFT", SPINE + 10, 0)
+		r.value:SetPoint("RIGHT", -8, 0)
 		r.value:SetJustifyH("LEFT")
 		r.value:SetWordWrap(false)
 		rows[i] = r
 		return r
 	end
 	local function refreshStatus()
-		local grey, good, bad = "|cff9d9d9d", "|cff40ff40", "|cffff6060"
+		local grey, good, bad = "|cff8c8c8c", "|cff7fd07f", "|cffe0786a"
 		local n = 0
 		local function add(label, value)
 			n = n + 1
@@ -213,7 +249,8 @@ local function buildTabs(frame, messages)
 		add("Export", failed and bad .. ("%d part%s failed|r %s%s|r"):format(#failed,
 			#failed == 1 and "" or "s", grey, failed[1]) or good .. "whole|r")
 		add("Combat", InCombatLockdown() and bad .. "yes|r " .. grey .. "(changes wait until it ends)|r" or "no")
-		for i = n + 1, #rows do rows[i]:Hide() end
+		for i = n + 1, #rows do rows[i]:Hide() if rows[i].divider then rows[i].divider:Hide() end end
+		for i = 2, n do rows[i].divider:Show() end
 		-- the rows share the page's height, so the card is filled to its foot
 		local h = math.max(ROW, math.floor((pages[3]:GetHeight() or 0) / n))
 		for i = 1, n do
