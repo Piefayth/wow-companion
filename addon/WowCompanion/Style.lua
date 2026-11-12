@@ -235,8 +235,9 @@ WowCompanion_Style.STONE = {
 -- Mid (stretched), Right, 32 x 16 (Mid 64); Top, VMid (stretched), Bottom,
 -- 16 x 32; the junctions, 64 square, centred where the runs meet, wire
 -- scrollwork at three levels: Wisp (a long S in each corner), Scroll (and a
--- lyre on the far side), Filigree (tighter spirals, a C off each S): Cross<level> and T<way><level> (TUp, TDown, TLeft, TRight, named for the arm that leaves the
--- straight run) where runs of one weight meet, and <weight>T<way>From
+-- lyre on the far side), Filigree (tighter spirals, a C off each S):
+-- Cross<level> and T<way><level> (TUp, TDown, TLeft, TRight, named for the arm
+-- that leaves the straight run) where runs of one weight meet, and <weight>T<way>From
 -- <Thin|Medium><level> where a lighter vine grows into a heavier run. The line
 -- runs down each piece's middle; a round end sits 1.2 + its half-width in from
 -- a cap's outer edge.
