@@ -212,4 +212,4 @@ WowCompanion_Style.STONE = {
 }
 -- "hold a conversation's chord": a shoulder button with no letter, inline in
 -- text (tools/make_chord_glyph.py draws it; the version is in its name)
-WowCompanion_Style.CHORD = "|T" .. ART .. "Chord-3:" .. GLYPH_SIZE .. ":" .. GLYPH_SIZE .. "|t"
+WowCompanion_Style.CHORD = "|T" .. ART .. "Chord-4:" .. GLYPH_SIZE .. ":" .. GLYPH_SIZE .. "|t"

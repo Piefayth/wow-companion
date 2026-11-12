@@ -18,7 +18,7 @@ import os
 import struct
 import numpy as np
 
-VERSION = 3
+VERSION = 4
 SIZE = 64
 OVER = 4
 OUT = os.path.join(os.path.dirname(__file__), "..", "addon", "WowCompanion", "Art")
@@ -47,21 +47,22 @@ def main():
     c = (np.arange(n) + 0.5) / OVER
     x, y = np.meshgrid(c, c)
     cx, cy, hh = 32, 38, 9
-    rim_w = 3.2
+    rim_w = 2.6
     shape = bumper(x, y, 0).astype(float)
     face = bumper(x, y, rim_w).astype(float)
     rim = shape - face
     shadow_shape = bumper(x, y, -1.5, drop=3).astype(float)
     # light from above: the rim runs from pale bronze at the top to dark below
     t = np.clip((y - (cy - hh - 9)) / (2 * hh + 9), 0, 1)
-    rim_rgb = np.stack([200 - 110 * t, 166 - 96 * t, 108 - 66 * t], axis=-1)
-    # a thin bright edge just inside the rim's top, as on Blizzard's icons
-    glint = (bumper(x, y, rim_w - 1.2) & ~bumper(x, y, rim_w + 0.2) & (y < cy)).astype(float) * 0.5
+    # muted bronze, matched against gamepad-ps-triggerl1 side by side
+    rim_rgb = np.stack([178 - 70 * t, 152 - 62 * t, 114 - 48 * t], axis=-1)
+    # a dark line just inside the rim, as theirs have
+    ring = (bumper(x, y, rim_w) & ~bumper(x, y, rim_w + 1.0)).astype(float)
     # the face: dark brown, a little lighter toward the top centre
     dist = np.hypot((x - cx) / 27, (y - (cy - hh)) / (hh + 9))
     k = np.clip(1 - dist, 0, 1)
-    face_rgb = np.stack([30 + 22 * k, 25 + 18 * k, 20 + 13 * k], axis=-1)
-    face_rgb += glint[..., None] * np.array([90, 75, 50])
+    face_rgb = np.stack([26 + 18 * k, 22 + 15 * k, 18 + 11 * k], axis=-1)
+    face_rgb *= (1 - ring[..., None] * 0.55)
     rgb = rim[..., None] * rim_rgb + face[..., None] * face_rgb
     alpha = shape
     # the soft shadow, under the shape, offset down
