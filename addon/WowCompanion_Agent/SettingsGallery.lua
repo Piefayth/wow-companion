@@ -1,5 +1,6 @@
 -- A design sheet, for now: the Settings page built from wells like the Chat
--- tab's, four ways, each a full-size mock-up drawn small so the player
+-- tab's (names down the left, the settings over the note), four weights of
+-- edge, each a full-size mock-up drawn small so the player
 -- compares them at once. Shown only; nothing here is a stop or changes a setting.
 -- Goes when one is chosen.
 
@@ -64,26 +65,40 @@ local function control(parent, spec)
 	return b
 end
 
--- Round 2: the page built from the Companion window's own wells. The panel's
--- rock shows in the 2 px between wells, as between the chat and the
--- conversation list; each well is Blizzard's inner bevel with a stone in it.
+-- The page built from wells like the Companion window's own: the panel's rock
+-- shows between them, as between the chat and the conversation list; each
+-- well a stone, edged by style (below).
 -- A layout is a list of wells, each { x, y, w, h, stone, role } in the area
 -- the Chat tab's two wells take (TW x TH); role says what it holds: names
 -- (the section names), rows, note, or names+rows (the spine inside the well).
 local TW, TH, SEP = W + 18, H + 14, 2
 
-local function well(mock, w)
-	local f = CreateFrame("Frame", nil, mock, "InsetFrameTemplate")
+-- style: "bevel" Blizzard's inner bevel round the stone; "plain" the stone
+-- alone, the rock between wells its only edge; "shade" the stone with a soft
+-- shadow inside its top and left edges, sunk without a rim
+local function well(mock, w, style)
+	local f = CreateFrame("Frame", nil, mock, style == "bevel" and "InsetFrameTemplate" or nil)
 	f:SetPoint("TOPLEFT", w[1], -w[2])
 	f:SetSize(w[3], w[4])
 	local back = f:CreateTexture(nil, "BACKGROUND", nil, 1)
 	stone(back, w[5])
-	back:SetPoint("TOPLEFT", 3, -3)
-	back:SetPoint("BOTTOMRIGHT", -3, 3)
+	local inset = style == "bevel" and 3 or 0
+	back:SetPoint("TOPLEFT", inset, -inset)
+	back:SetPoint("BOTTOMRIGHT", -inset, inset)
+	if style == "shade" then
+		for _, spec in ipairs({ { "Top", "TOPLEFT", "TOPRIGHT", true }, { "Left", "TOPLEFT", "BOTTOMLEFT" } }) do
+			local t = f:CreateTexture(nil, "BACKGROUND", nil, 2)
+			t:SetTexture([[Interface\Common\ShadowOverlay-]] .. spec[1])
+			t:SetAlpha(0.7)
+			t:SetPoint(spec[2])
+			t:SetPoint(spec[3])
+			if spec[4] then t:SetHeight(12) else t:SetWidth(12) end
+		end
+	end
 	return f
 end
 
-local function layout(mock, wells)
+local function layout(mock, wells, style)
 	local rock = mock:CreateTexture(nil, "BACKGROUND", nil, -8)
 	rock:SetTexture([[Interface\FrameGeneral\UI-Background-Rock]], "REPEAT", "REPEAT")
 	rock:SetHorizTile(true)
@@ -91,7 +106,7 @@ local function layout(mock, wells)
 	rock:SetAllPoints()
 	local at = {}
 	for _, w in ipairs(wells) do
-		local f = well(mock, w)
+		local f = well(mock, w, style or "bevel")
 		for role in w[6]:gmatch("[^+]+") do at[role] = f end
 		if w[6] == "names+rows" then
 			-- the spine inside the well, its dark stone to a column rule
@@ -148,40 +163,21 @@ end
 
 local FW = FOOT + 6 -- a note well's height
 
+-- Round 3: the player's pick, the names down the left in a well of their own
+-- and the settings over the note's well, four weights of edge
+local function threeWells(mock, style, sep)
+	layout(mock, {
+		{ 0, 0, SPINE + 6, TH, "you", "names" },
+		{ SPINE + 6 + sep, 0, TW - SPINE - 6 - sep, TH - FW - sep, "claude", "rows" },
+		{ SPINE + 6 + sep, TH - FW, TW - SPINE - 6 - sep, FW, "you", "note" },
+	}, style)
+end
+
 local CANDIDATES = {
-	-- A. two wells as on the Chat tab, mirrored: the spine its own well on the
-	-- left, the rows in the big one, the note at the foot of the spine's well
-	{ "Two wells: names and note | settings", function(mock)
-		layout(mock, {
-			{ 0, 0, SPINE + 6, TH, "you", "names+note" },
-			{ SPINE + 6 + SEP, 0, TW - SPINE - 6 - SEP, TH, "claude", "rows" },
-		})
-	end },
-	-- B. three wells: the spine down the left, the rows above the note's well
-	{ "Three wells: names | settings over the note", function(mock)
-		layout(mock, {
-			{ 0, 0, SPINE + 6, TH, "you", "names" },
-			{ SPINE + 6 + SEP, 0, TW - SPINE - 6 - SEP, TH - FW - SEP, "claude", "rows" },
-			{ SPINE + 6 + SEP, TH - FW, TW - SPINE - 6 - SEP, FW, "you", "note" },
-		})
-	end },
-	-- C. three wells: the spine and the rows side by side, the note's well
-	-- the full width under both
-	{ "Three wells: names | settings, the note under both", function(mock)
-		layout(mock, {
-			{ 0, 0, SPINE + 6, TH - FW - SEP, "you", "names" },
-			{ SPINE + 6 + SEP, 0, TW - SPINE - 6 - SEP, TH - FW - SEP, "claude", "rows" },
-			{ 0, TH - FW, TW, FW, "you", "note" },
-		})
-	end },
-	-- D. two wells: the spine inside the settings' well as now, the note in a
-	-- well of its own under it
-	{ "Two wells: names and settings over the note", function(mock)
-		layout(mock, {
-			{ 0, 0, TW, TH - FW - SEP, "claude", "names+rows" },
-			{ 0, TH - FW, TW, FW, "you", "note" },
-		})
-	end },
+	{ "Bevelled, as on the Chat tab", function(mock) threeWells(mock, "bevel", SEP) end },
+	{ "No rim: a thin seam of rock between", function(mock) threeWells(mock, "plain", 3) end },
+	{ "No rim: a wider channel of rock", function(mock) threeWells(mock, "plain", 7) end },
+	{ "Shaded: sunk by a soft inner shadow", function(mock) threeWells(mock, "shade", 3) end },
 }
 
 local function cell(parent, i, candidate)
