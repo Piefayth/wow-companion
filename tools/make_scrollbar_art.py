@@ -21,7 +21,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 # the vine dividers are every window's (Style.lua's WC.Style.Vine), so Core's
 CORE_OUT = os.path.join(ROOT, "addon", "WowCompanion", "Art")
-VINE_VERSION = 7  # Style.lua's VINE_VERSION
+VINE_VERSION = 8  # Style.lua's VINE_VERSION
 LIGHT = np.array([-0.55, -0.75, 0.9]); LIGHT /= np.linalg.norm(LIGHT)
 HALF = LIGHT + np.array([0, 0, 1.0]); HALF /= np.linalg.norm(HALF)
 
@@ -469,34 +469,42 @@ def rule_pieces(weight):
 # junction forged as one piece, the run, the arm and the ornament one metal
 # with one outline, never laid over the lines; drawn for the run down the
 # middle and the arm leaving right, square and centred where they meet, the
-# run and arm out past its edges so the vine pieces meet them seamlessly.
-# Built from the blacksmith's joints: the arm flares into the run with round
-# fillets (a forge weld, a branch's U-shaped crotch), and its ornament is the
-# arm's own end split and scrolled, in the fleur-de-lis arrow's language:
+# run and arm out past its edges so the vine pieces meet them seamlessly. The
+# arm flares into the run with round fillets (a forge weld, a branch's
+# U-shaped crotch); on the big one it runs through.
+#
+# The ornament is scrollwork drawn by the rules of Baroque and Victorian
+# scrolls, smiths' scrolls and Celtic spirals:
+#   - every line flows from a parent stem, every branch leaves its parent
+#     tangentially, from the outside of its curve (Owen Jones, propositions
+#     11 and 12);
+#   - a hierarchy of sizes: one main volute a side and satellites a half to
+#     two thirds its size, each turning the other way to its parent, so the
+#     two read as an S;
+#   - a main volute makes about two turns, a satellite one to one and a half,
+#     each ending in an open round eye, never a hook or a knob; the gap
+#     between turns shrinks only a little toward the eye (a smith's scroll),
+#     and stays a unit open at least (Wire.pieces checks it);
+#   - wire swells a little along its lead and narrows toward the eye, never
+#     to a hairline;
+#   - mirror symmetry about the arm, and even, rounded spaces between the
+#     wires, none touching but at a branch.
+# Kinds:
 #   Big       (Vine-ThickTRightBig) two thick vines: the arm runs through the
-#             run and opens on the far side into a fleur-de-lis lying on its
-#             side, its lance pointing away, a volute curling off each side
+#             run; on the far side a stem leaves it each way, sweeps out into
+#             a big volute curling back over it, and two satellites bud off
+#             the outside of its sweep, a heart of scrolls round the arm's end
 #   FromMedium (Vine-ThickTRightFromMedium) a medium vine growing out of the
-#             thick: it flares into the run, its root split into two volutes
-#             curling away from it, the arm itself their fleur's lance
+#             thick: the same, smaller, beside it: a stem each way bowing out
+#             from the root into a volute, a satellite curling off near the run
 #   FromMediumPlain (Vine-ThickTRightFromMediumPlain) the same flare and
-#             no volutes, where the arm runs past text (the Status rows)
+#             no ornament, where the arm runs past text (the Status rows)
 # Mirrored halves are built by moving points, so the light stays the frame's.
+# The big one reaches 46 units left and 28 up and down; the small one 30 right
+# and 23 up and down, clear of the rows' text (from 13 right of the run, 24
+# above and below the arm).
 
 JOIN_SIZE = {True: 112, False: 80}  # units square: Style.lua's VineJoin sizes
-
-
-def spline(pts, n=40):
-    """A smooth path through pts (Catmull-Rom), n points between each two."""
-    p = np.asarray(pts, float)
-    p = np.vstack([2 * p[0] - p[1], p, 2 * p[-1] - p[-2]])
-    out = []
-    t = np.linspace(0, 1, n, endpoint=False)[:, None]
-    for i in range(1, len(p) - 2):
-        p0, p1, p2, p3 = p[i - 1], p[i], p[i + 1], p[i + 2]
-        out.append(0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t ** 2 + (3 * p1 - p0 - 3 * p2 + p3) * t ** 3))
-    out.append(p[-2][None])
-    return np.vstack(out)
 
 
 def fillet_arm(N, A, x_from, r):
@@ -510,25 +518,20 @@ def fillet_arm(N, A, x_from, r):
     return ribbon(np.stack([xs, np.full_like(xs, m)], 1), hw)
 
 
-def forge(N, big, work=(), arm_from=None, fillets=True, behind=()):
+def forge(N, big, work=(), arm_from=None):
     """The junction as one piece: the run, the arm (from arm_from, the run's
-    middle by default) and `work` one metal. `behind`: groups of wire drawn
-    first, under it, in order. A medium arm is the thick vine's bark and
-    bevel at the run, the medium's from part way out, so it leaves the
-    texture as the medium vine."""
+    middle by default) and `work` one metal. A medium arm is the thick vine's
+    bark and bevel at the run, the medium's from part way out, so it leaves
+    the texture as the medium vine."""
     m = N / 2
     R = WEIGHTS["Thick"][0]
     A, apal = WEIGHTS["Thick" if big else ""]
     x0 = m if arm_from is None else arm_from
-    arm = fillet_arm(N, A, x0, 3.2 if big else 2.6) if fillets else ribbon([(x0, m), (N + 12, m)], A)
-    body = [ribbon([(m, -12), (m, N + 12)], R), arm] + list(work)
+    body = [ribbon([(m, -12), (m, N + 12)], R), fillet_arm(N, A, x0, 3.2 if big else 2.6)] + list(work)
 
     def paint(hw, pal):
         c = ucanvas(N, N)
-        pen = Pen(c, N)
-        for group in behind:
-            raised(pen, group, pal, bevel=0.5 * hw / 0.55, cast=0.4, grain=False)
-        raised(pen, body, pal, bevel=0.5 * hw / 0.55, cast=0.4, grain=False)
+        raised(Pen(c, N), body, pal, bevel=0.5 * hw / 0.55, cast=0.4, grain=False)
         return c.final()
 
     img = paint(R, WEIGHTS["Thick"][1])
@@ -539,40 +542,102 @@ def forge(N, big, work=(), arm_from=None, fillets=True, behind=()):
     return img
 
 
-def volute(pts, r0, turns, w0, w1, shrink=0.42):
-    """A wire along a smooth path through pts curling at its end, w0 to w1
-    wide (never to a hairline)."""
-    lead = spline(pts, 50)
-    path = np.vstack([lead, curl(lead[-1], lead[-1] - lead[-2], r0, turns, shrink)[1:]])
-    return ribbon(path, np.linspace(w0, w1, len(path)))
+class Wire:
+    """A wire laid out as scrollwork is drawn: its volutes placed first, each
+    by its centre, outer radius, where the wire enters it (an angle, 0 right,
+    90 down) and its hand (1 clockwise on screen, -1 anticlockwise), and the
+    wire led into each along a curve tangent at both ends, so every join is
+    tangential and every branch leaves its parent as one line (Owen Jones:
+    all lines flow from a parent stem, all junctions of curves tangential).
+    A volute keeps its turns open to the eye: the gap between turns shrinks
+    by only `grow` a turn (a smith's scroll, not a shell's, whose inner turns
+    close up)."""
+
+    STEP = 0.08
+
+    def __init__(self, p, heading):
+        self.pts = [np.array(p, float)]
+        self.hs = [np.radians(heading)]
+
+    def to(self, p, heading, out=0.4, inn=0.4):
+        """On to p, arriving along heading (degrees), by a cubic whose handles
+        are out and inn of the distance."""
+        p0, p3 = self.pts[-1], np.array(p, float)
+        d = np.linalg.norm(p3 - p0)
+        h1 = np.radians(heading)
+        p1 = p0 + out * d * np.array([np.cos(self.hs[-1]), np.sin(self.hs[-1])])
+        p2 = p3 - inn * d * np.array([np.cos(h1), np.sin(h1)])
+        q = bez(p0, p1, p2, p3, n=max(int(d * 1.5 / self.STEP), 8))[1:]
+        dq = np.diff(np.vstack([p0, q]), axis=0)
+        self.pts += list(q)
+        self.hs += list(np.arctan2(dq[:, 1], dq[:, 0]))
+        return self
+
+    def volute(self, c, r, at, hand, turns, eye=1.7, grow=1.12, **lead):
+        """Led to the point `at` degrees round c at radius r, on into a
+        spiral of `turns` turns closing to an eye of radius `eye`."""
+        c = np.array(c, float)
+        a = np.radians(at)
+        self.to(c + r * np.array([np.cos(a), np.sin(a)]), at + hand * 90, **lead)
+        pitch = (r - eye) * np.log(grow) / (1 - grow ** -turns)
+        self.pitch = min(getattr(self, "pitch", np.inf), pitch / grow ** (turns - 0.5))  # its last turn
+        th = 0.0
+        while th < turns * 2 * np.pi:
+            dth = self.STEP / r
+            a += hand * dth
+            th += dth
+            r -= pitch * grow ** (-th / (2 * np.pi)) * dth / (2 * np.pi)
+            p = c + r * np.array([np.cos(a), np.sin(a)])
+            self.hs.append(np.arctan2(*(p - self.pts[-1])[::-1]))
+            self.pts.append(p)
+        return self
+
+    def fork(self, at, turn=0.0):
+        """A wire leaving this one `at` (0..1 of its length so far) along its
+        heading, turned `turn` degrees."""
+        i = int(round(at * (len(self.pts) - 1)))
+        return Wire(self.pts[i], np.degrees(self.hs[i]) + turn)
+
+    def mirrored(self, y):
+        """The same wire mirrored about the line y (points moved, so the light
+        stays the frame's)."""
+        w = Wire((0, 0), 0)
+        w.pts = [np.array([p[0], 2 * y - p[1]]) for p in self.pts]
+        w.hs = [-h for h in self.hs]
+        return w
+
+    def pieces(self, w0, w1, swell=1.15):
+        """The wire as metal: half-width w0 at its root, swelling a little a
+        third of the way, w1 at its tip (never a hairline), the tip rounded
+        at its own width (no knob). Its innermost gap must stay open, a unit
+        at least, or the eye reads as a blob."""
+        assert getattr(self, "pitch", np.inf) >= 2 * w1 + 1.0, "volute too tight: pitch %.2f" % self.pitch
+        p = np.array(self.pts)
+        s = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(p, axis=0), axis=1))])
+        t = s / max(s[-1], 1e-9)
+        hw = w0 + (w1 - w0) * t + (swell - 1) * w0 * np.sin(np.pi * np.clip(t / 0.66, 0, 1)) * (1 - t)
+        return [ribbon(p, hw), (p[-1][0], p[-1][1], hw[-1])]
+
+
+def mirror_pair(m, wires):
+    """Each (wire, root half-width, tip half-width) and its mirror about the
+    arm, as metal."""
+    return [q for wire, w0, w1 in wires for v in (wire, wire.mirrored(m)) for q in v.pieces(w0, w1)]
 
 
 def junction(big):
     N = JOIN_SIZE[big]
     m, R = N / 2, WEIGHTS["Thick"][0]
-    work = []
     if big:
-        base = m - R - 9  # the fleur's base, where the arm splits
-        work.append(lance(base, m, 23))
-        for s in (-1, 1):
-            work.append(volute([(m - R - 2, m + s * 1.0), (base - 1, m + s * 7.5), (base - 10, m + s * 16.5),
-                                (base - 20, m + s * 18)], 4.6, s * 1.1, 1.7, 1.2))
-        return forge(N, True, work, arm_from=m - R - 10)
-    for s in (-1, 1):  # split from the arm at the trunk, an S out along it
-        work.append(volute([(m + R + 2.8, m + s * 0.8), (m + R + 4, m + s * 6.6), (m + R + 9, m + s * 11.2),
-                            (m + R + 15.5, m + s * 11), (m + R + 20.5, m + s * 13.8)], 3.3, s * 1.1, 1.4, 1.0))
-    return forge(N, False, work)
-
-
-def lance(base, y, L):
-    """The fleur's lance lying on its side, its base at x `base`, its point L
-    to the left."""
-    from scipy.interpolate import PchipInterpolator
-    knots = [(0, 1.5), (L * 0.22, 3.0), (L * 0.45, 3.3), (L * 0.72, 2.5), (L * 0.92, 1.1), (L, 0.45)]
-    f = PchipInterpolator([q[0] for q in knots], [q[1] for q in knots])
-    t = np.linspace(0, L, 120)
-    hw = f(t)
-    return [(base - u, y - w) for u, w in zip(t, hw)] + [(base - u, y + w) for u, w in zip(t[::-1], hw[::-1])]
+        x0 = m - R - 3  # where the stems leave the arm, past the run
+        stem = Wire((x0, m + 0.6), 165).volute((m - 36, m + 11), 9.0, 90, 1, 2.0, eye=2.1, out=0.35, inn=0.45)
+        far = stem.fork(0.30).volute((m - 23, m + 22), 5.2, 180, -1, 1.0, eye=1.9)
+        near = stem.fork(0.12).volute((m - 12, m + 15), 5.0, 180, -1, 1.0, eye=1.9)
+        return forge(N, True, mirror_pair(m, [(stem, 1.45, 0.95), (far, 1.15, 0.85), (near, 1.0, 0.8)]), arm_from=x0 - 1)
+    x0 = m + R + 1.5
+    stem = Wire((x0, m + 0.8), 75).volute((m + 22, m + 9.5), 7.0, 90, -1, 1.5, eye=2.0)
+    bud = stem.fork(0.25).volute((m + 9.5, m + 17.5), 5.0, 0, 1, 1.0, eye=1.8)
+    return forge(N, False, mirror_pair(m, [(stem, 1.2, 0.85), (bud, 1.0, 0.8)]))
 
 
 def joint(c):

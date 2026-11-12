@@ -236,10 +236,11 @@ WowCompanion_Style.STONE = {
 -- 16 x 32. The line runs down each piece's middle; a round end sits 1.2 + its
 -- half-width in from a cap's outer edge. Where the thick vine is met at a
 -- right angle, a junction (make_scrollbar_art.py, junction) forged as one
--- piece with both vines: ThickTRightBig (two thick vines, a fleur-de-lis on
--- the run's far side) and ThickTRightFromMedium (a medium vine growing out of
--- the thick), each for a run going down and an arm leaving right.
-local VINE_VERSION = 7 -- the generator's VINE_VERSION
+-- piece with both vines: ThickTRightBig (two thick vines, a heart of scrolls
+-- on the run's far side), ThickTRightFromMedium (a medium vine growing out of
+-- the thick, scrolls beside it) and ThickTRightFromMediumPlain (no scrolls),
+-- each for a run going down and an arm leaving right.
+local VINE_VERSION = 8 -- the generator's VINE_VERSION
 function WowCompanion_Style.Vine(piece)
 	return ART .. "Vine-" .. piece .. "-" .. VINE_VERSION
 end

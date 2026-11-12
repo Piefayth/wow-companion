@@ -1,14 +1,14 @@
--- Junction trials, temporary: three directions for where the vine dividers
--- meet, side by side at real size on the window's slate, while the player
--- chooses (art: tools/make_junction_trials.py; the first is the settings
--- page's). Goes with its art when one is chosen.
+-- Junction trials, temporary: three directions of scroll ornament for where
+-- the vine dividers meet, side by side at real size on the window's slate,
+-- while the player chooses (art: tools/make_junction_trials.py; Cascade is
+-- the settings page's). Goes with its art when one is chosen.
 local TRIALS = {
-	{ "Fleur", "on the settings page: the arm runs through and opens into a fleur-de-lis; a branch's root splits into two S volutes" },
-	{ "Whiplash", "the arm forks and its branches run into the trunk; two trunks add a long lyre on the left" },
-	{ "Interlace", "the arm parts into two wires that pass behind the trunk and cross on its far side" },
+	{ "Lyre", "the fleur grown ornate: a lance through the run, horns dropping into big volutes, S scrolls off them" },
+	{ "Cascade", "on the settings page: a stem each way curling back into a big volute, smaller scrolls budding off it" },
+	{ "Triskele", "Celtic spirals: three volutes a side, linked by S curves, turning in turn" },
 }
 local SIZE = { Big = 112, Small = 80 }
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Try-%s-%s-2]]
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Try-%s-%s-3]]
 local CELL, GAP = 150, 16
 local AT = -25 -- the trunk, left of the cell's centre so a big one's left side stays inside it
 
@@ -51,7 +51,7 @@ WC.Companion.AddTab("Junctions", function(page)
 				join:SetFrameLevel(above + 3)
 				join:SetAllPoints()
 				local t = join:CreateTexture(nil, "OVERLAY")
-				t:SetTexture(ART:format(trial[1], size))
+				t:SetTexture(ART:format(trial[1], size), "CLAMP", "CLAMP")
 				t:SetSize(SIZE[size], SIZE[size])
 				t:SetPoint("CENTER", cell, "CENTER", AT, 0)
 				local tag = box:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
