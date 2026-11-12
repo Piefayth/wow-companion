@@ -150,10 +150,11 @@ renderPending = function()
 	local chatInView = frame:IsShown() and (frame.currentTab or 1) == 1
 	if #lines > 0 then
 		if not chatInView then
+			-- the hint says how to open the window; with it open there is none
 			local key = WC.Link.TalkKey()
-			local hint = frame:IsShown() and "the Chat tab to read"
-				or key and ("tap %s to read"):format(WowCompanion_Glyph(key)) or "open the Companion window to read"
-			toastBoard(lines, hint)
+			local hint = not frame:IsShown()
+				and (key and ("tap %s to read"):format(WowCompanion_Glyph(key)) or "open the Companion window to read")
+			toastBoard(lines, hint or nil)
 		elseif toastIdleShown() then
 			toast(nil)
 		end
