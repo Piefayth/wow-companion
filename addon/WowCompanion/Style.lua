@@ -42,8 +42,11 @@ local function pressIcon(info)
 	return ("|T%d:%d:%d:0:0:%d:%d:%d:%d:%d:%d|t"):format(info.file, GLYPH_SIZE, width, w, h,
 		left + c.x0, left + c.x1, top + c.y0, top + c.y1)
 end
+-- the face buttons keep the flat glyphs: theirs are in the controller's own
+-- colours, which the textured set draws in bronze
+local FLAT = { PAD1 = true, PAD2 = true, PAD3 = true, PAD4 = true }
 function WowCompanion_Glyph(key)
-	local icons = InputIconTextureSetUtility
+	local icons = not FLAT[key] and InputIconTextureSetUtility or nil
 	local ok, atlas = icons ~= nil, nil
 	if ok then ok, atlas = pcall(icons.GetNormalActiveInputIconButtonTexture, key) end
 	local info = ok and type(atlas) == "string" and C_Texture.GetAtlasInfo(atlas)
