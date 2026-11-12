@@ -237,3 +237,83 @@ WowCompanion_Style.STONE = {
 local CHORD_ROWS = { 14, 52 }
 WowCompanion_Style.CHORD = ("|T%sChord-6:%d:%d:0:0:64:64:0:64:%d:%d|t"):format(ART, GLYPH_SIZE,
 	math.floor(GLYPH_SIZE * 64 / (CHORD_ROWS[2] - CHORD_ROWS[1]) + 0.5), CHORD_ROWS[1], CHORD_ROWS[2])
+
+-- A scroll bar for a ScrollFrame of ours, as the Companion's chat draws its
+-- own (Window.lua): Blizzard's classic scroll trough in column (its end caps,
+-- the top cap's rails-only rows 9..14 stretched between them, the dark stone
+-- in the gutter), Blizzard's up and down arrows inside the caps scrolling by
+-- step, and Blizzard's thumb between them, sized to the share in view, shown
+-- only. column is a frame BAR wide where the bar goes. Out of the cursor's
+-- path: the controller scrolls by moving through what is scrolled.
+WowCompanion_Style.BAR = 31
+function WowCompanion_Style.ScrollBar(scroll, column, step)
+	local gutter = column:CreateTexture(nil, "BACKGROUND")
+	gutter:SetTexture(WowCompanion_Style.STONE.you, "REPEAT", "REPEAT")
+	gutter:SetHorizTile(true)
+	gutter:SetVertTile(true)
+	gutter:SetPoint("TOPLEFT", 5, 0)
+	gutter:SetPoint("BOTTOMRIGHT", -5, 0)
+	local capTop = column:CreateTexture(nil, "BORDER")
+	capTop:SetAtlas("UI-ClassicScrollBar-EndCap-Top", true)
+	capTop:SetPoint("TOPLEFT")
+	local capBottom = column:CreateTexture(nil, "BORDER")
+	capBottom:SetAtlas("UI-ClassicScrollBar-EndCap-Bottom", true)
+	capBottom:SetPoint("BOTTOMLEFT")
+	local cap = C_Texture.GetAtlasInfo("UI-ClassicScrollBar-EndCap-Top")
+	if cap then
+		local rails = column:CreateTexture(nil, "BORDER")
+		rails:SetTexture(cap.file)
+		rails:SetTexCoord(cap.leftTexCoord, cap.rightTexCoord, 9 / 64, 14 / 64)
+		rails:SetPoint("TOPLEFT", capTop, "BOTTOMLEFT")
+		rails:SetPoint("BOTTOMRIGHT", capBottom, "TOPRIGHT")
+	end
+	local function scrollBy(dir)
+		local most = scroll:GetVerticalScrollRange() or 0
+		scroll:SetVerticalScroll(math.min(most, math.max(0, scroll:GetVerticalScroll() + dir * step)))
+	end
+	local up = CreateFrame("Button", nil, column, "UIPanelScrollUpButtonTemplate")
+	up:SetPoint("TOP", 0, -4)
+	up:SetScript("OnClick", function() scrollBy(-1) end)
+	local down = CreateFrame("Button", nil, column, "UIPanelScrollDownButtonTemplate")
+	down:SetPoint("BOTTOM", 0, 4)
+	down:SetScript("OnClick", function() scrollBy(1) end)
+	local track = CreateFrame("Frame", nil, column)
+	track:SetPoint("TOP", up, "BOTTOM", 0, -2)
+	track:SetPoint("BOTTOM", down, "TOP", 0, 2)
+	track:SetWidth(18)
+	-- Blizzard's WowTrimScrollBar thumb: round caps at their size, the centre
+	-- tiled (its coordinate runs past 1), never stretched
+	local thumb = CreateFrame("Frame", nil, track)
+	local top = thumb:CreateTexture(nil, "OVERLAY")
+	top:SetAtlas("UI-ScrollBar-Knob-EndCap-Top", true)
+	top:SetPoint("TOPLEFT")
+	local bottom = thumb:CreateTexture(nil, "OVERLAY")
+	bottom:SetAtlas("UI-ScrollBar-Knob-EndCap-Bottom", true)
+	bottom:SetPoint("BOTTOMLEFT")
+	local middle = thumb:CreateTexture(nil, "ARTWORK")
+	middle:SetAtlas("UI-ScrollBar-Knob-Center", true)
+	middle:SetPoint("TOPLEFT", 0, -5)
+	middle:SetPoint("TOPRIGHT", 0, -5)
+	local centre = C_Texture.GetAtlasInfo("UI-ScrollBar-Knob-Center")
+	thumb:SetWidth(math.max(top:GetWidth(), middle:GetWidth()))
+	local function paint()
+		local range = scroll:GetVerticalScrollRange() or 0
+		local view, room = scroll:GetHeight() or 0, track:GetHeight() or 0
+		up:SetEnabled(range > 1 and scroll:GetVerticalScroll() > 0)
+		down:SetEnabled(range > 1 and scroll:GetVerticalScroll() < range)
+		if range <= 1 or view <= 0 or room <= 0 then thumb:Hide() return end
+		local size = math.max(23, room * view / (view + range))
+		thumb:ClearAllPoints()
+		thumb:SetPoint("TOP", track, "TOP", 0, -(room - size) * math.min(1, scroll:GetVerticalScroll() / range))
+		thumb:SetHeight(size)
+		local h = math.max(1, size - 10)
+		middle:SetHeight(h)
+		if centre and centre.height > 0 then middle:SetTexCoord(0, 1, 0, h / centre.height) end
+		thumb:Show()
+	end
+	scroll:HookScript("OnVerticalScroll", paint)
+	scroll:HookScript("OnScrollRangeChanged", paint)
+	scroll:HookScript("OnSizeChanged", paint)
+	track:SetScript("OnShow", paint)
+	WC.MarkIgnored(column)
+end

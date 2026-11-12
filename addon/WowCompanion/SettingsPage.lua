@@ -112,11 +112,16 @@ local function describe(row)
 end
 
 -- the rows and section names above it, in a scroll frame the controller's
--- cursor scrolls as it moves (SmartNavigation's HandleScroll); 9 px wider
--- each side than the page so the dividers reach the backing's edge
+-- cursor scrolls as it moves (SmartNavigation's HandleScroll), 9 px wider
+-- each side than the page so the names and dividers reach the edges; the
+-- scroll bar down the settings well's right edge, as the chat's (WC.Style)
+local column = CreateFrame("Frame", nil, page)
+column:SetPoint("TOPRIGHT", 9, 7)
+column:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, SEAM)
+column:SetWidth(WC.Style.BAR)
 local scroll = CreateFrame("ScrollFrame", nil, page)
 scroll:SetPoint("TOPLEFT", -9, 0)
-scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, SEAM + 3)
+scroll:SetPoint("BOTTOMRIGHT", column, "BOTTOMLEFT", 9, 3)
 local content = CreateFrame("Frame", nil, scroll)
 content:SetSize(1, 1)
 scroll:SetScrollChild(content)
@@ -126,6 +131,9 @@ scroll:SetScript("OnMouseWheel", function(self, delta)
 	local most = math.max(0, content:GetHeight() - self:GetHeight())
 	self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW_H)))
 end)
+-- over the rows' 9 px under it, as the dividers run to the backing's edge
+column:SetFrameLevel(scroll:GetFrameLevel() + 5)
+WC.Style.ScrollBar(scroll, column, ROW_H)
 
 -- One setting: a row from the names well to the right edge, its name at the left
 -- and its control at the edge; the row is the one stop, shaded white at 0.1
