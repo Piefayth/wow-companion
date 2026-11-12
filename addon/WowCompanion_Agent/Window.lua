@@ -21,13 +21,15 @@ function WC.Companion.AddTab(name, fill)
 end
 -- The window's layout, every margin decided here (the art carries none):
 -- the rim stands on the frame's own bounds; every well is GAP inside the
--- rim's inner edge, and GAP apart; the wells hang from the title rule's foot,
--- their feet leave room for the legend's strip (FOOT, Jobs.lua).
+-- rim's inner edge, and GAP apart; the wells stand FOOT below the title rule's
+-- foot, and their feet leave the same FOOT for the legend's strip (Jobs.lua), so
+-- the space over the wells matches the strip under them.
 -- tools/make_frame_art.py draws the window at these numbers to check them.
 local RIM, TOP = 6, 28 -- the rim's width; the top pieces' height (title band and rule)
 local BAND = 22.6 -- the title band's foot, where the art's rule begins
 local GAP = 4
-local WELL_TOP, FOOT = 25.6, 20 -- WELL_TOP: the rule's foot, its shadow on the wells' wall
+local RULE_FOOT, FOOT = 25.6, 20 -- RULE_FOOT: the title rule's foot
+local WELL_TOP = RULE_FOOT + FOOT
 -- The tabs' plaques (tools/make_tab_art.py), one PLAQUE-sized piece a tab, its
 -- top PLAQUE_UP above the window's top, so its foot runs under the rim; the
 -- plaque itself spans the piece from x 3 to 77, its head IDLE_HEAD or
