@@ -71,13 +71,15 @@ reports and edits them with `WCCMD <nonce> set <key> <value>`. The row shows
 "applying" until a `status` carries the new value. `set` carries a value, never
 a toggle.
 
-- **Applying is a restart.** `voice::listen()` reads all of these once at its
-  start. A change writes settings.toml (`Settings::set`, `save`) and asks for the
-  existing handover (restart.rs): the new copy opens the mic and loads the engine
-  while the old one serves, so the headset link never drops and no press is
-  handled twice. Costs: a few seconds of model load, a wait for
-  `lifecycle::idle()`, and it moves onto whatever `SOURCE_EXE` is now (the same
-  build for players, target/debug for us).
+- **Applying is in place, never a restart** (the player, 2026-11-12). A change
+  writes settings.toml (`Settings::set`, `save`) and goes to the voice loop
+  (`voice::change`), which takes it between presses: the buttons and feedback at
+  once, the mic closed properly and the new one opened (as when a mic comes
+  back), a speech engine loaded beside the one in use and swapped in when it is
+  ready, never mid-hold. `status` follows within a quarter second of the loop
+  taking it (heartbeat.rs). The first build applied by restart, which waits for
+  no request in flight: with an agent busy, the player's mic changes sat on
+  "applying" for minutes.
 - **The mic list on demand:** opening the mic row draws `WCCMD <nonce> mics`;
   the companion answers with one message from `voice::microphones()`. `status`
   says which engines are installed (streaming only with `stream_model`).
@@ -107,9 +109,9 @@ cancel are drawn; a new nonce for every draw).
 | strip | meaning | the companion answers |
 |---|---|---|
 | `bind <key> start` | the row is waiting for a press; `key` is `talk`, `l1`, `l2`, `r1` or `r2` | collects every button that goes down from now, ignores the talk button meanwhile, and sends `status` with `binding = "<key>"`; only then does the row say "press a button". Ends by itself after 30 s. |
-| `bind <key> <PADNAME>` | the press the row caught, by WoW's name | exactly one button went down since `start`: writes `<key> = "<byte>:<mask> <PADNAME>"` and restarts; the new copy's `status` carries it. Otherwise `status` with `bind = { key = "<key>", error = "<why>" }`. |
+| `bind <key> <PADNAME>` | the press the row caught, by WoW's name | exactly one button went down since `start`: writes `<key> = "<byte>:<mask> <PADNAME>"` and the voice loop takes it; `status` carries it. Otherwise `status` with `bind = { key = "<key>", error = "<why>" }`. |
 | `bind <key> cancel` | the row left without a press | stops collecting |
-| `set <key> <value>` | `feedback` (`rumble`, `beep`, `both`), `speech` (`whisper`, `streaming`), `mic` (a device name, the rest of the line) | writes it if it differs and restarts; a value it refuses gets `status` with `set = { key = "<key>", error = "<why>" }` |
+| `set <key> <value>` | `feedback` (`rumble`, `beep`, `both`), `speech` (`whisper`, `streaming`), `mic` (a device name, the rest of the line) | writes it if it differs and the voice loop takes it; a value it refuses gets `status` with `set = { key = "<key>", error = "<why>" }` |
 | `mics` | the mic row opened | `{ kind = "mics", mics = { "<name>", ... } }`, the inputs Windows lists now |
 
 The companion to the game: `status`, sent when the companion starts, at every
@@ -129,8 +131,9 @@ new session (a reload), when the mic comes or goes, and with the answers above:
 
 A button key the companion has no button for is absent from `settings`
 (another pad before it is pressed). `engines` lists what is installed: the
-Whisper model file, the streaming model's folder. A restart means a few seconds
-with no `status`; the row shows "applying" until `settings` carries the value.
+Whisper model file, the streaming model's folder. The row shows "applying"
+until `settings` carries the value: a moment, or the seconds a speech engine
+takes to load.
 
 ## Work
 

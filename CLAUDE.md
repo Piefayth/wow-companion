@@ -72,7 +72,8 @@ extras a player may use, never required (the player, 2026-11-11).
   `context.rs` (the export, profile and integrations the agent gets),
   `session.rs` (the game's UI session, on trial beside the channel), `settings_page.rs`
   (the settings page's half here: `status` with the settings, its `bind`/`set`/`mics`
-  commands, a change written to settings.toml and applied by a restart), `restart.rs`, `install.rs`, `agent.rs` (the agent; its
+  commands; a change is written to settings.toml and the voice loop takes it between
+  presses, `voice::change`, never a restart), `restart.rs`, `install.rs`, `agent.rs` (the agent; its
   rules are `agent/rules.md`), `bells.rs`, `heartbeat.rs`, `doctor.rs`, `modules.rs`; its life:
   `lifecycle.rs` (one companion at a time, clean exits, pause, two clients),
   `watcher.rs` + `tray.rs` (`start`: wakes it with WoW, the tray icon),

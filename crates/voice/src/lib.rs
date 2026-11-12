@@ -106,6 +106,114 @@ pub struct Binding {
 pub static BINDING: Mutex<Option<Binding>> = Mutex::new(None);
 pub const BIND_WAIT: Duration = Duration::from_secs(30);
 
+/// Settings changed on the game's settings page (`talk`, `l1`..`r2`, `feedback`,
+/// `mic`, `speech`), for the loop to take between presses; no restart, so a
+/// request in flight never holds one up.
+static CHANGES: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+/// The options the loop runs with now, as `key=value`; `APPLIED` counts each
+/// time they change, for `status` to be sent again.
+static RUNNING: Mutex<Vec<String>> = Mutex::new(Vec::new());
+pub static APPLIED: AtomicUsize = AtomicUsize::new(0);
+
+/// Hand the loop a setting to take: the talk and conversation buttons, feedback
+/// and the mic at once (the mic switched between presses), a speech engine once
+/// it has loaded beside the one in use.
+pub fn change(key: &str, value: &str) {
+    CHANGES.lock().unwrap().push((key.to_string(), value.to_string()));
+}
+
+/// The options the loop runs with now.
+pub fn running() -> Vec<String> {
+    RUNNING.lock().unwrap().clone()
+}
+
+fn publish(options: &[String]) {
+    *RUNNING.lock().unwrap() = options.to_vec();
+    APPLIED.fetch_add(1, Ordering::SeqCst);
+}
+
+/// The talk button and the conversation triggers the options name.
+struct Keys {
+    talk: Option<pad::Bound>,
+    triggers: Vec<(Slot, pad::Press)>,
+}
+
+impl Keys {
+    fn read(options: &[String], vid: u16, pid: u16) -> io::Result<Keys> {
+        let bound = |key: &str| pad::bound(key, option(options, key), vid, pid);
+        let mut triggers = Vec::new();
+        for (slot, key) in [(Slot::L1, "l1"), (Slot::L2, "l2"), (Slot::R1, "r1"), (Slot::R2, "r2")] {
+            if let Some(each) = bound(key)? {
+                triggers.push((slot, each.press));
+            }
+        }
+        Ok(Keys { talk: bound("talk")?, triggers })
+    }
+}
+
+/// Feedback is rumble by default. Cues in a Bluetooth headset play over its
+/// hands-free link (8 kHz, the only one this PC negotiates with AirPods Max),
+/// which hisses whenever anything plays; the pad's rumble is instant, silent and
+/// in the player's hands. `feedback=beep` or `both`. (rumbles, beeps)
+fn feedback(options: &[String]) -> (bool, bool) {
+    let feedback = option(options, "feedback").unwrap_or("rumble");
+    (feedback == "rumble" || feedback == "both", feedback == "beep" || feedback == "both")
+}
+
+/// The speech engine `speech=` names: Whisper, or the streaming engine
+/// (stream.rs). Loading is the slow part, so it is done once and kept resident;
+/// its results come back on the receiver, in order.
+fn load_engine(model: &Path, options: &[String]) -> io::Result<(Engine, std::sync::mpsc::Receiver<Done>)> {
+    let (outbox, results) = std::sync::mpsc::channel::<Done>();
+    let engine = match option(options, "speech").unwrap_or("whisper") {
+        "whisper" => {
+            let path = model.to_str().ok_or_else(|| io::Error::other("model path isn't UTF-8"))?;
+            println!("loading {path}");
+            let whisper = WhisperContext::new_with_params(path, WhisperContextParameters::default())
+                .map_err(|err| io::Error::other(format!("{err:?}")))?;
+            let (jobs, inbox) = std::sync::mpsc::channel::<Job>();
+            std::thread::spawn(move || {
+                for job in inbox {
+                    mark(&format!("whisper start ({:.1}s of audio, prompt {} chars)", job.seconds, job.prompt.len()));
+                    let result = transcribe(&whisper, &job.clip, &job.prompt);
+                    mark("whisper done");
+                    let done = Done { slot: job.slot, level: job.level, seconds: job.seconds, result };
+                    if outbox.send(done).is_err() {
+                        break;
+                    }
+                }
+            });
+            Engine::Whisper(jobs)
+        }
+        "streaming" => {
+            let dir = option(options, "stream_model")
+                .map(std::path::PathBuf::from)
+                .ok_or_else(|| io::Error::other("speech=streaming needs stream_model=<folder>: download it in the setup window"))?;
+            println!("loading the streaming model in {}", dir.display());
+            let (feed, inbox) = std::sync::mpsc::channel::<stream::Feed>();
+            let (loaded, outcome) = std::sync::mpsc::channel::<Result<(), String>>();
+            // the recognizer lives on its own thread from the start: loaded there,
+            // the load's outcome reported back before the engine is used
+            std::thread::spawn(move || match stream::load(&dir, stream::THREADS) {
+                Ok(recognizer) => {
+                    let _ = loaded.send(Ok(()));
+                    stream::run(recognizer, inbox, outbox);
+                }
+                Err(err) => {
+                    let _ = loaded.send(Err(err.to_string()));
+                }
+            });
+            outcome
+                .recv()
+                .map_err(|_| io::Error::other("the streaming engine's thread ended while loading"))?
+                .map_err(io::Error::other)?;
+            Engine::Streaming(feed)
+        }
+        other => return Err(io::Error::other(format!("speech={other}: it is whisper or streaming"))),
+    };
+    Ok((engine, results))
+}
+
 /// The speech engine the loop feeds: Whisper takes a whole clip at release; the
 /// streaming engine takes the audio while the button is held.
 enum Engine {
@@ -210,12 +318,11 @@ pub fn listen(
     vocabulary: impl Fn() -> Vec<String>,
     mut heard: impl FnMut(Event) -> io::Result<()>,
 ) -> io::Result<()> {
-    // the pad: `pad=vid:pid` or `pad=xinput`, picked in the setup window; button
-    // names mean different bits on an Xbox pad
-    let (vid, pid) = pad::split(option(options, "pad").ok_or_else(|| io::Error::other("no controller chosen (`pad=`): pick it in the setup window"))?)?;
-    let bound = |key: &str| pad::bound(key, option(options, key), vid, pid);
-    let talk = bound("talk")?;
-    let wanted_mic = option(options, "mic");
+    let mut options = options.to_vec();
+    // the pad: `pad=vid:pid` or `pad=xinput`, picked in the setup window
+    let (vid, pid) = pad::split(option(&options, "pad").ok_or_else(|| io::Error::other("no controller chosen (`pad=`): pick it in the setup window"))?)?;
+    let mut keys = Keys::read(&options, vid, pid)?;
+    let mut wanted_mic = option(&options, "mic").map(str::to_string);
     // Neither has to be there at startup: the model loads either way, and each device
     // is picked up when it appears. A mistyped `mic=` looks exactly like an unplugged
     // headset from here, so the wait names the inputs it can see; a typo shows up
@@ -227,7 +334,7 @@ pub fn listen(
             None
         }
     };
-    let mut microphone = match Microphone::open(wanted_mic) {
+    let mut microphone = match Microphone::open(wanted_mic.as_deref()) {
         Ok(opened) => Some(opened),
         Err(err) => {
             println!("{err}; will pick it up when it connects");
@@ -239,63 +346,20 @@ pub fn listen(
     // A Bluetooth headset holding HFP for the mic has its A2DP render endpoint
     // switched off, so the cue has to name the hands-free one or it plays into a
     // dead device. Nothing is audible and nothing errors.
-    let cue_device = option(options, "cue").map(str::to_string);
-    let cue_volume = option(options, "volume")
+    let cue_device = option(&options, "cue").map(str::to_string);
+    let cue_volume = option(&options, "volume")
         .and_then(|given| given.parse().ok())
         .unwrap_or(CUE_VOLUME);
 
-    // One engine, chosen in the setup window (`speech=`): Whisper, or the streaming
-    // engine (stream.rs). Loading is the slow part, so it is done once
-    // and kept resident; results come back on `results` either way, in order.
-    let (outbox, results) = std::sync::mpsc::channel::<Done>();
-    let engine = match option(options, "speech").unwrap_or("whisper") {
-        "whisper" => {
-            let path = model.to_str().ok_or_else(|| io::Error::other("model path isn't UTF-8"))?;
-            println!("loading {path}");
-            let whisper = WhisperContext::new_with_params(path, WhisperContextParameters::default())
-                .map_err(|err| io::Error::other(format!("{err:?}")))?;
-            let (jobs, inbox) = std::sync::mpsc::channel::<Job>();
-            std::thread::spawn(move || {
-                for job in inbox {
-                    mark(&format!("whisper start ({:.1}s of audio, prompt {} chars)", job.seconds, job.prompt.len()));
-                    let result = transcribe(&whisper, &job.clip, &job.prompt);
-                    mark("whisper done");
-                    let done = Done { slot: job.slot, level: job.level, seconds: job.seconds, result };
-                    if outbox.send(done).is_err() {
-                        break;
-                    }
-                }
-            });
-            Engine::Whisper(jobs)
-        }
-        "streaming" => {
-            let dir = option(options, "stream_model")
-                .map(std::path::PathBuf::from)
-                .ok_or_else(|| io::Error::other("speech=streaming needs stream_model=<folder>: download it in the setup window"))?;
-            println!("loading the streaming model in {}", dir.display());
-            let (feed, inbox) = std::sync::mpsc::channel::<stream::Feed>();
-            let (loaded, outcome) = std::sync::mpsc::channel::<Result<(), String>>();
-            // the recognizer lives on its own thread from the start: loaded there,
-            // the load's outcome reported back before the loop reads the pad
-            std::thread::spawn(move || match stream::load(&dir, stream::THREADS) {
-                Ok(recognizer) => {
-                    let _ = loaded.send(Ok(()));
-                    stream::run(recognizer, inbox, outbox);
-                }
-                Err(err) => {
-                    let _ = loaded.send(Err(err.to_string()));
-                }
-            });
-            outcome
-                .recv()
-                .map_err(|_| io::Error::other("the streaming engine's thread ended while loading"))?
-                .map_err(io::Error::other)?;
-            Engine::Streaming(feed)
-        }
-        other => return Err(io::Error::other(format!("speech={other}: it is whisper or streaming"))),
-    };
+    // One engine (`load_engine`); a change of `speech` loads the next beside it,
+    // and the replaced one's results are read until it has finished its clips
+    let (mut engine, first) = load_engine(model, &options)?;
+    let mut results = vec![first];
+    // an engine loading for a change of `speech`, and that change: the options
+    // say the new engine only once it runs
+    let mut loading: Option<(std::sync::mpsc::Receiver<io::Result<(Engine, std::sync::mpsc::Receiver<Done>)>>, Vec<String>)> = None;
 
-    match &talk {
+    match &keys.talk {
         Some(talk) => println!("ready: hold {} ({}) to talk", talk.name, talk.press),
         None => println!("ready, with no talk button yet: set it on the game's settings page"),
     }
@@ -311,26 +375,14 @@ pub fn listen(
             thread::sleep(Duration::from_millis(20));
         }
     }
+    publish(&options);
     READY.store(true, Ordering::SeqCst);
-    // Feedback is rumble by default. Cues in a Bluetooth headset play over its
-    // hands-free link (8 kHz, the only one this PC negotiates with AirPods Max),
-    // which hisses whenever anything plays; the pad's rumble is instant, silent and
-    // in the player's hands. `feedback=beep` or `both`.
-    let feedback = option(options, "feedback").unwrap_or("rumble");
-    let rumbles = feedback == "rumble" || feedback == "both";
-    let beeps = feedback == "beep" || feedback == "both";
+    let (mut rumbles, mut beeps) = feedback(&options);
     // its own handle and thread, so a pulse keeps time while this loop transcribes
     let rumbler = pad::Rumbler::new(vid, pid);
     let mut holding = false;
     // Conversation slots: a trigger held with the talk button picks one; none is
     // the main conversation.
-    let mut triggers: Vec<(Slot, pad::Press)> = Vec::new();
-    for (slot, key) in [(Slot::L1, "l1"), (Slot::L2, "l2"), (Slot::R1, "r1"), (Slot::R2, "r2")] {
-        if let Some(each) = bound(key)? {
-            triggers.push((slot, each.press));
-        }
-    }
-    let talk = talk.map(|talk| talk.press);
     // the buttons held at the last read, to see one going down
     let mut was_down: Vec<pad::Press> = Vec::new();
     // None until a trigger is pulled during the press; then the last one pulled
@@ -350,9 +402,14 @@ pub fn listen(
         // echo and silence checks below are for Whisper's habits; streaming text
         // passes them unless a near-silent clip reads as one of Whisper's phrases)
         loop {
-            let done = match results.try_recv() {
+            let done = match results[0].try_recv() {
                 Ok(done) => done,
                 Err(TryRecvError::Empty) => break,
+                // an engine a change of `speech` replaced has finished its clips
+                Err(TryRecvError::Disconnected) if results.len() > 1 => {
+                    results.remove(0);
+                    continue;
+                }
                 // the engine's thread is gone: no clip it held will come back
                 Err(TryRecvError::Disconnected) => {
                     PENDING.store(0, Ordering::SeqCst);
@@ -405,6 +462,67 @@ pub fn listen(
             STOPPED.store(true, Ordering::SeqCst);
             return Ok(());
         }
+        // settings changed on the game's page, taken between presses
+        if !holding {
+            let changes = std::mem::take(&mut *CHANGES.lock().unwrap());
+            for (key, value) in changes {
+                let mut next = options.clone();
+                next.retain(|each| each.split_once('=').is_none_or(|(name, _)| name != key));
+                next.push(format!("{key}={value}"));
+                println!("setting {key} = {value}");
+                match key.as_str() {
+                    "talk" | "l1" | "l2" | "r1" | "r2" => match Keys::read(&next, vid, pid) {
+                        Ok(read) => keys = read,
+                        Err(err) => {
+                            eprintln!("  not taken: {err}");
+                            continue;
+                        }
+                    },
+                    "feedback" => (rumbles, beeps) = feedback(&next),
+                    // the mic in use closed properly, the new one opened below
+                    "mic" => {
+                        wanted_mic = Some(value);
+                        drop(microphone.take());
+                        retry_mic = Instant::now();
+                    }
+                    // loaded beside the engine in use, swapped in below
+                    "speech" => {
+                        let (model, wanted) = (model.to_path_buf(), next.clone());
+                        let (done, outcome) = std::sync::mpsc::channel();
+                        thread::spawn(move || {
+                            let _ = done.send(load_engine(&model, &wanted));
+                        });
+                        loading = Some((outcome, next));
+                        continue;
+                    }
+                    _ => {
+                        eprintln!("  not a setting the loop takes: {key}");
+                        continue;
+                    }
+                }
+                options = next;
+                publish(&options);
+            }
+            if let Some((outcome, wanted)) = &loading {
+                match outcome.try_recv() {
+                    Ok(Ok((next, its_results))) => {
+                        engine = next;
+                        results.push(its_results);
+                        let speech = option(wanted, "speech").unwrap_or("whisper").to_string();
+                        options.retain(|each| each.split_once('=').is_none_or(|(name, _)| name != "speech"));
+                        options.push(format!("speech={speech}"));
+                        loading = None;
+                        publish(&options);
+                    }
+                    Ok(Err(err)) => {
+                        eprintln!("  the speech engine did not load: {err}");
+                        loading = None;
+                    }
+                    Err(TryRecvError::Empty) => {}
+                    Err(TryRecvError::Disconnected) => loading = None,
+                }
+            }
+        }
         // The mic gone: its stream failed, or it is silent and Windows no longer
         // lists it (unplugged, or a headset taken by a phone). Wait for it quietly
         // and pick it up when it is back; never reconnect it. Between presses only.
@@ -425,7 +543,7 @@ pub fn listen(
             let reconnected = reconnect_bluetooth_audio();
             eprintln!("  reconnect sent to {reconnected} endpoint(s)");
             thread::sleep(Duration::from_millis(1500));
-            microphone = Microphone::open_quietly(wanted_mic, true).ok();
+            microphone = Microphone::open_quietly(wanted_mic.as_deref(), true).ok();
             let _ = heard(Event::Notice(
                 "The headset's mic stopped sending audio, so I reconnected its voice link. If I still cannot hear you, reconnect the headset.",
             ));
@@ -433,7 +551,7 @@ pub fn listen(
         if microphone.is_none() && Instant::now() >= retry_mic {
             retry_mic = Instant::now() + RETRY;
             // open prints the device it found, which doubles as "it's back"
-            if let Ok(opened) = Microphone::open(wanted_mic) {
+            if let Ok(opened) = Microphone::open(wanted_mic.as_deref()) {
                 microphone = Some(opened);
             }
         }
@@ -489,7 +607,8 @@ pub fn listen(
         if ALERT.swap(false, Ordering::SeqCst) && rumbles {
             rumbler.play(&[(0, PULSE, PULSE), (60, 0, 0), (120, PULSE, PULSE), (180, 0, 0), (240, PULSE, PULSE), (300, 0, 0)]);
         }
-        let held = talk.is_some_and(|talk| pad.held(&talk)) && !binding;
+        let held = keys.talk.as_ref().is_some_and(|talk| pad.held(&talk.press)) && !binding;
+        let triggers = &keys.triggers;
         let pulling = |slot: Slot| triggers.iter().any(|(each, press)| *each == slot && pad.held(press));
         // L2 and R2 together are the quick conversation: a fast agent for chat,
         // links and buttons. L1 and R1 together are dictation: the words go

@@ -14,11 +14,14 @@ use std::{
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 /// Seconds between swaps; Status.lua calls it down after three missed swaps.
 const EVERY: Duration = Duration::from_secs(4);
+/// How soon a changed mic or setting is told (`status`): a quarter second, so
+/// the settings page's "applying" ends about as soon as the change is taken.
+const TICK: Duration = Duration::from_millis(250);
 
 /// Cleared to stop the heartbeat.
 pub static BEATING: AtomicBool = AtomicBool::new(true);
@@ -35,19 +38,32 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
         let [a, b] = bells(&addons);
         let mut on_a = true;
         let mut saved = None;
-        // the UI session and mic state the game was last told (`status`, with the
-        // settings page's settings). A session is the channel's: the last save
-        // and when Wow.exe started, so a fresh launch, which saves nothing, is a
-        // new one too; told while the game was closed, it is told again once the
-        // game runs
-        let mut told: Option<(Option<String>, bool)> = None;
+        // the UI session, mic state and settings the game was last told
+        // (`status`; the settings count up as the voice loop takes a change). A
+        // session is the channel's: the last save and when Wow.exe started, so a
+        // fresh launch, which saves nothing, is a new one too; told while the game
+        // was closed, it is told again once the game runs
+        let mut told: Option<(Option<String>, bool, usize)> = None;
+        // the session is looked up at each beat: finding a game that is not
+        // running walks every process
+        let mut stamp = None;
+        let mut beat_at = Instant::now();
         while BEATING.load(Ordering::SeqCst) {
-            let now = (crate::saved_variables_stamp(&addons), crate::voice::MIC.load(Ordering::Relaxed));
+            let beat = Instant::now() >= beat_at;
+            if beat {
+                stamp = crate::saved_variables_stamp(&addons);
+            }
+            let now = (stamp.clone(), crate::voice::MIC.load(Ordering::Relaxed), crate::voice::APPLIED.load(Ordering::SeqCst));
             if ready() && told.as_ref() != Some(&now) {
                 if crate::send(&addons, &crate::settings_page::status(now.1)).is_ok() {
                     told = Some(now);
                 }
             }
+            if !beat {
+                thread::sleep(TICK);
+                continue;
+            }
+            beat_at = Instant::now() + EVERY;
             let began = crate::session_began(&addons);
             let new_session = began != saved;
             if new_session {
@@ -72,7 +88,7 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
                 }
                 on_a = !on_a;
             }
-            thread::sleep(EVERY);
+            thread::sleep(TICK);
         }
     });
 }

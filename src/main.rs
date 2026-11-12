@@ -240,7 +240,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         thread::spawn(move || watch_for_restart(args));
     }
     // what the game's settings page shows (src/settings_page.rs)
-    settings_page::running(model, options);
+    settings_page::running(model);
     // the in-game "companion" mark: beats while the voice loop can hear the player,
     // and stops when a restart hands over
     heartbeat::start(addons, || {
