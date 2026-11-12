@@ -53,6 +53,12 @@ on one file is how replies got lost.
   dots and a page name; it reopens on the last page used; positions never move
   (muscle memory). Combat-safe: every page's secure buttons are made ahead and
   flipping shows another set. Wheels stay the player's own: none ships.
+- **A request outlives the companion copy that started it** (the player,
+  2026-11-12, after an R2 request held a restart for 10 minutes): a restart
+  waits for every request because an agent's answer comes back on a pipe the
+  starting copy owns. Started detached and writing its stream to a file in its
+  job's folder, an agent can be read by any copy: restarts take seconds whatever
+  runs, and a crash no longer loses the reply in flight.
 - **The game reaching the PC through its file opens** (the player, 2026-11-12:
   "we should test that at some point"): Windows' event tracing hears which files
   the game plays, with no screen read; could replace the command strip and some
