@@ -1,4 +1,4 @@
-"""The "chord" glyph: a shoulder button with no letter on it, for prompts that
+"""The "chord" glyph: both shoulder buttons, no letters on them, for prompts that
 mean "hold any conversation's chord" (the Companion window's Chord+R3 Switch).
 The game's own prompt icons are lettered per controller (L1, LB); this one fits
 any. Drawn to sit beside them: the textured prompt set Blizzard's legends use
