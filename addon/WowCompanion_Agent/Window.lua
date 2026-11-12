@@ -4,11 +4,11 @@
 local effectiveModules = WC.Companion.modules
 local function newTranscript(...) return WC.Transcript.newTranscript(...) end
 
--- Tabs on the top edge, standing on the chat well (PanelTopTabButtonTemplate,
--- PanelTemplates_SetTab, as the macro frame's). Top, not side: the
--- conversation list is already a column of choices on the right, and side
--- tabs beside it read as tabs on tabs. Picked with
--- the controller cursor. No shoulder buttons: L1 and R1 are talk-button slots.
+-- Tabs on the top edge, slate plaques rising from under the window's top rim
+-- (PanelTopTabButtonTemplate, PanelTemplates_SetTab, as the macro frame's).
+-- Top, not side: the conversation list is already a column of choices on the
+-- right, and side tabs beside it read as tabs on tabs. Picked with the
+-- controller cursor. No shoulder buttons: L1 and R1 are talk-button slots.
 -- The tabs: the Agent's own three, then one per loaded addon that adds its
 -- page (WC.Companion.AddTab), so a disabled addon has no tab.
 local TAB_NAMES = { "Chat", "Settings", "Status" }
@@ -21,13 +21,35 @@ function WC.Companion.AddTab(name, fill)
 end
 -- The window's layout, every margin decided here (the art carries none):
 -- the rim stands on the frame's own bounds; every well is GAP inside the
--- rim's inner edge, and GAP apart; the wells' tops leave room for the title
--- band and the tab row, their feet for the legend's strip (FOOT, Jobs.lua).
+-- rim's inner edge, and GAP apart; the wells hang from the title rule's foot,
+-- their feet leave room for the legend's strip (FOOT, Jobs.lua).
 -- tools/make_frame_art.py draws the window at these numbers to check them.
 local RIM, TOP = 6, 28 -- the rim's width; the top pieces' height (title band and rule)
 local BAND = 22.6 -- the title band's foot, where the art's rule begins
 local GAP = 4
-local WELL_TOP, FOOT = 64, 20
+local WELL_TOP, FOOT = 25.6, 20 -- WELL_TOP: the rule's foot, its shadow on the wells' wall
+-- The tabs' plaques (tools/make_tab_art.py), one PLAQUE-sized piece a tab, its
+-- top PLAQUE_UP above the window's top, so its foot runs under the rim; the
+-- plaque itself spans the piece from x 3 to 77, its head IDLE_HEAD or
+-- CHOSEN_HEAD down. The first piece is TABS_X in; each next STEP on.
+local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s-1]]
+local PLAQUE_W, PLAQUE_H, PLAQUE_UP = 80, 32, 28
+local IDLE_HEAD, CHOSEN_HEAD = 8, 2
+local TABS_X, STEP = 18, 80
+-- a tab button: the plaque's idle height over the rim, centred on it, as wide
+-- as leaves PanelTemplates_AnchorTabs' 3 between two a STEP apart
+local TAB_W, TAB_H = STEP - 3, PLAQUE_UP - IDLE_HEAD
+-- the names: washed bronze, brighter under the cursor, lit when chosen
+local NAME, NAME_HL, NAME_LIT = { 0.78, 0.69, 0.53 }, { 0.91, 0.84, 0.67 }, { 0.98, 0.92, 0.78 }
+local function nameFont(name, colour)
+	local f = CreateFont(name)
+	f:CopyFontObject(GameFontNormal)
+	f:SetTextColor(unpack(colour))
+	return f
+end
+local TAB_FONT = nameFont("WowCompanionTabFont", NAME)
+local TAB_FONT_HL = nameFont("WowCompanionTabFontHighlight", NAME_HL)
+local TAB_FONT_LIT = nameFont("WowCompanionTabFontChosen", NAME_LIT)
 local INSET = 4 -- the wells' border, as wide as its art
 -- every well's floor (its stone) starts this far in, under the border's inner
 -- edge, which fades out over it; started at INSET, the fade lay on the dark
@@ -254,9 +276,8 @@ local function buildTabs(frame, messages)
 	messages.content:SetFrameLevel(level + 2)
 	local column, up, down = WC.ChatBar.Build(chatWell, messages.scroll, EDGE, level)
 	for _, part in ipairs({ column, up, down }) do table.insert(frame.chatParts, part) end
-	-- a row's height, and its name's colour: washed bronze, lit when in view
+	-- a row's height; its name in NAME, NAME_LIT when in view
 	local ROW = 24
-	local NAME, NAME_LIT = { 0.78, 0.69, 0.53 }, { 0.98, 0.92, 0.78 }
 	-- the chat's vine (WC.Style.Vine) along a plate's edge, rounded at both ends
 	local function vine(owner, edge)
 		local left = owner:CreateTexture(nil, "ARTWORK")
@@ -323,7 +344,7 @@ local function buildTabs(frame, messages)
 
 	-- each message's own panel (Jobs.lua) docks at the bottom of the chat well
 	frame.chatWell = chatWell
-	-- A shadow cast down from the chat well's top edge, under the tabs, so the
+	-- A shadow cast down from the chat well's top edge, under the title rule, so the
 	-- well reads as sunk into the panel: Blizzard's own ShadowOverlay-Top
 	-- (SharedUIPanelTemplates.xml:195), above the scrolling text and its
 	-- dividers so they slide under it. It covers the turns only, fading out
@@ -369,8 +390,7 @@ local function buildTabs(frame, messages)
 	stone:SetVertTile(true)
 	stone:SetPoint("TOPLEFT", FLOOR, -FLOOR)
 	stone:SetPoint("BOTTOMRIGHT", -FLOOR, FLOOR)
-	-- the same shadow under the tabs as the chat well has, on every other tab,
-	-- from the wall's foot
+	-- the same shadow as the chat well's, on every other tab, from the wall's foot
 	local pageLip = CreateFrame("Frame", nil, pageWell)
 	pageLip:SetPoint("TOPLEFT", INSET, -INSET)
 	pageLip:SetPoint("TOPRIGHT", -INSET, -INSET)
@@ -380,56 +400,37 @@ local function buildTabs(frame, messages)
 	pageShade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
 	pageShade:SetAllPoints()
 
-	-- The tabs stand on the chat well's top border, apart from the chat: its
-	-- stone is shaded to sit back and scrolls, so nothing above it can join
-	-- it (the player, 2026-11-12). Each is outlined by the wells' own border
-	-- (dress "Inset") on its top and sides, its foot on the well's border. The
-	-- chosen one is taller, on the replies' lighter slate, its name lit; the
-	-- others are shorter, on the darker slate dimmed, their names in washed
-	-- bronze. The row's spacing is here: every tab at least TAB_MIN wide
-	-- (PanelTemplates_TabResize reads frame.minTabWidth), TAB_GAP between
-	-- them, the first over the well's inner edge (EDGE).
+	-- The tabs: slate plaques rising from under the window's top rim, apart
+	-- from the chat (its stone is shaded to sit back and scrolls, so no tab
+	-- can join it, the player, 2026-11-12); the chosen one stands tallest, on
+	-- the lighter slate, its name lit. Each tab is at the window's own level,
+	-- so its border (the NineSlice, a level up) covers the plaques' feet.
+	-- PanelTemplates_SetNumTabs then sets the controller's focus glow a level
+	-- under the first tab (SharedUIPanelTemplates.lua), as on Blizzard's tabbed
+	-- windows: the glow hugs the rim behind the plaques. It draws nothing inside
+	-- the rim (FocusArt.lua), so lying under the window hides none of it.
 	local names = {}
-	local TAB_MIN, TAB_GAP, TAB_H, TAB_LOW = 69, 3, 26, 4 -- TAB_LOW: how much shorter the unchosen are
-	frame.minTabWidth = TAB_MIN
+	-- PanelTemplates_TabResize sizes every tab to these
+	frame.minTabWidth, frame.maxTabWidth = TAB_W, TAB_W
 	local function makeTab(name)
 		local i = #names + 1
 		local made, tab = pcall(CreateFrame, "Button", nil, frame, "PanelTopTabButtonTemplate")
 		if not made or not tab then return end
-		-- the template's art goes; ours is the plate and its vine
-		for _, part in ipairs({ "Left", "Middle", "Right" }) do
-			for _, state in ipairs({ "", "Active", "Highlight" }) do
-				local t = tab[part .. state]
-				if t then t:SetTexture(nil) end
-			end
-		end
+		-- the template's art goes; ours is the plaque (its piece set on choosing)
+		for _, t in ipairs(tab.TabTextures or {}) do t:SetTexture(nil) end
+		tab.plaque = tab:CreateTexture(nil, "BACKGROUND")
+		tab.plaque:SetSize(PLAQUE_W, PLAQUE_H)
+		tab.plaque:SetPoint("TOPLEFT", tab, "BOTTOMLEFT", -(PLAQUE_W - TAB_W) / 2, PLAQUE_UP)
+		tab:SetNormalFontObject(TAB_FONT)
+		tab:SetHighlightFontObject(TAB_FONT_HL)
 		tab:SetHeight(TAB_H)
-		-- the outline: the wells' border, its foot left open
-		local made, edge = pcall(CreateFrame, "Frame", nil, tab, "InsetFrameTemplate")
-		if not made or not edge then edge = CreateFrame("Frame", nil, tab) end
-		dress(edge, "Inset", INSET, INSET)
-		local slice = edge.NineSlice
-		if slice then
-			slice.BottomEdge:Hide()
-			slice.BottomLeftCorner:Hide()
-			slice.BottomRightCorner:Hide()
-			slice.LeftEdge:SetPoint("BOTTOMRIGHT", edge, "BOTTOMLEFT", INSET, 0)
-			slice.RightEdge:SetPoint("BOTTOMRIGHT", edge, "BOTTOMRIGHT")
-		end
-		if edge.Bg then edge.Bg:Hide() end
-		-- the floor, inside the border's inner fade (its stone set on choosing)
-		local floor = tab:CreateTexture(nil, "BACKGROUND", nil, -8)
-		tab.edge, tab.floor = edge, floor
 		names[i] = name
 		tab:SetID(i)
 		tab:SetText(name)
-		if i == 1 then
-			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", EDGE, 0)
-		else
-			tab:SetPoint("LEFT", frame.Tabs[i - 1], "RIGHT", TAB_GAP, 0)
-		end
+		-- the rest follow the first, put by PanelTemplates_AnchorTabs
+		if i == 1 then tab:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", TABS_X + (PLAQUE_W - TAB_W) / 2, 0) end
 		tab:SetScript("OnClick", function(self) frame.SelectTab(self:GetID()) end)
-		tab:SetFrameLevel(chatWell:GetFrameLevel() + 2)
+		tab:SetFrameLevel(frame:GetFrameLevel())
 		WC.MarkFocusable(tab)
 		PanelTemplates_SetNumTabs(frame, i)
 		return i
@@ -442,8 +443,8 @@ local function buildTabs(frame, messages)
 		place(pages[i])
 		local ok, err = pcall(fill, pages[i])
 		if not ok then pages[i].failed = tostring(err) end
-		-- tabs are laid out again for the new width
-		if frame.currentTab then PanelTemplates_SetTab(frame, frame.currentTab) end
+		-- the new tab drawn as chosen or not
+		if frame.currentTab then frame.SelectTab(frame.currentTab) end
 	end
 	for _, t in ipairs(added) do addTab(t.name, t.fill) end
 	added = {}
@@ -454,23 +455,11 @@ local function buildTabs(frame, messages)
 		PanelTemplates_SetTab(frame, id)
 		for i, tab in ipairs(frame.Tabs) do
 			local chosen = i == id
-			local top = chosen and 0 or -TAB_LOW
-			tab.edge:ClearAllPoints()
-			tab.edge:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, top)
-			tab.edge:SetPoint("BOTTOMRIGHT")
-			tab.floor:ClearAllPoints()
-			tab.floor:SetPoint("TOPLEFT", tab, "TOPLEFT", FLOOR, top - FLOOR)
-			tab.floor:SetPoint("BOTTOMRIGHT", -FLOOR, 0)
-			tab.floor:SetTexture(chosen and WC.Style.STONE.claude or WC.Style.STONE.you, "REPEAT", "REPEAT")
-			tab.floor:SetHorizTile(true)
-			tab.floor:SetVertTile(true)
-			local k = chosen and 1 or 0.6
-			tab.floor:SetVertexColor(k, k, k)
-			tab.Text:SetTextColor(unpack(chosen and NAME_LIT or NAME))
-			-- the name centred in its own outline (the template's offsets are
-			-- for its art's heights)
-			tab.Text:ClearAllPoints()
-			tab.Text:SetPoint("CENTER", tab.edge, "CENTER")
+			tab.plaque:SetTexture(TAB_ART:format(chosen and "Chosen" or "Idle"))
+			-- after PanelTemplates_SelectTab's own font and place: the name
+			-- centred in the plaque's face over the rim
+			tab:SetDisabledFontObject(TAB_FONT_LIT)
+			tab.Text:SetPoint("CENTER", tab, "CENTER", 0, chosen and (IDLE_HEAD - CHOSEN_HEAD) / 2 or 0)
 		end
 		local chat = id == 1
 		-- the page's name in the title, as Collections does
@@ -494,8 +483,8 @@ end
 local function buildLog()
 	-- One panel, Blizzard's ButtonFrameTemplate, as the macro frame is built
 	-- (its background, title and close button; the border, title bar and the
-	-- close button's art are ours, dress below), with the tabs standing on the
-	-- wells inside it (docs/proposals/companion-window-frame.md).
+	-- close button's art are ours, dress below), with the tabs rising from
+	-- under its top rim (docs/proposals/companion-tabs.md).
 	-- CreateFrame throws on a template this build lacks, and an ugly window
 	-- beats an addon that fails to load.
 	local made, frame = pcall(CreateFrame, "Frame", "WowCompanionLog", UIParent, "ButtonFrameTemplate")
@@ -505,7 +494,9 @@ local function buildLog()
 	-- the spellbook); the panel manager places it there on every open
 	frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -116)
 	frame:SetFrameStrata("DIALOG")
+	-- on screen with its tabs: the chosen plaque stands this far over the top
 	frame:SetClampedToScreen(true)
+	frame:SetClampRectInsets(0, 0, PLAQUE_UP - CHOSEN_HEAD, 0)
 	frame:Hide()
 	WC.Style.NoPortrait(frame)
 	-- our wells take the template's inset's place
@@ -567,8 +558,6 @@ local function buildLog()
 	end
 
 	local messages = newTranscript(frame)
-	messages.scroll:SetPoint("TOPLEFT", 20, -42)
-	messages.scroll:SetPoint("BOTTOMRIGHT", -40, 34)
 	frame.messages = messages
 
 	-- 1.60.1 added a SmartNavigation API for exactly this: an addon can mark its own
@@ -660,9 +649,8 @@ local function buildLog()
 		local pick = SIZES[index] or SIZES[2]
 		-- grow from the top-left corner, so the window stays where it is
 		local left, top = frame:GetLeft(), frame:GetTop()
-		-- never taller than the screen below its top, with room for the tabs
-		-- that hang under it (the large size runs off the bottom)
-		local room = (top or (UIParent:GetHeight() - 116)) - 44
+		-- never taller than the screen below its top (the large size runs off the bottom)
+		local room = top or (UIParent:GetHeight() - 116)
 		frame:SetSize(pick[1], math.min(pick[2], math.max(240, room)))
 		if left and top then
 			frame:ClearAllPoints()

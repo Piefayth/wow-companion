@@ -106,3 +106,23 @@ each tab and name it in a tooltip.
 7. **Bookmarks behind the wall: no.**
 
 So the live directions are 1 (fleur in front, stronger names), 3's placement with a luxury shape, and a redesigned 4.
+
+## Built: 4a, plaques rising from under the top rim (2026-11-12)
+
+The player chose 4a; it is the real tabs now and the gallery is gone. Each tab is
+still a `PanelTopTabButtonTemplate` button wearing a slate plaque
+(`Art/Tab-<Idle|Chosen>-1.tga`, `tools/make_tab_art.py`, the gallery's art
+unchanged). The plaques are 80 x 32, each 80 from the last, the first 18 in from the
+left. Each stands 28 above the window's top, so its foot is 4 under the rim. The
+chosen one stands tallest, and each name is centred in its plaque. The tab row inside
+the window is gone, so the wells hang from the title rule's foot (`WELL_TOP` 25.6, was 64).
+The clamp keeps the chosen plaque on screen (`SetClampRectInsets(0, 0, 26, 0)`).
+
+**The focus glow** runs behind the plaques. Each tab sits at the window's own
+level, under its border (the NineSlice, a level up), so the rim covers the plaques'
+feet. `PanelTemplates_SetNumTabs` then sets the `FrameGlow` (frameLevel 505 in
+the template) a level under the first tab (`SharedUIPanelTemplates.lua:542`).
+Blizzard's tabbed windows do the same. Our glow draws nothing inside the rim's
+outer edge (FocusArt.lua), so lying under the window hides none of it. It still
+hugs the rim all round, behind the plaques and in the gaps between them, and no
+glow line crosses a plaque.

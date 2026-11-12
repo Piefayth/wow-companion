@@ -14,7 +14,6 @@ Window.lua
 FocusArt.lua
 Transcript.lua
 ChatBar.lua
-TabGallery.lua
 JunctionTrials.lua
 JobsModel.lua
 Jobs.lua

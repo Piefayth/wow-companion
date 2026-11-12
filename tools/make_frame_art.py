@@ -5,8 +5,9 @@ to a pixel and averaged down, never Blizzard's art.
 
     python tools/make_frame_art.py   writes addon/WowCompanion_Agent/Art/Frame-*-<v>.tga,
                                      Inset-*-<v>.tga, Close-*-<v>.tga,
-                                     target/frame-fix-4k.png (the window mocked at 4K) and
-                                     target/tabs-v<tab v>-sheet.png (the tab row: the shot's, ours)
+                                     target/window-4k.png (the window mocked at 4K, its
+                                     tabs and focus glow too) and target/window-top-4k.png
+                                     (its top, Chat and then Settings chosen)
 
 The frame replaces its NineSlice region by region: four corners, four edges
 stretched between them (each edge is the same all along its length, so it
@@ -17,8 +18,7 @@ through the join without a step. The top pieces hold the title bar: the rim,
 the dark band the title sits in, the bronze rule under it and that rule's
 shadow. Nothing is drawn outside the rim; Window.lua puts it on the frame's
 bounds and decides every margin. The inset's border is painted as
-Blizzard's is (inset()); the tabs are
-carved with the same wall (tab()).
+Blizzard's is (inset()).
 
 The game keeps a texture for the session under its path, so a change bumps
 VERSION (and Window.lua's ART); older files are deleted.
@@ -310,16 +310,6 @@ def inset():
     }
 
 
-# --- the tabs -------------------------------------------------------------------
-#
-# The tabs have no art of their own (Window.lua): the chosen one is a plate of
-# the replies' slate crowned by the dividers' vine (Scroll-RuleLeft and
-# -RuleMid), the rest only labels. The mock draws them from those.
-
-TAB_W, TAB_GAP, TAB_H = 69.0, 3.0, 25.6  # Window.lua's
-VINE = os.path.join(OUT, "Scroll-%s-18.tga")  # ChatBar.lua's VERSION
-
-
 def render():
     art = frame_pieces()
     art.update(inset())
@@ -328,31 +318,43 @@ def render():
     return art
 
 
-# --- the comparison sheet ---------------------------------------------------------
+# --- the mock ------------------------------------------------------------------------
 #
 # The window as the game draws it, rebuilt at a 4K screen's own pixels from the
-# written textures and Window.lua's layout, beside the shot it replaces
+# written textures and Window.lua's layout, over the world from a shot
 # (%LOCALAPPDATA%/wow-companion/shots/full4.png: the medium window at 1.5 scale,
-# 2.7 px a unit, its top left at 28.8, 208.8; read in game with GetLeft/GetTop).
-# Every edge is rounded to a whole pixel, as the game snaps a texture.
+# 2.7 px a unit, its top left at 28.8, 208.8; read in game with GetLeft/GetTop),
+# with the controller's focus glow on. Every edge is rounded to a whole pixel,
+# as the game snaps a texture. Drawn in the game's order: the glow (a level
+# under the tabs), the panel and the tabs, then the rim over the tabs' feet
+# and the wells.
 
 PX = 2.7
 ORIGIN = (28.8, 208.8)
 SIZE = (760.0, 520.0)
 SHOT = os.path.join(os.environ.get("LOCALAPPDATA", ""), "wow-companion", "shots", "full4.png")
-GLOW_SHOT = os.path.join(ROOT, "target", "glowshot.png")  # the focus glow's atlas drawn 1:1 on black
 SLATE = os.path.join(ROOT, "addon", "WowCompanion", "Art", "%s-6.tga")  # Style.lua's STONE
+GLOW_ART = os.path.join(OUT, "Focus-Glow-1.tga")  # make_focus_art.py's
+TAB_ART = os.path.join(OUT, "Tab-%s-1.tga")  # make_tab_art.py's
 
 # Window.lua's layout, in units
-RIM, GAP, WELL_TOP, FOOT, WELL = 6.0, 4.0, 64.0, 20.0, 130.0
-CLOSE_PAD = 3.0  # Window.lua: the close button's gap from the rim
-GLOW = (14.0, 10.75, 13.0, 11.0)
+RIM, GAP, WELL_TOP, FOOT, WELL = 6.0, 4.0, 25.6, 20.0, 130.0
+CLOSE_PAD = 3.0  # the close button's gap from the rim
+PLAQUE_W, PLAQUE_H, PLAQUE_UP, TABS_X, STEP = 80.0, 32.0, 28.0, 18.0, 80.0
+IDLE_HEAD, CHOSEN_HEAD = 8.0, 2.0
+NAME, NAME_LIT = (199, 176, 135), (250, 235, 199)
+# FocusArt.lua: the glow's 9-slice, its margins M units, set out OUT past the frame
+GLOW_M, GLOW_OUT, GLOW_TEX, GLOW_MARGIN = 18.0, 12.0, 128, 48
 EDGE = INSET
 LABELS = ["Chat", "Settings", "Status", "Errands"]
 # the well's top shadow (ShadowOverlay-Top, the lip), its alpha down from
 # EDGE, read off the shot
 LIP = ((0, 1.5, 3.0, 4.4, 5.9, 7.4, 8.9, 10.4, 11.9, 13.3, 16.3),
        (0.67, 0.57, 0.48, 0.40, 0.33, 0.24, 0.17, 0.12, 0.07, 0.02, 0))
+
+
+def load(path):
+    return np.asarray(Image.open(path).convert("RGBA")).astype(float)
 
 
 class Mock:
@@ -395,42 +397,37 @@ class Mock:
         self.put(art[prefix + "LeftEdge"], x0, y0 + top, x0 + rim, y1 - rim)
         self.put(art[prefix + "RightEdge"], x1 - rim, y0 + top, x1, y1 - rim)
 
-    def glow(self, x0, y0, x1, y1):
-        """The focus glow (gamepad-uiframemetal-focus, 392 x 265, slice margins
-        156, 115, 220, 179, at half scale), gold, blended over what is under."""
-        if not os.path.exists(GLOW_SHOT):
-            return
-        src = np.asarray(Image.open(GLOW_SHOT).convert("RGB")).astype(float)[650:915, 1450:1842]
-        a = src.max(-1) / 255.0
-        ml, mt, mr, mb = 156, 115, 220, 179
-        H, W = a.shape
-        xs = ((0, ml), (ml, W - mr), (W - mr, W))
-        ys = ((0, mt), (mt, H - mb), (H - mb, H))
-        ux = ((x0, x0 + ml / 2), (x0 + ml / 2, x1 - mr / 2), (x1 - mr / 2, x1))
-        uy = ((y0, y0 + mt / 2), (y0 + mt / 2, y1 - mb / 2), (y1 - mb / 2, y1))
+    def glow(self, w, h):
+        """FocusArt.lua's glow: Focus-Glow cut in nine, round the frame's
+        bounds set out by GLOW_OUT, its corners GLOW_M square."""
+        tex = load(GLOW_ART)
+        t = (0, GLOW_MARGIN, GLOW_TEX - GLOW_MARGIN, GLOW_TEX)
+        o, m = GLOW_OUT, GLOW_M
+        xs = (-o, m - o, w - m + o, w + o)
+        ys = (-o, m - o, h - m + o, h + o)
         for j in range(3):
             for i in range(3):
-                if i == 1 and j == 1:
-                    continue
-                piece = a[ys[j][0]:ys[j][1], xs[i][0]:xs[i][1]]
-                rgba = np.zeros(piece.shape + (4,))
-                rgba[..., :3] = (255, 230, 102)
-                rgba[..., 3] = piece * 255
-                self.put(rgba, ux[i][0], uy[j][0], ux[i][1], uy[j][1])
+                if i != 1 or j != 1:
+                    self.put(tex[t[j]:t[j + 1], t[i]:t[i + 1]], xs[i], ys[j], xs[i + 1], ys[j + 1])
 
 
 def mock(art, backdrop, chosen=0):
     w, h = SIZE
     m = Mock(backdrop)
-    m.put((49, 45, 41, 255), 2, 21, w - 2, h - 2)  # the template's Bg
-    m.put((33, 19, 10, 255), 2, 2, w - 2, 21)
+    m.glow(w, h)
+    m.tile("Slate", RIM, RIM, w - RIM, h - RIM, 0.72)  # the panel's body (frame.Bg)
+    piece = {k: load(TAB_ART % k) for k in ("Idle", "Chosen")}
+    labels = []
+    for i, text in enumerate(LABELS):
+        x, act = TABS_X + i * STEP, i == chosen
+        m.put(piece["Chosen" if act else "Idle"], x, -PLAQUE_UP, x + PLAQUE_W, PLAQUE_H - PLAQUE_UP)
+        head = CHOSEN_HEAD if act else IDLE_HEAD
+        labels.append((x + PLAQUE_W / 2, -(PLAQUE_UP - head) / 2, text, NAME_LIT if act else NAME))
+    m.nine(art, "Frame-", 0, 0, w, h, RIM, TOP_H)
     wells = (RIM + GAP, w - (RIM + GAP + WELL + GAP), w - (RIM + GAP + WELL), w - (RIM + GAP))
     top, foot = WELL_TOP, h - (RIM + FOOT)
-    m.put((20, 21, 24, 255), wells[0], top, wells[1], foot)
     m.tile("SlateLight", wells[0] + EDGE, top + EDGE, wells[1] - EDGE, foot - EDGE)
-    m.put((34, 28, 24, 255), wells[2], top, wells[3], foot)
-    # the tabs' feet, left to right, the first over the well's inner edge
-    xs = [wells[0] + EDGE + i * (TAB_W + TAB_GAP) for i in range(len(LABELS))]
+    m.tile("Slate", wells[2] + EDGE, top + EDGE, wells[3] - EDGE, foot - EDGE)
     # the lip: the shadow down from the well's top wall
     x0, x1 = wells[0] + EDGE, wells[1] - EDGE - 30
     a, b = m.px(x0, top + EDGE)
@@ -441,28 +438,38 @@ def mock(art, backdrop, chosen=0):
     m.im.alpha_composite(Image.fromarray(lip.astype(np.uint8), "RGBA"), (a, b))
     m.nine(art, "Inset-", wells[0], top, wells[1], foot, INSET, INSET)
     m.nine(art, "Inset-", wells[2], top, wells[3], foot, INSET, INSET)
-    labels = []
-    vine = {n: np.asarray(Image.open(VINE % n).convert("RGBA")).astype(float) for n in ("RuleLeft", "RuleMid")}
-    for i, x in enumerate(xs):
-        act = i == chosen
-        if act:
-            m.tile("SlateLight", x, top - TAB_H, x + TAB_W, top)
-            y0 = top - TAB_H - 8
-            m.put(vine["RuleLeft"], x - 4, y0, x + 28, y0 + 16)
-            m.put(vine["RuleMid"], x + 28, y0, x + TAB_W - 28, y0 + 16)
-            m.put(vine["RuleLeft"][:, ::-1], x + TAB_W - 28, y0, x + TAB_W + 4, y0 + 16)
-        # PanelTemplates_SelectTab and _DeselectTab: the label's centre 12 and
-        # 8 units over the foot
-        labels.append((x + TAB_W / 2, top - (12 if act else 8), LABELS[i], (240, 230, 209) if act else (199, 163, 107)))
-    m.glow(-GLOW[0], -GLOW[1], w + GLOW[2], h + GLOW[3])
-    m.nine(art, "Frame-", 0, 0, w, h, RIM, TOP_H)
     cx, cy = w - RIM - CLOSE_PAD - CLOSE, (RIM + 22.6 - CLOSE) / 2
     m.put(art["Close-Normal"], cx, cy, cx + CLOSE, cy + CLOSE)
     draw = ImageDraw.Draw(m.im)
-    font = ImageFont.truetype("arial.ttf", int(round(10 * PX)))
+    # GameFontNormal at 12 units, its 1-unit drop shadow (Arial for Friz Quadrata)
+    font = ImageFont.truetype("arial.ttf", int(round(12 * PX)))
     for x, y, text, col in labels:
-        draw.text(m.px(x, y), text, font=font, fill=col + (255,), anchor="mm", stroke_width=1, stroke_fill=(0, 0, 0, 255))
+        sx, sy = m.px(x, y)
+        draw.text((sx + PX, sy + PX), text, font=font, fill=(0, 0, 0, 255), anchor="mm")
+        draw.text((sx, sy), text, font=font, fill=col + (255,), anchor="mm")
+    title = m.px(w / 2, (RIM + 22.6) / 2)
+    draw.text(title, "Companion", font=font, fill=(230, 201, 140, 255), anchor="mm")
     return m.im.convert("RGB")
+
+
+def sheet(art):
+    old = Image.open(SHOT).convert("RGB")
+    # the backdrop: the shot with the old window and its glow covered by the
+    # world from the screen's right, so nothing of the old frame shows
+    back = old.copy()
+    world = old.crop((2300, 300, 3800, 1900))
+    for x in range(0, 2300, world.width):
+        for y in range(0, 1830, world.height):
+            back.paste(world, (x, y + 100))
+    full = mock(art, back)
+    full.save(os.path.join(ROOT, "target", "window-4k.png"))
+    # the window's top at 4K's own pixels, Chat and then Settings chosen, and
+    # each zoomed 2x
+    box = (0, 100, 1300, 400)
+    up = lambda im: im.resize((im.width * 2, im.height * 2), Image.NEAREST)
+    crops = [full.crop(box), mock(art, back, chosen=1).crop(box)]
+    rows = [[c] for c in crops] + [[up(c)] for c in crops]
+    return stack(rows, os.path.join(ROOT, "target", "window-top-4k.png"))
 
 
 def stack(rows, path):
@@ -478,29 +485,6 @@ def stack(rows, path):
         y += max(i.height for i in r) + 12
     out.save(path)
     return path
-
-
-def sheet(art):
-    old = Image.open(SHOT).convert("RGB")
-    # the backdrop: the shot with the old window and its glow covered by the
-    # world from the screen's right, so nothing of the old frame shows
-    back = old.copy()
-    world = old.crop((2300, 300, 3800, 1900))
-    for x in range(0, 2300, world.width):
-        for y in range(0, 1830, world.height):
-            back.paste(world, (x, y + 100))
-    new = mock(art, back)
-    second = mock(art, back, chosen=1)
-    new.save(os.path.join(ROOT, "target", "frame-fix-4k.png"))
-    # the tab row: the shot's, then ours with Chat and with Settings chosen,
-    # each at 4K's own pixels and zoomed 3x; then the chosen tabs' joins at 8x
-    box = (40, 300, 640, 440)
-    up = lambda im, z: im.resize((im.width * z, im.height * z), Image.NEAREST)
-    rows = []
-    for im in (old, new, second):
-        crop = im.crop(box)
-        rows += [[crop], [up(crop, 3)]]
-    return stack(rows, os.path.join(ROOT, "target", "tabs-sheet.png"))
 
 
 def main():
