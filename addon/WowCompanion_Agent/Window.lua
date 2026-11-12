@@ -220,7 +220,7 @@ local function buildTabs(frame, messages)
 			r.divider:SetPoint("LEFT", r, "TOPLEFT", SPINE - 2 - SEAM / 2, 0)
 			r.divider:SetPoint("RIGHT", r, "TOPRIGHT", 9, 0)
 			WC.Style.VineLine(r.divider, "", false, false, true)
-			WC.Style.VineJoin(r.divider, "Thick", "TRightFromMediumCrest", "LEFT")
+			WC.Style.VineJoin(r.divider, "Thick", "TRightFromMedium", "LEFT")
 		end
 		r.label = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
 		r.label:SetPoint("RIGHT", r, "LEFT", SPINE - 18, 0)
