@@ -194,3 +194,6 @@ WowCompanion_Style.STONE = {
 	you = ART .. "Slate-" .. STONE_VERSION,
 	claude = ART .. "SlateLight-" .. STONE_VERSION,
 }
+-- "hold a conversation's chord": a shoulder button with no letter, inline in
+-- text (tools/make_chord_glyph.py draws it; the version is in its name)
+WowCompanion_Style.CHORD = "|T" .. ART .. "Chord-1:14:14|t"
