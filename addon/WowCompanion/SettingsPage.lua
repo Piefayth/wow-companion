@@ -1,8 +1,6 @@
 -- The settings page: Blizzard's Settings list in our window. Rows grouped
--- under section headers (their SettingsListSectionHeaderTemplate, no rules,
--- as theirs); names on the light stone, the controls against the right in one
--- inset well of the dark stone (dark under what the player operates, as
--- Chat's gutter), sized to what it holds; each row one controller stop
+-- under section headers (their SettingsListSectionHeaderTemplate), a quest log
+-- divider between sections as on the Status tab, each row one controller stop
 -- (Rows.lua: left and right change it, confirm opens a dropdown's menu or
 -- presses a button, up and down move between rows). The focused row's note is
 -- read in one band at the foot of the page, where Blizzard shows a tooltip.
@@ -26,12 +24,23 @@ WC.SettingsPage = Page
 local rows = {}    -- every row added: { row = the caller's table, frame = once made }
 local headers = {} -- section name -> header frame
 local ROW_H, HEADER_H, CONTROL_W = 36, 36, 250
--- the well: 14 of padding, the control, its value text (a slider's "150%"),
--- 14 of padding; the names take the rest of the width
-local LABEL_X, WELL_W, WELL_PAD, BEVEL = 24, 316, 14, 4
+-- Blizzard's columns: the label from the left to the middle, the control from
+-- just left of the middle (SettingsListElementMixin, SettingsSliderControlMixin)
+local LABEL_X, CONTROL_X = 24, -80
 
 local page = CreateFrame("Frame", "WowCompanionSettingsPage", UIParent)
 page:Hide()
+
+local function divider(parent)
+	local d = parent:CreateTexture(nil, "ARTWORK")
+	d:SetAtlas("QuestLog-frame-devider")
+	d:SetAlpha(0.8)
+	d:SetHeight(15)
+	-- edge to edge of the well's backing (the page sits 9 px inside it)
+	d:SetPoint("LEFT", parent, "TOPLEFT", -9, 0)
+	d:SetPoint("RIGHT", parent, "TOPRIGHT", 9, 0)
+	return d
+end
 
 local function stone(tex, which)
 	tex:SetTexture(WC.Style.STONE[which], "REPEAT", "REPEAT")
@@ -45,24 +54,12 @@ band:SetPoint("BOTTOMLEFT", 0, 0)
 band:SetPoint("BOTTOMRIGHT", 0, 0)
 band:SetHeight(48)
 
--- the well of the dark stone, Blizzard's inset (the bevel the window's own
--- wells have), clear of every edge of the page so it is set into it
-local well = CreateFrame("Frame", nil, page, "InsetFrameTemplate")
-well:SetPoint("TOPRIGHT", 0, -2)
-well:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 0, 4)
-well:SetWidth(WELL_W)
-stone(well.Bg, "you")
-well.Bg:ClearAllPoints()
-well.Bg:SetPoint("TOPLEFT", 3, -3)
-well.Bg:SetPoint("BOTTOMRIGHT", -3, 3)
-
--- the rows, in a scroll frame the controller's cursor scrolls as it moves
--- (SmartNavigation's HandleScroll), within the well's bevels so no row slides
--- over them; 9 px wider each side than the page so the hover reaches the
--- backing's edge
+-- the rows above it, in a scroll frame the controller's cursor scrolls as it
+-- moves (SmartNavigation's HandleScroll); 9 px wider each side than the page
+-- so the dividers reach the backing's edge without being clipped
 local scroll = CreateFrame("ScrollFrame", nil, page)
-scroll:SetPoint("TOPLEFT", -9, -2 - BEVEL)
-scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, 4 + BEVEL)
+scroll:SetPoint("TOPLEFT", -9, 0)
+scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, 2)
 local content = CreateFrame("Frame", nil, scroll)
 content:SetSize(1, 1)
 scroll:SetScrollChild(content)
@@ -72,13 +69,17 @@ scroll:SetScript("OnMouseWheel", function(self, delta)
 	local most = math.max(0, content:GetHeight() - self:GetHeight())
 	self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW_H)))
 end)
+local bandLine = divider(band)
 local bandText = band:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
 bandText:SetPoint("TOPLEFT", LABEL_X, -14)
 bandText:SetPoint("BOTTOMRIGHT", -LABEL_X, 4)
 bandText:SetJustifyH("LEFT")
 bandText:SetJustifyV("TOP")
+-- nothing focused, nothing shown: no line over an empty band
 local function describe(row)
-	bandText:SetText(row and row.text or "")
+	local text = row and row.text
+	bandText:SetText(text or "")
+	bandLine:SetShown(text ~= nil)
 end
 
 -- One setting as Blizzard's Settings lay one out (SettingsListElementTemplate):
@@ -96,7 +97,7 @@ local function settingRow(row, step, prompt)
 	hover:SetColorTexture(1, 1, 1, 0.1)
 	local fs = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	fs:SetPoint("LEFT", LABEL_X, 0)
-	fs:SetPoint("RIGHT", r, "RIGHT", -(WELL_W + 12), 0)
+	fs:SetPoint("RIGHT", r, "CENTER", CONTROL_X - 5, 0)
 	fs:SetJustifyH("LEFT")
 	fs:SetWordWrap(false)
 	fs:SetText(row.label)
@@ -106,9 +107,8 @@ local function settingRow(row, step, prompt)
 	WC.RowStop(r, step, prompt)
 	return r
 end
--- the control inside the well, its padding from the well's left edge
 local function place(r, control)
-	control:SetPoint("LEFT", r, "RIGHT", -WELL_W + WELL_PAD, 0)
+	control:SetPoint("LEFT", r, "CENTER", CONTROL_X, 0)
 end
 
 -- A choice from a list: their dropdown with steppers
@@ -179,13 +179,14 @@ local function header(name)
 	local h = CreateFrame("Frame", nil, content, "SettingsListSectionHeaderTemplate")
 	h:SetPoint("RIGHT", content, "RIGHT", -9, 0)
 	h.Title:SetText(name)
+	h.divider = divider(h)
 	headers[name] = h
 	return h
 end
 
 -- Every row made once; the page laid out again whenever one is added:
--- sections in the order of their first row, rows in order within each, the
--- headers alone between sections, as in Blizzard's Settings.
+-- sections in the order of their first row, rows in order within each, a
+-- divider between sections (over every header but the first).
 local function sectionOf(e) return e.row.section or "General" end
 local function orderOf(e) return e.row.order or 50 end
 local function layout()
@@ -215,6 +216,7 @@ local function layout()
 			local s = sectionOf(e)
 			if s ~= section then
 				local h = header(s)
+				h.divider:SetShown(section ~= nil)
 				section = s
 				h:SetPoint("TOPLEFT", 9, -y)
 				y = y + HEADER_H
