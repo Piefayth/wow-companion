@@ -30,7 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 
-VERSION = 17
+VERSION = 18
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -303,10 +303,10 @@ def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0, rim_pal=BR
 DARK = (np.array((7, 7, 9.0)), np.array((20, 21, 24.0)), np.array((46, 47, 52.0)))
 EVEN = (np.array((13, 13, 16.0)), np.array((22, 23, 26.0)), np.array((36, 37, 41.0)))
 GREY = (np.array((11, 11, 13.0)), np.array((32, 33, 37.0)), np.array((70, 71, 76.0)))
-# G: a bar and wall barely lit, so neither the bar's lit edge nor the wall
+# G: a bar and wall lit just enough to have form, so neither the bar's lit edge nor the wall
 # turned from the light stands out: the border is there, but quiet
-SOFT = (np.array((18, 18, 21.0)), np.array((24, 25, 28.0)), np.array((33, 34, 38.0)))
-QUIET = (np.array((19, 20, 23.0)), np.array((22, 23, 26.0)), np.array((30, 31, 35.0)))
+SOFT = (np.array((17, 17, 20.0)), np.array((25, 26, 29.0)), np.array((40, 41, 45.0)))
+QUIET = (np.array((17, 18, 21.0)), np.array((22, 23, 26.0)), np.array((34, 35, 39.0)))
 WELLS = {"A": dict(wall=DARK, lip=True), "C": dict(wall=EVEN), "D": dict(wall=GREY), "E": dict(wall=DARK, rim=True),
          "F": dict(wall=DARK, rim=True, rim_w=1.1, rim_dim=0.62),
          "G": dict(wall=QUIET, rim=True, rim_w=1.1, rim_pal=SOFT, rim_inner=False, foot=False, rim_gloss=0.04, wall_gloss=0.0)}

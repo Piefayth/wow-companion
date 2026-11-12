@@ -29,6 +29,10 @@ local BAND = 22.6 -- the title band's foot, where the art's rule begins
 local GAP = 4
 local WELL_TOP, FOOT = 64, 20
 local INSET = 4 -- the wells' border, as wide as its art
+-- every well's floor (its stone) starts this far in, under the border's inner
+-- edge, which fades out over it; started at INSET, the fade lay on the dark
+-- panel and drew a dark line along the wells' inner edge (measured, 2026-11-12)
+local FLOOR = 3
 local CLOSE, CLOSE_PAD = 14, 3 -- the close button, inside the title band, CLOSE_PAD from the rim
 -- The controller's focus glow (FrameGlow, gamepad-uiframemetal-focus) is
 -- placed by Blizzard for its own metal (FocusEffects.lua: -10, 14, 14, -14
@@ -41,7 +45,7 @@ local GLOW = { 14, 10.75, 13, 11 }
 -- Our own frame art (tools/make_frame_art.py) on an owner's NineSlice pieces,
 -- on the owner's bounds: every piece rim wide, the top corners and edge top
 -- tall, so a corner and the edge beside it share their pixels on screen.
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-17]]
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-18]]
 local function dress(owner, art, rim, top)
 	local slice = owner.NineSlice
 	if not slice then return end
@@ -235,8 +239,8 @@ local function buildTabs(frame, messages)
 	back:SetTexture(WC.Style.STONE.you, "REPEAT", "REPEAT")
 	back:SetHorizTile(true)
 	back:SetVertTile(true)
-	back:SetPoint("TOPLEFT", INSET, -INSET)
-	back:SetPoint("BOTTOMRIGHT", -INSET, INSET)
+	back:SetPoint("TOPLEFT", FLOOR, -FLOOR)
+	back:SetPoint("BOTTOMRIGHT", -FLOOR, FLOOR)
 	frame.chatParts = frame.chatParts or {}
 	table.insert(frame.chatParts, well)
 	-- The transcript sits in a well of its own, an inset like the conversation
@@ -255,6 +259,14 @@ local function buildTabs(frame, messages)
 	-- runs on behind the bar to the edge.
 	local EDGE = INSET
 	local level = chatWell:GetFrameLevel()
+	-- the floor under the wall's foot, where the turns' stone (from EDGE) does
+	-- not reach: the darker slate, as the player's turns are
+	local floor = chatWell:CreateTexture(nil, "BACKGROUND", nil, 1)
+	floor:SetTexture(WC.Style.STONE.you, "REPEAT", "REPEAT")
+	floor:SetHorizTile(true)
+	floor:SetVertTile(true)
+	floor:SetPoint("TOPLEFT", FLOOR, -FLOOR)
+	floor:SetPoint("BOTTOMRIGHT", -FLOOR, FLOOR)
 	messages.scroll:ClearAllPoints()
 	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", EDGE, -EDGE)
 	messages.scroll:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT", -EDGE, EDGE)
@@ -377,8 +389,8 @@ local function buildTabs(frame, messages)
 	stone:SetTexture(WC.Style.STONE.claude, "REPEAT", "REPEAT")
 	stone:SetHorizTile(true)
 	stone:SetVertTile(true)
-	stone:SetPoint("TOPLEFT", 3, -3)
-	stone:SetPoint("BOTTOMRIGHT", -3, 3)
+	stone:SetPoint("TOPLEFT", FLOOR, -FLOOR)
+	stone:SetPoint("BOTTOMRIGHT", -FLOOR, FLOOR)
 	-- the same shadow under the tabs as the chat well has, on every other tab,
 	-- from the wall's foot
 	local pageLip = CreateFrame("Frame", nil, pageWell)
