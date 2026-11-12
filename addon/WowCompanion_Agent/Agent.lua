@@ -118,7 +118,7 @@ renderPending = function()
 		return { slotLabel(slot), state, clip(detail, 90), r, g, b }
 	end
 	-- while the Companion key is held: talking, and where it will go (the
-	-- first trigger touched in the hold, as the PC picks it)
+	-- last trigger pulled in the hold, as the PC picks it)
 	if talking.slot then
 		local dictation = talking.slot == WC.Conversations.DICTATION
 		lines[#lines + 1] = row(dictation and "chat" or talking.slot, "ff8080",
@@ -449,22 +449,27 @@ bus:On("TALK_TAP", function() toggleWindow() end)
 -- a hold is talking: the board's talking row and, with the window open, the
 -- conversation's tab (renderPending) follow the pick each frame, and go when
 -- the key is let go
--- The PC's rule (crates/voice, the voice loop): the first trigger held at any
--- moment of the hold picks the conversation and stays picked when let go; the
--- second of L2+R2 makes it Quick, of L1+R1 dictation.
-local JOINS = { quick = { l2 = true, r2 = true }, [WC.Conversations.DICTATION] = { l1 = true, r1 = true } }
+-- The PC's rule (crates/voice, the voice loop): the triggers held at the press
+-- pick the conversation; then the last trigger pulled during the hold picks it,
+-- and letting it go keeps it. Pulled with its partner held, a pair's: L2+R2
+-- Quick, L1+R1 dictation.
+local PAIR = { l1 = { "r1", WC.Conversations.DICTATION }, r1 = { "l1", WC.Conversations.DICTATION },
+	l2 = { "r2", "quick" }, r2 = { "l2", "quick" } }
 talking:SetScript("OnUpdate", function(self)
-	local now = WowCompanion_PadSlot()
-	local slot = self.slot
-	if slot == nil or slot == "" or (JOINS[now] and JOINS[now][slot]) then slot = now end
+	local held, slot = WC.Pad.Triggers(), self.slot
+	for name, pair in pairs(PAIR) do
+		if held[name] and not self.held[name] then slot = held[pair[1]] and pair[2] or name end
+	end
+	self.held = held
 	if slot ~= self.slot then
 		self.slot = slot
 		renderPending()
 	end
 end)
 bus:On("TALK_DOWN", function()
-	talking.at, talking.slot = GetTime(), nil
+	talking.at, talking.slot, talking.held = GetTime(), WowCompanion_PadSlot(), WC.Pad.Triggers()
 	talking:Show()
+	renderPending()
 end)
 bus:On("TALK_UP", function()
 	talking:Hide()

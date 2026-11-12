@@ -310,8 +310,10 @@ pub fn listen(
         .map(|(slot, name)| pad::press_for(name, vid, pid).map(|press| (*slot, press)))
         .collect::<io::Result<_>>()?;
     let trigger = |slot: Slot| &triggers.iter().find(|(each, _)| *each == slot).expect("every trigger has a press").1;
-    // None until a trigger is pulled during the press
+    // None until a trigger is pulled during the press; then the last one pulled
     let mut slot: Option<Slot> = None;
+    // each trigger as last read, to see one being pulled
+    let mut was_held = [false; 4];
     let mut pressed_at = Instant::now();
     // the opening pulse waits until a press has outlasted a tap: a tap (which
     // the game handles itself, opening the window) stays silent, and feeling
@@ -464,6 +466,23 @@ pub fn listen(
         } else {
             triggers.iter().find(|(_, press)| pad.held(press)).map(|(slot, _)| *slot)
         };
+        // the trigger pulled since the last read, as the conversation it picks:
+        // with its partner already held, the pair's (L2+R2 Quick, L1+R1 dictation)
+        let mut pulled = None;
+        for (index, (each, press)) in triggers.iter().enumerate() {
+            let now = pad.held(press);
+            if now && !was_held[index] {
+                let (partner, pair) = match each {
+                    Slot::L1 => (Slot::R1, Slot::Dictation),
+                    Slot::R1 => (Slot::L1, Slot::Dictation),
+                    Slot::L2 => (Slot::R2, Slot::Quick),
+                    Slot::R2 => (Slot::L2, Slot::Quick),
+                    _ => continue,
+                };
+                pulled = Some(if pad.held(trigger(partner)) { pair } else { *each });
+            }
+            was_held[index] = now;
+        }
         let Some(mic) = &microphone else {
             if held && !holding {
                 println!("no microphone yet; still waiting for it");
@@ -546,16 +565,11 @@ pub fn listen(
                 }
             }
             (true, true) => {
-                // a trigger pulled just after the talk button still counts
-                if slot.is_none() {
-                    slot = modifier;
-                }
-                // the second trigger of L2+R2 (or L1+R1) pulled a moment after the first
-                if modifier == Some(Slot::Quick) && matches!(slot, Some(Slot::L2 | Slot::R2)) {
-                    slot = modifier;
-                }
-                if modifier == Some(Slot::Dictation) && matches!(slot, Some(Slot::L1 | Slot::R1)) {
-                    slot = modifier;
+                // the last trigger pulled during the hold picks the conversation,
+                // and letting it go keeps it: a wrong pick is corrected by
+                // pulling another
+                if pulled.is_some() {
+                    slot = pulled;
                 }
                 engine.feed(mic);
                 if rumbles && !pulsed && pressed_at.elapsed() >= TAP {

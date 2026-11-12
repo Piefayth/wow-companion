@@ -2,6 +2,7 @@
 -- talk-button press is for.
 --   WC.Pad.State() -> modifiers (sorted names), bases ({ [PADDUP] = true, ... }) | nil
 --   WowCompanion_PadSlot() -> a conversation (WC.Conversations) or dictation
+--   WC.Pad.Triggers() -> the triggers held: { l1 = true, r2 = true, ... }
 -- The pad as the client maps it: modifiers held (triggers, shoulders, sticks,
 -- sorted) and the d-pad and face buttons held. nil when there is no pad to read.
 local function padState()
@@ -34,13 +35,16 @@ end
 -- which conversation slot a talk-button press is for: the trigger held with it,
 -- in the PC's order (l1, l2, r1, r2), or "" for the main conversation
 local SLOT_BY_MODIFIER = { PADLSHOULDER = "l1", PADLTRIGGER = "l2", PADRSHOULDER = "r1", PADRTRIGGER = "r2" }
-function WowCompanion_PadSlot()
-	local modifiers = padState()
-	if not modifiers then return "" end
+-- the triggers held now, by slot name: { l2 = true, ... }
+local function triggers()
 	local held = {}
-	for _, name in ipairs(modifiers) do
+	for _, name in ipairs(padState() or {}) do
 		if SLOT_BY_MODIFIER[name] then held[SLOT_BY_MODIFIER[name]] = true end
 	end
+	return held
+end
+function WowCompanion_PadSlot()
+	local held = triggers()
 	-- L2 and R2 together are the quick conversation, as on the PC
 	if held.l2 and held.r2 then return "quick" end
 	-- L1 and R1 together are dictation (ChatWheel.lua), no conversation
@@ -51,4 +55,4 @@ function WowCompanion_PadSlot()
 	return ""
 end
 
-WC.Pad = { State = padState }
+WC.Pad = { State = padState, Triggers = triggers }
