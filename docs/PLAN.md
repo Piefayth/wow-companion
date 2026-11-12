@@ -24,22 +24,19 @@ on one file is how replies got lost.
 
 ## Next, in order
 
-1. **Settings screens, no slash commands, no tutorials** (the player,
-   2026-11-11: "there should just be a settings screen"; "fine for now, can
-   always evolve"). Built (PC c8dad13, game 5834a61); not yet tried in game.
-   - Game: one settings page owned by Core (works without the Agent), in
-     Blizzard's look and the row rule (CLAUDE.md); the Companion window's tab
-     shows it, the minimap mark opens it, and Blizzard's AddOns panel has one row
-     that opens it. The Tools tab's settings move there; the wheel editor and the
-     buff picker live there later.
-   - Game bindings are addon keybindings in WoW's Keybindings screen (bound with
-     the pad): toggling the Companion window (a tap, told from a hold on
-     release) and combat loot. `/wc talkkey` and `/wci bind` go.
-   - PC: the setup window is the companion's settings window: titled so, no
-     "Next:" guidance.
-   - Open: whether WoW sees an Xbox pad's Xbox button; if not, an Xbox player
-     binds the window to another button.
-2. **rc2 for the friend** after an evening of play on 2026-11-11's changes.
+1. **Try the companion's settings in game** (built 2026-11-12,
+   docs/proposals/settings-in-game.md; not yet tried): set the talk button and a
+   conversation button by pressing them on our settings page, change the mic,
+   the engine and feedback, and see each one take without a restart. The settings
+   page itself (Core's, in Blizzard's look and the row rule) and the combat-loot
+   addon keybinding were built 2026-11-11 (PC c8dad13, game 5834a61).
+2. **A request outlives the companion copy that started it** (the player,
+   2026-11-12, after an R2 request held a restart for 10 minutes): a restart
+   waits for every request because an agent's answer comes back on a pipe the
+   starting copy owns. Started detached and writing its stream to a file in its
+   job's folder, an agent can be read by any copy: restarts take seconds whatever
+   runs, and a crash no longer loses the reply in flight.
+3. **rc2 for the friend** after an evening of play on 2026-11-12's changes.
 
 ## Later
 
@@ -53,12 +50,6 @@ on one file is how replies got lost.
   dots and a page name; it reopens on the last page used; positions never move
   (muscle memory). Combat-safe: every page's secure buttons are made ahead and
   flipping shows another set. Wheels stay the player's own: none ships.
-- **A request outlives the companion copy that started it** (the player,
-  2026-11-12, after an R2 request held a restart for 10 minutes): a restart
-  waits for every request because an agent's answer comes back on a pipe the
-  starting copy owns. Started detached and writing its stream to a file in its
-  job's folder, an agent can be read by any copy: restarts take seconds whatever
-  runs, and a crash no longer loses the reply in flight.
 - **The game reaching the PC through its file opens** (the player, 2026-11-12:
   "we should test that at some point"): Windows' event tracing hears which files
   the game plays, with no screen read; could replace the command strip and some
