@@ -57,6 +57,25 @@ impl Drop for Following {
     }
 }
 
+/// Request threads waiting behind another request in their conversation, their
+/// words on disk (runs::queue): an exit need not wait for them either.
+pub(crate) static WAITING: AtomicUsize = AtomicUsize::new(0);
+
+pub(crate) struct Waiting;
+
+impl Waiting {
+    pub(crate) fn start() -> Waiting {
+        WAITING.fetch_add(1, Ordering::SeqCst);
+        Waiting
+    }
+}
+
+impl Drop for Waiting {
+    fn drop(&mut self) {
+        WAITING.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// This copy is leaving (a restart's hand-over, `stop`, the game closing):
 /// followers leave their runs to the next companion, and no reply goes out from
 /// here once it is set. `delivering` counts replies on their way out, which
@@ -72,7 +91,7 @@ fn handover() -> std::sync::MutexGuard<'static, Handover> {
     HANDOVER.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn leaving() -> bool {
+pub(crate) fn leaving() -> bool {
     handover().leaving
 }
 

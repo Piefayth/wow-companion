@@ -128,12 +128,13 @@ pub(crate) fn last_exit(since: u128) -> Option<String> {
 
 /// Nothing the player said is unfinished here: the talk button is up, no clip
 /// is at the speech engine, every request thread is following an agent's run
-/// (which the next companion follows instead, src/runs.rs), and the courier
-/// holds nothing.
+/// or waiting in a queue with its words kept (the next companion takes both
+/// over, src/runs.rs), and the courier holds nothing.
 pub(crate) fn idle() -> bool {
+    let left = crate::requests::FOLLOWING.load(Ordering::SeqCst) + crate::requests::WAITING.load(Ordering::SeqCst);
     !voice::HOLDING.load(Ordering::SeqCst)
         && voice::PENDING.load(Ordering::SeqCst) == 0
-        && IN_FLIGHT.load(Ordering::SeqCst) == crate::requests::FOLLOWING.load(Ordering::SeqCst)
+        && IN_FLIGHT.load(Ordering::SeqCst) == left
         && crate::COURIER.load(Ordering::SeqCst) == 0
 }
 

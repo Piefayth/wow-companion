@@ -13,6 +13,9 @@
 //! A round is followed until its process has exited and its file is read to the
 //! end: the answer is delivered only then, as with the pipe before (a turn can
 //! wake again after its first result, and that result stays the answer).
+//!
+//! A request waiting behind another in its conversation keeps its words here
+//! too (`queued.json`), so the copy that takes over queues it again.
 
 use std::{
     fs::{self, File},
@@ -84,7 +87,36 @@ pub(crate) fn start(job: u64, slot: &str, round: u32, mut agent: Command, prompt
     let run = Run { job, slot: slot.to_string(), round, pid, started };
     let record = json!({ "slot": slot, "round": round, "pid": pid, "started": started.to_string() });
     fs::write(dir.join("run.json"), record.to_string())?;
+    // it was waiting in its conversation's queue; now it runs
+    let _ = fs::remove_file(dir.join("queued.json"));
     Ok(run)
+}
+
+/// Job `job` waits behind another request in conversation `slot`: its words,
+/// kept for a companion that takes over.
+pub(crate) fn queue(job: u64, slot: &str, text: &str) {
+    let written = folder(job).and_then(|dir| {
+        fs::create_dir_all(&dir)?;
+        fs::write(dir.join("queued.json"), json!({ "slot": slot, "text": text }).to_string())
+    });
+    if let Err(err) = written {
+        eprintln!("  the queued request's words could not be kept for a restart: {err}");
+    }
+}
+
+/// Every request a companion left waiting in a queue: job, conversation, words.
+pub(crate) fn queued() -> Vec<(u64, String, String)> {
+    let Ok(dir) = crate::restart::companion_dir().map(|dir| dir.join("runs")) else { return Vec::new() };
+    let mut found = Vec::new();
+    for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
+        let Some(job) = entry.file_name().to_str().and_then(|name| name.parse::<u64>().ok()) else { continue };
+        let Ok(text) = fs::read_to_string(entry.path().join("queued.json")) else { continue };
+        let Ok(record) = serde_json::from_str::<Value>(&text) else { continue };
+        let field = |key: &str| record.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
+        found.push((job, field("slot"), field("text")));
+    }
+    found.sort();
+    found
 }
 
 /// Every run a companion left going: its newest round, whether its agent still

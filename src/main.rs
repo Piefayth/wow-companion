@@ -314,7 +314,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
         move || {
             lifecycle::wait_until_alone();
             let left = runs::left();
-            let going: Vec<u64> = left.iter().map(|run| run.job).collect();
+            let queued = runs::queued();
+            let going: Vec<u64> = left.iter().map(|run| run.job).chain(queued.iter().map(|(job, ..)| *job)).collect();
             let recovered = ledger::open(&addons, agents, &going);
             {
                 let addons = addons.clone();
@@ -325,18 +326,24 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     crash::after_start(&addons);
                 });
             }
+            // each run takes its conversation before any queued request is put
+            // back, so a queue never starts a run beside one still going
+            let (took, taken) = std::sync::mpsc::channel::<()>();
+            let mut following = 0;
             for run in left {
                 if jobs::state(run.job) != Some(jobs::State::Running) || !jobs::set_pid(run.job, run.pid) {
                     runs::finished(run.job);
                     continue;
                 }
                 println!("following request {} [{}] where the last companion left it", run.job, if run.slot.is_empty() { "main" } else { &run.slot });
-                let (addons, session) = (addons.clone(), find_session(&run.slot));
+                let (addons, session, took) = (addons.clone(), find_session(&run.slot), took.clone());
                 let in_flight = InFlight::start();
+                following += 1;
                 thread::spawn(move || {
                     let _in_flight = in_flight;
                     let slot = run.slot.clone();
                     let mut held = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                    let _ = took.send(());
                     match follow(&addons, &mut held, run.job, run) {
                         Ok(true) if slot.is_empty() => look_after_reload(&addons),
                         Ok(_) => {}
@@ -345,6 +352,23 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                             tell_failure(&addons, &slot, &err);
                         }
                     }
+                });
+            }
+            for _ in 0..following {
+                let _ = taken.recv();
+            }
+            for (job, slot, text) in queued {
+                if jobs::state(job) != Some(jobs::State::Queued) {
+                    runs::finished(job);
+                    continue;
+                }
+                println!("queueing request {job} [{}] again where the last companion left it", if slot.is_empty() { "main" } else { &slot });
+                jobs::requeue(job, &text);
+                let (addons, session, courier) = (addons.clone(), find_session(&slot), courier.clone());
+                let in_flight = InFlight::start();
+                thread::spawn(move || {
+                    let _in_flight = in_flight;
+                    request(&addons, &slot, text, job, &session, &courier, true);
                 });
             }
             // the main conversation's look, resumed after the reload it asked for
@@ -391,7 +415,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                     let in_flight = InFlight::start();
                     thread::spawn(move || {
                         let _in_flight = in_flight;
-                        request(&addons, &slot, text, job, &session, &courier);
+                        request(&addons, &slot, text, job, &session, &courier, false);
                     });
                 }
             });
@@ -501,7 +525,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                         }
                     };
                     voice::mark("gathered");
-                    request(&addons, &slot, text, job, &session, &courier);
+                    request(&addons, &slot, text, job, &session, &courier, false);
                 });
                 Ok(())
             }
@@ -519,7 +543,9 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
 
 /// A request to the agent in conversation `slot`, as its job `job`, on the
 /// request's own thread: spoken or typed, shown as waiting while one runs in
-/// the same conversation, its reply sent, a failure said.
+/// the same conversation, its reply sent, a failure said. `requeued`: one a
+/// companion left waiting in a queue, already shown, put back by the one that
+/// took over.
 fn request(
     addons: &Path,
     slot: &str,
@@ -527,7 +553,9 @@ fn request(
     job: u64,
     session: &Mutex<agent::Session>,
     courier: &Courier,
+    requeued: bool,
 ) {
+    let words = text.clone();
     // a slot's request is marked with it, in the window and for the agent
     // ("[L2] ..."), so both can tell the conversations apart
     let text = if slot.is_empty() { text } else { format!("[{}] {}", slot.to_uppercase(), text) };
@@ -539,20 +567,35 @@ fn request(
     // Waiting means this conversation's lock is held (a request in another runs
     // beside it). Shown at once, as queued on its own line; the first to get the
     // conversation takes every queued one (jobs::take_queued).
+    // Its words are kept on disk while it waits (src/runs.rs), so a companion
+    // that takes over queues it again; a requeued one goes through the queue
+    // even when the conversation is free, since its line already shows it.
     let (mut held, queued) = match session.try_lock() {
-        Ok(guard) => (guard, false),
-        Err(std::sync::TryLockError::Poisoned(poisoned)) => (poisoned.into_inner(), false),
+        Ok(guard) => (guard, requeued),
+        Err(std::sync::TryLockError::Poisoned(poisoned)) => (poisoned.into_inner(), requeued),
         Err(std::sync::TryLockError::WouldBlock) => {
-            let line = Line::new(slot, "you", &text).queued().job(job, jobs::state(job).unwrap_or(jobs::State::Queued));
-            let _ = courier.send(Out::Line(line));
-            (session.lock().unwrap_or_else(|poisoned| poisoned.into_inner()), true)
+            if !requeued {
+                runs::queue(job, slot, &words);
+                let line = Line::new(slot, "you", &text).queued().job(job, jobs::state(job).unwrap_or(jobs::State::Queued));
+                let _ = courier.send(Out::Line(line));
+            }
+            let _waiting = Waiting::start();
+            let guard = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            // this copy is leaving: the one taking over queues it again
+            if leaving() {
+                return;
+            }
+            (guard, true)
         }
     };
     let text = if queued {
         match run_queued(addons, slot, job) {
             Some(all) => all,
-            // another waiting request already took this one
-            None => return,
+            // another waiting request already took this one, or it was cancelled
+            None => {
+                runs::finished(job);
+                return;
+            }
         }
     } else {
         text

@@ -173,6 +173,16 @@ pub(crate) fn restore(kept: &[(u64, String, State)]) {
     })
 }
 
+/// A restored job waiting in a queue gets its words back (src/runs.rs kept
+/// them), for the run that takes it.
+pub(crate) fn requeue(id: u64, text: &str) {
+    with(|jobs| {
+        if let Some(job) = jobs.get_mut(&id) {
+            job.text = text.to_string();
+        }
+    })
+}
+
 /// Requests whose end the game has saved (the ledger's confirmation): gone.
 pub(crate) fn forget(ids: &[u64]) {
     if ids.is_empty() {

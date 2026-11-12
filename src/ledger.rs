@@ -91,14 +91,14 @@ impl Book {
         self.jobs = jobs;
     }
 
-    /// At a start: every job not ended ended with the companion, unless its run
-    /// is `going` (src/runs.rs: its agent was left running, or finished, for
-    /// the next companion to follow). An ended one's line says so; the job itself
-    /// becomes failed.
+    /// At a start: every job not ended ended with the companion, unless it is
+    /// `going` (src/runs.rs: its agent was left running, or finished, for the
+    /// next companion to follow, or it waits in a queue with its words kept). An
+    /// ended one's line says so; the job itself becomes failed.
     pub(crate) fn recover(&mut self, going: &[u64]) -> Vec<Line> {
         let mut lines = Vec::new();
         for (id, slot, state) in self.jobs.iter_mut() {
-            if state.ended() || (*state == State::Running && going.contains(id)) {
+            if state.ended() || (matches!(state, State::Running | State::Queued) && going.contains(id)) {
                 continue;
             }
             let text = format!(
@@ -505,7 +505,7 @@ mod tests {
     fn a_job_running_at_a_start_ended_with_the_companion_unless_its_run_goes_on() {
         let mut book = Book::default();
         book.mirror(vec![(6, "r2".into(), State::Running), (7, "l1".into(), State::Running), (8, "".into(), State::Answered), (9, "".into(), State::Queued)]);
-        let lines = book.recover(&[6, 9]);
+        let lines = book.recover(&[6]);
         assert_eq!(lines.len(), 2);
         assert_eq!((lines[0].slot.as_str(), lines[0].job, lines[0].n), ("l1", Some((7, State::Failed)), 1));
         assert!(lines[0].text.contains("while it was running"), "{}", lines[0].text);
