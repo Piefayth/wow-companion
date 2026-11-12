@@ -43,6 +43,11 @@ on one file is how replies got lost.
 
 ## Later
 
+- **The chat wheel configurable** (the player, 2026-11-11: "eventually"): which
+  channels and in what order, on the settings page, and/or paged like other
+  wheels.
+- **Fonts from the folder** (puntable): install generates the font list from
+  `Fonts/`, as it does Modules.lua, so dropping in a .ttf is enough.
 - **Paged wheels** (the player, 2026-11-11, designed, not built): 8 slots a page,
   any number of pages; L1/R1 flip while the wheel is open and wrap around; page
   dots and a page name; it reopens on the last page used; positions never move
