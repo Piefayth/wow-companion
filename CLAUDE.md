@@ -31,7 +31,10 @@ every agent request. This file and the agent's rules are the same for every
 player: a new preference goes in the profile, never here. Product rules that hold
 for everyone: never play for them (casting, targeting, moving, and the step that
 spends or sends are their press); addons are vetted and installed only after a
-yes; don't reinvent what Claude Code has.
+yes; don't reinvent what Claude Code has. Everything works with a standard
+controller's buttons (four face buttons, d-pad, two shoulders, two triggers, two
+stick clicks, the middle buttons): paddles, back buttons and touchpads are
+extras a player may use, never required (the player, 2026-11-11).
 
 ## Shape
 
