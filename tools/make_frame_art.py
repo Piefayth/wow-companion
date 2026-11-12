@@ -28,7 +28,7 @@ from PIL import Image
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 
-VERSION = 3
+VERSION = 4
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -190,12 +190,12 @@ def frame_pieces():
 # --- the close button ----------------------------------------------------------
 
 CLOSE = 14.0  # its side: it sits inside the title band (16.6 tall under the rim)
+BRASS = (np.array((62, 42, 16.0)), np.array((150, 114, 52.0)), np.array((214, 186, 120.0)))  # aged, not new gold
 
 
 def close(state):
     """The close button, 14 units, inside the title band: no plate of its own,
-    only a cross in the title's gold struck into the band's dark leather, as
-    the title text is, with a dark outline and the shadow it casts. Pushed
+    only a cross of aged brass struck into the band's dark leather, with a dark outline and the shadow it casts. Pushed
     sinks and dims it; Highlight is a soft warm light behind it, for ADD
     blending; Disabled is greyed."""
     xx, yy = grid(CLOSE, CLOSE)
@@ -221,7 +221,7 @@ def close(state):
     lay.over(LINE, np.clip((d + 0.45) / 0.4, 0, 1))
     hx = np.clip(d / 0.8, 0, 1)
     hx = (1 - (1 - hx) ** 2) * 0.8
-    gold = shade(ndimage.gaussian_filter(hx, K * 0.08), GOLD, gloss=0.25, power=16)
+    gold = shade(ndimage.gaussian_filter(hx, K * 0.08), BRASS, gloss=0.1, power=12)
     if push:
         gold = gold * 0.75
     lay.over(gold, np.clip((d + 0.05) / 0.15, 0, 1))
@@ -236,21 +236,22 @@ def close(state):
 # --- the inset ------------------------------------------------------------------
 
 INSET = 4.0  # the inset's corners' side and its edges' width
-LIP = (np.array((74, 71, 66.0)), np.array((132, 127, 116.0)))  # the outer lip, unlit and lit
-LINE_IN = np.array((5, 4, 3.0))  # the dark line where the well drops away
+STONE = (np.array((16, 14, 12.0)), np.array((52, 48, 43.0)), np.array((112, 104, 92.0)))  # the wall: shadow, mid, lit
+LINE_IN = np.array((5, 4, 3.0))  # the creases at the wall's top and foot
 
 
 def inset():
-    """An inset's border in a 20-unit square, painted as Blizzard's
-    InsetFrameTemplate is: a worn grey lip at its edge, lit on the bottom and
-    right (the walls facing the light), a dark line inside it, then a shadow
-    fading into the well, deeper under the top and left. Each side's share
-    blends smoothly into the next round the softly rounded corners, and the
-    whole is blurred a third of a unit, so no line is razor sharp."""
+    """An inset's border in a 20-unit square: a wall carved down from the
+    panel into the well, opaque stone, so the well reads as cut into the
+    frame rather than shaded over. A dark crease where the panel breaks, a
+    rounded, worn wall lit by the frame's light (the top and left walls face
+    away and fall dark, the bottom and right catch it), a dark crease at its
+    foot, and a short contact shadow onto the well's floor. The corners turn
+    softly, and the whole is blurred a quarter unit, so no line is razor
+    sharp."""
     n, pad = 20.0, 1.0
     xx, yy = grid(n + 2 * pad, n + 2 * pad)
     xx, yy = xx - pad, yy - pad
-    sides = np.stack([yy, xx, n - yy, n - xx])  # top, left, bottom, right
     # depth into the border: a rounded box's, so the corners turn softly
     r = 1.2
     qx = np.maximum(np.minimum(xx, n - xx), 0)
@@ -258,20 +259,19 @@ def inset():
     ex, ey = np.maximum(r - qx, 0), np.maximum(r - qy, 0)
     d = np.where((ex > 0) & (ey > 0), r - np.hypot(ex, ey), np.minimum(qx, qy))
     d = np.where((xx < 0) | (yy < 0) | (xx > n) | (yy > n), -1, d)
-    # each side's share at a point, smooth across the corners' diagonals
-    wgt = np.exp(-sides / 0.6)
-    wgt /= wgt.sum(0)
-    lit = wgt[2] + wgt[3]  # bottom and right face the light
     lay = Layers(xx.shape)
-    shadow = np.clip(1 - (d - 1.5) / (INSET - 1.5), 0, 1) ** 1.6 * (0.8 - 0.35 * lit)
-    lay.over(np.zeros(3), np.where(d >= 1.5, shadow, 0))
-    lay.over(LINE_IN, np.clip(1 - np.abs(d - 1.3) / 0.35, 0, 1))
-    lip = LIP[0] + (LIP[1] - LIP[0]) * lit[..., None]
-    # the lip's crest a little lighter than its foot, as a worn bevel is
-    lip = lip * (1.08 - 0.2 * np.clip(d, 0, 1))[..., None]
-    lay.over(lip, np.clip(np.minimum(d + 0.05, 1.05 - d) / 0.15, 0, 1) * (0.8 + 0.15 * lit))
+    top, foot = 0.35, 3.3
+    # the wall's height: the panel's level at its top, the well's at its foot,
+    # rounded over at the lip as worn stone is
+    t = np.clip((d - top) / (foot - top), 0, 1)
+    hgt = 1.6 * (1 - t) ** 1.6
+    wall = shade(ndimage.gaussian_filter(hgt, K * 0.15), STONE, gloss=0.08, power=10)
+    lay.over(wall, ((d >= 0) & (d < foot + 0.2)).astype(float))
+    lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.12) / 0.22, 0, 1) * (d >= 0) * 0.9)
+    lay.over(LINE_IN, np.clip(1 - np.abs(d - foot) / 0.3, 0, 1) * 0.9)
+    lay.over(np.zeros(3), np.where(d > foot, np.clip(1 - (d - foot) / (INSET - foot), 0, 1) * 0.45, 0))
     pre = lay.pre()
-    pre = np.stack([ndimage.gaussian_filter(pre[..., i], K * 0.33) for i in range(4)], -1)
+    pre = np.stack([ndimage.gaussian_filter(pre[..., i], K * 0.25) for i in range(4)], -1)
     k = K
 
     def cut(x0, y0, x1, y1):
