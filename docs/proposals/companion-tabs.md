@@ -94,3 +94,15 @@ tab is taller and merges into the border.
 Check it with a shot (`tools/shot.ps1`): the tab roots should be hidden under the
 right border, the gold rim should be on the open tab, and the cursor should reach
 each tab and name it in a tooltip.
+
+## The player's verdict on the tab gallery (2026-11-12, TabGallery.lua's seven rows)
+
+1. **Fleur on the vine: liked** ("pretty cool, fun"). The fleur (they said "floor") should hang **in front of** the vine (they said "pipe"), not behind it. The names' text is **too minimal**: give it more presence.
+2. **The scroll groove, laid flat: no.** Its texture reads as "nineties website". The groove itself is okay and its tie to how the scroll bar works is liked; the interior would want to be darker. Doesn't look as integrated as others.
+3. **Banners from the title rule: the placement is liked** (hanging off the top, not rising from the chat, "a clever idea"), **the banner shape is not**: too PvP, not luxury. A different shape in the same place is open.
+4. **Plaques from under the rim: liked the look ("really nice"), but** with Chat open it makes two vertical tab columns (the conversation list is the other), which feels bad, especially if vertical and horizontal tabs get hotkeys later (an idea the player is considering). **Open to a redesign** of it.
+5. **Tabs in the title band: neutral.** It would need a different selector, and the unselected names to be more than empty space.
+6. **Blizzard's own tab art, washed: no.**
+7. **Bookmarks behind the wall: no.**
+
+So the live directions are 1 (fleur in front, stronger names), 3's placement with a luxury shape, and a redesigned 4.
