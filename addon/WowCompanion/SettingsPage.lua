@@ -300,9 +300,12 @@ local function orderOf(e) return e.row.order or 50 end
 local LIFT = 25
 local function lift()
 	local base = page:GetFrameLevel() + LIFT
-	for _, f in ipairs({ seams, down, across }) do f:SetFrameLevel(base) end
-	for _, h in pairs(headers) do h.divider:SetFrameLevel(base) end
-	column:SetFrameLevel(base + 1)
+	-- the joints over the spine: each draws the spine through it, threaded
+	seams:SetFrameLevel(base)
+	down:SetFrameLevel(base)
+	across:SetFrameLevel(base + 1)
+	for _, h in pairs(headers) do h.divider:SetFrameLevel(base + 1) end
+	column:SetFrameLevel(base + 2)
 end
 local function layout()
 	for _, e in ipairs(rows) do
