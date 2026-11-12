@@ -24,13 +24,22 @@ WowCompanion_Style = WowCompanion_Style or {}
 -- labelStyle reads "Shapes" on this client, not "Shp": both spellings map.
 local GLYPH_SUFFIX = { Shp = "_SHP", Shapes = "_SHP", Ltr = "_LTR", Letters = "_LTR",
 	Rev = "_REV", Reverse = "_REV", Reversed = "_REV" }
-local GLYPH_SIZE = 18
+local GLYPH_SIZE = 20
+-- the newer prompt art sits on a 76 x 75 canvas with padding round it; Blizzard
+-- draws those 5 px past their bounds each side (InputIconTextureMixin
+-- ApplyTextureLayout), so inline they are drawn that much larger
+local PADDED = { width = 76, height = 75, scale = 76 / 66 }
 function WowCompanion_Glyph(key)
 	local icons = InputIconTextureSetUtility
 	local ok, atlas = icons ~= nil, nil
 	if ok then ok, atlas = pcall(icons.GetNormalActiveInputIconButtonTexture, key) end
-	if ok and type(atlas) == "string" and C_Texture.GetAtlasInfo(atlas) then
-		return ("|A:%s:%d:%d|a"):format(atlas, GLYPH_SIZE, GLYPH_SIZE)
+	local info = ok and type(atlas) == "string" and C_Texture.GetAtlasInfo(atlas)
+	if info then
+		local size = GLYPH_SIZE
+		if info.width == PADDED.width and info.height == PADDED.height then
+			size = math.floor(GLYPH_SIZE * PADDED.scale + 0.5)
+		end
+		return ("|A:%s:%d:%d|a"):format(atlas, size, size)
 	end
 	local style
 	pcall(function()
@@ -203,4 +212,4 @@ WowCompanion_Style.STONE = {
 }
 -- "hold a conversation's chord": a shoulder button with no letter, inline in
 -- text (tools/make_chord_glyph.py draws it; the version is in its name)
-WowCompanion_Style.CHORD = "|T" .. ART .. "Chord-2:" .. GLYPH_SIZE .. ":" .. GLYPH_SIZE .. "|t"
+WowCompanion_Style.CHORD = "|T" .. ART .. "Chord-3:" .. GLYPH_SIZE .. ":" .. GLYPH_SIZE .. "|t"

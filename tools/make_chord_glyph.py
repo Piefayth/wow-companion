@@ -18,7 +18,7 @@ import os
 import struct
 import numpy as np
 
-VERSION = 2
+VERSION = 3
 SIZE = 64
 OVER = 4
 OUT = os.path.join(os.path.dirname(__file__), "..", "addon", "WowCompanion", "Art")
@@ -31,33 +31,41 @@ def rounded_box(x, y, cx, cy, hw, hh, r):
     return np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0) - r
 
 
+def bumper(x, y, inset, drop=0.0):
+    """A shoulder button seen from the front: a wide bar, its bottom corners
+    rounded, its top edge arched (high in the middle, low at the ends), shrunk
+    by `inset`."""
+    cx, cy = 32, 30 + drop
+    hw, hh, r = 27 - inset, 17 - inset, max(8 - inset, 1)
+    box = rounded_box(x, y, cx, cy, hw, hh, r) <= 0
+    top = (13 + drop) + 11 * ((x - cx) / 27) ** 2 + inset
+    return box & (y >= top)
+
+
 def main():
     n = SIZE * OVER
     c = (np.arange(n) + 0.5) / OVER
     x, y = np.meshgrid(c, c)
-    cx, cy, hw, hh, r = 32, 31, 22, 21, 12
-    d = rounded_box(x, y, cx, cy, hw, hh, r)
-    shadow_d = rounded_box(x, y, cx, cy + 3, hw + 1, hh + 1, r)
-
+    cx, cy, hh = 32, 38, 9
     rim_w = 3.2
-    shape = (d <= 0).astype(float)
-    face = (d <= -rim_w).astype(float)
+    shape = bumper(x, y, 0).astype(float)
+    face = bumper(x, y, rim_w).astype(float)
     rim = shape - face
+    shadow_shape = bumper(x, y, -1.5, drop=3).astype(float)
     # light from above: the rim runs from pale bronze at the top to dark below
-    t = np.clip((y - (cy - hh)) / (2 * hh), 0, 1)
+    t = np.clip((y - (cy - hh - 9)) / (2 * hh + 9), 0, 1)
     rim_rgb = np.stack([200 - 110 * t, 166 - 96 * t, 108 - 66 * t], axis=-1)
     # a thin bright edge just inside the rim's top, as on Blizzard's icons
-    glint = ((d > -rim_w - 1.2) & (d <= -rim_w) & (y < cy)).astype(float) * 0.5
+    glint = (bumper(x, y, rim_w - 1.2) & ~bumper(x, y, rim_w + 0.2) & (y < cy)).astype(float) * 0.5
     # the face: dark brown, a little lighter toward the top centre
-    dist = np.hypot((x - cx) / hw, (y - (cy - hh * 0.4)) / hh)
+    dist = np.hypot((x - cx) / 27, (y - (cy - hh)) / (hh + 9))
     k = np.clip(1 - dist, 0, 1)
     face_rgb = np.stack([30 + 22 * k, 25 + 18 * k, 20 + 13 * k], axis=-1)
     face_rgb += glint[..., None] * np.array([90, 75, 50])
-
     rgb = rim[..., None] * rim_rgb + face[..., None] * face_rgb
     alpha = shape
     # the soft shadow, under the shape, offset down
-    shadow = np.clip(1 - np.maximum(shadow_d, 0) / 4.0, 0, 1) * (shadow_d < 4) * 0.55
+    shadow = shadow_shape * 0.5
     alpha_all = alpha + shadow * (1 - alpha)
     rgb_all = rgb  # the shadow is black
 
