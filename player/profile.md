@@ -27,10 +27,6 @@ none of this. When the player states a new preference or changes one, write it h
   window.
 - **Clean up freely** (2026-11-11: "I love cleaning up"): remove what is dead,
   done or replaced without asking first.
-- **Design by talking it through, no references to copy** (2026-11-11): for
-  the look of our UI, propose original ideas in words first (with the design
-  agent), then show candidates; never build from a reference panel (it gets
-  ripped off), and never redesign the live panel one reload per guess.
 - **Combat bars are for combat** (2026-11-10): no agent puts a non-combat entry
   (a chat, menu or utility macro, a wheel opener) on the action bars without
   their explicit permission, at minimum anything on the first page (the gamepad
