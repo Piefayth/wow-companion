@@ -499,7 +499,8 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " Cancel newest" end
 		if focused and sendable() then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
 		if focused and offerShown() then parts[#parts + 1] = glyph("PADLSTICK") .. " " .. offerShown() end
-		if focused then parts[#parts + 1] = glyph("PADRSTICK") .. " with a chord: that conversation" end
+		-- the game's unlabelled shoulder glyph: any conversation's chord
+		if focused then parts[#parts + 1] = "|A:Gamepad_Gen_LShoulder_32:14:14|a+" .. glyph("PADRSTICK") .. " Switch" end
 		-- a settings row under the cursor, on any tab (WC.RowStop binds the keys)
 		local adjust = WC.RowPrompt(window)
 		if adjust then parts[#parts + 1] = adjust end
