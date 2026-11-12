@@ -267,7 +267,9 @@ local function runCode(label, code, before)
 	for _, printed in ipairs(output) do
 		remember("probe", label .. ": " .. printed)
 	end
-	if before or not ok then
+	-- the window hears of a run only when it says something: a failure or a value
+	-- (prints are posted above, a taint below); the run record keeps every run
+	if not ok or outcome ~= "" then
 		remember("probe", ("%s %s"):format(label, line))
 	end
 	WowCompanionAgentDB.runs = WowCompanionAgentDB.runs or {}
