@@ -415,7 +415,7 @@ def fleur_cap(c, down, mode):
 def bud_rule(c, piece, hw=1.0, pal=dim(BARK, 0.88)):
     """The divider: a vine nearer the quest log divider's weight than a hairline
     (the player, 2026-11-12), a shade darker than the bark so its width does
-    not read brighter. Its left end a tendril's coil and one leaf; at
+    not read brighter. Its left end the vine curling into a coil (no leaf: noise beside the text); at
     the Joint a node where it grows into the left border, a tendril coiling off it."""
     pen = Pen(c, 16)
     vine = lambda x0, x1: [ribbon([(x0, 8), (x1, 8)], hw)]
