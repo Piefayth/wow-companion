@@ -34,13 +34,6 @@ local INSET = 4 -- the wells' border, as wide as its art
 -- panel and drew a dark line along the wells' inner edge (measured, 2026-11-12)
 local FLOOR = 3
 local CLOSE, CLOSE_PAD = 14, 3 -- the close button, inside the title band, CLOSE_PAD from the rim
--- The controller's focus glow (FrameGlow, gamepad-uiframemetal-focus) is
--- placed by Blizzard for its own metal (FocusEffects.lua: -10, 14, 14, -14
--- from the frame), not ours. Its bright line's inner edge lies this far inside
--- its box, left, top, right, bottom: 28, 21.5, 26 and 22 of the atlas's
--- pixels, drawn at half scale (measured, 2026-11-12), so the box set out by
--- these puts the line on the rim's outer edge all round.
-local GLOW = { 14, 10.75, 13, 11 }
 
 -- Our own frame art (tools/make_frame_art.py) on an owner's NineSlice pieces,
 -- on the owner's bounds: every piece rim wide, the top corners and edge top
@@ -535,11 +528,6 @@ local function buildLog()
 		frame.Bg:ClearAllPoints()
 		frame.Bg:SetPoint("TOPLEFT", RIM, -RIM)
 		frame.Bg:SetPoint("BOTTOMRIGHT", -RIM, RIM)
-	end
-	if frame.FrameGlow then
-		frame.FrameGlow:ClearAllPoints()
-		frame.FrameGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", -GLOW[1], GLOW[2])
-		frame.FrameGlow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", GLOW[3], -GLOW[4])
 	end
 	-- the title centred in the band, between the close button and its mirror
 	local bar = frame.TitleContainer
