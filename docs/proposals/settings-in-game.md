@@ -80,7 +80,8 @@ HID byte and mask (`9:0x10`, crates/pad). Mirroring `set talk PADSOCIAL` needs a
 map from one to the other. The two vocabularies are what let the two homes
 disagree.
 
-The way (the player asked for the robust one, 2026-11-12; Main proposed it):
+Proposed way, not yet chosen by the player. The player asked for a robust version
+of naming by WoW's names and Main proposed this (2026-11-12):
 the companion keeps reading raw HID and names buttons the way WoW does, from
 data instead of hand tables. WoW's raw order in `WTF/GamePadConfig_Default.json`
 is SDL's (raw 4 Back = `PADSOCIAL`, 5 Guide = `PADSYSTEM`, 15 misc = `PAD5`,
