@@ -1,8 +1,8 @@
--- A design sheet, for now: candidate scroll bars side by side, each on a small
--- copy of the chat well (six turns, each on its stone from the transcript's
--- edge to the pane's, the groove carved through them; the dividers meeting
--- the bar), so the player compares them in the Companion window instead of one
--- reload per idea. Shown only; nothing scrolls. Goes when a bar is chosen.
+-- A design sheet, for now: the candidate scroll bars, one at a time on a
+-- full-size copy of the chat well that scrolls as the chat does (the turns,
+-- their dividers and the dividers' joints move together; the bar stays, its
+-- arrows scroll, its thumb follows), so the player compares them in the
+-- Companion window instead of one reload per idea. Goes when a bar is chosen.
 
 local STONE = WC.Style.STONE
 local EDGE = 3
@@ -26,6 +26,7 @@ end
 local ARROW = 16 -- an arrow's square, its art about 12 of it
 
 local function arrows(c, design)
+	local made = {}
 	for _, spec in ipairs({ { "Up", "TOP", -2 }, { "Down", "BOTTOM", 2 } }) do
 		local b = CreateFrame("Button", nil, c)
 		b:SetSize(ARROW, ARROW)
@@ -35,8 +36,9 @@ local function arrows(c, design)
 		b:SetPushedTexture(art(design, base .. "Pushed"))
 		b:SetHighlightTexture(art(design, base .. "Highlight"), "ADD")
 		b:SetDisabledTexture(art(design, base .. "Disabled"))
+		made[spec[1]] = b
 	end
-	return 2 + ARROW + 2
+	return 2 + ARROW + 2, made.Up, made.Down
 end
 
 -- the rod (8 wide, its art the middle 1.5) centred on the column's left side,
@@ -58,17 +60,20 @@ local function rule(c, design)
 	mid:SetPoint("BOTTOM", bottom, "TOP")
 end
 
--- The spearhead: MinimalScrollBar's slim track and thumb, 8 wide, untinted, the
--- thumb a sixth of the way down and a third of the height. ends: the dividers'
--- y below the column's top, each given the design's joint at the column's edge.
-local function spear(c, design, ends)
-	local inset = arrows(c, design)
+-- Each builder draws its bar in the column c, puts each divider's joint in
+-- the lane (the strip over the column that scrolls with the turns) at the
+-- divider's y (ends), and returns its arrows, its thumb and the thumb's inset
+-- at each end of the column.
+
+-- The spearhead: MinimalScrollBar's slim track and thumb, 8 wide, untinted.
+local function spear(c, design, lane, ends)
+	local inset, up, down = arrows(c, design)
 	rule(c, design)
 	for _, e in ipairs(ends) do
-		local joint = c:CreateTexture(nil, "OVERLAY")
+		local joint = lane:CreateTexture(nil, "OVERLAY")
 		joint:SetTexture(art(design, "Joint"))
 		joint:SetSize(16, 16)
-		joint:SetPoint("CENTER", c, "TOPLEFT", 0, e.y)
+		joint:SetPoint("CENTER", lane, "TOPLEFT", 0, e.y)
 	end
 	local width = 8
 	local track = CreateFrame("Frame", nil, c)
@@ -93,10 +98,8 @@ local function spear(c, design, ends)
 	column3(track, "BACKGROUND", "minimal-scrollbar-track", "!minimal-scrollbar-track-middle")
 	local thumb = CreateFrame("Frame", nil, track)
 	thumb:SetWidth(width)
-	local room = (c:GetHeight() > 0 and c:GetHeight() or 300) - 2 * inset
-	thumb:SetHeight(room / 3)
-	thumb:SetPoint("TOP", track, "TOP", 0, -room / 6)
 	column3(thumb, "ARTWORK", "minimal-scrollbar-small-thumb", "minimal-scrollbar-small-thumb-middle")
+	return up, down, thumb, inset
 end
 
 -- A groove carved into the stone between its borders (Mid, 32 wide over the
@@ -104,7 +107,7 @@ end
 -- two ends, the thumb riding in it, and at each divider's y a Joint (32x16, its
 -- x 6 the column's left edge) taking the divider into the left border and on
 -- past the groove to the pane's edge.
-local function groove(c, design, ends)
+local function groove(c, design, lane, ends)
 	local caps = {}
 	for _, spec in ipairs({ { "Up", "TOP" }, { "Down", "BOTTOM" } }) do
 		local b = CreateFrame("Button", nil, c)
@@ -124,17 +127,15 @@ local function groove(c, design, ends)
 	mid:SetPoint("TOP", caps.Up, "BOTTOM")
 	mid:SetPoint("BOTTOM", caps.Down, "TOP")
 	for _, e in ipairs(ends) do
-		local joint = c:CreateTexture(nil, "ARTWORK")
+		local joint = lane:CreateTexture(nil, "ARTWORK")
 		joint:SetTexture(art(design, "Joint" .. (e.thick and "Thick" or "")))
 		joint:SetSize(32, 16)
-		joint:SetPoint("LEFT", c, "TOPLEFT", -6, e.y)
+		joint:SetPoint("LEFT", lane, "TOPLEFT", -6, e.y)
 	end
 	-- the thumb: its ends, its centre (the set's motif) and the shaft stretched between
-	local room = (c:GetHeight() > 0 and c:GetHeight() or 300) - 64
 	local thumb = CreateFrame("Frame", nil, c)
 	thumb:SetFrameLevel(c:GetFrameLevel() + 3)
-	thumb:SetSize(32, room / 3)
-	thumb:SetPoint("TOP", c, "TOP", 0, -32 - room / 6)
+	thumb:SetWidth(32)
 	local function piece(name, height, point)
 		local t = thumb:CreateTexture(nil, "ARTWORK")
 		t:SetTexture(art(design, name))
@@ -149,6 +150,7 @@ local function groove(c, design, ends)
 		shaft:SetPoint("TOPLEFT", span[1], "BOTTOMLEFT")
 		shaft:SetPoint("BOTTOMRIGHT", span[2], "TOPRIGHT")
 	end
+	return caps.Up, caps.Down, thumb, 32
 end
 
 -- each: a name, its builder and its art. The spearhead's divider is Blizzard's
@@ -163,7 +165,7 @@ local OPTIONS = {
 }
 
 -- a conversation as the chat shows it, long enough to scroll: each turn's
--- band height, its owner's stone, the header and the text in the chat's fonts
+-- owner (its stone), header, text in the chat's fonts, and band height
 local SAMPLE = {
 	{ "you", "You 20:47", "The scroll bar again. Show me the real thing this time, at full size.", 64 },
 	{ "claude", "Claude 20:48", "This is the chat at its real size, with the design you picked on its right. The arrows sit at the groove's ends and each divider meets the groove's edge.", 104 },
@@ -172,20 +174,26 @@ local SAMPLE = {
 	{ "you", "You 20:51", "What about the stone behind the bar?", 64 },
 	{ "claude", "Claude 20:52", "Each turn's stone runs on behind the groove to the panel's edge, so the bands never stop short.", 86 },
 	{ "you", "You 20:53", "Good. Pick one on the right to compare.", 64 },
-	{ "claude", "Claude 20:54", "Each button shows its design here, in the same place.", 0 },
+	{ "claude", "Claude 20:54", "Each button shows its design here, in the same place.", 64 },
+	{ "you", "You 20:55", "Does it scroll?", 64 },
+	{ "claude", "Claude 20:56", "It does: the arrows move the turns, the dividers and their joints together, and the thumb follows.", 86 },
+	{ "you", "You 20:57", "And the dividers stay lined up with the bar?", 64 },
+	{ "claude", "Claude 20:58", "Each joint scrolls with its divider, so they meet the groove at every position.", 86 },
+	{ "you", "You 20:59", "Show me the end.", 64 },
+	{ "claude", "Claude 21:00", "This is the last turn; the thumb sits at the bottom of its groove.", 70 },
 }
 
--- a divider at y across the pane, as the bands run: Blizzard's to the
--- spearhead's column, its plain middle on under the column to the edge; a
--- groove's own to its Joint
-local function divider(text, column, y, design, thick)
+-- a divider at y across the turns, as the bands run: Blizzard's to the
+-- spearhead's lane, its plain middle on under the lane to the edge; a groove's
+-- own to its Joint
+local function divider(text, lane, y, design, thick)
 	if design == "Spear" then
 		local line = text:CreateTexture(nil, "ARTWORK")
 		line:SetAtlas("QuestLog-frame-devider")
 		line:SetAlpha(thick and 1 or 0.8)
 		line:SetHeight(thick and 22 or 15)
 		line:SetPoint("LEFT", text, "TOPLEFT", 0, y)
-		line:SetPoint("RIGHT", column, "TOPLEFT", 0, y)
+		line:SetPoint("RIGHT", lane, "TOPLEFT", 0, y)
 		local info = C_Texture.GetAtlasInfo("QuestLog-frame-devider")
 		if info then
 			local on = text:CreateTexture(nil, "ARTWORK")
@@ -194,8 +202,8 @@ local function divider(text, column, y, design, thick)
 			on:SetTexCoord(l + (r - l) * 0.45, l + (r - l) * 0.55, info.topTexCoord, info.bottomTexCoord)
 			on:SetAlpha(thick and 1 or 0.8)
 			on:SetHeight(thick and 22 or 15)
-			on:SetPoint("LEFT", column, "TOPLEFT", 0, y)
-			on:SetPoint("RIGHT", column, "TOPRIGHT", 0, y)
+			on:SetPoint("LEFT", lane, "TOPLEFT", 0, y)
+			on:SetPoint("RIGHT", lane, "TOPRIGHT", 0, y)
 		end
 		return
 	end
@@ -208,7 +216,7 @@ local function divider(text, column, y, design, thick)
 	line:SetTexture(art(design, "RuleMid" .. weight))
 	line:SetHeight(16)
 	line:SetPoint("LEFT", left, "RIGHT")
-	line:SetPoint("RIGHT", column, "TOPLEFT", -6, y) -- where the Joint takes it on
+	line:SetPoint("RIGHT", lane, "TOPLEFT", -6, y) -- where the Joint takes it on
 end
 
 -- one design on a full-size copy of the chat well, in the chat well's place
@@ -220,21 +228,39 @@ local function pane(page, option)
 	local border = CreateFrame("Frame", nil, box, "InsetFrameTemplate")
 	border:SetAllPoints()
 	if border.Bg then border.Bg:Hide() end
-	-- the turns past the well's bottom are cut off there, as the chat's scroll does
-	box:SetClipsChildren(true)
 	local column = CreateFrame("Frame", nil, box)
 	-- Shorter than the well, with the same clear stone past each tip, measured
-	-- at 4K: the inset's top border reads 3 px thicker than its bottom one, and
-	-- the down arrow's art carries its cast shadow below the tip; with 3 and 3
-	-- the top tip touched the border and the bottom one stood 15 px off.
+	-- at 4K: the inset's top border reads thicker than its bottom one, and the
+	-- down arrow's art carries its cast shadow below the tip; with 3 and 3 the
+	-- top tip touched the border and the bottom one stood 15 px off.
 	column:SetPoint("TOPRIGHT", -EDGE, -9)
 	column:SetPoint("BOTTOMRIGHT", -EDGE, 4)
 	column:SetWidth(20)
 	column:SetFrameLevel(box:GetFrameLevel() + 3) -- above the top shadow (the lip, below)
-	local text = CreateFrame("Frame", nil, box)
-	text:SetPoint("TOPLEFT", EDGE, -EDGE)
-	text:SetPoint("BOTTOMRIGHT", column, "BOTTOMLEFT")
-	text:SetFrameLevel(box:GetFrameLevel() + 1)
+	-- The turns scroll in a frame over the whole well, behind the bar: each
+	-- turn's stone runs on behind the groove to the edge; the lane is the strip
+	-- under the column, where each divider ends.
+	local scroll = CreateFrame("ScrollFrame", nil, box)
+	scroll:SetPoint("TOPLEFT", EDGE, -EDGE)
+	scroll:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
+	scroll:SetFrameLevel(box:GetFrameLevel() + 1)
+	local text = CreateFrame("Frame", nil, scroll)
+	scroll:SetScrollChild(text)
+	local lane = CreateFrame("Frame", nil, text)
+	lane:SetPoint("TOPRIGHT")
+	lane:SetPoint("BOTTOMRIGHT")
+	lane:SetWidth(20)
+	-- The joints sit over the groove's border, so they scroll in a second,
+	-- transparent frame above the column, kept at the same offset.
+	local over = CreateFrame("ScrollFrame", nil, box)
+	over:SetAllPoints(scroll)
+	over:SetFrameLevel(box:GetFrameLevel() + 4)
+	local overText = CreateFrame("Frame", nil, over)
+	over:SetScrollChild(overText)
+	local joints = CreateFrame("Frame", nil, overText)
+	joints:SetPoint("TOPRIGHT")
+	joints:SetPoint("BOTTOMRIGHT")
+	joints:SetWidth(20)
 	local y, ends = 0, {}
 	for n, turn in ipairs(SAMPLE) do
 		local band = text:CreateTexture(nil, "BACKGROUND")
@@ -246,20 +272,58 @@ local function pane(page, option)
 		fs:SetJustifyH("LEFT")
 		fs:SetTextColor(0.86, 0.83, 0.76)
 		fs:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -4)
-		fs:SetPoint("RIGHT", -10, 0)
+		fs:SetPoint("RIGHT", lane, "LEFT", -10, 0)
 		fs:SetText(turn[3])
 		band:SetPoint("TOPLEFT", 0, y)
-		band:SetPoint("RIGHT", column) -- on behind the groove, to the pane's edge
-		if n == #SAMPLE then band:SetPoint("BOTTOM") else band:SetHeight(turn[4]) end
+		band:SetPoint("RIGHT") -- on behind the groove, to the pane's edge
+		band:SetHeight(turn[4])
 		if n > 1 then
 			-- the upper dividers thin, the lower ones thick: both weights in view
 			local thick = n > #SAMPLE / 2 + 1
-			divider(text, column, y, option[3], thick)
+			divider(text, lane, y, option[3], thick)
 			ends[#ends + 1] = { y = y, thick = thick }
 		end
 		y = y - turn[4]
 	end
-	local ok, err = pcall(option[2], column, option[3], ends)
+	local total = -y
+	text:SetSize(1, total)
+	overText:SetSize(1, total)
+
+	local ok, built = pcall(function() return { option[2](column, option[3], joints, ends) } end)
+	local up, down, thumb, inset
+	if ok then
+		up, down, thumb, inset = unpack(built)
+		-- the arrows and thumb over the scrolling joints
+		for _, f in ipairs({ up, down, thumb }) do f:SetFrameLevel(box:GetFrameLevel() + 6) end
+	end
+	-- The thumb's share of its room is the share of the conversation in view,
+	-- its place the scroll's; an arrow moves most of a view, as the chat's do.
+	local function paint()
+		local view = scroll:GetHeight()
+		text:SetWidth(scroll:GetWidth())
+		overText:SetWidth(scroll:GetWidth())
+		if not thumb or view <= 0 then return end
+		local range = math.max(0, total - view)
+		local room = column:GetHeight() - 2 * inset
+		local size = math.max(24, room * math.min(1, view / total))
+		local at = range > 0 and scroll:GetVerticalScroll() / range or 0
+		thumb:SetHeight(size)
+		thumb:ClearAllPoints()
+		thumb:SetPoint("TOP", column, "TOP", 0, -(inset + (room - size) * at))
+	end
+	local function by(pages)
+		local view = scroll:GetHeight()
+		local range = math.max(0, total - view)
+		local to = math.max(0, math.min(range, scroll:GetVerticalScroll() + pages * view * 0.75))
+		scroll:SetVerticalScroll(to)
+		over:SetVerticalScroll(to)
+		paint()
+	end
+	if up then up:SetScript("OnClick", function() by(-1) end) end
+	if down then down:SetScript("OnClick", function() by(1) end) end
+	scroll:SetScript("OnSizeChanged", paint)
+	box:SetScript("OnShow", paint)
+
 	-- The chat's top shadow (Blizzard's ShadowOverlay-Top, as Window.lua's lip)
 	-- over the turns, fading out sideways as it nears the bar, so the stone
 	-- round the top arrow is as clean as round the bottom one, with no edge
@@ -269,7 +333,7 @@ local function pane(page, option)
 	lip:SetPoint("TOPLEFT", EDGE, -EDGE)
 	lip:SetPoint("TOPRIGHT", column, "TOPLEFT", -6, 0)
 	lip:SetHeight(24)
-	lip:SetFrameLevel(text:GetFrameLevel() + 1)
+	lip:SetFrameLevel(box:GetFrameLevel() + 2)
 	local shade = lip:CreateTexture(nil, "OVERLAY")
 	shade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
 	shade:SetPoint("TOPLEFT")
@@ -279,7 +343,7 @@ local function pane(page, option)
 	fade:SetPoint("TOPLEFT", shade, "TOPRIGHT")
 	fade:SetPoint("BOTTOMRIGHT")
 	fade:SetGradient("HORIZONTAL", CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 0))
-	return box, not ok and tostring(err) or nil
+	return box, not ok and tostring(built) or nil
 end
 
 -- The tab: the preview where the chat sits, the designs as buttons where the
@@ -295,12 +359,8 @@ WC.Companion.AddTab("Scroll bars", function(page)
 	for i, option in ipairs(OPTIONS) do
 		local box, err = pane(page, option)
 		if chatWell then
-			-- the chat well's sides, the page well's top and bottom: the chat well
-			-- ends above the page well's bottom border (measured 13 px at 4K),
-			-- which left the down arrow high and the two arrows unequal
 			box:SetPoint("TOPLEFT", chatWell, "TOPLEFT")
-			box:SetPoint("RIGHT", chatWell, "RIGHT")
-			box:SetPoint("BOTTOM", page:GetParent(), "BOTTOM")
+			box:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT")
 		else
 			box:SetAllPoints(page)
 		end
@@ -316,7 +376,6 @@ WC.Companion.AddTab("Scroll bars", function(page)
 			b:SetSize(150, 21)
 			b:SetPoint("TOPRIGHT", page, "TOPRIGHT", -6, -(i - 1) * 24)
 		end
-		b:SetFrameLevel(box:GetFrameLevel() + 10)
 		local function art(layer, atlas)
 			local t = b:CreateTexture(nil, layer)
 			t:SetAtlas(atlas)
