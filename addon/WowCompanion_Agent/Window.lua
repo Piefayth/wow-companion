@@ -33,7 +33,7 @@ local WELL_TOP, FOOT = 25.6, 20 -- WELL_TOP: the rule's foot, its shadow on the 
 -- plaque itself spans the piece from x 3 to 77, its head IDLE_HEAD or
 -- CHOSEN_HEAD down. The first piece is TABS_X in; each next STEP on. The
 -- chosen tab's focus glow (FocusArt.lua) is drawn for these numbers.
-local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s-2]]
+local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s-3]]
 local PLAQUE_W, PLAQUE_H, PLAQUE_UP = 80, 34, 30
 local IDLE_HEAD, CHOSEN_HEAD = 7, 2
 local TABS_X, STEP = 18, 80

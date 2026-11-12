@@ -74,6 +74,19 @@ def bead(u):
     return np.sqrt(np.clip(1 - u * u, 0, 1))
 
 
+def bar(u, w):
+    """A bar of the rim's make: its height across it, u from 0 to w, shoulders
+    1.1 wide, a slightly crowned top."""
+    sh = np.clip(np.minimum(u, w - u) / 1.1, 0, 1)
+    return (1 - (1 - sh) ** 2) * 0.9 + 0.15 * bead(np.clip(2 * u / w - 1, -1, 1))
+
+
+def rim_metal(hgt, pal=BRONZE, k=K):
+    """The rim's metal on a height field, k samples a unit: the tabs' trim
+    is the same (make_tab_art.py)."""
+    return shade(hgt, pal, k, gloss=0.22, power=14)
+
+
 class Layers:
     def __init__(self, shape):
         self.rgb = np.zeros(shape + (3,))
@@ -138,11 +151,6 @@ def frame():
     # narrower bar of the same make, meeting the rim in a T. The metal is
     # brushed along its length: its grain a function of the depth alone, so
     # the edges stretch and the corners turn without a seam.
-    def bar(u, w):
-        """A bar's height across it, u from 0 to w: shoulders 1.1 wide, a
-        slightly crowned top."""
-        sh = np.clip(np.minimum(u, w - u) / 1.1, 0, 1)
-        return (1 - (1 - sh) ** 2) * 0.9 + 0.15 * bead(np.clip(2 * u / w - 1, -1, 1))
     # the rim's bar carries a raised bead along its outer half, the lit
     # ridge the game's rim has, its inner half lower and darker
     hr = np.where((s >= 0.45) & (s < 5.35), bar(s - 0.45, 4.9) * 0.75 + 0.6 * bead(np.clip((s - 2.0) / 1.25, -1, 1)), 0)
@@ -151,7 +159,7 @@ def frame():
     hrule = np.where(hrule > hr, hrule, 0)  # the rim's bar runs over the rule's end
     hgt = ndimage.gaussian_filter(np.maximum(hr, hrule), K * 0.1)
     metal = (s >= 0) & (s < RIM) | (hrule > 0)
-    col = shade(hgt, BRONZE, gloss=0.22, power=14)
+    col = rim_metal(hgt)
     col = col * (1 + 0.09 * brushed(s))[..., None]
     rule = hrule > 0
     col = np.where(rule[..., None], col * (1 + 0.07 * brushed(yy, 5))[..., None], col)
@@ -335,9 +343,8 @@ ORIGIN = (28.8, 208.8)
 SIZE = (760.0, 520.0)
 SHOT = os.path.join(os.environ.get("LOCALAPPDATA", ""), "wow-companion", "shots", "full4.png")
 SLATE = os.path.join(ROOT, "addon", "WowCompanion", "Art", "%s-6.tga")  # Style.lua's STONE
-GLOW_ART = os.path.join(OUT, "Focus-Glow-1.tga")  # make_focus_art.py's
-TAB_GLOW_ART = os.path.join(OUT, "Focus-Tab-1.tga")  # make_focus_art.py's
-TAB_ART = os.path.join(OUT, "Tab-%s-2.tga")  # make_tab_art.py's
+GLOW_ART = os.path.join(OUT, "Focus-%s-1.tga")  # make_focus_art.py's: Glow and Tab, -<style> after either
+TAB_ART = os.path.join(OUT, "Tab-%s-3.tga")  # make_tab_art.py's
 
 # Window.lua's layout, in units
 RIM, GAP, WELL_TOP, FOOT, WELL = 6.0, 4.0, 25.6, 20.0, 130.0
@@ -401,12 +408,12 @@ class Mock:
         self.put(art[prefix + "LeftEdge"], x0, y0 + top, x0 + rim, y1 - rim)
         self.put(art[prefix + "RightEdge"], x1 - rim, y0 + top, x1, y1 - rim)
 
-    def glow(self, w, h, tab_x):
-        """FocusArt.lua's glow: Focus-Glow cut in nine, round the frame's
-        bounds set out by GLOW_OUT, its corners GLOW_M square; its top edge
-        in two runs either side of Focus-Tab on the chosen plaque's piece,
-        at tab_x."""
-        tex = load(GLOW_ART)
+    def glow(self, w, h, tab_x, style=""):
+        """FocusArt.lua's glow in a style ("" or "-A".."-E"): Focus-Glow cut
+        in nine, round the frame's bounds set out by GLOW_OUT, its corners
+        GLOW_M square; its top edge in two runs either side of Focus-Tab on
+        the chosen plaque's piece, at tab_x."""
+        tex = load(GLOW_ART % ("Glow" + style))
         t = (0, GLOW_MARGIN, GLOW_TEX - GLOW_MARGIN, GLOW_TEX)
         o, m = GLOW_OUT, GLOW_M
         xs = (-o, m - o, w - m + o, w + o)
@@ -421,13 +428,13 @@ class Mock:
                 elif i != 1 or j != 1:
                     self.put(piece, xs[i], ys[j], xs[i + 1], ys[j + 1])
         top = -PLAQUE_UP - TAB_GLOW_UP
-        self.put(load(TAB_GLOW_ART), gx0, top, gx1, top + TAB_GLOW[1])
+        self.put(load(GLOW_ART % ("Tab" + style)), gx0, top, gx1, top + TAB_GLOW[1])
 
 
-def mock(art, backdrop, chosen=0):
+def mock(art, backdrop, chosen=0, style=""):
     w, h = SIZE
     m = Mock(backdrop)
-    m.glow(w, h, TABS_X + chosen * STEP)
+    m.glow(w, h, TABS_X + chosen * STEP, style)
     m.tile("Slate", RIM, RIM, w - RIM, h - RIM, 0.72)  # the panel's body (frame.Bg)
     piece = {k: load(TAB_ART % k) for k in ("Idle", "Chosen")}
     labels = []
@@ -465,15 +472,20 @@ def mock(art, backdrop, chosen=0):
     return m.im.convert("RGB")
 
 
-def sheet(art):
+def backdrop():
+    """The shot with the old window and its glow covered by the world from
+    the screen's right, so nothing of the old frame shows."""
     old = Image.open(SHOT).convert("RGB")
-    # the backdrop: the shot with the old window and its glow covered by the
-    # world from the screen's right, so nothing of the old frame shows
     back = old.copy()
     world = old.crop((2300, 300, 3800, 1900))
     for x in range(0, 2300, world.width):
         for y in range(0, 1830, world.height):
             back.paste(world, (x, y + 100))
+    return back
+
+
+def sheet(art):
+    back = backdrop()
     full = mock(art, back)
     full.save(os.path.join(ROOT, "target", "window-4k.png"))
     # the window's top at 4K's own pixels, Chat and then Settings chosen; then

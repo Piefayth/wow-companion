@@ -111,7 +111,7 @@ So the live directions are 1 (fleur in front, stronger names), 3's placement wit
 
 The player chose 4a; it is the real tabs now and the gallery is gone. Each tab is
 still a `PanelTopTabButtonTemplate` button wearing a slate plaque
-(`Art/Tab-<Idle|Chosen>-2.tga`, `tools/make_tab_art.py`). The plaque pieces are
+(`Art/Tab-<Idle|Chosen>-3.tga`, `tools/make_tab_art.py`). The plaque pieces are
 80 x 34, each 80 from the last, the first 18 in from the left. Each piece's top
 is 30 above the window's top, so its foot is 4 under the rim. An idle plaque's
 face stands 23 above the rim, the chosen one's 28, and each name is centred in
@@ -120,9 +120,15 @@ the title rule's foot (`WELL_TOP` 25.6, was 64). The clamp keeps the chosen
 plaque on screen (`SetClampRectInsets(0, 0, 28, 0)`).
 
 **The tuck** (the player: the join "is not quite perfect", 2026-11-12): a plaque
-runs on behind the rim, so its face and bark darken over the last 3.2 units
+runs on behind the rim, so its face and trim darken over the last 3.2 units
 above the rim's top line, steepest at the line, as stone does in a crevice; the
-bark runs straight down into the rim at full width.
+trim runs straight down into the rim at full width.
+
+**The trim** (the player, 2026-11-12: the chosen tab's border the rim's colour,
+the others darker) is a bar of the rim's own make in the rim's metal
+(`make_frame_art.py`'s `bar()` and `rim_metal()`): the chosen plaque's in the
+rim's bronze, so its tones are the rim's under the same light; every other
+plaque's in that bronze times 0.7.
 
 **The focus glow** follows the rim and the chosen plaque as one outline (the
 player: "shape it to the highlighted tab", 2026-11-12; behind every plaque it
@@ -131,10 +137,14 @@ border (the NineSlice, a level up), so the rim covers the plaques' feet.
 `PanelTemplates_SetNumTabs` then sets the `FrameGlow` (frameLevel 505 in the
 template) a level under the first tab (`SharedUIPanelTemplates.lua:542`), as
 Blizzard's tabbed windows do. FocusArt.lua draws the rim's 9-slice with its top
-edge in two runs either side of `Focus-Tab`, the same halo drawn round the rim's
+edge in two runs either side of `Focus-Tab`, the same glow drawn round the rim's
 top and the chosen plaque (`tools/make_focus_art.py`), which follows the
 selection. Nothing is drawn inside that outline, so the window and the chosen
-plaque hide none of it; the other plaques stand in front of its halo. All of it
-is on the `FrameGlow`, so it shows and hides with Blizzard's focus. The five
-glow styles on trial (`WC.FocusArt.Style`) are gone: the player never picked
-one, and the shaped glow is the default's.
+plaque hide none of it; the other plaques stand in front of it. All of it
+is on the `FrameGlow`, so it shows and hides with Blizzard's focus.
+
+**The glow's styles** are on trial, the player's to pick (they dislike the
+first, 2026-11-12, and are still choosing): the first (`""`) and A to E, each
+drawn as both pieces, the 9-slice and `Focus-Tab`, so every style wraps the
+chosen plaque. `WC.FocusArt.Style("C")` switches it live and keeps it in
+`WowCompanionAgentDB.focusGlow`; `target/glow-styles-tabs.png` shows them all.

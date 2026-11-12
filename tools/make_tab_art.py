@@ -1,19 +1,19 @@
 """The Companion window's tabs (Window.lua): slate plaques rising from under
-the window's top rim, painted with the chat's own painters
-(make_scrollbar_art.py: bark, carving) on the chat's slate.
+the window's top rim: the chat's slate, trimmed in the rim's metal.
 
     python tools/make_tab_art.py   writes addon/WowCompanion_Agent/Art/Tab-<Idle|Chosen>-<v>.tga
 
 One piece a tab, the same for every tab (the names are the game's), drawn in
 UI units on a canvas of U texels a unit, PLAQUE units, at its rect in
 Window.lua: its top PLAQUE_UP over the window's top, the plaque from x X0 to
-X1, its head HEADS down (Chosen on the lighter slate, its bark lit), its foot
-running off the piece's bottom, under the rim. Bark trim on the three sides
-that show.
+X1, its head HEADS down (Chosen on the lighter slate), its foot running off
+the piece's bottom, under the rim. A trim on the three sides that show, of the
+rim's own metal (make_frame_art.py's bar() and rim_metal()): the chosen tab's in
+the rim's bronze, the others' in IDLE times it.
 
 The tuck: the plaque runs on behind the rim, so the slot between them is
-dark. The face and the bark darken over the last TUCK units above the rim's
-top line, steeply at the line, as stone does in a crevice; the bark runs
+dark. The face and the trim darken over the last TUCK units above the rim's
+top line, steeply at the line, as stone does in a crevice; the trim runs
 straight down into the rim at its full width.
 
 The chosen plaque's focus glow (make_focus_art.py) is drawn round outline().
@@ -27,22 +27,24 @@ import os
 import numpy as np
 from PIL import Image
 
-from make_scrollbar_art import BARK, U, Pen, dim, glint, raised, ribbon, shadow, ucanvas, write_tga
+from scipy import ndimage
+
+from make_frame_art import BRONZE, LINE, bar, rim_metal
+from make_scrollbar_art import U, Pen, ribbon, shadow, ucanvas, write_tga
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 SLATE = os.path.join(ROOT, "addon", "WowCompanion", "Art", "%s-6.tga")  # Style.lua's STONE
-VERSION = 2
+VERSION = 3
 PLAQUE = (80, 34)  # Window.lua's PLAQUE_W, PLAQUE_H
 PLAQUE_UP = 30  # Window.lua's: the rim's top line, from the piece's top
 HEADS = {"Idle": 7, "Chosen": 2}  # Window.lua's IDLE_HEAD, CHOSEN_HEAD
 X0, X1, R = 3, 77, 4.5  # the plaque's sides and its corners' radius
-TRIM = 0.85  # the bark's half-width, on the plaque's edge
-EDGE = TRIM + 0.3  # the plaque's outer edge out from its outline: the bark and its dark line
+TRIM = 0.85  # the trim's half-width, on the plaque's edge
+EDGE = TRIM + 0.3  # the plaque's outer edge out from its outline: the trim and its dark line
 TUCK = 3.2  # units above the rim the plaque starts into the slot's shade
 PX_4K = 2.7  # 4K pixels a UI unit: the game tiles the slate a texel a pixel
-LIT = tuple(tuple(min(255, int(x * 1.18)) for x in col) for col in BARK)
-DULL = dim(BARK, 0.82)
+IDLE = 0.7  # the unchosen tabs' trim: the rim's bronze this much darker
 
 
 def pot(n):
@@ -88,6 +90,18 @@ def tuck(c):
     return (0.3 + 0.7 * (1 - (1 - t) ** 2.4))[:, None, None]
 
 
+def trim(c, m, pal):
+    """The trim where m is: a bar of the rim's make across it, in the rim's
+    metal in pal, its shadow and the rim's dark line round it."""
+    k = U * c.s  # samples a unit
+    shadow(c, m, 0.4)
+    ring = ndimage.gaussian_filter(ndimage.maximum_filter(m, size=int(0.6 * k) | 1), k * 0.06)
+    c.over(np.broadcast_to(LINE, c.rgb.shape), ring * 0.9)
+    d = ndimage.distance_transform_edt(m > 0.5) / k  # units in from its edge
+    hgt = ndimage.gaussian_filter(bar(d, 2 * TRIM), k * 0.1)
+    c.over(rim_metal(hgt, pal, k), m)
+
+
 def plaque(kind):
     w, h = PLAQUE
     lit = kind == "Chosen"
@@ -98,9 +112,7 @@ def plaque(kind):
     m = pen.mask([edge])
     shadow(c, m, 0.7)
     stone(c, m, lit)
-    raised(pen, [ribbon(np.array(edge, float), TRIM)], LIT if lit else DULL, bevel=0.55, cast=0.4, grain=False)
-    if lit:
-        glint(c, pen, X0 + 1.3, head + 1.3, 2.6, 0.4)
+    trim(c, pen.mask([ribbon(np.array(edge, float), TRIM)]), BRONZE if lit else tuple(col * IDLE for col in BRONZE))
     c.rgb = c.rgb * tuck(c)
     return c.final()
 

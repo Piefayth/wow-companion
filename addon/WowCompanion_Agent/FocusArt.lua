@@ -10,6 +10,9 @@
 -- the chosen tab's glow (Focus-Tab): the line runs along the rim, up and
 -- over the chosen plaque and back down as one outline. The glow lies a level
 -- under the tabs (Window.lua), so the other plaques stand in front of it.
+-- Its style is the player's pick while they choose one (make_focus_art.py's
+-- STYLES): a letter in WowCompanionAgentDB.focusGlow, "" for the first,
+-- switched live by WC.FocusArt.Style.
 --
 -- The pointer is SmartNavigation's one shared texture. Its art (not Lua
 -- state) is swapped while it points into our window and put back as it was
@@ -28,6 +31,20 @@ local M, OUT = MARGIN / UNIT, INSET / UNIT -- 18 and 12 units
 local TAB_W, TAB_H, TAB_LEFT, TAB_UP = 96, 48, 8, 12
 
 local tabGlow -- the chosen tab's glow, once the window is dressed
+local dressed = {} -- every glow texture, with its art's stem, for Style
+
+-- a glow stem's art in the picked style
+local function styled(stem)
+	local pick = WowCompanionAgentDB and WowCompanionAgentDB.focusGlow or ""
+	return ART:format(pick ~= "" and (stem .. "-" .. pick) or stem)
+end
+
+local function texture(holder, stem)
+	local t = holder:CreateTexture(nil, "BACKGROUND", nil, 1)
+	t:SetTexture(styled(stem))
+	dressed[#dressed + 1] = { t = t, stem = stem }
+	return t
+end
 
 -- frame: the window, its focus glow dressed once; plaque: its chosen tab's
 -- plaque, which the glow follows
@@ -39,8 +56,7 @@ local function glow(frame, plaque)
 		local a, b = MARGIN / TEX, (TEX - MARGIN) / TEX
 		local cols = { { 0, a }, { a, b }, { b, 1 } }
 		local function piece(row, col)
-			local t = holder:CreateTexture(nil, "BACKGROUND", nil, 1)
-			t:SetTexture(ART:format("Focus-Glow"))
+			local t = texture(holder, "Focus-Glow")
 			t:SetTexCoord(cols[col][1], cols[col][2], cols[row][1], cols[row][2])
 			return t
 		end
@@ -65,8 +81,7 @@ local function glow(frame, plaque)
 				end
 			end
 		end
-		tabGlow = holder:CreateTexture(nil, "BACKGROUND", nil, 1)
-		tabGlow:SetTexture(ART:format("Focus-Tab"))
+		tabGlow = texture(holder, "Focus-Tab")
 		tabGlow:SetSize(TAB_W, TAB_H)
 		-- the top edge: a run from each top corner to the tab's glow
 		local left, right = piece(1, 2), piece(1, 2)
@@ -136,5 +151,12 @@ local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:SetScript("OnEvent", function() pcall(hook) end)
 
--- Window.lua dresses the window's glow with it, and moves it with the chosen tab
-WC.FocusArt = { Dress = glow }
+WC.FocusArt = {
+	-- Window.lua dresses the window's glow with it, and moves it with the chosen tab
+	Dress = glow,
+	-- "A".."E", or "" for the first glow; the window's glow changes at once
+	Style = function(pick)
+		WowCompanionAgentDB.focusGlow = pick or ""
+		for _, d in ipairs(dressed) do d.t:SetTexture(styled(d.stem)) end
+	end,
+}
