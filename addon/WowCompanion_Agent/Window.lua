@@ -56,11 +56,18 @@ local function buildTabs(frame, messages)
 		end })
 
 	-- Status: what is running, read fresh while the tab is looked at. In the
-	-- chat's look: one row per fact on the replies' stone, the label in gold,
+	-- chat's look: one row per fact on the replies' stone (one sheet for the page), the label in gold,
 	-- the value beside it, a quest log divider between rows, a light, colour-
 	-- blind-safe word for good or bad (green ok, red problem) and grey detail.
 	local ROW = 30
 	local rows = {}
+	-- one stone behind the whole page, so the card fills the tab to its bottom
+	-- edge instead of ending under the last row (the player, 2026-11-11)
+	local stone = pages[3]:CreateTexture(nil, "BACKGROUND")
+	stone:SetTexture(WC.Transcript.STONE.claude, "REPEAT", "REPEAT")
+	stone:SetHorizTile(true)
+	stone:SetVertTile(true)
+	stone:SetAllPoints()
 	local function row(i)
 		local r = rows[i]
 		if r then return r end
@@ -68,11 +75,6 @@ local function buildTabs(frame, messages)
 		r:SetPoint("TOPLEFT", 0, -(i - 1) * ROW)
 		r:SetPoint("TOPRIGHT", 0, -(i - 1) * ROW)
 		r:SetHeight(ROW)
-		local stone = r:CreateTexture(nil, "BACKGROUND")
-		stone:SetTexture(WC.Transcript.STONE.claude, "REPEAT", "REPEAT")
-		stone:SetHorizTile(true)
-		stone:SetVertTile(true)
-		stone:SetAllPoints()
 		if i > 1 then
 			local divider = r:CreateTexture(nil, "ARTWORK")
 			divider:SetAtlas("QuestLog-frame-devider")
