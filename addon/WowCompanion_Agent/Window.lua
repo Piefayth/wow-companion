@@ -29,7 +29,7 @@ local BAND = 22.6 -- the title band's foot, where the art's rule begins
 local GAP = 4
 local WELL_TOP, FOOT = 64, 20
 local INSET = 4 -- the wells' border, as wide as its art
-local CLOSE = 26
+local CLOSE, CLOSE_PAD = 14, 3 -- the close button, inside the title band, CLOSE_PAD from the rim
 -- The controller's focus glow (FrameGlow, gamepad-uiframemetal-focus) is
 -- placed by Blizzard for its own metal (FocusEffects.lua: -10, 14, 14, -14
 -- from the frame), not ours. Its bright line's inner edge lies this far inside
@@ -41,7 +41,7 @@ local GLOW = { 14, 10.75, 13, 11 }
 -- Our own frame art (tools/make_frame_art.py) on an owner's NineSlice pieces,
 -- on the owner's bounds: every piece rim wide, the top corners and edge top
 -- tall, so a corner and the edge beside it share their pixels on screen.
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-2]]
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-3]]
 local function dress(owner, art, rim, top)
 	local slice = owner.NineSlice
 	if not slice then return end
@@ -479,22 +479,22 @@ local function buildLog()
 	local bar = frame.TitleContainer
 	if bar then
 		bar:ClearAllPoints()
-		bar:SetPoint("TOPLEFT", frame, "TOPLEFT", CLOSE, -RIM)
-		bar:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", -CLOSE, -BAND)
+		bar:SetPoint("TOPLEFT", frame, "TOPLEFT", RIM + CLOSE_PAD + CLOSE, -RIM)
+		bar:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", -(RIM + CLOSE_PAD + CLOSE), -BAND)
 		if bar.TitleText then
 			bar.TitleText:ClearAllPoints()
 			bar.TitleText:SetPoint("LEFT")
 			bar.TitleText:SetPoint("RIGHT")
 		end
 	end
-	-- our close button on the rim's top right corner; the controller's back
-	-- button (circle) closes a focused window by clicking its
+	-- our close button inside the title band's right end, centred in it; the
+	-- controller's back button (circle) closes a focused window by clicking its
 	-- frame.CloseButton (SmartNavigation:AttemptClose)
 	if frame.CloseButton then
 		local close = frame.CloseButton
 		close:SetSize(CLOSE, CLOSE)
 		close:ClearAllPoints()
-		close:SetPoint("TOPRIGHT")
+		close:SetPoint("TOPRIGHT", -(RIM + CLOSE_PAD), -(RIM + BAND - CLOSE) / 2)
 		close:SetNormalTexture(ART:format("Close", "Normal"))
 		close:SetPushedTexture(ART:format("Close", "Pushed"))
 		close:SetDisabledTexture(ART:format("Close", "Disabled"))

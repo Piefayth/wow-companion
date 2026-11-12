@@ -28,7 +28,7 @@ from PIL import Image
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 
-VERSION = 2
+VERSION = 3
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -44,7 +44,6 @@ BRONZE = (np.array((28, 16, 4.0)), np.array((72, 46, 16.0)), np.array((196, 154,
 LINE = np.array((14, 9, 4.0))
 BAND = np.array((33, 19, 10.0))
 GOLD = (np.array((120, 72, 0.0)), np.array((236, 186, 16.0)), np.array((255, 238, 110.0)))
-RED = (np.array((46, 3, 2.0)), np.array((126, 12, 8.0)), np.array((214, 58, 38.0)))
 
 
 def grid(w, h, k=K):
@@ -190,51 +189,21 @@ def frame_pieces():
 
 # --- the close button ----------------------------------------------------------
 
-CLOSE = 26.0
-
-
-def segment_dist(xx, yy, a, b):
-    ax, ay = a
-    bx, by = b
-    dx, dy = bx - ax, by - ay
-    t = np.clip(((xx - ax) * dx + (yy - ay) * dy) / (dx * dx + dy * dy), 0, 1)
-    return np.hypot(xx - ax - t * dx, yy - ay - t * dy)
+CLOSE = 14.0  # its side: it sits inside the title band (16.6 tall under the rim)
 
 
 def close(state):
-    """The close button, 26 units: a bronze octagon set round a red stone,
-    a gold cross on it. Pushed sinks the stone and the cross; Highlight is
-    drawn for ADD blending; Disabled is greyed."""
+    """The close button, 14 units, inside the title band: no plate of its own,
+    only a cross in the title's gold struck into the band's dark leather, as
+    the title text is, with a dark outline and the shadow it casts. Pushed
+    sinks and dims it; Highlight is a soft warm light behind it, for ADD
+    blending; Disabled is greyed."""
     xx, yy = grid(CLOSE, CLOSE)
     lay = Layers(xx.shape)
-    ring = octagon_depth(xx, yy, 0, 0, CLOSE, CLOSE, 4.0)
-    if state == "Highlight":
-        gem = octagon_depth(xx, yy, 2.8, 2.8, CLOSE - 2.8, CLOSE - 2.8, 2.6)
-        glow = np.clip(gem / 1.0, 0, 1) * (0.12 + 0.25 * np.clip(1 - gem / 6, 0, 1))
-        lay.over(np.array((255, 170, 90.0)), glow)
-        return lay.pre()
-    # the ring: a dark line, a bevelled bronze band
-    sh = np.clip(np.minimum(ring - 0.45, 2.8 - ring) / 0.9, 0, 1)
-    hring = (1 - (1 - sh) ** 2) * 0.9
-    rcol = shade(ndimage.gaussian_filter(hring, K * 0.1), BRONZE, gloss=0.22, power=14) * (1 + 0.09 * brushed(ring))[..., None]
-    lay.over(rcol, (ring >= 0).astype(float))
-    lay.over(LINE, np.clip(1 - ring / 0.5, 0, 1) * (ring >= 0) * 0.85)
-    # the stone, sunk in the ring, its face domed a little
     push = state == "Pushed"
-    gem = octagon_depth(xx, yy, 2.8, 2.8, CLOSE - 2.8, CLOSE - 2.8, 2.6)
-    hgem = np.minimum(gem, 1.4) * 0.9 + np.clip(gem - 1.4, 0, None) * 0.08
-    red = shade(ndimage.gaussian_filter(hgem, K * 0.12), RED, gloss=0.3, power=20)
-    # lighter toward the top, as a lit stone is
-    red = red * (1.12 - 0.3 * (yy / CLOSE))[..., None]
-    if push:
-        red = red * 0.72
-    lay.over(np.clip(red, 0, 255), (gem >= 0).astype(float))
-    lay.over(np.zeros(3), np.clip(1 - gem / 0.6, 0, 1) * (gem >= 0) * 0.7)  # the seat's dark edge
-    # the cross: two square-ended bars, bevelled, their outline and the
-    # shadow they cast
-    o = 0.6 if push else 0.0
-    c0 = CLOSE / 2 + o
-    half, reach = 2.0, 6.4
+    o = 0.5 if push else 0.0
+    c0 = CLOSE / 2
+    half, reach = 1.05, 4.6
 
     def cross(x, y):
         """How far inside the cross a point is (negative outside)."""
@@ -242,16 +211,22 @@ def close(state):
         one = np.minimum(half - np.abs(v), reach - np.abs(u))
         two = np.minimum(half - np.abs(u), reach - np.abs(v))
         return np.maximum(one, two)
-    d = cross(xx, yy)
-    lay.over(np.zeros(3), np.clip((cross(xx - 0.6, yy - 0.8) + 0.9) / 0.9, 0, 1) * 0.55 * (gem > 0))
-    lay.over(LINE, np.clip((d + 0.55) * 2, 0, 1))
-    hx = np.clip(d / 0.9, 0, 1)
+    if state == "Highlight":
+        r = np.hypot(xx - c0, yy - c0)
+        lay.over(np.array((255, 190, 90.0)), np.clip(1 - r / (CLOSE / 2), 0, 1) ** 1.5 * 0.35)
+        lay.over(np.array((255, 220, 130.0)), np.clip((cross(xx, yy) + 1.2) / 1.2, 0, 1) * 0.25)
+        return lay.pre()
+    d = cross(xx - o, yy - o)
+    lay.over(np.zeros(3), np.clip((cross(xx - o - 0.5, yy - o - 0.7) + 0.8) / 0.8, 0, 1) * 0.6)
+    lay.over(LINE, np.clip((d + 0.45) / 0.4, 0, 1))
+    hx = np.clip(d / 0.8, 0, 1)
     hx = (1 - (1 - hx) ** 2) * 0.8
-    gold = shade(ndimage.gaussian_filter(hx, K * 0.08), GOLD, gloss=0.3, power=16)
+    gold = shade(ndimage.gaussian_filter(hx, K * 0.08), GOLD, gloss=0.25, power=16)
     if push:
-        gold = gold * 0.85
-    lay.over(gold, (d >= 0).astype(float))
+        gold = gold * 0.75
+    lay.over(gold, np.clip((d + 0.05) / 0.15, 0, 1))
     pre = lay.pre()
+    pre = np.stack([ndimage.gaussian_filter(pre[..., i], K * 0.12) for i in range(4)], -1)
     if state == "Disabled":
         grey = (pre[..., :3] @ np.array([0.3, 0.59, 0.11]))[..., None] * 0.7
         pre = np.concatenate([np.repeat(grey, 3, -1), pre[..., 3:]], -1)
@@ -318,7 +293,7 @@ def render():
     art = frame_pieces()
     art.update(inset())
     for state in ("Normal", "Pushed", "Highlight", "Disabled"):
-        art["Close-" + state] = fit(close(state), (256, 256))
+        art["Close-" + state] = fit(close(state), (128, 128))
     return art
 
 
@@ -338,6 +313,7 @@ GLOW_SHOT = os.path.join(ROOT, "target", "glowshot.png")  # the focus glow's atl
 
 # Window.lua's layout, in units
 RIM, GAP, WELL_TOP, FOOT, WELL = 6.0, 4.0, 64.0, 20.0, 130.0
+CLOSE_PAD = 3.0  # Window.lua: the close button's gap from the rim
 GLOW = (14.0, 10.75, 13.0, 11.0)
 TAB_W, TAB_GAP, TAB_H, TAB_ACTIVE_H, CAP, HALO, EDGE = 69.0, 3.0, 20.2, 25.6, 6.0, 2.0, 3.0
 
@@ -423,7 +399,8 @@ def mock(art, backdrop):
             m.put(tabs["Right"], x + TAB_W - CAP, y1 - TAB_H, x + TAB_W, y1)
     m.glow(-GLOW[0], -GLOW[1], w + GLOW[2], h + GLOW[3])
     m.nine(art, "Frame-", 0, 0, w, h, RIM, TOP_H)
-    m.put(art["Close-Normal"], w - CLOSE, 0, w, CLOSE)
+    cx, cy = w - RIM - CLOSE_PAD - CLOSE, (RIM + 22.6 - CLOSE) / 2
+    m.put(art["Close-Normal"], cx, cy, cx + CLOSE, cy + CLOSE)
     return m.im.convert("RGB")
 
 
