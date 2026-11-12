@@ -83,7 +83,7 @@ class Canvas:
         self.rgb = np.where(out_a > 0, (rgb * a + self.rgb * self.a[..., None] * (1 - a)) / np.maximum(out_a, 1e-6), 0)
         self.a = out_a[..., 0]
 
-    def metal(self, m, pal, bevel=1.6, outline=0.8, shadow=True, dome=False, gloss=0.55, sheen=True):
+    def metal(self, m, pal, bevel=1.6, outline=0.8, shadow=True, dome=False, gloss=0.55, sheen=True, glow=True):
         """A raised piece: its outline and drop shadow under it, then the face
         shaded from a height field (a bevel `bevel` px wide, or a dome)."""
         inside = m > 0.5
@@ -115,7 +115,7 @@ class Canvas:
         if sheen:  # never on a rod: its tile would band where it repeats
             col = col * (1.08 - 0.22 * ys)
         col = col + spec[..., None] * 255
-        if dome:  # light caught inside the stone, bottom right
+        if dome and glow:  # light caught inside the stone, bottom right
             yy, xx = np.mgrid[0:self.H, 0:self.W]
             cy, cx = ndimage.center_of_mass(inside)
             rad = np.sqrt(inside.sum() / np.pi)
@@ -402,14 +402,17 @@ def render2():
         if name == "Onion":
             draw_layers(c, [("rim", [[(1, -10), (15, -10), (15, 40), (1, 40)]], GOLD)])
         out["Scroll-%s-Mid" % name] = c.final()
-        for piece in ("Top", "Mid", "Bottom"):
-            c = Canvas(8 * U, 4 * U, pad=0 if piece == "Mid" else 6)
-            m = Image.new("L", (c.W, c.H), 0)
-            (x0, y0), (x1, y1) = c.xy([(0.6 * U, 0.4 * U if piece != "Mid" else -40 * U), (7.4 * U, 40 * U)])
-            ImageDraw.Draw(m).rounded_rectangle([x0, y0, x1, y1], radius=3.3 * U * S, fill=255)
-            m = np.asarray(m, float) / 255
-            c.metal(np.flipud(m) if piece == "Bottom" else m, thumb_metal, dome=True, gloss=0.8, outline=1.2, sheen=False)
-            out["Scroll-%s-Thumb-%s" % (name, piece)] = c.final()
+        # the thumb drawn once, a pill 16 tall, and cut: its ends, and a
+        # middle slice (the same on every row) to stretch between them
+        c = Canvas(8 * U, 16 * U)
+        m = Image.new("L", (c.W, c.H), 0)
+        (x0, y0), (x1, y1) = c.xy([(0.6 * U, 0.4 * U), (7.4 * U, 15.6 * U)])
+        ImageDraw.Draw(m).rounded_rectangle([x0, y0, x1, y1], radius=3.3 * U * S, fill=255)
+        c.metal(np.asarray(m, float) / 255, thumb_metal, dome=True, glow=False, gloss=0.8, outline=1.2, sheen=False)
+        pill = c.final()
+        out["Scroll-%s-Thumb-Top" % name] = pill[:4 * U]
+        out["Scroll-%s-Thumb-Mid" % name] = pill[6 * U:10 * U]
+        out["Scroll-%s-Thumb-Bottom" % name] = pill[12 * U:]
         out.update(dividers(name))
     return out
 
