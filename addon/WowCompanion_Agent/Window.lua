@@ -188,12 +188,27 @@ local function buildTabs(frame, messages)
 	-- wells, so the border between it and the transcript is the window's own
 	-- border art (the classic trough's file is not in this client)
 	local column = _G["WCChatScrollColumn"] or CreateFrame("Frame", "WCChatScrollColumn", chatWell, "InsetFrameTemplate")
-	-- flush with the well's own edges, so the two borders coincide there and
-	-- only the column's left border shows, between it and the transcript
+	-- flush with the well's own edges; of its border only the left edge is
+	-- kept, full height, as the line between it and the transcript: its other
+	-- edges lay over the well's border a pixel off and drew a dark doubled
+	-- band beside the arrows
 	column:SetPoint("TOPRIGHT")
 	column:SetPoint("BOTTOMRIGHT")
 	column:SetWidth(BAR)
 	column:SetFrameLevel(level + 1)
+	local nine = column.NineSlice
+	if nine then
+		for _, key in ipairs({ "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
+			"TopEdge", "BottomEdge", "RightEdge", "Center" }) do
+			if nine[key] then nine[key]:Hide() end
+		end
+		if nine.LeftEdge then
+			nine.LeftEdge:ClearAllPoints()
+			nine.LeftEdge:SetPoint("TOPLEFT", column, "TOPLEFT")
+			nine.LeftEdge:SetPoint("BOTTOMLEFT", column, "BOTTOMLEFT")
+		end
+	end
+	if column.Bg then column.Bg:Hide() end
 	table.insert(frame.chatParts, column)
 	messages.scroll:ClearAllPoints()
 	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", EDGE, -EDGE)
