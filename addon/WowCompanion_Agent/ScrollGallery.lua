@@ -13,20 +13,6 @@ local function stone(tex, which)
 	tex:SetVertTile(true)
 end
 
--- Blizzard's classic arrows and knob (UIPanelScrollBarTemplate's pieces)
-local function classicArrows(column, inset, top)
-	local up = CreateFrame("Button", nil, column, "UIPanelScrollUpButtonTemplate")
-	up:SetPoint("TOP", column, "TOP", inset or 0, -(top or 4))
-	local down = CreateFrame("Button", nil, column, "UIPanelScrollDownButtonTemplate")
-	down:SetPoint("BOTTOM", column, "BOTTOM", inset or 0, top or 4)
-	local knob = column:CreateTexture(nil, "OVERLAY")
-	knob:SetTexture([[Interface\Buttons\UI-ScrollBar-Knob]])
-	knob:SetTexCoord(0.20, 0.80, 0.125, 0.875)
-	knob:SetSize(18, 24)
-	knob:SetPoint("TOP", up, "BOTTOM", 0, -40)
-	return up, down
-end
-
 -- the classic trough: its end caps, and the top cap's rails-only rows
 -- stretched between them (the centre atlas is not in this client)
 local function trough(column)
@@ -46,70 +32,124 @@ local function trough(column)
 	end
 end
 
--- a Blizzard ScrollBar template, shown at a quarter of the way down
-local function templateBar(column, template)
-	local made, bar = pcall(CreateFrame, "EventFrame", nil, column, template)
-	if not made or not bar then return false end
-	bar:SetPoint("TOPLEFT")
-	bar:SetPoint("BOTTOMLEFT")
-	pcall(bar.Init, bar, 0.3, 0.1)
-	pcall(bar.SetScrollPercentage, bar, 0.25, true)
-	return bar
+-- A slim marker, no arrows: a gutter and a thumb exactly its width (never
+-- wider), a sixth of the way down, a third of the height. g: the gutter
+-- (track atlases tinted, or a stone), t: the thumb (atlases, tint, desaturate)
+local function marker(c, width, g, t)
+	local track = CreateFrame("Frame", nil, c)
+	track:SetPoint("TOP", 0, -6)
+	track:SetPoint("BOTTOM", 0, 6)
+	track:SetWidth(width)
+	if g.stone then
+		local s = track:CreateTexture(nil, "BACKGROUND")
+		stone(s, g.stone)
+		s:SetAllPoints()
+		if g.rim then
+			-- a recessed groove: Blizzard's inset border around the stone
+			local rim = CreateFrame("Frame", nil, track, "InsetFrameTemplate")
+			rim:SetPoint("TOPLEFT", -3, 3)
+			rim:SetPoint("BOTTOMRIGHT", 3, -3)
+			if rim.Bg then rim.Bg:Hide() end
+		end
+	else
+		local top = track:CreateTexture(nil, "BACKGROUND")
+		top:SetAtlas("minimal-scrollbar-track-top")
+		top:SetSize(width, 8)
+		top:SetPoint("TOP")
+		local bottom = track:CreateTexture(nil, "BACKGROUND")
+		bottom:SetAtlas("minimal-scrollbar-track-bottom")
+		bottom:SetSize(width, 8)
+		bottom:SetPoint("BOTTOM")
+		local mid = track:CreateTexture(nil, "BACKGROUND")
+		mid:SetAtlas("!minimal-scrollbar-track-middle")
+		mid:SetPoint("TOPLEFT", top, "BOTTOMLEFT")
+		mid:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT")
+		for _, x in ipairs({ top, bottom, mid }) do
+			if g.color then x:SetVertexColor(unpack(g.color)) end
+		end
+	end
+	local thumb = CreateFrame("Frame", nil, track)
+	thumb:SetWidth(width)
+	local room = (c:GetHeight() > 0 and c:GetHeight() or 300) - 12
+	thumb:SetHeight(room / 3)
+	thumb:SetPoint("TOP", track, "TOP", 0, -room / 6)
+	if t.knob then
+		-- Blizzard's classic knob art (gold, bevelled), its centre tiled
+		local top = thumb:CreateTexture(nil, "ARTWORK")
+		top:SetAtlas("UI-ScrollBar-Knob-EndCap-Top")
+		top:SetSize(width, 21 * width / 18)
+		top:SetPoint("TOP")
+		local bottom = thumb:CreateTexture(nil, "ARTWORK")
+		bottom:SetAtlas("UI-ScrollBar-Knob-EndCap-Bottom")
+		bottom:SetSize(width, 21 * width / 18)
+		bottom:SetPoint("BOTTOM")
+		local mid = thumb:CreateTexture(nil, "BACKGROUND", nil, 1)
+		mid:SetAtlas("UI-ScrollBar-Knob-Center")
+		mid:SetPoint("TOPLEFT", 0, -5)
+		mid:SetPoint("BOTTOMRIGHT", 0, 5)
+		-- tiled, never squashed: the art is 1022 tall (as Window.lua's thumb)
+		mid:SetTexCoord(0, 1, 0, (room / 3 - 10) / 1022)
+		return
+	end
+	local set = t.set or "minimal-scrollbar-small-thumb"
+	local top = thumb:CreateTexture(nil, "ARTWORK")
+	top:SetAtlas(set .. "-top")
+	top:SetSize(width, 8)
+	top:SetPoint("TOP")
+	local bottom = thumb:CreateTexture(nil, "ARTWORK")
+	bottom:SetAtlas(set .. "-bottom")
+	bottom:SetSize(width, 8)
+	bottom:SetPoint("BOTTOM")
+	local mid = thumb:CreateTexture(nil, "ARTWORK")
+	mid:SetAtlas(set .. "-middle")
+	mid:SetPoint("TOPLEFT", top, "BOTTOMLEFT")
+	mid:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT")
+	for _, x in ipairs({ top, bottom, mid }) do
+		if t.desaturate then x:SetDesaturated(true) end
+		if t.color then x:SetVertexColor(unpack(t.color)) end
+	end
 end
 
 -- each: a name, the column's width, and what draws in it
 local OPTIONS = {
-	{ "Trough, dark stone", 31, function(c)
+	{ "Was 7, fitted", 14, function(c) marker(c, 8, {}, {}) end },
+	{ "Gold", 14, function(c) marker(c, 8, {}, { desaturate = true, color = { 1, 0.82, 0.25 } }) end },
+	{ "Bronze", 14, function(c) marker(c, 8, {}, { desaturate = true, color = { 0.78, 0.6, 0.38 } }) end },
+	{ "Parchment", 14, function(c) marker(c, 8, {}, { desaturate = true, color = { 0.86, 0.83, 0.76 } }) end },
+	{ "Stone groove, gold", 18, function(c)
+		marker(c, 8, { stone = "you", rim = true }, { desaturate = true, color = { 1, 0.82, 0.25 } })
+	end },
+	{ "Stone groove, knob", 22, function(c) marker(c, 12, { stone = "you", rim = true }, { knob = true }) end },
+	{ "Trough gutter, knob", 31, function(c)
 		local g = c:CreateTexture(nil, "BACKGROUND")
 		stone(g, "you")
 		g:SetPoint("TOPLEFT", 5, 0)
 		g:SetPoint("BOTTOMRIGHT", -5, 0)
 		trough(c)
-		-- centred on the gap between the rails (columns 6..24 of 31)
-		classicArrows(c, -0.5, 5)
-	end },
-	{ "Trough, black", 31, function(c)
-		local g = c:CreateTexture(nil, "BACKGROUND")
-		g:SetColorTexture(0, 0, 0, 0.75)
-		g:SetPoint("TOPLEFT", 5, 0)
-		g:SetPoint("BOTTOMRIGHT", -5, 0)
-		trough(c)
-		classicArrows(c, -0.5, 5)
-	end },
-	{ "List trough", 27, function(c)
-		local top = c:CreateTexture(nil, "BORDER")
-		top:SetAtlas("macropopup-scrollbar-top", true)
-		top:SetPoint("TOPLEFT")
-		local bottom = c:CreateTexture(nil, "BORDER")
-		bottom:SetAtlas("macropopup-scrollbar-bottom", true)
-		bottom:SetPoint("BOTTOMLEFT")
-		local mid = c:CreateTexture(nil, "BORDER")
-		mid:SetAtlas("!macropopup-scrollbar-middle", true)
-		mid:SetVertTile(true)
-		mid:SetPoint("TOPLEFT", top, "BOTTOMLEFT")
-		mid:SetPoint("BOTTOMLEFT", bottom, "TOPLEFT")
-		classicArrows(c, 0, 4)
-	end },
-	{ "Trim (modern)", 18, function(c) templateBar(c, "WowTrimScrollBar") end },
-	{ "Minimal", 10, function(c) templateBar(c, "MinimalScrollBar") end },
-	{ "Arrows only", 24, function(c) classicArrows(c, 0, 2) end },
-	{ "Marker only", 10, function(c)
-		local bar = templateBar(c, "MinimalScrollBar")
-		if bar then
-			if bar.Back then bar.Back:Hide() end
-			if bar.Forward then bar.Forward:Hide() end
-			if bar.Track then
-				bar.Track:ClearAllPoints()
-				bar.Track:SetPoint("TOPLEFT", 0, -4)
-				bar.Track:SetPoint("BOTTOMRIGHT", 0, 4)
-			end
-		end
+		-- the knob exactly the gutter's width (columns 6..24 of the 31)
+		local knob = CreateFrame("Frame", nil, c)
+		knob:SetPoint("TOPLEFT", 6, -40)
+		knob:SetSize(19, 90)
+		knob:SetFrameLevel(c:GetFrameLevel() + 1)
+		local top = knob:CreateTexture(nil, "ARTWORK")
+		top:SetAtlas("UI-ScrollBar-Knob-EndCap-Top")
+		top:SetSize(19, 22)
+		top:SetPoint("TOP")
+		local bottom = knob:CreateTexture(nil, "ARTWORK")
+		bottom:SetAtlas("UI-ScrollBar-Knob-EndCap-Bottom")
+		bottom:SetSize(19, 22)
+		bottom:SetPoint("BOTTOM")
+		local mid = knob:CreateTexture(nil, "BACKGROUND", nil, 1)
+		mid:SetAtlas("UI-ScrollBar-Knob-Center")
+		mid:SetPoint("TOPLEFT", 0, -5)
+		mid:SetPoint("BOTTOMRIGHT", 0, 5)
+		mid:SetTexCoord(0, 1, 0, 80 / 1022)
 	end },
 }
 
 local SAMPLE = {
 	{ "you", "|cffffd100You|r 20:47\nThe scroll bar again, what else have you got?" },
-	{ "claude", "|cffffd100Claude|r 20:48\nSeven of Blizzard's own looks, side by side. Each pane is a small chat well with your stone and mine, and its bar on the right." },
+	{ "claude", "|cffffd100Claude|r 20:48\nSlim markers, no arrows, each thumb its gutter's width. Each pane is a small chat well with your stone and mine, and its bar on the right." },
 }
 
 local function pane(page, i, option)
