@@ -180,7 +180,10 @@ local function paintConversations()
 		local label = slotLabel(key)
 		-- each conversation shows its own progress in the list: the seconds while its agent works, "new" once it answered
 		local heard, running = work(key)
-		if heard then
+		if talking.slot == key then
+			-- the Companion key is held with this conversation's chord
+			label = "|cffff8080" .. label .. "  talking|r"
+		elseif heard then
 			-- Whisper still has this conversation's clip
 			label = label .. "  |cff9ad5ff" .. WC.Jobs.Age(heard.since) .. "s|r"
 		elseif running then
@@ -443,8 +446,9 @@ local bus = WC.Module("Agent")
 -- a short tap of the talk button opens or closes the window (the game alone
 -- decides a tap: the PC sends nothing for one)
 bus:On("TALK_TAP", function() toggleWindow() end)
--- a hold is talking: the board's talking row (renderPending) follows the
--- chord each frame, and goes when the key is let go
+-- a hold is talking: the board's talking row and, with the window open, the
+-- conversation's tab (renderPending) follow the chord each frame, and go when
+-- the key is let go
 talking:SetScript("OnUpdate", function(self)
 	local slot = WowCompanion_PadSlot()
 	if slot ~= self.slot then
