@@ -131,13 +131,15 @@ function stepper:Relabel(p)
 	actionButton:SetText(WC.Conversations.Label(held.slot) .. ": " .. held.label)
 end
 
-local function offer(label, macro, slot)
-	-- attributes on a secure frame cannot be set in combat, and this is
-	-- configuration anyway
-	if InCombatLockdown() then
-		return "refused: in combat"
-	end
+local offer
+offer = function(label, macro, slot)
 	slot = slot or WC.Link.Current() or WowCompanion_ViewSlot()
+	-- attributes on a secure frame cannot be set in combat: an offer that comes
+	-- in a fight waits for its end
+	if InCombatLockdown() then
+		WC.AfterCombat(function() offer(label, macro, slot) end)
+		return "waiting for the fight to end"
+	end
 	table.insert(offers, 1, { slot = slot, label = label, macro = macro })
 	picked = 1
 	local bound = showOffer()
