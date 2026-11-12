@@ -1,4 +1,4 @@
-"""Junction trials, temporary: four directions for where the vine dividers meet,
+"""Junction trials, temporary: directions for where the vine dividers meet,
 beside the current one, for the Junctions tab (addon/WowCompanion_Agent/
 JunctionTrials.lua) while the player chooses. Goes when one is chosen.
 
@@ -74,56 +74,6 @@ def graft(c, big):
         raised(pen, leaves, dim(BUD, 0.8), bevel=0.45, cast=0.45)
 
 
-# --- C. Wrap: the arm reaches the trunk and parts, its two ends wrapping
-# round the trunk's front and curling off on the far side.
-def wrap(c, big):
-    rhw, rpal = THICK
-    ahw, apal = THICK if big else MEDIUM
-    pen = Pen(c, J)
-    run(pen, rhw, rpal)
-    flared_arm(pen, rhw, ahw, apal, 1.3)
-    w = ahw * 0.85
-    work = []
-    for s in (-1, 1):
-        path = tendril_path((m + rhw + 3, m), (m + rhw - 1, m - s * 2.5), (m - rhw - 1.5, m - s * 3.5),
-                            (m - rhw - 5, m - s * (6 if big else 4.5)), 2.0 if big else 1.6, -s * 1.2)
-        work += thick_wire(path, w, w * 0.55)
-    raised(pen, work, apal, bevel=bevel(ahw) * 0.8, cast=0.5)
-
-
-# --- D. Leafy: curling leaves (acanthus-like, long and curved) cupping the
-# meeting in its corners, a curl at each tip; two trunks get two leaves a
-# corner, a branch one.
-def curved_leaf(base, mid, tip, width, n=40):
-    path = bez(base, mid, mid, tip, n=n)
-    d = np.gradient(path, axis=0)
-    d /= np.linalg.norm(d, axis=1, keepdims=True)
-    nrm = np.stack([-d[:, 1], d[:, 0]], 1)
-    s = np.linspace(0, 1, n)
-    hw = width / 2 * np.sin(np.pi * s ** 0.7) ** 1.0
-    return [tuple(p) for p in path + nrm * hw[:, None]] + [tuple(p) for p in (path - nrm * hw[:, None])[::-1]]
-
-
-def leafy(c, big):
-    rhw, rpal = THICK
-    ahw, apal = THICK if big else MEDIUM
-    pen = Pen(c, J)
-    run(pen, rhw, rpal)
-    flared_arm(pen, rhw, ahw, apal, 1.4)
-    leaves, curls = [], []
-    for s in (-1, 1):
-        b = (m + rhw + 0.6, m - s * (ahw + 0.4))
-        leaves.append(curved_leaf(b, (m + rhw + 3, m - s * (ahw + 9)), (m + rhw + 0.5, m - s * (ahw + 14)), 4.2))
-        curls += thick_wire(tendril_path((m + rhw + 0.8, m - s * (ahw + 13.5)), (m + rhw + 2.5, m - s * (ahw + 15)),
-                                         (m + rhw + 4.5, m - s * (ahw + 15)), (m + rhw + 5, m - s * (ahw + 13)), 1.3, s * 1.1),
-                            0.6, 0.4)
-        if big:
-            leaves.append(curved_leaf((m + rhw + 1.0, m - s * (ahw + 0.5)), (m + rhw + 9, m - s * (ahw + 4)),
-                                      (m + rhw + 14, m - s * (ahw + 1)), 3.6))
-    raised(pen, leaves, dim(BUD, 0.85), bevel=0.55, cast=0.5)
-    raised(pen, curls, dim(apal, 0.95), bevel=0.4, cast=0.45)
-
-
 # --- E. Long tendril: one long, slow hairpin of wire in each corner, running
 # far out along both vines and turning in a single wide loop, a small curl at
 # its far ends; elegant, open, nothing tight. A branch gets one, longer, on
@@ -150,7 +100,7 @@ def current(c, big):
     M.junction(c, THICK, THICK if big else MEDIUM, M.TURNS["TRight"], "Scroll")
 
 
-TRIALS = {"Current": current, "Graft": graft, "Wrap": wrap, "Leafy": leafy, "Tendril": long_tendril}
+TRIALS = {"Current": current, "Graft": graft, "Tendril": long_tendril}
 
 
 def main():
