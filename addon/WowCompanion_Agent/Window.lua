@@ -140,14 +140,14 @@ local function buildTabs(frame, messages)
 	-- for good or bad (green ok, red problem) and grey detail.
 	local SPINE, SEAM, SHADE, NAME_W = 170, 3, 12, 150
 	local status = pages[3]
-	local rock = status:CreateTexture(nil, "BACKGROUND", nil, 0)
+	local rock = status:CreateTexture(nil, "BACKGROUND", nil, -2)
 	rock:SetTexture([[Interface\FrameGeneral\UI-Background-Rock]], "REPEAT", "REPEAT")
 	rock:SetHorizTile(true)
 	rock:SetVertTile(true)
 	rock:SetPoint("TOPLEFT", -9, 7)
 	rock:SetPoint("BOTTOMRIGHT", 9, -7)
 	local function statusWell(which, tl, br)
-		local t = status:CreateTexture(nil, "BACKGROUND", nil, 1)
+		local t = status:CreateTexture(nil, "BACKGROUND", nil, -1)
 		t:SetTexture(WC.Style.STONE[which], "REPEAT", "REPEAT")
 		t:SetHorizTile(true)
 		t:SetVertTile(true)
@@ -161,9 +161,35 @@ local function buildTabs(frame, messages)
 			shade:SetPoint(side == "Top" and "TOPRIGHT" or "BOTTOMLEFT", t)
 			if side == "Top" then shade:SetHeight(SHADE) else shade:SetWidth(SHADE) end
 		end
+		return t
 	end
-	statusWell("you", -9, { "BOTTOMLEFT", SPINE - 2 - SEAM })
+	local names = statusWell("you", -9, { "BOTTOMLEFT", SPINE - 2 - SEAM })
 	statusWell("claude", SPINE - 2, { "BOTTOMRIGHT", 9 })
+	-- The names well's stone, on trial (the player, 2026-11-12: a stone
+	-- darker than the rows' dark, or another texture, for the raised side):
+	-- picked live with WC.Companion.StatusNames(key), kept in
+	-- WowCompanionAgentDB.statusNames
+	local NAMES = {
+		dark = { WC.Style.STONE.you, 1, 1, 1 },
+		deeper = { WC.Style.STONE.you, 0.6, 0.6, 0.6 },
+		navy = { WC.Style.STONE.you, 0.42, 0.48, 0.62 },
+		rock = { [[Interface\FrameGeneral\UI-Background-Rock]], 0.8, 0.8, 0.8 },
+		marble = { [[Interface\FrameGeneral\UI-Background-Marble]], 0.7, 0.7, 0.7 },
+	}
+	local function dressNames()
+		local look = NAMES[WowCompanionAgentDB.statusNames or "deeper"] or NAMES.deeper
+		names:SetTexture(look[1], "REPEAT", "REPEAT")
+		names:SetHorizTile(true)
+		names:SetVertTile(true)
+		names:SetVertexColor(look[2], look[3], look[4])
+	end
+	dressNames()
+	WC.Companion.StatusNames = function(key)
+		if not NAMES[key] then return false end
+		WowCompanionAgentDB.statusNames = key
+		dressNames()
+		return true
+	end
 	local vines = CreateFrame("Frame", nil, status)
 	vines:SetAllPoints()
 	vines:SetFrameLevel(status:GetFrameLevel() + 5)
@@ -179,6 +205,14 @@ local function buildTabs(frame, messages)
 		if r then return r end
 		r = CreateFrame("Frame", nil, status)
 		r:SetHeight(ROW)
+		-- the row's band on the values' side, dark on every other row as the
+		-- chat's replies alternate; under the well's shading
+		r.band = status:CreateTexture(nil, "BACKGROUND", nil, 0)
+		r.band:SetTexture(WC.Style.STONE[i % 2 == 0 and "you" or "claude"], "REPEAT", "REPEAT")
+		r.band:SetHorizTile(true)
+		r.band:SetVertTile(true)
+		r.band:SetPoint("TOPLEFT", r, "TOPLEFT", SPINE - 2, 0)
+		r.band:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 9, 0)
 		if i > 1 then
 			r.divider = CreateFrame("Frame", nil, vines)
 			r.divider:SetHeight(16)
@@ -248,7 +282,8 @@ local function buildTabs(frame, messages)
 		add("Export", failed and bad .. ("%d part%s failed|r %s%s|r"):format(#failed,
 			#failed == 1 and "" or "s", grey, failed[1]) or good .. "whole|r")
 		add("Combat", InCombatLockdown() and bad .. "yes|r " .. grey .. "(changes wait until it ends)|r" or "no")
-		for i = n + 1, #rows do rows[i]:Hide() if rows[i].divider then rows[i].divider:Hide() end end
+		for i = n + 1, #rows do rows[i]:Hide() rows[i].band:Hide() if rows[i].divider then rows[i].divider:Hide() end end
+		for i = 1, n do rows[i].band:Show() end
 		for i = 2, n do rows[i].divider:Show() end
 		-- the rows share the page's height, so the card is filled to its foot
 		local h = math.max(ROW, math.floor((pages[3]:GetHeight() or 0) / n))
