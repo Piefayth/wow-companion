@@ -47,7 +47,9 @@ end
 -- steppers (SettingsDropdownWithButtonsTemplate's own), its menu the game's.
 -- The row is one stop laid over it, as their settings row is (the control
 -- itself out of the cycle): left and right are the steppers, confirm opens the
--- menu the way their gamepad footer does (MouseDown, MouseUp).
+-- menu the way their gamepad footer does (MouseDown, MouseUp). A pick does not
+-- refresh the steppers by itself (Settings re-inits on every change), so each
+-- pick signals the dropdown again, or an end's disabled arrow stays disabled.
 local function dropdown(row)
 	local top = label(row.label)
 	local control = CreateFrame("Frame", nil, page, "Metal2DropdownWithSteppersAndLabelTemplate")
@@ -57,7 +59,7 @@ local function dropdown(row)
 	control:SetPoint("TOPLEFT", LABEL_W, -top + 1)
 	dd:SetupMenu(function(_, root)
 		for _, name in ipairs(row.options()) do
-			root:CreateRadio(name, function(n) return n == row.get() end, function(n) row.set(n) end, name)
+			root:CreateRadio(name, function(n) return n == row.get() end, function(n) row.set(n) dd:SignalUpdate() end, name)
 		end
 	end)
 	control:SetSteppersShown(true)
