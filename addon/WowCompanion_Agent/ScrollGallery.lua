@@ -223,8 +223,12 @@ local function pane(page, option)
 	-- the turns past the well's bottom are cut off there, as the chat's scroll does
 	box:SetClipsChildren(true)
 	local column = CreateFrame("Frame", nil, box)
-	column:SetPoint("TOPRIGHT", -EDGE, -EDGE)
-	column:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
+	-- Shorter than the well, with the same clear stone past each tip, measured
+	-- at 4K: the inset's top border reads 3 px thicker than its bottom one, and
+	-- the down arrow's art carries its cast shadow below the tip; with 3 and 3
+	-- the top tip touched the border and the bottom one stood 15 px off.
+	column:SetPoint("TOPRIGHT", -EDGE, -9)
+	column:SetPoint("BOTTOMRIGHT", -EDGE, 4)
 	column:SetWidth(20)
 	column:SetFrameLevel(box:GetFrameLevel() + 3) -- above the top shadow (the lip, below)
 	local text = CreateFrame("Frame", nil, box)
