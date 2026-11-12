@@ -281,8 +281,12 @@ WC.Companion.AddTab("Scroll bars", function(page)
 	for i, option in ipairs(OPTIONS) do
 		local box, err = pane(page, option)
 		if chatWell then
+			-- the chat well's sides, the page well's top and bottom: the chat well
+			-- ends above the page well's bottom border (measured 13 px at 4K),
+			-- which left the down arrow high and the two arrows unequal
 			box:SetPoint("TOPLEFT", chatWell, "TOPLEFT")
-			box:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT")
+			box:SetPoint("RIGHT", chatWell, "RIGHT")
+			box:SetPoint("BOTTOM", page:GetParent(), "BOTTOM")
 		else
 			box:SetAllPoints(page)
 		end
