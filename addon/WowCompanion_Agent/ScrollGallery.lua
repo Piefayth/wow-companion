@@ -248,6 +248,20 @@ local function pane(page, option)
 		y = y - turn[4]
 	end
 	local ok, err = pcall(option[2], column, option[3], ends)
+	-- The chat's top shadow (Blizzard's ShadowOverlay-Top, as Window.lua's lip),
+	-- here across the whole well, the bar included: the groove is cut into the
+	-- same stone, so the shadow falls into it too. The arrows sit above it, lit.
+	local lip = CreateFrame("Frame", nil, box)
+	lip:SetPoint("TOPLEFT", EDGE, -EDGE)
+	lip:SetPoint("TOPRIGHT", -EDGE, -EDGE)
+	lip:SetHeight(24)
+	lip:SetFrameLevel(column:GetFrameLevel() + 4)
+	local shade = lip:CreateTexture(nil, "OVERLAY")
+	shade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
+	shade:SetAllPoints()
+	for _, child in ipairs({ column:GetChildren() }) do
+		if child:IsObjectType("Button") then child:SetFrameLevel(lip:GetFrameLevel() + 1) end
+	end
 	return box, not ok and tostring(err) or nil
 end
 
