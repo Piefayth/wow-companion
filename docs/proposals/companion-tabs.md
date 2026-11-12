@@ -148,3 +148,7 @@ first, 2026-11-12, and are still choosing): the first (`""`) and A to E, each
 drawn as both pieces, the 9-slice and `Focus-Tab`, so every style wraps the
 chosen plaque. `WC.FocusArt.Style("C")` switches it live and keeps it in
 `WowCompanionAgentDB.focusGlow`; `target/glow-styles-tabs.png` shows them all.
+
+## The focus glow (2026-11-12)
+
+The player picked **D6** (D3's warm colour with no white line, at D4's width) "for now", after: the first glow (disliked), B (too subtle, too white), C (ornaments, not a highlight), D (close: a little too white and bright), D2 and D4 (too golden), D5 (no). The styles stay, so the work can continue.
