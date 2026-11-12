@@ -82,22 +82,32 @@ do
 	-- A command for the companion: "WCCMD <nonce> <words>" (src/requests.rs reads
 	-- them from the strip it always watches). One shows at a time: a command
 	-- drawn while another is up waits its turn rather than replacing it, so a
-	-- Stop is never lost under a settings change. A fresh nonce for every draw
-	-- gets a repeated command past the companion's same-strip dedupe.
-	local commands, showing = {}, false
+	-- Stop is never lost under a settings change. The companion answers each
+	-- with `read` and its nonce, and the next is drawn then; one it never
+	-- answers (no companion) gives way after COMMAND_SECONDS. A fresh nonce for
+	-- every draw gets a repeated command past the companion's same-strip dedupe.
+	local commands, showing = {}, nil -- showing: the nonce drawn now
 	local COMMAND_SECONDS = 2.5
 	local function nextCommand()
 		local words = table.remove(commands, 1)
 		if not words then
-			showing = false
+			showing = nil
 			return
 		end
-		showing = true
-		WowCompanion_Strip.Send(("WCCMD %d%04d %s"):format(time(), math.random(0, 9999), words), COMMAND_SECONDS)
-		C_Timer.After(COMMAND_SECONDS, nextCommand)
+		local nonce = ("%d%04d"):format(time(), math.random(0, 9999))
+		showing = nonce
+		WowCompanion_Strip.Send(("WCCMD %s %s"):format(nonce, words), COMMAND_SECONDS)
+		C_Timer.After(COMMAND_SECONDS, function() if showing == nonce then nextCommand() end end)
 	end
 	function WowCompanion_Strip.Command(words)
 		commands[#commands + 1] = words
 		if not showing then nextCommand() end
 	end
+	WC.Link.Handle("read", function(inbox)
+		if showing and tostring(inbox.nonce) == showing then
+			WowCompanion_Strip.Hide()
+			nextCommand()
+		end
+		return "read: " .. tostring(inbox.nonce)
+	end)
 end

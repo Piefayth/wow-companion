@@ -164,6 +164,13 @@ pub(crate) fn watch_commands(addons: &Path) {
             crate::audit::note("cmd", "", &line);
         }
         let words: Vec<&str> = line.split_whitespace().collect();
+        // the game shows one command at a time and draws the next once this one
+        // is read (Strip.lua), so every command is answered at once
+        if let ["WCCMD", nonce, ..] = words.as_slice() {
+            if let Err(err) = crate::send(addons, &crate::message::Msg::new("read").text("nonce", nonce)) {
+                eprintln!("  command {nonce}: the read was not delivered: {err}");
+            }
+        }
         let main = |slot: &str| if slot == "main" { String::new() } else { slot.to_string() };
         match words.as_slice() {
             ["WCCMD", _nonce, verb @ ("cancel" | "now"), slot, req, ..] => {
