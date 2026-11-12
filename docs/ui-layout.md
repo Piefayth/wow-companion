@@ -18,15 +18,19 @@ The chat well, for example:
     column's bottom left. The turns' backings and dividers fill its width
     (Transcript.lua); text keeps `PAD_L`/`PAD_R`/`PAD_TOP` margins inside it.
     The top shadow (`lip`) spans its top.
-  - the **scroll column** (`WCChatScrollColumn`, `BAR` wide): an inset of its
-    own (`InsetFrameTemplate`), flush with the well's edges so their borders
-    coincide and only its left border shows, between it and the transcript.
-    The channel's stone and inner shadow fill its inside, the arrows sit at its
-    ends, the thumb's track between them.
-- A border is the window's own border art (an inset), never a rotated or
-  borrowed strip: `SetRotation` turns a texture inside its rect without
-  turning the rect, and files from other clients may not exist in this one
-  (`UI-Character-ScrollBar` does not).
+  - the **scroll column** (`WCChatScrollColumn`, `BAR` wide, the trough's own
+    width), inside the border on the right: Blizzard's classic scroll trough
+    as `WowClassicScrollBar` draws it (TrimScrollBar.xml), its end cap atlases
+    at their size and, since its centre atlas is not in this client, the top
+    cap's rails-only rows stretched between them. The player's darker stone
+    fills between the rails (the gutter), the arrows sit inside the caps, the
+    thumb's track between them.
+- A border is Blizzard's own border art at its own size, never a rotated
+  strip or a piece of a border stretched past its corners (a lone inset edge
+  stretched to full height ended abruptly at the top): `SetRotation` turns a
+  texture inside its rect without turning the rect, and files from other
+  clients may not exist in this one (`UI-Character-ScrollBar` does not; check
+  an atlas with `C_Texture.GetAtlasInfo` first).
 
 To add a piece: decide which rect it belongs to and anchor it to that rect's
 points. To change the bar's width or the border, change `BAR` or `EDGE`;

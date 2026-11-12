@@ -191,53 +191,53 @@ local function buildTabs(frame, messages)
 	-- transcript on the left and the scroll column (BAR wide) on the right.
 	-- Everything in the well anchors to one of the two, never to a number of
 	-- its own, so backings, shadows and the bar cannot drift apart.
-	local EDGE, BAR = 3, 24
+	-- BAR is the classic trough's own width (its end cap atlas, 31)
+	local EDGE, BAR = 3, 31
 	local level = chatWell:GetFrameLevel()
-	-- The column is an inset of its own, the same InsetFrameTemplate as the
-	-- wells, so the border between it and the transcript is the window's own
-	-- border art (the classic trough's file is not in this client)
-	local column = _G["WCChatScrollColumn"] or CreateFrame("Frame", "WCChatScrollColumn", chatWell, "InsetFrameTemplate")
-	-- flush with the well's own edges; of its border only the left edge is
-	-- kept, full height, as the line between it and the transcript: its other
-	-- edges lay over the well's border a pixel off and drew a dark doubled
-	-- band beside the arrows
-	column:SetPoint("TOPRIGHT")
-	column:SetPoint("BOTTOMRIGHT")
+	-- The column is Blizzard's classic scroll trough, as WowClassicScrollBar
+	-- draws it (TrimScrollBar.xml; the classic auction house's bar): metal
+	-- rails with an end cap at each end. Its centre atlas is not in this
+	-- client, so the centre is the top cap's rails-only rows (9..14 of its
+	-- 64-row file), stretched along the rails, which run straight down.
+	-- Between the rails, the player's darker stone: a gutter apart from the
+	-- replies' stone beside it.
+	local column = _G["WCChatScrollColumn"] or CreateFrame("Frame", "WCChatScrollColumn", chatWell)
+	column:SetPoint("TOPRIGHT", -EDGE, -EDGE)
+	column:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
 	column:SetWidth(BAR)
 	column:SetFrameLevel(level + 1)
-	local nine = column.NineSlice
-	if nine then
-		for _, key in ipairs({ "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
-			"TopEdge", "BottomEdge", "RightEdge", "Center" }) do
-			if nine[key] then nine[key]:Hide() end
-		end
-		if nine.LeftEdge then
-			nine.LeftEdge:ClearAllPoints()
-			nine.LeftEdge:SetPoint("TOPLEFT", column, "TOPLEFT")
-			nine.LeftEdge:SetPoint("BOTTOMLEFT", column, "BOTTOMLEFT")
-		end
-	end
-	if column.Bg then column.Bg:Hide() end
 	table.insert(frame.chatParts, column)
+	local gutter = column:CreateTexture(nil, "BACKGROUND")
+	gutter:SetTexture(WC.Transcript.STONE.you, "REPEAT", "REPEAT")
+	gutter:SetHorizTile(true)
+	gutter:SetVertTile(true)
+	gutter:SetPoint("TOPLEFT", 5, 0)
+	gutter:SetPoint("BOTTOMRIGHT", -5, 0)
+	local capTop = column:CreateTexture(nil, "BORDER")
+	capTop:SetAtlas("UI-ClassicScrollBar-EndCap-Top", true)
+	capTop:SetPoint("TOPLEFT")
+	local capBottom = column:CreateTexture(nil, "BORDER")
+	capBottom:SetAtlas("UI-ClassicScrollBar-EndCap-Bottom", true)
+	capBottom:SetPoint("BOTTOMLEFT")
+	local cap = C_Texture.GetAtlasInfo("UI-ClassicScrollBar-EndCap-Top")
+	if cap then
+		local rails = column:CreateTexture(nil, "BORDER")
+		rails:SetTexture(cap.file)
+		rails:SetTexCoord(cap.leftTexCoord, cap.rightTexCoord, 9 / 64, 14 / 64)
+		rails:SetPoint("TOPLEFT", capTop, "BOTTOMLEFT")
+		rails:SetPoint("BOTTOMRIGHT", capBottom, "TOPRIGHT")
+	end
 	messages.scroll:ClearAllPoints()
 	messages.scroll:SetPoint("TOPLEFT", chatWell, "TOPLEFT", EDGE, -EDGE)
-	messages.scroll:SetPoint("BOTTOMRIGHT", column, "BOTTOMLEFT", 0, EDGE)
+	messages.scroll:SetPoint("BOTTOMRIGHT", column, "BOTTOMLEFT", 2, 0)
 	messages.scroll:SetFrameLevel(level + 2)
-	-- the column: the replies' stone, no shadow over it (an inner shadow's
-	-- corners darkened the stone beside the arrows); the arrows at its ends
-	-- and the thumb's track between them
-	local channel = column:CreateTexture(nil, "BACKGROUND")
-	channel:SetTexture(WC.Transcript.STONE.claude, "REPEAT", "REPEAT")
-	channel:SetHorizTile(true)
-	channel:SetVertTile(true)
-	channel:SetPoint("TOPLEFT", EDGE, -EDGE)
-	channel:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
 	if frame.chatParts[1] and frame.chatParts[2] then
 		frame.chatParts[1]:ClearAllPoints()
-		frame.chatParts[1]:SetPoint("TOP", column, "TOP", 0, -(EDGE + 1))
+		-- inside the caps, where WowClassicScrollBar puts its steppers
+		frame.chatParts[1]:SetPoint("TOP", column, "TOP", 0, -4)
 		frame.chatParts[1]:SetFrameLevel(level + 3)
 		frame.chatParts[2]:ClearAllPoints()
-		frame.chatParts[2]:SetPoint("BOTTOM", column, "BOTTOM", 0, EDGE + 1)
+		frame.chatParts[2]:SetPoint("BOTTOM", column, "BOTTOM", 0, 4)
 		frame.chatParts[2]:SetFrameLevel(level + 3)
 	end
 	if frame.scrollTrack then frame.scrollTrack:SetFrameLevel(level + 3) end
