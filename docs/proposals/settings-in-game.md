@@ -1,6 +1,7 @@
 # Settings in game: the companion holds them, our page edits them
 
-Status: agreed with the player (2026-11-12), not built.
+Status: agreed with the player and built (2026-11-12): the Lua half 3e9b04f,
+the Rust half 5c5e40c. Not yet tried in game.
 
 ## Why
 
