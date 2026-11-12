@@ -270,8 +270,17 @@ WC.Companion.AddTab("Scroll bars", function(page)
 		end
 		boxes[i] = box
 		local b = CreateFrame("Button", nil, page)
-		b:SetSize(150, 21)
-		b:SetPoint("TOPRIGHT", page, "TOPRIGHT", -6, -(i - 1) * 24)
+		-- in the conversation list's own places, Main's button the first
+		local first = log and log.convButtons and log.convButtons[""]
+		if first then
+			b:SetPoint("TOPLEFT", first, "TOPLEFT", 0, -(i - 1) * 24)
+			b:SetPoint("TOPRIGHT", first, "TOPRIGHT", 0, -(i - 1) * 24)
+			b:SetHeight(first:GetHeight())
+		else
+			b:SetSize(150, 21)
+			b:SetPoint("TOPRIGHT", page, "TOPRIGHT", -6, -(i - 1) * 24)
+		end
+		b:SetFrameLevel(box:GetFrameLevel() + 10)
 		local function art(layer, atlas)
 			local t = b:CreateTexture(nil, layer)
 			t:SetAtlas(atlas)
