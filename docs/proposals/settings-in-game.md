@@ -1,7 +1,6 @@
-# Settings in game, the companion mirrors them
+# Settings in game: the companion holds them, our page edits them
 
-Status: proposal (2026-11-12), not built. The player likes it; the open
-question is the complexity and the upkeep.
+Status: agreed with the player (2026-11-12), not built.
 
 ## Why
 
@@ -9,146 +8,103 @@ The player lives in WoW. The companion (the Rust app) is set up once and then
 never looked at. Today the talk button is set in two places that can disagree:
 the setup window (`ask=` in settings.toml, read from the pad over HID) and WoW's
 Keybindings (`WOWCOMPANION_WINDOW` on the same button, for the tap that opens
-the window). The chords live only in the companion's code, and the window's
-keys (square, triangle, L3, R3 + chord) only in addon code.
+the window). On 2026-11-11 the WoW half was simply empty after 5834a61 and minus
+did nothing in game. The conversation chords live only in the companion's code.
 
 ## The rule
 
-**A setting the player changes while playing lives in the game.** The
-companion mirrors it. The setup window keeps only what is about the PC and is
-set once: the AddOns path, the pad's identity, the models and their files.
+**The companion is the one truth for its settings; our settings page in WoW is
+where the player sees and changes them; WoW's own binding is a copy we write.**
+The game keeps no copy of its own, so nothing is reconciled.
 
-## What moves
+Why the companion and not the game: the companion must react to the talk button
+at once and anywhere (loading screens, character select, alt-tabbed), so it
+needs the button's bit over HID. The game can reach the PC only by a screen read
+(the strip) or a reload. Truth in the game would mean a screen read per request
+or a name-to-bit database; truth in the companion needs neither.
 
-| setting | today | proposed home |
-|---|---|---|
-| talk button | settings.toml `ask=`, and WoW's Keybindings | our settings page; the addon writes the WoW binding with `SetBinding` (out of combat) |
-| push-to-talk feedback (rumble/beep) | settings.toml `cue`/`feedback` | our settings page |
-| speech engine (Whisper/streaming) | settings.toml `speech=` | our settings page |
-| microphone | settings.toml `mic=` | our settings page, from a device list the companion sends (a `status`-like message) |
-| conversation chords | fixed in crates/voice | unchanged for now; one source if they ever become settings |
-| combat loot key | WoW's Keybindings | our settings page, written the same way |
+## Buttons: set by pressing, stored as both names
 
-WoW's Keybindings screen keeps only bindings the game itself fires, and our
-page writes those, so the player never opens it.
+A button is set in its row on our page by pressing it, as in any game's key
+settings. One press gives both halves: the game sees WoW's name (`PADSOCIAL`),
+the companion sees the bit. The companion stores them together:
+`talk = 9:0x10 PADSOCIAL`. No side ever works out one from the other.
 
-## How the companion learns them
+1. Confirming the row draws `WCCMD <nonce> bind <key> start`; the companion
+   reads it and collects the buttons that go down from then on.
+2. The press makes the game draw `WCCMD <nonce> bind <key> PADxxx`; the
+   companion takes the one button that went down between the two strips.
+   Exactly one: stored. None or several: `status` says so and the row asks again.
+3. Refused in the row: buttons the game hard-wires (`PADBACK` Focus UI,
+   `PADFORWARD` the game menu) and a button another companion key already has.
+   The talk button's press always reaches the game too (we cannot swallow it).
 
-Three paths, all existing machinery:
+This needs the pad layer to know which bits are buttons: the pad's HID report
+descriptor where it describes the report, and the two fixed layouts we read
+anyway (the DualSense, whose Bluetooth report 0x31 is undescribed, and XInput).
+That is also the pad-learn fix (no baseline diff, so byte 31's counter is never
+taken for a button). No database of names anywhere.
 
-1. **Live:** a change on the page draws a command strip (as Stop, cancel and
-   send-now already do: `WCCMD ...`, read by `src/requests.rs` from the strip
-   the companion always watches). A new verb, e.g. `WCCMD <nonce> set talk 9:0x10`.
-   The companion applies it at once and writes its own copy.
-2. **At reload, logout and exit:** the setting is in the Link addon's saved
-   table; the companion already reads the save file when a session begins
-   (`session_began` in heartbeat.rs) and takes the settings from it then. This
-   catches anything a missed strip lost.
-3. **Game closed:** the companion uses its own copy (settings.toml as today), so
-   the talk button works before WoW starts.
+Keys: `talk`, and the conversation chords `l1`, `l2`, `r1`, `r2` (Quick is L2+R2,
+dictation L1+R1, from the same keys). Defaults come from the two layouts we
+know: minus (Guide on XInput) and the shoulders and triggers, each with its WoW
+name. Another pad starts with them unset: Main works by our page and the
+minimap mark until talk is pressed in its row.
 
-The game is the truth, settings.toml becomes the companion's cache of it.
+## WoW's binding is a copy
 
-## Cost, honestly
+Our addon writes WoW's binding for the tap from the companion's `talk` at every
+login and after a change (out of combat; `WC.AfterCombat` otherwise). It is not
+declared in a Bindings.xml, so it is not in WoW's Keybindings screen: a change
+made there would come with no press for the companion to see. If WoW loses it,
+the next login puts it back. This changes the rule "our keys are addon
+keybindings in WoW's Keybindings screen" for the companion's keys; CLAUDE.md
+says so when this is built. The window's other keys and the combat loot key stay
+addon keybindings.
 
-- Lua: rows on the settings page (the page and row kinds exist), a strip on
-  change, `SetBinding`/`SaveBindings` for the game-fired keys. Small.
-- Rust: a `set` verb on the command strip, reading the settings from the save
-  at session start, writing settings.toml from them. The mic list needs a
-  message to the game listing devices. Moderate: the strip and save readers
-  exist; this adds fields to them.
-- Setup window: its rows for these settings become read-only ("set in game"),
-  or go.
-- Upkeep: one more thing the strip carries. The settings themselves get
-  simpler (one home each) than today's two.
+## Other settings
 
-## Open questions
+Feedback (rumble/beep), the speech engine and the mic work the same way: the
+companion holds them in settings.toml, the page shows the values `status`
+reports and edits them with `WCCMD <nonce> set <key> <value>`. The row shows
+"applying" until a `status` carries the new value. `set` carries a value, never
+a toggle.
 
-- A talk-button change has to reach the pad reader live: the voice loop reads
-  `ask` at start. It would need to take a new button without a restart.
-- First run before the game has ever loaded: the setup window's defaults stand
-  until the first save.
+- **Applying is a restart.** `voice::listen()` reads all of these once at its
+  start. A change writes settings.toml (`Settings::set`, `save`) and asks for the
+  existing handover (restart.rs): the new copy opens the mic and loads the engine
+  while the old one serves, so the headset link never drops and no press is
+  handled twice. Costs: a few seconds of model load, a wait for
+  `lifecycle::idle()`, and it moves onto whatever `SOURCE_EXE` is now (the same
+  build for players, target/debug for us).
+- **The mic list on demand:** opening the mic row draws `WCCMD <nonce> mics`;
+  the companion answers with one message from `voice::microphones()`. `status`
+  says which engines are installed (streaming only with `stream_model`).
+- **The setup window loses these rows** (and its button learning): a second
+  writer of these keys is what clobbered settings.toml on 2026-11-11 at 20:39
+  (95bafad). It keeps the AddOns path, the pad, the models and its mic test.
+  First run uses the defaults above, the default input, rumble and the engine
+  that is downloaded.
 
-## Review (2026-11-12, the Rust side)
+## The talking indicator
 
-I agree with the rule, and the Rust side is small with the changes below. One
-question the proposal leaves out decides the talk button.
+The game draws its own preview of the conversation while the talk button is
+held, by the same rule as the companion (last trigger pulled; L2+R2 Quick; L1+R1
+dictation) on the chord keys' WoW names from `status`. Two readers of one pad
+can differ only when triggers change within a frame of each other; the clip's
+`heard` names the conversation it went to when it is let go. The rule is written
+once in Lua: today it is in Agent.lua (last pulled) and again in Pad.lua's
+`WowCompanion_PadSlot` (a fixed order, used by Offer.lua and ChatWheel.lua),
+which can disagree with each other and with the companion.
 
-**The decision for the player: how a WoW button name maps to a pad bit.** The
-game knows the talk button as a WoW name (`PADSOCIAL`); the companion reads an
-HID byte and mask (`9:0x10`, crates/pad). Mirroring `set talk PADSOCIAL` needs a
-map from one to the other. The two vocabularies are what let the two homes
-disagree.
+## Work
 
-Proposed way, not yet chosen by the player. The player asked for a robust version
-of naming by WoW's names and Main proposed this (2026-11-12):
-the companion keeps reading raw HID and names buttons the way WoW does, from
-data instead of hand tables. WoW's raw order in `WTF/GamePadConfig_Default.json`
-is SDL's (raw 4 Back = `PADSOCIAL`, 5 Guide = `PADSYSTEM`, 15 misc = `PAD5`,
-16-19 the paddles), and SDL names buttons from `gamecontrollerdb.txt`.
-
-1. **Buttons from the pad's HID report descriptor**: the Button page's usages
-   in order are SDL's `b0..bN` on Windows. This is also the pad-learn fix (no
-   baseline diff, so byte 31's counter is never taken for a button).
-2. **Names from SDL's `gamecontrollerdb.txt`, shipped as a file** (2,295 lines,
-   community kept), looked up by vid:pid: `back:b8` is `PADSOCIAL`,
-   `guide:b12` `PADSYSTEM`. No SDL at runtime, so nothing else opens the pad
-   while WoW has it.
-3. **Checked against the measured bits:** the database has both the DualSense
-   (054c:0ce6) and the Edge (054c:0df2), and its `b0..b14` are the bits crates/pad
-   measured, in order: Square..Triangle byte 8 0x10..0x80 (`b0..b3`), L1..R3
-   byte 9 0x01..0x80 (`b4..b11`, Create `b8`, Options `b9`), PS, touchpad and mute
-   byte 10 0x01..0x04 (`b12..b14`). So the player's pad needs no hand table.
-
-What stays hand-made, each fixed by its maker: XInput (Microsoft's 16-bit button
-word, already in `xinput::NAMES`), the Edge's extras (the database lists no
-paddles; WoW's `PADPADDLE1-4` come from SDL's own DualSense driver; Fn and the
-back buttons are in byte 10 above 0x04, only `Edge_R_Fn` 0x20 measured), and the
-triggers (the database maps them as axes `a3`/`a4`, while the companion reads
-the descriptor's digital buttons `b6`/`b7`). A pad that is in neither the
-database nor these tables is named by an exact pairing: the row says "hold the
-button", the game draws `WCCMD n learn talk PADxxx` while it is held, and the
-companion takes the one button held when it reads the strip.
-
-On the game side, the binding itself is the truth: the row reads
-`GetBindingKey("WOWCOMPANION_WINDOW")` and writes it with `SetBinding`, with no
-copy in `WowCompanionLinkDB` to drift from the Keybindings screen. (On
-2026-11-11 the binding was simply empty after 5834a61, and minus did nothing.)
-The row is one `WC.SettingsPage.Add` call (addon/WowCompanion/SettingsPage.lua).
-
-**A change applies by restart, not live.** `talk`, `feedback`, `speech` and `mic`
-are all read once at the top of `voice::listen()`. Applying one = write
-settings.toml (`Settings::set` + `save`) + the existing handover (restart.rs):
-the new copy opens the mic and loads the engine while the old one serves, so the
-headset link never drops and no press is handled twice. One path for all four
-and no change to the voice loop; an engine or mic switch needs a reload or a
-reopen anyway. This closes the open question. Costs: a few seconds of model load,
-a wait for `lifecycle::idle()` (a long request delays it), and it moves onto
-whatever `SOURCE_EXE` is (the same build for players, target/debug for us).
-
-**One path, not three.** Path 2 (the save read at session start) goes; the loop
-closes instead. The companion's `status` message (heartbeat.rs, sent on a change
-and after a reload) carries the settings it runs with; the page shows those and
-redraws `WCCMD n set <key> <value>` while the game's value differs. That covers a
-missed strip, a companion that was off, and the first start after a change, and
-shows the player when a change has taken. `set` carries a value, never a toggle;
-the nonce gets it past strip.rs's same-payload dedupe.
-
-**The mic list on demand.** Opening the mic row draws `WCCMD n mics`; the
-companion answers with one message from `voice::microphones()`. No polling, and no
-list sent at a reload that a headset connecting later would make stale. `status`
-also says which engines are installed (streaming only with `stream_model`
-downloaded).
-
-**The setup window loses the moved rows** rather than showing them read-only: a
-second writer of these keys is what clobbered settings.toml on 2026-11-11 at
-20:39 (95bafad). First run uses defaults (`default_talk`, the default input,
-rumble, the engine that is downloaded). It keeps the AddOns path, the pad, the
-models and its mic test.
-
-So the Rust work is a `set` verb in `requests.rs` `watch_commands` (check the
-value, write the file, request a restart), `status` carrying the applied values,
-and a `mics` verb: tens of lines each, on existing machinery. Since this changes
-how the game reaches the PC, check before moving the rows that a `set` drawn
-while a Stop or cancel strip is pending queues behind it rather than replacing
-it (the strip shows one payload at a time).
+- Rust: the `bind` and `set` verbs in `requests.rs` `watch_commands`, the button
+  bits from the descriptor and the two layouts (crates/pad), `talk`/chord keys
+  stored as bit plus name, `status` carrying the applied settings, the `mics`
+  verb, the setup window's rows removed.
+- Lua: the rows (`WC.SettingsPage.Add`), the bind and set strips, writing WoW's
+  binding from `status`, the Bindings.xml entry removed, one slot rule.
+- Before moving the rows: check that a `set` or `bind` strip drawn while a Stop
+  or cancel strip is pending queues behind it (the strip shows one payload at a
+  time).
