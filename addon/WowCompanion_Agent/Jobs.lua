@@ -499,9 +499,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " Cancel newest" end
 		if focused and sendable() then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
 		if focused and offerShown() then parts[#parts + 1] = glyph("PADLSTICK") .. " " .. offerShown() end
-		if focused and offerShown() and WC.Offer.Count() > 1 then
-			parts[#parts + 1] = glyph("PADRSTICK") .. (" Next button (%d)"):format(WC.Offer.Count())
-		end
+		if focused then parts[#parts + 1] = glyph("PADRSTICK") .. " with a chord: that conversation" end
 		-- a settings row under the cursor, on any tab (WC.RowStop binds the keys)
 		local adjust = WC.RowPrompt(window)
 		if adjust then parts[#parts + 1] = adjust end
@@ -510,21 +508,20 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		if window.jobsCancelPrompt then window.jobsCancelPrompt:Hide() window.jobsNowPrompt:Hide() end
 	end
 	-- what is bound follows what the legend shows; rebound only on a change
-	local want = focused and (offerShown() and (WC.Offer.Count() > 1 and "offers" or "offer") or "jobs") or nil
+	local want = focused and (offerShown() and "offer" or "jobs") or nil
 	if want ~= bound then
 		ClearOverrideBindings(keyOwner)
+		-- R3 with a conversation's chord picks it (Offer.lua), L3 presses its
+		-- offered button (both unused in menus); autorun and the camera stick
+		-- click come back when the window lets go. The button is secure and the
+		-- press is theirs
 		if want then
 			SetOverrideBindingClick(keyOwner, true, "PAD3", "WCJobsCancelKey")
 			SetOverrideBindingClick(keyOwner, true, "PAD4", "WCJobsNowKey")
+			SetOverrideBindingClick(keyOwner, true, "PADRSTICK", WC.Offer.PICK)
 		end
-		-- L3 presses the offered button and R3 steps to the next offer (both unused
-		-- in menus); autorun and the camera stick click come back when the window
-		-- lets go. The button itself is secure and the press is theirs
-		if want == "offer" or want == "offers" then
+		if want == "offer" then
 			SetOverrideBindingClick(keyOwner, true, "PADLSTICK", WC.Offer.BUTTON, "LeftButton")
-		end
-		if want == "offers" then
-			SetOverrideBindingClick(keyOwner, true, "PADRSTICK", WC.Offer.NEXT, "LeftButton")
 		end
 		bound = want
 	end

@@ -1,34 +1,19 @@
 -- WowCompanion_Agent: the offered button.
 -- What this needs from Agent.lua comes through WC.Companion; what it offers,
--- the other files reach through WC.Offer: Show() to redraw it, Waiting() (its
--- label while a press waits, else nil), Count() (offers waiting), BUTTON and
--- NEXT (the button and R3's stepper, by name, for bindings).
+-- the other files reach through WC.Offer: Show() to redraw it for the
+-- conversation in view, Waiting() (its label while a press waits, else nil),
+-- BUTTON (its name, for L3's binding in Jobs.lua).
 
--- Every conversation's offers wait in one list, newest first, so one agent's
--- offer never replaces another's and any of them can be pressed from whichever
--- conversation is in view. The one secure button shows the picked offer,
--- labelled with its conversation; R3 steps to the next, in combat too (Jobs.lua
--- binds L3 and R3 while the window has focus). In a fight no offer arrives or
--- leaves (attributes are written out of combat), so the list is fixed then: the
--- step is a secure snippet that moves the button's macro along macros written
--- beforehand, and only the label is redrawn by plain code.
+-- One offer per conversation, so one agent's offer never replaces another's;
+-- the one secure button shows the offer of the conversation in view. The
+-- conversation is picked with its own chord and R3 (Jobs.lua), L3 presses.
+-- A secure button's action is written out of combat only: an offer that comes
+-- in a fight waits for its end, and in a fight the button keeps the offer it had
+-- (its label then names the conversation it belongs to).
 local BUTTON = "WowCompanionDo"
-local offers = {} -- { slot, label, macro }, newest first; saved at login (below)
-local picked = 1
+local offers = {} -- [slot] = { label, macro }; saved at login (below)
 local actionButton
 local showOffer
--- R3's secure half: it holds every offer's macro (macro1..N), `count` and
--- `picked`, and moves the next onto the button
-local stepper = CreateFrame("Button", "WCOfferNextKey", UIParent, "SecureHandlerClickTemplate")
-stepper:RegisterForClicks("AnyDown")
-stepper:SetAttribute("_onclick", [[
-	local n = self:GetAttribute("count") or 0
-	if n < 2 then return end
-	local p = (self:GetAttribute("picked") or 1) % n + 1
-	self:SetAttribute("picked", p)
-	self:GetFrameRef("button"):SetAttribute("macrotext", self:GetAttribute("macro" .. p))
-	self:CallMethod("Relabel", p)
-]])
 local logFrame = WC.Companion.window
 local remember = WC.Companion.remember
 local function toast(...) return WC.Board.toast(...) end
@@ -53,7 +38,6 @@ local function buildActionButton()
 			return "could not build the button: " .. tostring(button)
 		end
 		actionButton = button
-		stepper:SetFrameRef("button", actionButton)
 		-- at the foot of the conversation list, the list's width, under its buttons
 		local function place(b)
 			b:SetParent(frame)
@@ -78,61 +62,50 @@ local function buildActionButton()
 		-- the cursor can land on it, and goes to it when the window takes focus
 		WC.MarkFocusable(actionButton)
 		WC.SetFocusButton(frame, actionButton)
-		-- a pressed offer is done: the next one takes its place
+		-- a pressed offer is done
 		actionButton:SetScript("PostClick", function(self)
-			if self.offer then
-				for i, o in ipairs(offers) do
-					if o == self.offer then table.remove(offers, i) break end
-				end
-			end
-			self.offer = nil
+			if self.slot then offers[self.slot] = nil end
+			self.slot = nil
 			WC.AfterCombat(showOffer)
 		end)
 	end
 	return frame
 end
 
--- Put the picked offer on the button, or take the button away when none waits
--- or another tab than Chat is up. Secure attributes cannot change in combat; the
--- button then stays as it was until the fight ends.
+-- The view's offer on the button, or the button away when it has none or
+-- another tab than Chat is up. In a fight only the label follows the view.
 showOffer = function()
-	if InCombatLockdown() then return "in combat" end
-	if picked > #offers then picked = 1 end
-	local held = offers[picked]
+	local view = WowCompanion_ViewSlot()
 	local frame = logFrame()
+	if InCombatLockdown() then
+		if actionButton and actionButton.slot and offers[actionButton.slot] then
+			local held = offers[actionButton.slot]
+			actionButton:SetText(actionButton.slot == view and held.label
+				or (WC.Conversations.Label(actionButton.slot) .. ": " .. held.label))
+		end
+		return "in combat"
+	end
 	-- it belongs to the Chat tab: another tab takes it away, Chat brings it back
 	-- (followed from the first call, so an offer that came on another tab shows)
 	if frame and frame.SelectTab and not frame.offerFollowsTabs then
 		frame.offerFollowsTabs = true
 		hooksecurefunc(frame, "SelectTab", function() showOffer() end)
 	end
+	local held = offers[view]
 	if not held or (frame and (frame.currentTab or 1) ~= 1) then
 		if actionButton then
-			actionButton.offer = nil
+			actionButton.slot = nil
 			actionButton:Hide()
 		end
-		stepper:SetAttribute("count", 0)
 		return "nothing"
 	end
 	buildActionButton()
 	if not actionButton then return "nothing" end
+	actionButton.slot = view
 	actionButton:SetAttribute("macrotext", held.macro)
-	stepper:SetAttribute("count", #offers)
-	stepper:SetAttribute("picked", picked)
-	for i, o in ipairs(offers) do stepper:SetAttribute("macro" .. i, o.macro) end
-	stepper:Relabel(picked)
+	actionButton:SetText(held.label)
 	actionButton:Show()
 	return "shown"
-end
-
--- the label (and which offer a press finishes) follows the picked one; plain
--- code, so it runs in combat too
-function stepper:Relabel(p)
-	picked = p
-	local held = offers[p]
-	if not (held and actionButton) then return end
-	actionButton.offer = held
-	actionButton:SetText(WC.Conversations.Label(held.slot) .. ": " .. held.label)
 end
 
 local offer
@@ -144,14 +117,13 @@ offer = function(label, macro, slot)
 		WC.AfterCombat(function() offer(label, macro, slot) end)
 		return "waiting for the fight to end"
 	end
-	table.insert(offers, 1, { slot = slot, label = label, macro = macro })
-	picked = 1
+	offers[slot] = { label = label, macro = macro }
 	local bound = showOffer()
 	-- show the macro, not just the label: the player is the one authorising this, and
 	-- "Do it" tells them nothing about what they would be running
 	remember("claude", ("button |cffffffff%s|r runs |cff9ad5ff%s|r — it is in the window")
 		:format(label, macro), nil, slot)
-	toast(("|cffffd100%s|r  a button in the window: |cffffffff%s|r")
+	toast(("|cffffd100%s|r  has a button for you: |cffffffff%s|r")
 		:format(WC.Conversations.Label(slot), label), 0.8, 0.8, 0.8, 30)
 	return ("offering %q which runs %q, %s"):format(label, macro, bound)
 end
@@ -177,28 +149,38 @@ function handlers.press(inbox)
 end
 for kind, fn in pairs(handlers) do WC.Link.Handle(kind, fn) end
 
--- Waiting offers outlive a reload: the list is kept in the saved table. A
--- reload offer is done by the reload that just happened, whoever offered it.
+-- Waiting offers outlive a reload: they are kept in the saved table. A reload
+-- offer is done by the reload that just happened, whoever offered it.
 local login = CreateFrame("Frame")
 login:RegisterEvent("PLAYER_LOGIN")
 login:SetScript("OnEvent", function()
-	local kept = {}
-	for _, o in ipairs(offers) do kept[#kept + 1] = o end -- any that came before login
-	for _, o in ipairs(type(WowCompanionAgentDB.offers) == "table" and WowCompanionAgentDB.offers or {}) do
-		if type(o) == "table" and o.macro and o.macro ~= "/reload" then kept[#kept + 1] = o end
+	local saved = type(WowCompanionAgentDB.offers) == "table" and WowCompanionAgentDB.offers or {}
+	for slot, o in pairs(saved) do
+		if type(slot) == "string" and type(o) == "table" and o.macro and o.macro ~= "/reload"
+			and not offers[slot] then
+			offers[slot] = o
+		end
 	end
-	offers = kept
 	WowCompanionAgentDB.offers = offers
 	WC.AfterCombat(showOffer)
 end)
 
+-- R3 with a conversation's chord held picks that conversation, as minus does
+-- to talk to it; R3 alone is Main (Jobs.lua binds it while the window has focus)
+local pick = CreateFrame("Button", "WCConversationPick", UIParent)
+pick:SetScript("OnClick", function()
+	local slot = WowCompanion_PadSlot()
+	for _, known in ipairs(WC.Conversations.list) do
+		if known == slot then WowCompanion_SetConversation(slot) return end
+	end
+end)
+
 WC.Offer = {
 	BUTTON = BUTTON,
-	NEXT = "WCOfferNextKey",
+	PICK = "WCConversationPick",
 	Show = showOffer,
-	Count = function() return #offers end,
 	-- the label of the offer on the button while it waits for a press, or nil
 	Waiting = function()
-		return actionButton and actionButton:IsVisible() and actionButton.offer and actionButton:GetText() or nil
+		return actionButton and actionButton:IsVisible() and actionButton.slot and actionButton:GetText() or nil
 	end,
 }
