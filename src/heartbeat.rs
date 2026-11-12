@@ -34,24 +34,27 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
     thread::spawn(move || {
         let [a, b] = bells(&addons);
         let mut on_a = true;
-        let mut session = None;
-        // the mic state the game was last told; a reload forgets it and the
-        // settings page's settings, so every new session is told again
-        let mut told_mic: Option<bool> = None;
+        let mut saved = None;
+        // the UI session and mic state the game was last told (`status`, with the
+        // settings page's settings). A session is the channel's: the last save
+        // and when Wow.exe started, so a fresh launch, which saves nothing, is a
+        // new one too; told while the game was closed, it is told again once the
+        // game runs
+        let mut told: Option<(Option<String>, bool)> = None;
         while BEATING.load(Ordering::SeqCst) {
-            let began = crate::session_began(&addons);
-            let new_session = began != session;
-            let mic = crate::voice::MIC.load(Ordering::Relaxed);
-            if ready() && (told_mic != Some(mic) || new_session) {
-                if crate::send(&addons, &crate::settings_page::status(mic)).is_ok() {
-                    told_mic = Some(mic);
+            let now = (crate::saved_variables_stamp(&addons), crate::voice::MIC.load(Ordering::Relaxed));
+            if ready() && told.as_ref() != Some(&now) {
+                if crate::send(&addons, &crate::settings_page::status(now.1)).is_ok() {
+                    told = Some(now);
                 }
             }
+            let began = crate::session_began(&addons);
+            let new_session = began != saved;
             if new_session {
                 // a save landed (or the companion started): the ledger drops what
                 // the game now holds
                 crate::ledger::confirm(&addons);
-                session = began;
+                saved = began;
                 // and copy the save, and say
                 // so in game if it looks like the addon's data was reset
                 for note in crate::backups::snapshot(&addons) {
