@@ -13,7 +13,6 @@ Sandbox.lua
 Window.lua
 Transcript.lua
 ScrollGallery.lua
-SettingsGallery.lua
 JobsModel.lua
 Jobs.lua
 Chords.lua
