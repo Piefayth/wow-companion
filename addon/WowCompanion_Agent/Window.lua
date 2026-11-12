@@ -45,7 +45,7 @@ local GLOW = { 14, 10.75, 13, 11 }
 -- Our own frame art (tools/make_frame_art.py) on an owner's NineSlice pieces,
 -- on the owner's bounds: every piece rim wide, the top corners and edge top
 -- tall, so a corner and the edge beside it share their pixels on screen.
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-18]]
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-19]]
 local function dress(owner, art, rim, top)
 	local slice = owner.NineSlice
 	if not slice then return end
@@ -345,28 +345,6 @@ local function buildTabs(frame, messages)
 
 	-- each message's own panel (Jobs.lua) docks at the bottom of the chat well
 	frame.chatWell = chatWell
-	-- A shadow cast down from the chat well's top edge, under the tabs, so the
-	-- well reads as sunk into the panel: Blizzard's own ShadowOverlay-Top
-	-- (SharedUIPanelTemplates.xml:195), above the scrolling text and its
-	-- dividers so they slide under it. It covers the turns only, fading out
-	-- sideways as it nears the bar, so the bar stands above the chat, unshaded,
-	-- with no edge where the shadow stops.
-	local FADE = 48
-	local lip = CreateFrame("Frame", nil, chatWell)
-	lip:SetPoint("TOPLEFT", messages.scroll, "TOPLEFT")
-	lip:SetPoint("TOPRIGHT", column, "TOPLEFT", -6, 0)
-	lip:SetHeight(24)
-	lip:SetFrameLevel(level + 5)
-	local shade = lip:CreateTexture(nil, "OVERLAY")
-	shade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
-	shade:SetPoint("TOPLEFT")
-	shade:SetPoint("BOTTOMRIGHT", -FADE, 0)
-	local fade = lip:CreateTexture(nil, "OVERLAY")
-	fade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
-	fade:SetPoint("TOPLEFT", shade, "TOPRIGHT")
-	fade:SetPoint("BOTTOMRIGHT")
-	fade:SetGradient("HORIZONTAL", CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 0))
-	table.insert(frame.chatParts, lip)
 
 	-- the page well, over both wells' area, for the other tabs
 	local madePage, pageWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
@@ -391,16 +369,6 @@ local function buildTabs(frame, messages)
 	stone:SetVertTile(true)
 	stone:SetPoint("TOPLEFT", FLOOR, -FLOOR)
 	stone:SetPoint("BOTTOMRIGHT", -FLOOR, FLOOR)
-	-- the same shadow under the tabs as the chat well has, on every other tab,
-	-- from the wall's foot
-	local pageLip = CreateFrame("Frame", nil, pageWell)
-	pageLip:SetPoint("TOPLEFT", INSET, -INSET)
-	pageLip:SetPoint("TOPRIGHT", -INSET, -INSET)
-	pageLip:SetHeight(24)
-	pageLip:SetFrameLevel(pageWell:GetFrameLevel() + 20)
-	local pageShade = pageLip:CreateTexture(nil, "OVERLAY")
-	pageShade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
-	pageShade:SetAllPoints()
 
 	-- The tabs, in the chat's own language (the player's look, 2026-11-12):
 	-- no boxes of their own. The chosen tab is a plate of the replies' marbled

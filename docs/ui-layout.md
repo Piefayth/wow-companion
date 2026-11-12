@@ -17,8 +17,7 @@ The chat well, for example:
   - the **transcript** (`messages.scroll`), the whole inside of the border.
     The turns' stone and dividers fill its width, on behind the bar to the
     edge (Transcript.lua); text keeps `PAD_L`/`PAD_TOP` and `PAD_R` plus the
-    bar's room (`WC.ChatBar.ROOM`) clear of it. The top shadow (`lip`) spans
-    its top up to the bar, fading out sideways before it.
+    bar's room (`WC.ChatBar.ROOM`) clear of it.
   - the **scroll column** (ChatBar.lua, 20 wide), over the transcript's right
     end, inside the border: a groove carved in the stone between bark
     borders, the arrows over its ends, the thumb riding in it; each divider's
