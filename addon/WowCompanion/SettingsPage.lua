@@ -23,7 +23,7 @@ WC.SettingsPage = Page
 
 local rows = {}    -- every row added: { row = the caller's table, frame = once made }
 local headers = {} -- section name -> header frame
-local ROW_H, HEADER_H, CONTROL_W = 36, 45, 250
+local ROW_H, HEADER_H, CONTROL_W = 36, 36, 250
 -- Blizzard's columns: the label from the left to the middle, the control from
 -- just left of the middle (SettingsListElementMixin, SettingsSliderControlMixin)
 local LABEL_X, CONTROL_X = 24, -80
@@ -46,7 +46,23 @@ end
 local band = CreateFrame("Frame", nil, page)
 band:SetPoint("BOTTOMLEFT", 0, 0)
 band:SetPoint("BOTTOMRIGHT", 0, 0)
-band:SetHeight(56)
+band:SetHeight(48)
+
+-- the rows above it, in a scroll frame the controller's cursor scrolls as it
+-- moves (SmartNavigation's HandleScroll); 9 px wider each side than the page
+-- so the dividers reach the backing's edge without being clipped
+local scroll = CreateFrame("ScrollFrame", nil, page)
+scroll:SetPoint("TOPLEFT", -9, 0)
+scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, 2)
+local content = CreateFrame("Frame", nil, scroll)
+content:SetSize(1, 1)
+scroll:SetScrollChild(content)
+scroll:SetScript("OnSizeChanged", function(_, w) content:SetWidth(w) end)
+scroll:EnableMouseWheel(true)
+scroll:SetScript("OnMouseWheel", function(self, delta)
+	local most = math.max(0, content:GetHeight() - self:GetHeight())
+	self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW_H)))
+end)
 divider(band)
 local bandText = band:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
 bandText:SetPoint("TOPLEFT", LABEL_X, -14)
@@ -63,8 +79,8 @@ end
 -- HoverBackgroundTemplate), the cursor just left of its name. The control
 -- inside is out of the cycle, as theirs is.
 local function settingRow(row, step, prompt)
-	local r = CreateFrame("Button", nil, page)
-	r:SetPoint("RIGHT", page, "RIGHT", 0, 0)
+	local r = CreateFrame("Button", nil, content)
+	r:SetPoint("RIGHT", content, "RIGHT", -9, 0)
 	r:SetHeight(ROW_H)
 	local hover = r:CreateTexture(nil, "HIGHLIGHT")
 	hover:SetPoint("TOPLEFT", -9, -3)
@@ -152,8 +168,8 @@ local KINDS = { dropdown = dropdown, slider = slider, button = button }
 
 local function header(name)
 	if headers[name] then return headers[name] end
-	local h = CreateFrame("Frame", nil, page, "SettingsListSectionHeaderTemplate")
-	h:SetPoint("RIGHT", page, "RIGHT", 0, 0)
+	local h = CreateFrame("Frame", nil, content, "SettingsListSectionHeaderTemplate")
+	h:SetPoint("RIGHT", content, "RIGHT", -9, 0)
 	h.Title:SetText(name)
 	headers[name] = h
 	return h
@@ -192,13 +208,14 @@ local function layout()
 			e.frame.divider:SetShown(s == section)
 			if s ~= section then
 				section = s
-				header(s):SetPoint("TOPLEFT", 0, -y)
+				header(s):SetPoint("TOPLEFT", 9, -y)
 				y = y + HEADER_H
 			end
-			e.frame:SetPoint("TOPLEFT", 0, -y)
+			e.frame:SetPoint("TOPLEFT", 9, -y)
 			y = y + ROW_H
 		end
 	end
+	content:SetHeight(math.max(y, 1))
 end
 page:SetScript("OnShow", function()
 	layout()
