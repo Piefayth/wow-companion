@@ -324,7 +324,9 @@ fn serve_one(addons: &Path, slot: &str, lua: &str, seconds: f64) -> Result<Vec<u
 /// For the running companion: watch the corner for command strips ("WCCMD ...",
 /// drawn when the player presses Stop, cancel or send now in the window) and hand
 /// each new one to `command`, newlines made spaces. Never returns. A look at the
-/// bottom row twice a second; a full read only when that row changes.
+/// bottom row ten times a second, so a press waits about 50 ms: with the game kept
+/// composited (composited.rs) a look switches nothing and is one small copy; a
+/// full read only when that row changes.
 pub(crate) fn serve(mut command: impl FnMut(String)) -> ! {
     let mut seen: Option<Vec<u8>> = None;
     let mut last_row: Option<Vec<u8>> = None;
@@ -345,7 +347,7 @@ pub(crate) fn serve(mut command: impl FnMut(String)) -> ! {
                 last_row = None;
             }
         }
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(100));
     }
 }
 
