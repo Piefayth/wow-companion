@@ -41,7 +41,7 @@ local GLOW = { 14, 10.75, 13, 11 }
 -- Our own frame art (tools/make_frame_art.py) on an owner's NineSlice pieces,
 -- on the owner's bounds: every piece rim wide, the top corners and edge top
 -- tall, so a corner and the edge beside it share their pixels on screen.
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-7]]
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-8]]
 local function dress(owner, art, rim, top)
 	local slice = owner.NineSlice
 	if not slice then return end
@@ -73,6 +73,19 @@ local function dress(owner, art, rim, top)
 	p.LeftEdge:SetPoint("BOTTOMRIGHT", p.BottomLeftCorner, "TOPRIGHT")
 	p.RightEdge:SetPoint("TOPLEFT", p.TopRightCorner, "BOTTOMLEFT")
 	p.RightEdge:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "TOPRIGHT")
+end
+
+-- The wells' border, A to D while the player chooses between them (2026-11-12,
+-- tools/make_frame_art.py's WELLS); WC.Window.WellStyle(letter) redresses them
+-- all at once and keeps the choice.
+local wells = {}
+local function wellStyle()
+	local db = WowCompanionAgentDB
+	return type(db) == "table" and db.wellStyle or "A"
+end
+local function dressWell(owner)
+	wells[#wells + 1] = owner
+	dress(owner, "Inset" .. wellStyle(), INSET, INSET)
 end
 
 local function buildTabs(frame, messages)
@@ -214,7 +227,7 @@ local function buildTabs(frame, messages)
 	local WELL = 130
 	local made, well = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not made or not well then well = CreateFrame("Frame", nil, frame) end
-	dress(well, "Inset", INSET, INSET)
+	dressWell(well)
 	well:SetPoint("TOPRIGHT", -(RIM + GAP), -WELL_TOP)
 	well:SetPoint("BOTTOMRIGHT", -(RIM + GAP), RIM + FOOT)
 	well:SetWidth(WELL)
@@ -231,7 +244,7 @@ local function buildTabs(frame, messages)
 	-- keeps only the waiting line.
 	local madeChat, chatWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not madeChat or not chatWell then chatWell = CreateFrame("Frame", nil, frame) end
-	dress(chatWell, "Inset", INSET, INSET)
+	dressWell(chatWell)
 	chatWell:SetPoint("TOPLEFT", RIM + GAP, -WELL_TOP)
 	chatWell:SetPoint("BOTTOMRIGHT", well, "BOTTOMLEFT", -GAP, 0)
 	table.insert(frame.chatParts, chatWell)
@@ -346,7 +359,7 @@ local function buildTabs(frame, messages)
 	-- the page well, over both wells' area, for the other tabs
 	local madePage, pageWell = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not madePage or not pageWell then pageWell = CreateFrame("Frame", nil, frame) end
-	dress(pageWell, "Inset", INSET, INSET)
+	dressWell(pageWell)
 	pageWell:SetPoint("TOPLEFT", chatWell, "TOPLEFT")
 	pageWell:SetPoint("BOTTOMRIGHT", well, "BOTTOMRIGHT")
 	pageWell:Hide()
@@ -693,5 +706,9 @@ end
 
 WC.Window = WC.Window or {}
 WC.Window.buildLog = buildLog
+function WC.Window.WellStyle(letter)
+	if type(WowCompanionAgentDB) == "table" then WowCompanionAgentDB.wellStyle = letter end
+	for _, owner in ipairs(wells) do dress(owner, "Inset" .. letter, INSET, INSET) end
+end
 -- the middle of the strip under the wells, for the legend (Jobs.lua)
 WC.Window.FOOT_MID = RIM + FOOT / 2

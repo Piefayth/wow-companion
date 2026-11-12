@@ -4,7 +4,7 @@ drawn here as vector shapes, bevelled and lit from the top left, many samples
 to a pixel and averaged down, never Blizzard's art.
 
     python tools/make_frame_art.py   writes addon/WowCompanion_Agent/Art/Frame-*-<v>.tga,
-                                     Inset-*-<v>.tga, Close-*-<v>.tga,
+                                     Inset<style>-*-<v>.tga, Close-*-<v>.tga,
                                      target/frame-fix-4k.png (the window mocked at 4K) and
                                      target/tabs-v<tab v>-sheet.png (the tab row: the shot's, ours)
 
@@ -30,7 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 
-VERSION = 7
+VERSION = 8
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -244,38 +244,49 @@ LINE_IN = np.array((5, 4, 3.0))  # the creases at the wall's top and foot
 WALL_FOOT = 3.3  # where the wall meets the floor, its contact shadow on to INSET
 
 
-def carve(d, k=K, brass=None):
-    """The wells' wall painted on a depth field d (units into the cavity from
-    its edge, negative outside): opaque stone carved down from the panel, so
-    a cavity reads as cut into the frame rather than shaded over. A dark
-    crease where the panel breaks, a rounded, worn wall lit by the frame's
-    light (walls facing away fall dark, the others catch it), a dark crease at
-    its foot, and a short contact shadow onto the floor, which is left clear.
-    The whole is blurred a quarter unit, so no line is razor sharp. brass, if
-    given, is how much of an aged brass bead lies along the wall's lip at
-    each point."""
+def carve(d, k=K, wall=STONE, lip=False, sunk=False):
+    """A well's border painted on a depth field d (units into the cavity from
+    its edge, negative outside). The wall: opaque stone carved down from the
+    panel, a dark crease where the panel breaks, a rounded, worn wall lit by
+    the frame's light (walls facing away fall dark, the others catch it), a
+    dark crease at its foot, a short contact shadow onto the floor. lip: a
+    bead of the window's bronze along the wall's top. sunk: no wall at all,
+    the floor running to the edge under a soft shadow cast in from it. The
+    whole is blurred a quarter unit, so no line is razor sharp."""
     lay = Layers(d.shape)
-    top = 0.35
-    # the wall's height: the panel's level at its top, the floor's at its
-    # foot, rounded over at the lip as worn stone is
-    t = np.clip((d - top) / (WALL_FOOT - top), 0, 1)
-    hgt = 1.6 * (1 - t) ** 1.6
-    wall = shade(ndimage.gaussian_filter(hgt, k * 0.15), STONE, k, gloss=0.08, power=10)
-    lay.over(wall, ((d >= 0) & (d < WALL_FOOT + 0.2)).astype(float))
-    lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.12) / 0.22, 0, 1) * (d >= 0) * 0.9)
-    if brass is not None:
-        # a rounded bead a unit wide on the lip, with a crease on its inner side
-        u = (d - 0.75) / 0.55
-        bh = ndimage.gaussian_filter(bead(np.clip(u, -1, 1)) * (np.abs(u) < 1), k * 0.1)
-        lay.over(shade(bh, BRASS, k, gloss=0.12, power=12), np.clip((1 - np.abs(u)) / 0.25, 0, 1) * brass)
-        lay.over(LINE_IN, np.clip(1 - np.abs(d - 1.35) / 0.2, 0, 1) * 0.6 * brass)
-    lay.over(LINE_IN, np.clip(1 - np.abs(d - WALL_FOOT) / 0.3, 0, 1) * 0.9)
-    lay.over(np.zeros(3), np.where(d > WALL_FOOT, np.clip(1 - (d - WALL_FOOT) / (INSET - WALL_FOOT), 0, 1) * 0.45, 0))
+    inside = (d >= 0).astype(float)
+    if sunk:
+        lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.12) / 0.25, 0, 1) * inside)
+        lay.over(np.zeros(3), np.clip(1 - d / INSET, 0, 1) ** 1.6 * 0.8 * inside)
+    else:
+        top = 0.35
+        # the wall's height: the panel's level at its top, the floor's at its
+        # foot, rounded over at the lip as worn stone is
+        t = np.clip((d - top) / (WALL_FOOT - top), 0, 1)
+        hgt = 1.6 * (1 - t) ** 1.6
+        col = shade(ndimage.gaussian_filter(hgt, k * 0.15), wall, k, gloss=0.08, power=10)
+        lay.over(col, ((d >= 0) & (d < WALL_FOOT + 0.2)).astype(float))
+        lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.12) / 0.22, 0, 1) * inside * 0.9)
+        if lip:
+            # a rounded bead a unit wide on the wall's top, a crease inside it
+            u = (d - 0.75) / 0.6
+            bh = ndimage.gaussian_filter(bead(np.clip(u, -1, 1)) * (np.abs(u) < 1), k * 0.1)
+            lay.over(shade(bh, BRONZE, k, gloss=0.15, power=12), np.clip((1 - np.abs(u)) / 0.25, 0, 1))
+            lay.over(LINE_IN, np.clip(1 - np.abs(d - 1.45) / 0.2, 0, 1) * 0.7)
+        lay.over(LINE_IN, np.clip(1 - np.abs(d - WALL_FOOT) / 0.3, 0, 1) * 0.9)
+        lay.over(np.zeros(3), np.where(d > WALL_FOOT, np.clip(1 - (d - WALL_FOOT) / (INSET - WALL_FOOT), 0, 1) * 0.45, 0))
     pre = lay.pre()
     return np.stack([ndimage.gaussian_filter(pre[..., i], k * 0.25) for i in range(4)], -1)
 
 
-def inset():
+# The wells' border, four ways while the player chooses (Window.lua's
+# WC.Window.WellStyle): A the dark wall with a bronze lip, B no wall, sunk
+# under a soft shadow, C the dark wall alone, D the grey wall as it was.
+DARK = (np.array((7, 7, 9.0)), np.array((20, 21, 24.0)), np.array((46, 47, 52.0)))
+WELLS = {"A": dict(wall=DARK, lip=True), "B": dict(sunk=True), "C": dict(wall=DARK), "D": dict()}
+
+
+def inset(style):
     """An inset's border, cut from a 20-unit square carved by carve(); the
     corners turn softly (a rounded box's depth)."""
     n, pad = 20.0, 1.0
@@ -287,21 +298,21 @@ def inset():
     ex, ey = np.maximum(r - qx, 0), np.maximum(r - qy, 0)
     d = np.where((ex > 0) & (ey > 0), r - np.hypot(ex, ey), np.minimum(qx, qy))
     d = np.where((xx < 0) | (yy < 0) | (xx > n) | (yy > n), -1, d)
-    pre = carve(d)
+    pre = carve(d, **WELLS[style])
     k = K
 
     def cut(x0, y0, x1, y1):
         return pre[int(round((y0 + pad) * k)):int(round((y1 + pad) * k)), int(round((x0 + pad) * k)):int(round((x1 + pad) * k))]
     c, mid = INSET, n / 2
     return {
-        "Inset-TopLeftCorner": fit(cut(0, 0, c, c), (64, 64)),
-        "Inset-TopRightCorner": fit(cut(n - c, 0, n, c), (64, 64)),
-        "Inset-BottomLeftCorner": fit(cut(0, n - c, c, n), (64, 64)),
-        "Inset-BottomRightCorner": fit(cut(n - c, n - c, n, n), (64, 64)),
-        "Inset-TopEdge": fit(cut(mid - 0.5, 0, mid + 0.5, c), (16, 64)),
-        "Inset-BottomEdge": fit(cut(mid - 0.5, n - c, mid + 0.5, n), (16, 64)),
-        "Inset-LeftEdge": fit(cut(0, mid - 0.5, c, mid + 0.5), (64, 16)),
-        "Inset-RightEdge": fit(cut(n - c, mid - 0.5, n, mid + 0.5), (64, 16)),
+        "Inset" + style + "-TopLeftCorner": fit(cut(0, 0, c, c), (64, 64)),
+        "Inset" + style + "-TopRightCorner": fit(cut(n - c, 0, n, c), (64, 64)),
+        "Inset" + style + "-BottomLeftCorner": fit(cut(0, n - c, c, n), (64, 64)),
+        "Inset" + style + "-BottomRightCorner": fit(cut(n - c, n - c, n, n), (64, 64)),
+        "Inset" + style + "-TopEdge": fit(cut(mid - 0.5, 0, mid + 0.5, c), (16, 64)),
+        "Inset" + style + "-BottomEdge": fit(cut(mid - 0.5, n - c, mid + 0.5, n), (16, 64)),
+        "Inset" + style + "-LeftEdge": fit(cut(0, mid - 0.5, c, mid + 0.5), (64, 16)),
+        "Inset" + style + "-RightEdge": fit(cut(n - c, mid - 0.5, n, mid + 0.5), (64, 16)),
     }
 
 
@@ -317,7 +328,8 @@ VINE = os.path.join(OUT, "Scroll-%s-18.tga")  # ChatBar.lua's VERSION
 
 def render():
     art = frame_pieces()
-    art.update(inset())
+    for style in WELLS:
+        art.update(inset(style))
     for state in ("Normal", "Pushed", "Highlight", "Disabled"):
         art["Close-" + state] = fit(close(state), (128, 128))
     return art
@@ -434,8 +446,8 @@ def mock(art, backdrop, chosen=0):
     lip = np.zeros((d - b, c - a, 4))
     lip[..., 3] = np.interp(yu, *LIP)[:, None] * 255
     m.im.alpha_composite(Image.fromarray(lip.astype(np.uint8), "RGBA"), (a, b))
-    m.nine(art, "Inset-", wells[0], top, wells[1], foot, INSET, INSET)
-    m.nine(art, "Inset-", wells[2], top, wells[3], foot, INSET, INSET)
+    m.nine(art, "InsetA-", wells[0], top, wells[1], foot, INSET, INSET)
+    m.nine(art, "InsetA-", wells[2], top, wells[3], foot, INSET, INSET)
     labels = []
     vine = {n: np.asarray(Image.open(VINE % n).convert("RGBA")).astype(float) for n in ("RuleLeft", "RuleMid")}
     for i, x in enumerate(xs):
@@ -501,7 +513,7 @@ def sheet(art):
 def main():
     art = render()
     os.makedirs(OUT, exist_ok=True)
-    for pat in ("Frame-*.tga", "Inset-*.tga", "Close-*.tga"):
+    for pat in ("Frame-*.tga", "Inset*-*.tga", "Close-*.tga"):
         for old in glob.glob(os.path.join(OUT, pat)):
             os.remove(old)
     for stem, img in art.items():
