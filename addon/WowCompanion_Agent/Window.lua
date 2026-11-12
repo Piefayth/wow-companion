@@ -389,18 +389,15 @@ local function buildTabs(frame, messages)
 	pageShade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
 	pageShade:SetAllPoints()
 
-	-- The tabs, in the chat's own language (the player's look, 2026-11-12):
-	-- no boxes of their own. The chosen tab is a plate of the replies' marbled
-	-- slate standing on the chat well, crowned by the dividers' bronze vine
-	-- (ChatBar.lua's art: its curl at each end, its middle stretched); its
-	-- label is light. The others are only their labels, in washed bronze, on
-	-- the panel. The row's spacing is here: every tab at least TAB_MIN wide
+	-- The tabs, in the same language as the conversation list beside them
+	-- (the player's look, 2026-11-12): the chosen tab is drawn as the list's
+	-- chosen row (a plate of the replies' slate, the vine along its top, its
+	-- name lit), standing on the chat well; the others are only their names
+	-- in washed bronze, on the panel. The row's spacing is here: every tab at least TAB_MIN wide
 	-- (PanelTemplates_TabResize reads frame.minTabWidth), TAB_GAP between
 	-- them, the first over the well's inner edge (EDGE).
 	local names = {}
-	local VINE = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-%s-18]] -- ChatBar.lua's VERSION
-	local TAB_MIN, TAB_GAP, TAB_H = 69, 3, 25.6
-	local LIGHT, BRONZE = { 0.94, 0.9, 0.82 }, { 0.78, 0.64, 0.42 }
+	local TAB_MIN, TAB_GAP = 69, 3
 	frame.minTabWidth = TAB_MIN
 	local function makeTab(name)
 		local i = #names + 1
@@ -413,28 +410,16 @@ local function buildTabs(frame, messages)
 				if t then t:SetTexture(nil) end
 			end
 		end
+		-- the chosen one: the conversation list's chosen row, a plate of the
+		-- replies' slate with the vine along its top
+		tab:SetHeight(ROW)
 		local plate = tab:CreateTexture(nil, "BACKGROUND", nil, -8)
 		plate:SetTexture(WC.Style.STONE.claude, "REPEAT", "REPEAT")
 		plate:SetHorizTile(true)
 		plate:SetVertTile(true)
-		plate:SetPoint("BOTTOMLEFT")
-		plate:SetPoint("BOTTOMRIGHT")
-		plate:SetHeight(TAB_H)
-		local left = tab:CreateTexture(nil, "ARTWORK")
-		left:SetTexture(VINE:format("RuleLeft"))
-		left:SetSize(32, 16)
-		left:SetPoint("LEFT", plate, "TOPLEFT", -4, 0)
-		local right = tab:CreateTexture(nil, "ARTWORK")
-		right:SetTexture(VINE:format("RuleLeft"))
-		right:SetTexCoord(1, 0, 0, 1)
-		right:SetSize(32, 16)
-		right:SetPoint("RIGHT", plate, "TOPRIGHT", 4, 0)
-		local mid = tab:CreateTexture(nil, "ARTWORK")
-		mid:SetTexture(VINE:format("RuleMid"))
-		mid:SetHeight(16)
-		mid:SetPoint("LEFT", left, "RIGHT")
-		mid:SetPoint("RIGHT", right, "LEFT")
-		tab.chosenParts = { plate, left, right, mid }
+		plate:SetAllPoints()
+		tab.chosenParts = { plate }
+		for _, t in ipairs(vine(tab, "TOP")) do tab.chosenParts[#tab.chosenParts + 1] = t end
 		names[i] = name
 		tab:SetID(i)
 		tab:SetText(name)
@@ -470,7 +455,7 @@ local function buildTabs(frame, messages)
 		for i, tab in ipairs(frame.Tabs) do
 			local chosen = i == id
 			for _, part in ipairs(tab.chosenParts) do part:SetShown(chosen) end
-			tab.Text:SetTextColor(unpack(chosen and LIGHT or BRONZE))
+			tab.Text:SetTextColor(unpack(chosen and NAME_LIT or NAME))
 		end
 		local chat = id == 1
 		-- the page's name in the title, as Collections does
