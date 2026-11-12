@@ -48,7 +48,7 @@ local function buildTabs(frame, messages)
 		get = function() return math.floor((WowCompanionAgentDB.windowScale or 1) * 100 + 0.5) end,
 		set = function(value) frame.SetWindowScale(math.floor(value + 0.5) / 100) end,
 		format = function(value) return ("%d%%"):format(math.floor(value + 0.5)) end })
-	WC.SettingsPage.Add({ kind = "button", order = 90, label = "Clear transcript",
+	WC.SettingsPage.Add({ kind = "button", order = 90, label = "Clear transcript", button = "Clear",
 		text = "Empty the Companion window. The conversation itself carries on.",
 		onClick = function()
 			WowCompanionAgentDB.log = {}

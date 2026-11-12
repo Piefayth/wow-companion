@@ -9,7 +9,7 @@
 --                                label, text (the note beside it), order (lower
 --                                first), and by kind: options()/get()/set(name);
 --                                min, max, steps, get()/set(value), format(value);
---                                onClick() }
+--                                button (its text), onClick() }
 --   WC.SettingsPage.Open()       the page in its own window
 --   WC.SettingsPage.ShowIn(f)    the page inside frame f (anchored to fill it)
 
@@ -45,7 +45,7 @@ local function settingRow(row, step, prompt)
 	fs:SetText(row.label)
 	y = y + ROW_H
 	WC.SetCursorAnchor(r, 30)
-	WC.RowStop(r, step, prompt)
+	if step then WC.RowStop(r, step, prompt) else WC.MarkFocusable(r) end
 	return r
 end
 local function note(r, anchor, text)
@@ -101,22 +101,19 @@ local function slider(row)
 	note(r, s.RightText or s, row.text)
 end
 
+-- An action: their button in the control column (SettingsButtonControlTemplate),
+-- the row the stop as on every other row, so the cursor goes straight down
+-- the page; confirm presses it.
 local function button(row)
-	local made, b = pcall(CreateFrame, "Button", nil, page, "UIPanelButtonTemplate")
-	if not made or not b then return end
-	b:SetSize(LABEL_W + CONTROL_W, 26)
-	b:SetPoint("TOPLEFT", 0, -y)
-	b:SetText(row.label)
+	local r = settingRow(row)
+	local b = CreateFrame("Button", nil, r, "UIPanelButtonTemplate")
+	b:SetSize(CONTROL_W, 26)
+	b:SetPoint("LEFT", LABEL_W, 0)
+	b:SetText(row.button)
 	b:SetScript("OnClick", row.onClick)
-	if row.text then
-		local fs = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		fs:SetPoint("LEFT", b, "RIGHT", 12, 0)
-		fs:SetPoint("RIGHT", page, "RIGHT", 0, 0)
-		fs:SetJustifyH("LEFT")
-		fs:SetText(row.text)
-	end
-	WC.MarkFocusable(b)
-	y = y + 34
+	r:SetScript("OnClick", row.onClick)
+	WC.MarkIgnored(b)
+	note(r, b, row.text)
 end
 
 local KINDS = { dropdown = dropdown, slider = slider, button = button }
