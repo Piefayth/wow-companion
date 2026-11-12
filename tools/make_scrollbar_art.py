@@ -21,7 +21,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 # the vine dividers are every window's (Style.lua's WC.Style.Vine), so Core's
 CORE_OUT = os.path.join(ROOT, "addon", "WowCompanion", "Art")
-VINE_VERSION = 1  # Style.lua's VINE_VERSION
+VINE_VERSION = 2  # Style.lua's VINE_VERSION
 LIGHT = np.array([-0.55, -0.75, 0.9]); LIGHT /= np.linalg.norm(LIGHT)
 HALF = LIGHT + np.array([0, 0, 1.0]); HALF /= np.linalg.norm(HALF)
 
@@ -439,9 +439,7 @@ def rule_pieces(weight):
     piece's middle. Horizontal, 16 tall:
     Left and Right (32 wide, a round end 1.2 + hw from the piece's outer edge)
     and Mid (64, stretched). Vertical, 16 wide: Top and Bottom (32 tall) and
-    VMid (64, stretched). Junctions, 32 square, centred: Cross, and the T's,
-    named for the arm that leaves the straight run (TDown: a horizontal run
-    with an arm down; TRight: a vertical run with an arm right)."""
+    VMid (64, stretched); and its junctions (junctions())."""
     hw, pal = WEIGHTS[weight]
     e = 1.2 + hw
     far = -12, 44  # runs leave the piece, so a stretched Mid meets them seamlessly
@@ -453,11 +451,6 @@ def rule_pieces(weight):
         "Top": (16, 32, [((8, e), (8, 44))], [(8, e)], None),
         "VMid": (16, 64, [((8, -12), (8, 76))], [], None),
         "Bottom": (16, 32, [((8, -12), (8, 32 - e))], [(8, 32 - e)], None),
-        "Cross": (32, 32, [((far[0], m), (far[1], m)), ((m, far[0]), (m, far[1]))], [], (m, m)),
-        "TDown": (32, 32, [((far[0], m), (far[1], m)), ((m, m), (m, far[1]))], [], (m, m)),
-        "TUp": (32, 32, [((far[0], m), (far[1], m)), ((m, far[0]), (m, m))], [], (m, m)),
-        "TRight": (32, 32, [((m, far[0]), (m, far[1])), ((m, m), (far[1], m))], [], (m, m)),
-        "TLeft": (32, 32, [((m, far[0]), (m, far[1])), ((far[0], m), (m, m))], [], (m, m)),
     }
     out = {}
     for piece, (w, h, runs, ends, node) in specs.items():
@@ -469,6 +462,101 @@ def rule_pieces(weight):
         elif piece == "VMid":  # stretched lengthwise: the same in every row
             img = np.repeat(img.mean(0, keepdims=True), img.shape[0], 0)
         out[weight + piece] = img
+    out.update(junctions(weight))
+    return out
+
+
+# --- where dividers meet. Each junction is drawn for TRight (a straight run
+# down x 16, the arm leaving to the right along y 16) and turned to the other
+# ways by moving its points, never its pixels, so its light stays the frame's.
+# Two kinds, ornate but simple, in the vine's own language (the chat's Joint,
+# the fleur's volutes): a run meeting one of its own weight wears a bark collar
+# and a boss, two small volutes curling away from the arm; a lighter vine
+# growing into a heavier one swells into a node on it, a tendril coiling off
+# it and a leaf below, as the chat's divider grows into the scroll bar.
+
+TURNS = {
+    "TRight": lambda x, y: (x, y),
+    "TLeft": lambda x, y: (32 - x, y),
+    "TDown": lambda x, y: (y, x),
+    "TUp": lambda x, y: (y, 32 - x),
+}
+
+
+def turned(f, pieces):
+    out = []
+    for p in pieces:
+        if isinstance(p, tuple) and len(p) == 3 and np.isscalar(p[2]):
+            x, y = f(p[0], p[1])
+            out.append((x, y, p[2]))
+        else:
+            out.append([f(x, y) for x, y in p])
+    return out
+
+
+def same_junction(c, hw, pal, f, cross=False):
+    """Runs of one weight meeting: a bark collar (a lozenge), the runs, two
+    volutes on the side away from the arm, a boss over the meeting."""
+    pen = Pen(c, 32)
+    m = 16
+    L = 1.5 * hw + 1.7
+    # its free point shows past the boss where no run covers it; a cross's
+    # collar is turned square to the runs, so its corners show between them
+    a = 0.62 * L
+    collar = [(m - a, m - a), (m + a, m - a), (m + a, m + a), (m - a, m + a)] if cross else [(m - L, m), (m, m - L), (m + L, m), (m, m + L)]
+    raised(pen, turned(f, [collar]), dim(pal, 0.82), bevel=0.6, cast=0.5)
+    runs = [ribbon([(m, -12), (m, 44)], hw), ribbon([(m, m), (44, m)], hw)]
+    if cross:
+        runs.append(ribbon([(-12, m), (m, m)], hw))
+    raised(pen, turned(f, runs), pal, bevel=0.5 * hw / 0.55, cast=0.4, grain=False)
+    if not cross:
+        k = 0.6 + 0.4 * hw
+        for s in (1, -1):  # up and down from the boss, curling back on themselves away from the arm
+            lead = bez((m - hw * 0.3, m - s * (hw + 0.4)), (m - hw - 0.8 * k, m - s * (hw + 1.4 * k)),
+                       (m - hw - 2.2 * k, m - s * (hw + 1.6 * k)), (m - hw - 3.0 * k, m - s * (hw + 0.7 * k)), n=24)
+            raised(pen, turned(f, stroke(scroll(lead, 0.75 * k, s * 0.9, 0.35), 0.42 * k + 0.12, 0.22 * k, knob=False)),
+                   pal, bevel=0.45, cast=0.45)
+    raised(pen, turned(f, [(m, m, hw + 0.75)]), dim(BARK, 0.95), bevel=0.5 * hw / 0.55 + 0.2, cast=0.4)
+
+
+def grow_junction(c, run, arm, f):
+    """A lighter vine (arm) growing into a heavier run: the arm tucked under
+    the run, a node swelling on the run where it meets, a tendril coiling off
+    the arm and a leaf below it, as the chat's Joint."""
+    (rhw, rpal), (ahw, apal) = run, arm
+    pen = Pen(c, 32)
+    m = 16
+    raised(pen, turned(f, [ribbon([(m, m), (44, m)], ahw)]), apal, bevel=0.5 * ahw / 0.55, cast=0.4, grain=False)
+    raised(pen, turned(f, [ribbon([(m, -12), (m, 44)], rhw)]), rpal, bevel=0.5 * rhw / 0.55, cast=0.4, grain=False)
+    x0 = m + rhw + 0.5
+    lead = bez((x0 + 0.2, m - ahw * 0.5), (x0 + 0.8, m - ahw - 1.6), (x0 + 2.2, m - ahw - 2.8), (x0 + 3.8, m - ahw - 2.6), n=24)
+    raised(pen, turned(f, stroke(scroll(lead, 0.9, 1.0, 0.35), 0.45, 0.24, knob=False)), BARK, bevel=0.45, cast=0.45)
+    raised(pen, turned(f, [leaf((x0 + 0.4, m + ahw * 0.6), (x0 + 3.2, m + ahw + 2.8), 1.3)]), dim(BUD, 0.8), bevel=0.4, cast=0.4)
+    raised(pen, turned(f, [(m + rhw * 0.35, m, rhw + 0.55)]), rpal, bevel=0.5 * rhw / 0.55, cast=0.4)
+
+
+NAMES = {"Thin": "Thin", "": "Medium", "Thick": "Thick"}
+
+
+def junctions(weight):
+    """A weight's junctions, 32 square, centred: Cross and the T's of its own
+    weight (named for the arm leaving the straight run: TDown, a horizontal
+    run with an arm down), and the T's of each lighter weight growing into it
+    (<weight>T<way>From<Thin|Medium>)."""
+    hw, pal = WEIGHTS[weight]
+    out = {}
+    c = ucanvas(32, 32)
+    same_junction(c, hw, pal, TURNS["TRight"], cross=True)
+    out[weight + "Cross"] = c.final()
+    for way, f in TURNS.items():
+        c = ucanvas(32, 32)
+        same_junction(c, hw, pal, f)
+        out[weight + way] = c.final()
+        for lighter, (ahw, apal) in WEIGHTS.items():
+            if ahw < hw:
+                c = ucanvas(32, 32)
+                grow_junction(c, (hw, pal), (ahw, apal), f)
+                out[weight + way + "From" + NAMES[lighter]] = c.final()
     return out
 
 

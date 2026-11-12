@@ -233,10 +233,13 @@ WowCompanion_Style.STONE = {
 -- The vine dividers, every window's (tools/make_scrollbar_art.py, rule_pieces):
 -- three weights, "Thin", "" (medium, the chat's) and "Thick"; pieces Left,
 -- Mid (stretched), Right, 32 x 16 (Mid 64); Top, VMid (stretched), Bottom,
--- 16 x 32; the junctions Cross, TUp, TDown, TLeft, TRight, 32 square, named for
--- the arm that leaves the straight run. The line runs down each piece's middle;
--- a round end sits 1.2 + its half-width in from a cap's outer edge.
-local VINE_VERSION = 1 -- the generator's VINE_VERSION
+-- 16 x 32; the junctions, 32 square, centred where the runs meet: Cross and
+-- TUp, TDown, TLeft, TRight (named for the arm that leaves the straight run)
+-- where runs of one weight meet, a collar and volutes; and <weight>T<way>From
+-- <Thin|Medium>, a lighter vine growing into a heavier run, a node, a tendril
+-- and a leaf. The line runs down each piece's middle; a round end sits 1.2 +
+-- its half-width in from a cap's outer edge.
+local VINE_VERSION = 2 -- the generator's VINE_VERSION
 function WowCompanion_Style.Vine(piece)
 	return ART .. "Vine-" .. piece .. "-" .. VINE_VERSION
 end

@@ -134,7 +134,7 @@ scroll:SetScript("OnMouseWheel", function(self, delta)
 	self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW_H)))
 end)
 -- over the rows' 9 px under it, as the dividers run to the backing's edge
-column:SetFrameLevel(scroll:GetFrameLevel() + 5)
+column:SetFrameLevel(scroll:GetFrameLevel() + 6)
 WC.Style.ScrollBar(scroll, column, ROW_H)
 
 -- The seams between the wells are the thick vine (WC.Style.VineLine): down
@@ -273,16 +273,20 @@ local KINDS = { dropdown = dropdown, slider = slider, button = button, key = key
 
 -- a section's name in the names well, right-aligned beside its first row, and the
 -- divider over the section (shown for every section but the first), from the
--- names well to the backing's right edge
+-- spine between the wells to the backing's right edge
 local function header(name)
 	if headers[name] then return headers[name] end
 	local h = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
 	h:SetWidth(SPINE - 24)
 	h:SetJustifyH("RIGHT")
 	h:SetText(name)
+	-- grown out of the thick spine between the wells, through a joint of the
+	-- vine's own (WC.Style.VineJoin), drawn over the spine as it scrolls past
 	h.divider = CreateFrame("Frame", nil, content)
 	h.divider:SetHeight(16)
-	WC.Style.VineLine(h.divider, "", false, true, true)
+	h.divider:SetFrameLevel(scroll:GetFrameLevel() + 5)
+	WC.Style.VineLine(h.divider, "", false, false, true)
+	WC.Style.VineJoin(h.divider, "Thick", "TRightFromMedium", "LEFT")
 	headers[name] = h
 	return h
 end
@@ -322,7 +326,7 @@ local function layout()
 				if section then y = y + GAP end
 				h.divider:SetShown(section ~= nil)
 				h.divider:ClearAllPoints()
-				h.divider:SetPoint("LEFT", content, "TOPLEFT", 9 + SPINE, -y + GAP / 2)
+				h.divider:SetPoint("LEFT", content, "TOPLEFT", 9 + SPINE - 2 - SEAM / 2, -y + GAP / 2)
 				h.divider:SetPoint("RIGHT", content, "TOPRIGHT", 0, -y + GAP / 2)
 				section = s
 				h:SetPoint("TOPRIGHT", content, "TOPLEFT", 9 + SPINE - 18, -y - 10)
