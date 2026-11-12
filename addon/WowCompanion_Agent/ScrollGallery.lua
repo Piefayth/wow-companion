@@ -1,5 +1,5 @@
--- A design sheet, for now: the chat's scroll bar in several of Blizzard's own
--- looks side by side, each on a small copy of the chat well (two turns on the
+-- A design sheet, for now: the chat's slim grey bar with candidate ornate
+-- arrows and divider edges side by side, each on a small copy of the chat well (two turns on the
 -- stone, the quest log divider between), so the player compares them in the
 -- Companion window instead of one reload per idea. Shown only; nothing scrolls.
 -- Goes when a bar is chosen.
@@ -13,105 +13,100 @@ local function stone(tex, which)
 	tex:SetVertTile(true)
 end
 
--- An arrow button at each end, for the controller cursor (the right stick
--- stays the camera). "minimal": MinimalScrollBar's own steppers (17x11,
--- with their over and down art); "classic": UIPanelScrollUp/DownButton.
--- Returns the height they take at each end.
-local function arrows(c, a)
-	if a.kind == "classic" then
-		local up = CreateFrame("Button", nil, c, "UIPanelScrollUpButtonTemplate")
-		up:SetPoint("TOP", 0, -4)
-		local down = CreateFrame("Button", nil, c, "UIPanelScrollDownButtonTemplate")
-		down:SetPoint("BOTTOM", 0, 4)
-		return 4 + up:GetHeight() + 4
-	end
-	for _, spec in ipairs({ { "top", "TOP", -4 }, { "bottom", "BOTTOM", 4 } }) do
+-- The arrows and the dividers' edge, drawn by tools/make_scrollbar_art.py
+-- (ornate, not Blizzard's): each candidate's up and down arrow as real buttons
+-- with all four states, and where the dividers end, its edge: a rod down the
+-- column's left side with caps, and a joint on each divider's end.
+local ART_VERSION = 1
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-]]
+local function art(design, piece) return ART .. design .. "-" .. piece .. "-" .. ART_VERSION end
+local ARROW = 16 -- an arrow's square, its art about 12 of it
+
+local function arrows(c, design)
+	for _, spec in ipairs({ { "Up", "TOP", -2 }, { "Down", "BOTTOM", 2 } }) do
 		local b = CreateFrame("Button", nil, c)
-		b:SetSize(17, 11)
+		b:SetSize(ARROW, ARROW)
 		b:SetPoint(spec[2], 0, spec[3])
-		local base = "minimal-scrollbar-arrow-" .. spec[1]
-		b:SetNormalAtlas(base)
-		b:SetHighlightAtlas(base .. "-over")
-		b:SetPushedAtlas(base .. "-down")
-		for _, t in ipairs({ b:GetNormalTexture(), b:GetPushedTexture() }) do
-			if a.color then
-				t:SetDesaturated(true)
-				t:SetVertexColor(unpack(a.color))
-			end
-		end
+		local base = spec[1] .. "-"
+		b:SetNormalTexture(art(design, base .. "Normal"))
+		b:SetPushedTexture(art(design, base .. "Pushed"))
+		b:SetHighlightTexture(art(design, base .. "Highlight"), "ADD")
+		b:SetDisabledTexture(art(design, base .. "Disabled"))
 	end
-	return 4 + 11 + 4
+	return 2 + ARROW + 2
 end
 
--- A slim bar: a gutter and a thumb exactly its width (never wider), a sixth
--- of the way down, a third of the height, on MinimalScrollBar's track. t: the
--- thumb's tint, a: the arrows
-local function marker(c, width, t, a)
-	local ends = arrows(c, a)
+-- the rod (8 wide, its art the middle 1.5) centred on the column's left side,
+-- from cap to cap
+local function rule(c, design)
+	local top = c:CreateTexture(nil, "ARTWORK")
+	top:SetTexture(art(design, "RuleTop"))
+	top:SetSize(8, 8)
+	top:SetPoint("TOP", c, "TOPLEFT", 0, 0)
+	local bottom = c:CreateTexture(nil, "ARTWORK")
+	bottom:SetTexture(art(design, "RuleBottom"))
+	bottom:SetSize(8, 8)
+	bottom:SetPoint("BOTTOM", c, "BOTTOMLEFT", 0, 0)
+	local mid = c:CreateTexture(nil, "ARTWORK")
+	mid:SetTexture(art(design, "RuleMid"), nil, "REPEAT")
+	mid:SetVertTile(true)
+	mid:SetWidth(8)
+	mid:SetPoint("TOP", top, "BOTTOM")
+	mid:SetPoint("BOTTOM", bottom, "TOP")
+end
+
+-- The slim bar: MinimalScrollBar's track and thumb, 8 wide, untinted, the
+-- thumb a sixth of the way down and a third of the height. ends: the dividers'
+-- right ends, each given the design's joint.
+local function marker(c, design, hasRule, ends)
+	local inset = arrows(c, design)
+	if hasRule then rule(c, design) end
+	for _, at in ipairs(ends) do
+		local joint = c:CreateTexture(nil, "OVERLAY")
+		joint:SetTexture(art(design, "Joint"))
+		joint:SetSize(16, 16)
+		joint:SetPoint("CENTER", at, "TOPRIGHT")
+	end
+	local width = 8
 	local track = CreateFrame("Frame", nil, c)
-	track:SetPoint("TOP", 0, -ends)
-	track:SetPoint("BOTTOM", 0, ends)
+	track:SetPoint("TOP", 0, -inset)
+	track:SetPoint("BOTTOM", 0, inset)
 	track:SetWidth(width)
-	local top = track:CreateTexture(nil, "BACKGROUND")
-	top:SetAtlas("minimal-scrollbar-track-top")
-	top:SetSize(width, 8)
-	top:SetPoint("TOP")
-	local bottom = track:CreateTexture(nil, "BACKGROUND")
-	bottom:SetAtlas("minimal-scrollbar-track-bottom")
-	bottom:SetSize(width, 8)
-	bottom:SetPoint("BOTTOM")
-	local mid = track:CreateTexture(nil, "BACKGROUND")
-	mid:SetAtlas("!minimal-scrollbar-track-middle")
-	mid:SetPoint("TOPLEFT", top, "BOTTOMLEFT")
-	mid:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT")
+	local function piece(parent, layer, atlas, point)
+		local t = parent:CreateTexture(nil, layer)
+		t:SetAtlas(atlas)
+		t:SetSize(width, 8)
+		t:SetPoint(point)
+		return t
+	end
+	local function column3(parent, layer, set, middle)
+		local top = piece(parent, layer, set .. "-top", "TOP")
+		local bottom = piece(parent, layer, set .. "-bottom", "BOTTOM")
+		local mid = parent:CreateTexture(nil, layer)
+		mid:SetAtlas(middle)
+		mid:SetPoint("TOPLEFT", top, "BOTTOMLEFT")
+		mid:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT")
+	end
+	column3(track, "BACKGROUND", "minimal-scrollbar-track", "!minimal-scrollbar-track-middle")
 	local thumb = CreateFrame("Frame", nil, track)
 	thumb:SetWidth(width)
-	local room = (c:GetHeight() > 0 and c:GetHeight() or 300) - 12
+	local room = (c:GetHeight() > 0 and c:GetHeight() or 300) - 2 * inset
 	thumb:SetHeight(room / 3)
 	thumb:SetPoint("TOP", track, "TOP", 0, -room / 6)
-	local set = "minimal-scrollbar-small-thumb"
-	local top = thumb:CreateTexture(nil, "ARTWORK")
-	top:SetAtlas(set .. "-top")
-	top:SetSize(width, 8)
-	top:SetPoint("TOP")
-	local bottom = thumb:CreateTexture(nil, "ARTWORK")
-	bottom:SetAtlas(set .. "-bottom")
-	bottom:SetSize(width, 8)
-	bottom:SetPoint("BOTTOM")
-	local mid = thumb:CreateTexture(nil, "ARTWORK")
-	mid:SetAtlas(set .. "-middle")
-	mid:SetPoint("TOPLEFT", top, "BOTTOMLEFT")
-	mid:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT")
-	for _, x in ipairs({ top, bottom, mid }) do
-		if t.desaturate then x:SetDesaturated(true) end
-		if t.color then x:SetVertexColor(unpack(t.color)) end
-	end
+	column3(thumb, "ARTWORK", "minimal-scrollbar-small-thumb", "minimal-scrollbar-small-thumb-middle")
 end
 
--- each: a name, the column's width, and what draws in it
-local GOLD, BRONZE, PARCHMENT = { 1, 0.82, 0.25 }, { 0.78, 0.6, 0.38 }, { 0.86, 0.83, 0.76 }
-local function tinted(color) return { desaturate = true, color = color } end
+-- each: a name, the column's width, the design's art, and whether it has a rod
 local OPTIONS = {
-	{ "Minimal", 18, function(c) marker(c, 8, {}, { kind = "minimal" }) end },
-	{ "Minimal, gold", 18, function(c)
-		marker(c, 8, tinted(GOLD), { kind = "minimal", color = GOLD })
-	end },
-	{ "Minimal, bronze", 18, function(c)
-		marker(c, 8, tinted(BRONZE), { kind = "minimal", color = BRONZE })
-	end },
-	{ "Minimal, parchment", 18, function(c)
-		marker(c, 8, tinted(PARCHMENT), { kind = "minimal", color = PARCHMENT })
-	end },
-	{ "Grey bar, gold arrows", 18, function(c)
-		marker(c, 8, {}, { kind = "minimal", color = GOLD })
-	end },
-	{ "Classic arrows, grey", 24, function(c) marker(c, 8, {}, { kind = "classic" }) end },
-	{ "Classic arrows, gold", 24, function(c) marker(c, 8, tinted(GOLD), { kind = "classic" }) end },
+	{ "Gilded chevron, ruby", 20, "Gilded", true },
+	{ "Bronze spearhead", 20, "Spear", true },
+	{ "Fleur, sapphire, no rod", 20, "Fleur", false },
+	{ "Iron and gold, amber", 20, "Ember", true },
 }
 
 local SAMPLE = {
-	{ "you", "|cffffd100You|r 20:47\nThe scroll bar again, what else have you got?" },
-	{ "claude", "|cffffd100Claude|r 20:48\nThe thin rounded bar with arrows, in a few colours. Each pane is a small chat well with your stone and mine, and its bar on the right." },
+	{ "you", "|cffffd100You|r 20:47\nArrows worthy of the bar, please." },
+	{ "claude", "|cffffd100Claude|r 20:48\nThe slim grey bar with new ornate arrows, and an edge where each divider ends. Each pane is a small chat well with your stone and mine." },
 }
 
 local function pane(page, i, option)
@@ -134,7 +129,7 @@ local function pane(page, i, option)
 	stone(under, "claude")
 	under:SetPoint("TOPLEFT", EDGE, -EDGE)
 	under:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
-	local y, last = 0, nil
+	local y, last, ends = 0, nil, {}
 	for n, turn in ipairs(SAMPLE) do
 		local band = text:CreateTexture(nil, "BACKGROUND")
 		stone(band, turn[1])
@@ -154,11 +149,12 @@ local function pane(page, i, option)
 			divider:SetHeight(15)
 			divider:SetPoint("LEFT", band, "TOPLEFT")
 			divider:SetPoint("RIGHT", band, "TOPRIGHT")
+			ends[#ends + 1] = band
 		end
 		last = band
 		y = y - 64
 	end
-	local ok, err = pcall(option[3], column)
+	local ok, err = pcall(marker, column, option[3], option[4], ends)
 	if not ok then
 		label:SetText(i .. ". " .. option[1] .. " |cffff6060" .. tostring(err) .. "|r")
 	end
