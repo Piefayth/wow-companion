@@ -9,7 +9,7 @@
 --   WC.Link.Current()           the conversation slot of the message being handled
 --   WC.Link.Slash(word, fn)     a /wc subcommand
 -- Bus messages sent: TALK_TAP (a tap of the Companion key), TALK_DOWN and
--- TALK_UP (its press and release),
+-- TALK_UP (its press and release), TALK_HOLD (the press outlasted a tap),
 -- JOB_MESSAGE(inbox) (a handled message that names a job or lists jobs: their
 -- states for whoever keeps them), LINK_STEP(step, ok, outcome) (a follow-up step
 -- ran), LINK_FAILED(text), MAILBOX_JOBS(jobs).
@@ -57,13 +57,18 @@ local current
 -- it). It runs on press and release, so a tap is told from a hold: a tap sends
 -- TALK_TAP (the Agent opens or closes its window), a hold does nothing here (the
 -- PC's push-to-talk, its clip named by the PC's `heard`). TALK_DOWN and TALK_UP
--- go out on both edges (the chat wheel's ring).
+-- go out on both edges (the chat wheel's ring), TALK_HOLD once a press has
+-- outlasted a tap (the PC's own line, crates/voice TAP: it is talking now).
 local TAP_MAX = 0.35
 local downAt
 function WowCompanion_TalkBinding(keystate)
 	if keystate == "down" then
-		downAt = GetTime()
+		local at = GetTime()
+		downAt = at
 		WC.Send("TALK_DOWN")
+		C_Timer.After(TAP_MAX, function()
+			if downAt == at then WC.Send("TALK_HOLD") end
+		end)
 		return
 	end
 	local held = downAt and GetTime() - downAt

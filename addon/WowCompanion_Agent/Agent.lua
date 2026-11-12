@@ -79,7 +79,7 @@ local function slotLabel(slot)
 end
 local renderPending
 -- the Companion key held (TALK_DOWN to TALK_UP): `slot` the conversation the
--- chord names now, `at` when it was pressed
+-- chord names now, `at` when it was pressed, `on` once it is a hold (TALK_HOLD)
 local talking = _G["WCTalkingWatch"] or CreateFrame("Frame", "WCTalkingWatch")
 talking:Hide()
 -- the last reply or error per conversation, shown in its row for a while
@@ -119,7 +119,7 @@ renderPending = function()
 	end
 	-- while the Companion key is held: talking, and where it will go (the
 	-- last trigger pulled in the hold, as the PC picks it)
-	if talking.slot then
+	if talking.on then
 		local dictation = talking.slot == WC.Conversations.DICTATION
 		lines[#lines + 1] = row(dictation and "chat" or talking.slot, "ff8080",
 			("talking %ds"):format(math.floor(now - talking.at)),
@@ -192,7 +192,7 @@ local function paintConversations()
 		local label = slotLabel(key)
 		-- each conversation shows its own progress in the list: the seconds while its agent works, "new" once it answered
 		local heard, running = work(key)
-		if talking.slot == key then
+		if talking.on and talking.slot == key then
 			-- the Companion key is held with this conversation's chord
 			label = "|cffff8080" .. label .. "  talking|r"
 		elseif heard then
@@ -481,11 +481,15 @@ end)
 bus:On("TALK_DOWN", function()
 	talking.at, talking.slot, talking.held = GetTime(), WowCompanion_PadSlot(), WC.Pad.Triggers()
 	talking:Show()
+end)
+-- shown only once the press is a hold: a tap opens the window, it says nothing
+bus:On("TALK_HOLD", function()
+	talking.on = true
 	renderPending()
 end)
 bus:On("TALK_UP", function()
 	talking:Hide()
-	talking.slot = nil
+	talking.slot, talking.on = nil, nil
 	renderPending()
 end)
 bus:On("LINK_FAILED", function(text) remember("error", text) end)
