@@ -303,13 +303,6 @@ local function buildTabs(frame, messages)
 		function selected:Show() self:SetShown(true) end
 		selected:SetShown(false)
 		b.selected = selected
-		-- the cursor's: the replies' slate laid faintly over the row
-		local glow = b:CreateTexture(nil, "HIGHLIGHT")
-		glow:SetTexture(WC.Style.STONE.claude, "REPEAT", "REPEAT")
-		glow:SetHorizTile(true)
-		glow:SetVertTile(true)
-		glow:SetAllPoints()
-		glow:SetAlpha(0.45)
 		-- news kept across a reload shows from the start
 		local kept = type(WowCompanionAgentDB) == "table" and WowCompanionAgentDB.unread
 		-- Main is the one in view after a reload, so its news is being read
