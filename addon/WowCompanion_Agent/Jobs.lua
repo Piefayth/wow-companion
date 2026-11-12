@@ -462,9 +462,6 @@ nowKey:SetScript("OnClick", function()
 	local job = sendable()
 	if job then sendNow(job) end
 end)
--- R3: the next offer on the offered button, when more than one waits
-local offerNextKey = CreateFrame("Button", "WCOfferNextKey", UIParent)
-offerNextKey:SetScript("OnClick", function() WC.Offer.Next() end)
 local keyOwner = CreateFrame("Frame", "WCJobsKeys", UIParent)
 local bound = nil
 local elapsed = 0
@@ -502,9 +499,6 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " Cancel newest" end
 		if focused and sendable() then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
 		if focused and offerShown() then parts[#parts + 1] = glyph("PADLSTICK") .. " " .. offerShown() end
-		if focused and offerShown() and WC.Offer.Count() > 1 then
-			parts[#parts + 1] = glyph("PADRSTICK") .. (" Next button (%d)"):format(WC.Offer.Count())
-		end
 		-- a settings row under the cursor, on any tab (WC.RowStop binds the keys)
 		local adjust = WC.RowPrompt(window)
 		if adjust then parts[#parts + 1] = adjust end
@@ -513,21 +507,17 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		if window.jobsCancelPrompt then window.jobsCancelPrompt:Hide() window.jobsNowPrompt:Hide() end
 	end
 	-- what is bound follows what the legend shows; rebound only on a change
-	local want = focused and (offerShown() and (WC.Offer.Count() > 1 and "offers" or "offer") or "jobs") or nil
+	local want = focused and (offerShown() and "offer" or "jobs") or nil
 	if want ~= bound then
 		ClearOverrideBindings(keyOwner)
 		if want then
 			SetOverrideBindingClick(keyOwner, true, "PAD3", "WCJobsCancelKey")
 			SetOverrideBindingClick(keyOwner, true, "PAD4", "WCJobsNowKey")
 		end
-		-- L3 presses the offered button and R3 steps to the next offer (both unused
-		-- in menus); autorun and the camera stick click come back when the window
-		-- lets go. The button itself is secure and the press is theirs
-		if want == "offer" or want == "offers" then
+		-- L3 presses the offered button (L3 is unused in menus); autorun comes back when
+		-- the window lets go. The button itself is secure and the press is theirs
+		if want == "offer" then
 			SetOverrideBindingClick(keyOwner, true, "PADLSTICK", WC.Offer.BUTTON, "LeftButton")
-		end
-		if want == "offers" then
-			SetOverrideBindingClick(keyOwner, true, "PADRSTICK", "WCOfferNextKey")
 		end
 		bound = want
 	end
