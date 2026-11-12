@@ -80,24 +80,34 @@ HID byte and mask (`9:0x10`, crates/pad). Mirroring `set talk PADSOCIAL` needs a
 map from one to the other. The two vocabularies are what let the two homes
 disagree.
 
-- Now, exact and small: WoW's names become the companion's button names
-  (`PADSOCIAL`, `PADSYSTEM`, `PADFORWARD`, `PADLSHOULDER`, `PADLTRIGGER`,
-  `PADLSTICK`...) in `pad::press`/`press_for`, beside the Sony table and
-  `xinput::NAMES`; `minus`/`home`/`l1` go. WoW's raw order in
-  `WTF/GamePadConfig_Default.json` looks like SDL's (raw 4 Back = `PADSOCIAL`,
-  5 Guide = `PADSYSTEM`, 15 = `PAD5`, 16-19 the paddles), so a standard button's
-  meaning is fixed. That covers the DualSense, the Edge and XInput.
-  `PADPADDLE1-4` join once their Edge bits are measured (only `Edge_R_Fn`, byte
-  10 0x20, is).
-- Not covered: an HID pad with no table. It would need the setup window's learn
-  (a second home again) or an exact pairing: the row says "hold the button", the
-  game draws `WCCMD n learn talk PADxxx` while it is held, and the companion
-  takes the one button bit held when it reads the strip. That needs the pad
-  learn fix first (button bits from the HID report descriptor, not a baseline
-  diff that takes byte 31's counter for a button).
-- The root fix: the companion reads the pad the way WoW does (SDL's controller
-  layer), so a name means the same button in both by construction. It is a big
-  change (rumble, the DualSense report).
+The way (the player asked for the robust one, 2026-11-12; Main proposed it):
+the companion keeps reading raw HID and names buttons the way WoW does, from
+data instead of hand tables. WoW's raw order in `WTF/GamePadConfig_Default.json`
+is SDL's (raw 4 Back = `PADSOCIAL`, 5 Guide = `PADSYSTEM`, 15 misc = `PAD5`,
+16-19 the paddles), and SDL names buttons from `gamecontrollerdb.txt`.
+
+1. **Buttons from the pad's HID report descriptor**: the Button page's usages
+   in order are SDL's `b0..bN` on Windows. This is also the pad-learn fix (no
+   baseline diff, so byte 31's counter is never taken for a button).
+2. **Names from SDL's `gamecontrollerdb.txt`, shipped as a file** (2,295 lines,
+   community kept), looked up by vid:pid: `back:b8` is `PADSOCIAL`,
+   `guide:b12` `PADSYSTEM`. No SDL at runtime, so nothing else opens the pad
+   while WoW has it.
+3. **Checked against the measured bits:** the database has both the DualSense
+   (054c:0ce6) and the Edge (054c:0df2), and its `b0..b14` are the bits crates/pad
+   measured, in order: Square..Triangle byte 8 0x10..0x80 (`b0..b3`), L1..R3
+   byte 9 0x01..0x80 (`b4..b11`, Create `b8`, Options `b9`), PS, touchpad and mute
+   byte 10 0x01..0x04 (`b12..b14`). So the player's pad needs no hand table.
+
+What stays hand-made, each fixed by its maker: XInput (Microsoft's 16-bit button
+word, already in `xinput::NAMES`), the Edge's extras (the database lists no
+paddles; WoW's `PADPADDLE1-4` come from SDL's own DualSense driver; Fn and the
+back buttons are in byte 10 above 0x04, only `Edge_R_Fn` 0x20 measured), and the
+triggers (the database maps them as axes `a3`/`a4`, while the companion reads
+the descriptor's digital buttons `b6`/`b7`). A pad that is in neither the
+database nor these tables is named by an exact pairing: the row says "hold the
+button", the game draws `WCCMD n learn talk PADxxx` while it is held, and the
+companion takes the one button held when it reads the strip.
 
 On the game side, the binding itself is the truth: the row reads
 `GetBindingKey("WOWCOMPANION_WINDOW")` and writes it with `SetBinding`, with no
