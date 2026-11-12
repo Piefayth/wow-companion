@@ -61,13 +61,15 @@ local function buildTabs(frame, messages)
 	-- blind-safe word for good or bad (green ok, red problem) and grey detail.
 	local ROW = 30
 	local rows = {}
-	-- one stone behind the whole page, so the card fills the tab to its bottom
-	-- edge instead of ending under the last row (the player, 2026-11-11)
+	-- One stone over the whole page well (the inset the page sits in, edge to
+	-- edge inside its border), so only one texture shows, divided by the row
+	-- dividers; the well's own backing no longer peeks out around a smaller
+	-- card (the player, 2026-11-11). Anchored once the page has its parent.
 	local stone = pages[3]:CreateTexture(nil, "BACKGROUND")
 	stone:SetTexture(WC.Transcript.STONE.claude, "REPEAT", "REPEAT")
 	stone:SetHorizTile(true)
 	stone:SetVertTile(true)
-	stone:SetAllPoints()
+	pages[3].stone = stone
 	local function row(i)
 		local r = rows[i]
 		if r then return r end
@@ -313,6 +315,8 @@ local function buildTabs(frame, messages)
 		p:SetPoint("BOTTOMRIGHT", -12, 10)
 	end
 	for _, p in pairs(pages) do place(p) end
+	pages[3].stone:SetPoint("TOPLEFT", pageWell, "TOPLEFT", 3, -3)
+	pages[3].stone:SetPoint("BOTTOMRIGHT", pageWell, "BOTTOMRIGHT", -3, 3)
 
 	-- the tabs, their foot resting on the chat well's top border (one pixel
 	-- in, no more: deeper, they covered the top line of text), drawn under
