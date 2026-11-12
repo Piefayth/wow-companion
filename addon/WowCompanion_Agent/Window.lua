@@ -355,10 +355,8 @@ local function buildTabs(frame, messages)
 	pageShade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
 	pageShade:SetAllPoints()
 
-	-- the tabs, their foot resting on the chat well's top border (one pixel
-	-- in, no more: deeper, they covered the top line of text), the row's left
-	-- end on the well's inner edge (EDGE), drawn under the well's top shadow
-	-- so it falls across their foot as across the text
+	-- the tabs, their foot standing on the chat well's outer edge, never over
+	-- its carved wall, the row's left end over the well's inner edge (EDGE)
 	local names = {}
 	-- our art (tools/make_tab_art.py) carries no margin: the unselected
 	-- pieces are the button's own size, the open ones set out by their glow
@@ -400,7 +398,7 @@ local function buildTabs(frame, messages)
 		tab:SetID(i)
 		tab:SetText(name)
 		if i == 1 then
-			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", EDGE, -1)
+			tab:SetPoint("BOTTOMLEFT", chatWell, "TOPLEFT", EDGE, 0)
 		else
 			tab:SetPoint("LEFT", frame.Tabs[i - 1], "RIGHT", TAB_GAP, 0)
 		end
