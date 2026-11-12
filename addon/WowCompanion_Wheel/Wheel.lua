@@ -5,10 +5,11 @@
 -- still walks. Every button is secure, so a wheel works in combat; what is on
 -- it is rebuilt out of combat only.
 --
--- The ring (its secure snippets, the stick capture, the axis CVar dance) is
--- adapted from Improved Forever's Ring.lua by markg, MIT licence, see
--- LICENSE-ImprovedForever. What is left out: its built-in wheels, its editor,
--- its R3 combos, pages, and everything it needed its core for.
+-- The ring's look, layout, aim and stick capture are Core's (Ring.lua, shared
+-- with the chat wheel); what is this addon's own is the secure part: the
+-- buttons that open a wheel and use its slots, the bindings it takes while
+-- open, the stick-direction keys (the axis CVar dance). Adapted from Improved
+-- Forever's Ring.lua by markg, MIT licence, see LICENSE-ImprovedForever.
 --
 -- Configured by the companion agent, in Lua, out of combat:
 --   WCWheel.Set("travel", { label = "Travel", slots = {
@@ -26,11 +27,7 @@ WCWheel = WCWheel or {}
 WC.Wheel = WCWheel
 local W = WCWheel
 
-local MAX_SLOTS = 8
-local WHEEL_WIDTH, WHEEL_HEIGHT = 540, 541 -- Forever's GamepadRadial, measured by Improved Forever
-local SLOT_RADIUS = 150
-local ICON_SIZE = 45 -- Blizzard's segment icon size
-local PICK_LENGTH_SQ = 0.25
+local MAX_SLOTS = WC.Ring.PAGE
 local AXIS_CVAR = "GamePadStickAxisButtons"
 local MODIFIERS_LUA = [[newtable("", "SHIFT-", "CTRL-", "ALT-", "CTRL-SHIFT-", "ALT-SHIFT-", "CTRL-ALT-", "CTRL-ALT-SHIFT-")]]
 
@@ -54,57 +51,9 @@ end
 ---------------------------------------------------------------------------
 
 local ring = CreateFrame("Frame", "WCWheelRing", UIParent, "SecureHandlerBaseTemplate")
-ring:SetSize(WHEEL_WIDTH, WHEEL_HEIGHT)
-ring:SetPoint("CENTER", UIParent, "CENTER", 312, 10) -- where the native radial sits
-ring:SetFrameStrata("DIALOG")
 ring:Hide()
-
--- While the ring is up this child takes the sticks, so the right stick aims
--- without turning the camera; the left one walks through bindings instead
--- (its directions arrive as keys, GamePadStickAxisButtons).
-local stickCapture = CreateFrame("Frame", nil, ring)
-stickCapture:SetAllPoints(ring)
-if stickCapture.EnableGamePadStick then
-    stickCapture:EnableGamePadStick(true)
-    stickCapture:SetScript("OnGamePadStick", function() end)
-end
-
--- After the ring closes the right stick is often still pushed: keep the
--- sticks a moment so the camera does not swing round.
-local RELEASE_SQ, RELEASE_MAX = 0.04, 0.5
-local afterCapture = CreateFrame("Frame", nil, UIParent)
-afterCapture:SetAllPoints(UIParent)
-afterCapture:SetFrameStrata("DIALOG")
-afterCapture:Hide()
-if afterCapture.EnableGamePadStick then
-    afterCapture:EnableGamePadStick(true)
-    afterCapture:SetScript("OnGamePadStick", function() end)
-end
-
-local function Sticks()
-    local state = C_GamePad.GetDeviceMappedState(C_GamePad.GetActiveDeviceID())
-    return state and state.sticks
-end
-
-local function AimStick()
-    local sticks = Sticks()
-    local stick = sticks and sticks[ring:GetAttribute("wc-stick") or 2]
-    if stick and stick.x and stick.y then return stick.x, stick.y end
-end
-
-afterCapture:SetScript("OnUpdate", function(self, elapsed)
-    self.held = (self.held or 0) + elapsed
-    local x, y = AimStick()
-    if self.held >= RELEASE_MAX or not x or x * x + y * y <= RELEASE_SQ then self:Hide() end
-end)
-ring:HookScript("OnHide", function()
-    local x, y = AimStick()
-    if x and x * x + y * y > RELEASE_SQ then
-        afterCapture.held = 0
-        afterCapture:Show()
-    end
-end)
-ring:HookScript("OnShow", function() afterCapture:Hide() end)
+-- the look, the aim, the stick capture and the camera hold (Core's Ring.lua)
+local look = WC.Ring.Build(ring, { prompt = "Release stick or R2 Use      Circle Close" })
 
 local function SecureButton(name)
     local button = CreateFrame("Button", name, UIParent, "SecureActionButtonTemplate,SecureHandlerBaseTemplate")
@@ -331,166 +280,13 @@ ring:HookScript("OnShow", function()
 end)
 ring:HookScript("OnHide", RestoreAxis)
 
----------------------------------------------------------------------------
--- Visuals (Forever's native radial art)
----------------------------------------------------------------------------
-
-local function Atlas(texture, atlas, fallback)
-    if C_Texture.GetAtlasInfo(atlas) then
-        texture:SetAtlas(atlas)
-    elseif fallback then
-        texture:SetColorTexture(unpack(fallback))
-    end
-end
-
-local bg = ring:CreateTexture(nil, "OVERLAY", nil, -3)
-bg:SetPoint("CENTER")
-bg:SetSize(WHEEL_WIDTH, WHEEL_HEIGHT)
-Atlas(bg, "gamepad-radial-menu-wheelbg", { 0, 0, 0, 0.6 })
-
-local highlight = ring:CreateTexture(nil, "OVERLAY", nil, -2)
-highlight:SetSize(169, 165)
-Atlas(highlight, "gamepad-radial-menu-selected", { 1, 0.82, 0, 0.25 })
-highlight:Hide()
-
-local header = ring:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-header:SetPoint("BOTTOM", ring, "TOP", 0, 40)
-local headerBar = ring:CreateTexture(nil, "OVERLAY", nil, -2)
-headerBar:SetSize(487, 75)
-headerBar:SetPoint("TOP", header, "BOTTOM", 0, 4)
-Atlas(headerBar, "gamepad-radial-menu-toptext")
-
-local footerBar = ring:CreateTexture(nil, "OVERLAY", nil, -1)
-footerBar:SetSize(570, 151)
-footerBar:SetPoint("CENTER", ring, "BOTTOM", 0, -30)
-Atlas(footerBar, "gamepad-radial-menu-bottomtext")
-local selected = ring:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-selected:SetPoint("CENTER", footerBar, "CENTER", 0, 14)
-local prompts = ring:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-prompts:SetPoint("TOP", selected, "BOTTOM", 0, -6)
-prompts:SetText("Release stick or R2 Use      Circle Close")
-
-local slots = {}
-for index = 1, MAX_SLOTS do
-    local slot = {}
-    slot.icon = ring:CreateTexture(nil, "OVERLAY")
-    slot.icon:SetSize(ICON_SIZE, ICON_SIZE)
-    -- round: Blizzard's portrait circle mask, clamped to black outside so
-    -- nothing past the circle shows (Blizzard_ArtifactPowerButton.xml does
-    -- exactly this). The CircleMask atlas without the clamp cut corners off
-    -- instead of rounding them. A drop shadow sits behind.
-    local mask = ring:CreateMaskTexture()
-    mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    mask:SetPoint("TOPLEFT", slot.icon, "TOPLEFT", 3, -3)
-    mask:SetPoint("BOTTOMRIGHT", slot.icon, "BOTTOMRIGHT", -3, 3)
-    slot.icon:AddMaskTexture(mask)
-    -- the gamepad bar's own round frame over the masked icon, the same size as
-    -- the icon (ActionBarButton.lua: SetNormalAtlas on a button the icon fills)
-    slot.border = ring:CreateTexture(nil, "OVERLAY", nil, 2)
-    Atlas(slot.border, "gamepad-actionbar-circleslot-border-normal")
-    slot.border:SetAllPoints(slot.icon)
-    slot.shadow = ring:CreateTexture(nil, "OVERLAY", nil, -1)
-    Atlas(slot.shadow, "gamepad-actionbar-circleslot-dropshadow")
-    slot.shadow:SetPoint("TOPLEFT", slot.icon, "TOPLEFT", -4, 4)
-    slot.shadow:SetPoint("BOTTOMRIGHT", slot.icon, "BOTTOMRIGHT", 4, -4)
-    slot.label = ring:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    slot.label:SetSize(80, 40)
-    slot.label:SetWordWrap(true)
-    -- two lines at most, ending in "..." past that: a long name wrapped on and
-    -- spilled out of its triangle
-    slot.label:SetMaxLines(2)
-    slot.label:SetJustifyH("CENTER")
-    slot.label:SetJustifyV("MIDDLE")
-    slots[index] = slot
-end
-
--- Slot i sits in the art's segment i: the native wheel is always eight
--- triangles centred on the cardinals and diagonals (GamepadRadial.xml), so a
--- wheel of three still uses three of the eight, starting at the top and going
--- clockwise. Spreading n slots evenly put icons across the triangle edges.
-local function Direction(index)
-    local angle = math.pi / 2 - (index - 1) * math.pi / 4
-    return math.cos(angle), math.sin(angle), angle
-end
-
-local function LayOut(entries)
-    for index, slot in ipairs(slots) do
-        local entry = entries[index]
-        if entry then
-            local dx, dy = entry.dx, entry.dy
-            -- Blizzard draws a segment's icon 20 in from its centre (GetIconOffset)
-            local reach = SLOT_RADIUS - 20
-            slot.icon:SetPoint("CENTER", ring, "CENTER", dx * reach, dy * reach)
-            slot.icon:SetTexture(entry.icon or 134400)
-            -- and its label outward from the icon, in an 80x40 box that wraps
-            -- (textAnchorData, GamepadRadial.xml): 60 out on a cardinal,
-            -- (30, 45) on a diagonal, which keeps it inside the triangle
-            local lx, ly
-            if math.abs(dx) < 0.1 then lx, ly = 0, dy > 0 and 60 or -60
-            elseif math.abs(dy) < 0.1 then lx, ly = dx > 0 and 60 or -60, 0
-            else lx, ly = dx > 0 and 30 or -30, dy > 0 and 45 or -45 end
-            slot.label:ClearAllPoints()
-            slot.label:SetPoint("CENTER", slot.icon, "CENTER", lx, ly)
-            slot.label:SetText(entry.label)
-            slot.icon:Show()
-            slot.shadow:Show()
-            slot.border:Show()
-            slot.label:Show()
-        else
-            slot.icon:Hide()
-            slot.shadow:Hide()
-            slot.border:Hide()
-            slot.label:Hide()
-        end
-    end
-end
-
-local lit
-local function Highlight(pick, entries)
-    lit = pick
-    local entry = pick and entries[pick]
-    if entry then
-        highlight:ClearAllPoints()
-        highlight:SetPoint("CENTER", ring, "CENTER", entry.dx * SLOT_RADIUS, entry.dy * SLOT_RADIUS)
-        highlight:SetRotation(entry.angle + math.pi / 2)
-        highlight:Show()
-        selected:SetText(entry.label)
-    else
-        highlight:Hide()
-        selected:SetText("")
-    end
-    for index, slot in ipairs(slots) do
-        if index == pick then slot.label:SetTextColor(1, 1, 1) else slot.label:SetTextColor(1, 0.82, 0) end
-        -- the picked one wears the bar's "selected" frame, as a focused button does
-        Atlas(slot.border, index == pick and "gamepad-actionbar-circleslot-border-selected"
-            or "gamepad-actionbar-circleslot-border-normal")
-    end
-end
-
-local function StickPick(entries)
-    local x, y = AimStick()
-    if not x or x * x + y * y < PICK_LENGTH_SQ then return nil end
-    local best, bestDot
-    for index, entry in ipairs(entries) do
-        local dot = x * entry.dx + y * entry.dy
-        if not bestDot or dot > bestDot then best, bestDot = index, dot end
-    end
-    return best
-end
-
 ring:SetScript("OnUpdate", function()
-    local entries = ringData[ring:GetAttribute("wc-active")] or {}
-    local pick = StickPick(entries) or ring:GetAttribute("wc-sticky")
-    if pick ~= lit then Highlight(pick, entries) end
+    look:Aim(ringData[ring:GetAttribute("wc-active")] or {}, ring:GetAttribute("wc-sticky"))
 end)
 ring:HookScript("OnShow", function()
     local key = ring:GetAttribute("wc-active")
     local wheel = WowCompanionWheelDB.wheels[key]
-    header:SetText(wheel and wheel.label or key)
-    local entries = ringData[key] or {}
-    LayOut(entries)
-    lit = false
-    Highlight(nil, entries)
+    look:Open(wheel and wheel.label or key, ringData[key] or {})
 end)
 
 ---------------------------------------------------------------------------
@@ -605,7 +401,7 @@ function W.Rebuild(quiet)
             end
         end
         for index, entry in ipairs(entries) do
-            entry.dx, entry.dy, entry.angle = Direction(index, #entries)
+            entry.dx, entry.dy, entry.angle = WC.Ring.Direction(index)
             ring:SetAttribute(key .. "-dx-" .. index, entry.dx)
             ring:SetAttribute(key .. "-dy-" .. index, entry.dy)
             ring:SetAttribute(key .. "-type-" .. index, entry.type)

@@ -2,8 +2,8 @@
 -- Hold minus with L1 and R1 together and speak: the PC sends the words straight
 -- here (no agent) and they go into the chat box (Chat.lua's chat line): the one
 -- the player has open, or the next one they open. Cross sends.
--- The channel is picked on the same hold: while the chord is held a small ring of
--- channels shows, and the right stick points at one. Let go: that channel is
+-- The channel is picked on the same hold: while the chord is held the ring
+-- (Core's Ring.lua) shows the channels, and the right stick points at one. Let go: that channel is
 -- kept for next time; leave the stick alone and the last one stays.
 -- Nothing goes on the action bars.
 --
@@ -70,75 +70,23 @@ do
 		end,
 	}
 
-	-- The ring: ours, Blizzard's gamepad slot art and fonts. Shown only while
-	-- the chord is held; it takes the right stick then, so the camera stays put.
-	local RADIUS, PICK_SQ = 92, 0.25
+	-- The ring: Core's (Ring.lua), shown only while the chord is held; it takes
+	-- the sticks then, so the camera stays put, and holds them a moment after.
+	-- The last direction pushed is kept, so a flick and let go picks it.
 	local ring = _G["WCChatRing"] or CreateFrame("Frame", "WCChatRing", UIParent)
-	ring:SetSize(2 * RADIUS + 80, 2 * RADIUS + 80)
-	ring:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
-	ring:SetFrameStrata("DIALOG")
 	ring:Hide()
-	if ring.EnableGamePadStick then
-		ring:EnableGamePadStick(true)
-		ring:SetScript("OnGamePadStick", function() end)
+	local look = WC.Ring.Build(ring, { prompt = "Let go to keep it" })
+	local entries = {}
+	for i, s in ipairs(SLOTS) do
+		entries[i] = { slash = s[1], label = NAMES[s[1]], icon = "Interface\\Icons\\" .. s[2] }
 	end
-	ring.title = ring.title or ring:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-	ring.title:SetPoint("CENTER")
-	ring.slots = ring.slots or {}
-	for index, s in ipairs(SLOTS) do
-		local angle = math.pi / 2 - (index - 1) * math.pi / 4
-		local slot = ring.slots[index] or {}
-		ring.slots[index] = slot
-		slot.dx, slot.dy, slot.slash = math.cos(angle), math.sin(angle), s[1]
-		slot.icon = slot.icon or ring:CreateTexture(nil, "ARTWORK")
-		slot.icon:SetSize(40, 40)
-		slot.icon:SetPoint("CENTER", ring, "CENTER", slot.dx * RADIUS, slot.dy * RADIUS)
-		slot.icon:SetTexture("Interface\\Icons\\" .. s[2])
-		-- the icon art's own edge cropped off, then cut round by Blizzard's
-		-- portrait mask clamped to black, as the wheels do (Wheel.lua), so only
-		-- the circle shows inside the round border
-		slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-		if not slot.mask then
-			slot.mask = ring:CreateMaskTexture()
-			slot.mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-			slot.mask:SetPoint("TOPLEFT", slot.icon, "TOPLEFT", 3, -3)
-			slot.mask:SetPoint("BOTTOMRIGHT", slot.icon, "BOTTOMRIGHT", -3, 3)
-			slot.icon:AddMaskTexture(slot.mask)
-		end
-		slot.border = slot.border or ring:CreateTexture(nil, "OVERLAY", nil, 2)
-		slot.border:SetAllPoints(slot.icon)
-		slot.label = slot.label or ring:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		slot.label:SetPoint("TOP", slot.icon, "BOTTOM", 0, -2)
-		slot.label:SetText(NAMES[s[1]])
-	end
-	local function light(pick)
-		for _, slot in ipairs(ring.slots) do
-			local on = slot.slash == pick
-			pcall(slot.border.SetAtlas, slot.border, on and "gamepad-actionbar-circleslot-border-selected"
-				or "gamepad-actionbar-circleslot-border-normal")
-			slot.icon:SetDesaturated(not on)
-			slot.label:SetFontObject(on and "GameFontNormalSmall" or "GameFontHighlightSmall")
-		end
-		ring.title:SetText(NAMES[pick] or "")
-	end
-	local function stickPick()
-		local ok, state = pcall(C_GamePad.GetDeviceMappedState, C_GamePad.GetActiveDeviceID())
-		local stick = ok and state and state.sticks and state.sticks[2]
-		if not (stick and stick.x and stick.y) or stick.x * stick.x + stick.y * stick.y < PICK_SQ then return nil end
-		local best, bestDot
-		for _, slot in ipairs(ring.slots) do
-			local dot = stick.x * slot.dx + stick.y * slot.dy
-			if not bestDot or dot > bestDot then best, bestDot = slot.slash, dot end
-		end
-		return best
+	local function indexOf(slash)
+		for i, e in ipairs(entries) do if e.slash == slash then return i end end
 	end
 	ring:SetScript("OnUpdate", function(self)
-		-- the last direction pushed is kept, so a flick and let go picks it
-		local pick = stickPick()
-		if pick and pick ~= self.pick then
-			self.pick = pick
-			light(pick)
-		end
+		local aimed = look:Picked(entries)
+		if aimed then self.pick = entries[aimed].slash end
+		look:Aim(entries, indexOf(self.pick))
 	end)
 
 	-- the Companion key down and up (TALK_DOWN, TALK_UP; Link.lua): the ring
@@ -149,7 +97,7 @@ do
 		self.t = (self.t or 0) + elapsed
 		if not ring:IsShown() and WowCompanion_PadSlot and WowCompanion_PadSlot() == WC.Conversations.DICTATION then
 			ring.pick = current()
-			light(ring.pick)
+			look:Open("Chat channel", entries)
 			ring:Show()
 		end
 		if self.t > 0.6 and not ring:IsShown() then self:Hide() end

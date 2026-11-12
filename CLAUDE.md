@@ -81,7 +81,8 @@ yes; don't reinvent what Claude Code has.
     bus, settings, `WC.AfterCombat`, the focus helpers, capabilities, `WC.Saved`),
     `Conversations.lua` (the conversations as the PC names them, their labels;
     `WC.Conversations`), `Bars.lua` (the gamepad action bars: frames, slots,
-    triggers, `WC.GamepadBars`), `Style.lua` (Blizzard look, glyphs, destroy dialog),
+    triggers, `WC.GamepadBars`), `Ring.lua` (the one radial ring: look, layout, stick
+    aim, the stick capture and camera hold; `WC.Ring`), `Style.lua` (Blizzard look, glyphs, destroy dialog),
     `Rows.lua` (settings rows as controller stops, `WC.RowStop`, `WC.SliderStop`),
     `SettingsPage.lua` (the one settings page, `WC.SettingsPage.Add` for each
     addon's rows; its own window, the minimap mark and Blizzard's AddOns settings
@@ -120,7 +121,7 @@ yes; don't reinvent what Claude Code has.
     `BagsInput.lua` the secure pad, `BagsMenu.lua`, `Bags.lua`, `BagsStandIn.lua`
     over Blizzard's, `BagsEvaluate.lua`, `BagSwap.lua`, `MakeRoom.lua`),
     `WowCompanion_Interact` (combat loot, an addon keybinding), `WowCompanion_Fonts`
-    (live interface fonts, `Fonts/`), `WowCompanion_Wheel` (the wheels),
+    (live interface fonts, `Fonts/`), `WowCompanion_Wheel` (the wheels: the secure buttons on Core's ring),
     `WowCompanion_Pins` (minimap and map pins; the builtin pins and nav),
     `WowCompanion_Buffs` (watched buffs per character, the glow). And
     `WowCompanion_Errands` (needs the Agent: agents add errands).

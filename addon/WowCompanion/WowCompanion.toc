@@ -9,6 +9,7 @@
 Engine.lua
 Conversations.lua
 Bars.lua
+Ring.lua
 Style.lua
 Rows.lua
 SettingsPage.lua
