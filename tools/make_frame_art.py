@@ -30,7 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 
-VERSION = 16
+VERSION = 17
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -243,7 +243,7 @@ LINE_IN = np.array((5, 4, 3.0))  # the creases at the wall's top and foot
 WALL_FOOT = 3.3  # where the wall meets the floor, its contact shadow on to INSET
 
 
-def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0, rim_pal=BRONZE, rim_inner=True, foot=True):
+def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0, rim_pal=BRONZE, rim_inner=True, foot=True, rim_gloss=0.22, wall_gloss=0.08):
     """A well's border painted on a depth field d (units into the cavity from
     its edge, negative outside). The wall: opaque stone carved down from the
     panel, a dark crease where the panel breaks, a rounded, worn wall lit by
@@ -260,7 +260,7 @@ def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0, rim_pal=BR
     t = np.clip((d - top) / (WALL_FOOT - top), 0, 1)
     hgt = 1.6 * (1 - t) ** 1.6
     if wall is not None:  # none: the floor runs right up to the rim's bar
-        col = shade(ndimage.gaussian_filter(hgt, k * 0.15), wall, k, gloss=0.08, power=10)
+        col = shade(ndimage.gaussian_filter(hgt, k * 0.15), wall, k, gloss=wall_gloss, power=10)
         lay.over(col, ((d >= 0) & (d < WALL_FOOT + 0.2)).astype(float))
         lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.12) / 0.22, 0, 1) * inside * 0.9)
     if lip:
@@ -277,7 +277,7 @@ def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0, rim_pal=BR
         u = np.clip(d / w, 0, 1)
         sh = np.clip(np.minimum(d, w - d) / 0.5, 0, 1)
         bh = ndimage.gaussian_filter(((1 - (1 - sh) ** 2) * 0.9 + 0.15 * bead(2 * u - 1)) * (d < w), k * 0.08)
-        col = shade(bh, rim_pal, k, gloss=0.22, power=14) * (1 + 0.09 * brushed(d * 8))[..., None] * rim_dim
+        col = shade(bh, rim_pal, k, gloss=rim_gloss, power=14) * (1 + 0.09 * brushed(d * 8))[..., None] * rim_dim
         lay.over(col, ((d >= 0) & (d < w)).astype(float))
         lay.over(LINE, np.clip(1 - d / 0.25, 0, 1) * inside * 0.9)
         if rim_inner:  # a dark line where the bar meets the wall
@@ -303,9 +303,13 @@ def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0, rim_pal=BR
 DARK = (np.array((7, 7, 9.0)), np.array((20, 21, 24.0)), np.array((46, 47, 52.0)))
 EVEN = (np.array((13, 13, 16.0)), np.array((22, 23, 26.0)), np.array((36, 37, 41.0)))
 GREY = (np.array((11, 11, 13.0)), np.array((32, 33, 37.0)), np.array((70, 71, 76.0)))
+# G: a bar and wall barely lit, so neither the bar's lit edge nor the wall
+# turned from the light stands out: the border is there, but quiet
+SOFT = (np.array((18, 18, 21.0)), np.array((24, 25, 28.0)), np.array((33, 34, 38.0)))
+QUIET = (np.array((19, 20, 23.0)), np.array((22, 23, 26.0)), np.array((30, 31, 35.0)))
 WELLS = {"A": dict(wall=DARK, lip=True), "C": dict(wall=EVEN), "D": dict(wall=GREY), "E": dict(wall=DARK, rim=True),
          "F": dict(wall=DARK, rim=True, rim_w=1.1, rim_dim=0.62),
-         "G": dict(wall=None, rim=True, rim_w=1.1, rim_pal=GREY, rim_inner=False, foot=False)}
+         "G": dict(wall=QUIET, rim=True, rim_w=1.1, rim_pal=SOFT, rim_inner=False, foot=False, rim_gloss=0.04, wall_gloss=0.0)}
 
 
 def inset(style):
