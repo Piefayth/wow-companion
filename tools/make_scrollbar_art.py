@@ -479,7 +479,7 @@ def blizzard_divider():
 def sheet2(art):
     """Each candidate on the player's stone, a divider meeting the bar, at
     on-screen size (1.8 px per unit) and 4x; then every cap state at 4x."""
-    slate = np.asarray(Image.open(os.path.join(OUT, "SlateLight-6.tga")).convert("RGB"), float)
+    slate = np.asarray(Image.open(os.path.join(ROOT, "addon", "WowCompanion", "Art", "SlateLight-6.tga")).convert("RGB"), float)
     bliz = blizzard_divider()
 
     def img(stem):

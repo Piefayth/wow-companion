@@ -18,18 +18,10 @@ local PAD_L, PAD_R, PAD_TOP = 10, 10, 6
 local BODY_FONT = ChatFontNormal and "ChatFontNormal" or "GameFontHighlight"
 local NOTE_FONT = "GameFontHighlightSmall"
 
--- Every turn on our own stone (Art/, made by tools/make_slate.py): a dark,
--- fine-grained slate in two values, the replies the lighter one. Owners
--- differ by value, never by hue. Turns parted by the quest log's divider.
--- The game keeps a texture it has loaded for the session under its path, so
--- a changed file needs a new name to show without a restart: each version of
--- the stone gets its own names (tools/make_slate.py reads this number).
-local STONE_VERSION = 6
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\]]
-local STONE = {
-	you = ART .. "Slate-" .. STONE_VERSION,
-	claude = ART .. "SlateLight-" .. STONE_VERSION,
-}
+-- Every turn on our own stone (WC.Style.STONE): the replies on the lighter
+-- one, the player's on the darker. Owners differ by value, never by hue.
+-- Turns parted by the quest log's divider.
+local STONE = WC.Style.STONE
 -- owner: whose turn, which picks the stone
 local function ownBand(band, owner)
 	band:SetTexture(STONE[owner] or STONE.claude, "REPEAT", "REPEAT")
@@ -357,6 +349,5 @@ WC.Transcript.PAD_L, WC.Transcript.PAD_R = PAD_L, PAD_R
 -- the pending lines (Jobs.lua) are turns too: the same backing and divider
 WC.Transcript.turnBand = turnBand
 WC.Transcript.ownBand = ownBand
-WC.Transcript.STONE = STONE
 WC.Transcript.TURN_GAP = TURN_GAP
 WC.Transcript.markRow = markRow

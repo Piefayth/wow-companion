@@ -4,11 +4,11 @@ first: marble too busy and near black, rock flat grey, the neutral tile read as
 wooden planks. Two tiles of one stone at two values, since owners differ by
 value, never by hue.
 
-    python tools/make_slate.py      writes addon/WowCompanion_Agent/Art/Slate*-<v>.tga
+    python tools/make_slate.py      writes addon/WowCompanion/Art/Slate*-<v>.tga
 
 The game keeps a loaded texture for the session under its path, so each version
 gets new file names (no restart to see a change): bump STONE_VERSION in
-Transcript.lua, run this, reload. Older versions are deleted.
+Style.lua, run this, reload. Older versions are deleted.
 
 256 x 256, 32-bit uncompressed TGA (what the game loads besides BLP), the noise
 periodic in both axes so the tile repeats without a seam.
@@ -20,7 +20,7 @@ import struct
 import numpy as np
 
 SIZE = 256
-OUT = os.path.join(os.path.dirname(__file__), "..", "addon", "WowCompanion_Agent", "Art")
+OUT = os.path.join(os.path.dirname(__file__), "..", "addon", "WowCompanion", "Art")
 
 
 def periodic_noise(rng, period):
@@ -72,7 +72,7 @@ def write_tga(path, rgb):
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
-    lua = open(os.path.join(OUT, "..", "Transcript.lua"), encoding="utf-8").read()
+    lua = open(os.path.join(OUT, "..", "Style.lua"), encoding="utf-8").read()
     v = re.search(r"local STONE_VERSION = (\d+)", lua).group(1)
     for old in glob.glob(os.path.join(OUT, "Slate*.tga")):
         os.remove(old)

@@ -3,7 +3,7 @@
 -- bar), so the player compares them in the Companion window instead of one
 -- reload per idea. Shown only; nothing scrolls. Goes when a bar is chosen.
 
-local STONE = WC.Transcript.STONE
+local STONE = WC.Style.STONE
 local EDGE = 3
 
 local function stone(tex, which)

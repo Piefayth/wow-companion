@@ -180,3 +180,17 @@ function WowCompanion_Style.NoPortrait(frame)
 end
 
 WC.Style = WowCompanion_Style
+
+-- Our own stone (Art/, made by tools/make_slate.py): a dark, fine-grained
+-- slate in two values, the backing of our windows' text; the lighter one under
+-- what is read, the darker under what the player does (his turns, the scroll
+-- gutter, the settings controls). The game keeps a texture it has loaded for
+-- the session under its path, so a changed file needs a new name to show
+-- without a restart: each version gets its own names (make_slate.py reads
+-- this number).
+local STONE_VERSION = 6
+local ART = [[Interface\AddOns\WowCompanion\Art\]]
+WowCompanion_Style.STONE = {
+	you = ART .. "Slate-" .. STONE_VERSION,
+	claude = ART .. "SlateLight-" .. STONE_VERSION,
+}
