@@ -31,7 +31,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 
-VERSION = 4
+VERSION = 5
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -43,10 +43,11 @@ RULE = (22.6, 25.6)  # the rule under the title band
 TOP_H = 28.0  # the top pieces' height: rim, band, rule and its shadow
 N = 60.0  # the drawn frame's side, the pieces cut from it
 
-BRONZE = (np.array((28, 16, 4.0)), np.array((72, 46, 16.0)), np.array((196, 154, 98.0)))
+# the washed-out bronze of the chat's scroll bar and dividers (make_scrollbar_art.py's
+# BARK), the light a touch higher for the rim's broader bar: the window's one metal
+BRONZE = (np.array((22, 15, 9.0)), np.array((68, 48, 30.0)), np.array((150, 118, 82.0)))
 LINE = np.array((14, 9, 4.0))
-BAND = np.array((33, 19, 10.0))
-GOLD = (np.array((120, 72, 0.0)), np.array((236, 186, 16.0)), np.array((255, 238, 110.0)))
+BAND = np.array((20, 21, 25.0))  # the title band: the slate in shadow, cool as the wells
 
 
 def grid(w, h, k=K):

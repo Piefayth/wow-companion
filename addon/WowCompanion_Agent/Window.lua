@@ -41,7 +41,7 @@ local GLOW = { 14, 10.75, 13, 11 }
 -- Our own frame art (tools/make_frame_art.py) on an owner's NineSlice pieces,
 -- on the owner's bounds: every piece rim wide, the top corners and edge top
 -- tall, so a corner and the edge beside it share their pixels on screen.
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-4]]
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-5]]
 local function dress(owner, art, rim, top)
 	local slice = owner.NineSlice
 	if not slice then return end
@@ -485,6 +485,19 @@ local function buildLog()
 	-- our border and title bar over the template's, on the frame's bounds,
 	-- and the focus glow fitted round them
 	dress(frame, "Frame", RIM, TOP)
+	-- The panel's body: the chat's slate, darker, so the window is one stone
+	-- trimmed in bronze; to the rim's inner edge on every side (the template
+	-- set it 7 in on the left for Blizzard's wider border, which left a strip
+	-- of the world showing between our rim and the panel).
+	if frame.Bg then
+		frame.Bg:SetTexture(WC.Style.STONE.you, "REPEAT", "REPEAT")
+		frame.Bg:SetHorizTile(true)
+		frame.Bg:SetVertTile(true)
+		frame.Bg:SetVertexColor(0.72, 0.72, 0.72)
+		frame.Bg:ClearAllPoints()
+		frame.Bg:SetPoint("TOPLEFT", RIM, -RIM)
+		frame.Bg:SetPoint("BOTTOMRIGHT", -RIM, RIM)
+	end
 	if frame.FrameGlow then
 		frame.FrameGlow:ClearAllPoints()
 		frame.FrameGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", -GLOW[1], GLOW[2])
