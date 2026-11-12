@@ -141,10 +141,21 @@ renderPending = function()
 		if line then lines[#lines + 1] = line end
 	end
 	if paintHook then paintHook() end
+	-- the board stands in for the chat while the chat is out of sight: the
+	-- window closed, or another tab up (a tab switch redraws it)
+	if not frame.boardFollowsTabs and frame.SelectTab then
+		frame.boardFollowsTabs = true
+		hooksecurefunc(frame, "SelectTab", function() renderPending() end)
+	end
+	local chatInView = frame:IsShown() and (frame.currentTab or 1) == 1
 	if #lines > 0 then
-		if not frame:IsShown() then
+		if not chatInView then
 			local key = WC.Link.TalkKey()
-			toastBoard(lines, key and ("tap %s to read"):format(WowCompanion_Glyph(key)) or "open the Companion window to read")
+			local hint = frame:IsShown() and "the Chat tab to read"
+				or key and ("tap %s to read"):format(WowCompanion_Glyph(key)) or "open the Companion window to read"
+			toastBoard(lines, hint)
+		elseif toastIdleShown() then
+			toast(nil)
 		end
 		if not pendingTicker then pendingTicker = C_Timer.NewTicker(0.4, function() renderPending() end) end
 	else
