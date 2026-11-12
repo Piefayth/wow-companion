@@ -241,7 +241,7 @@ WowCompanion_Style.STONE = {
 -- <Thin|Medium><level> where a lighter vine grows into a heavier run. The line
 -- runs down each piece's middle; a round end sits 1.2 + its half-width in from
 -- a cap's outer edge.
-local VINE_VERSION = 4 -- the generator's VINE_VERSION
+local VINE_VERSION = 5 -- the generator's VINE_VERSION
 function WowCompanion_Style.Vine(piece)
 	return ART .. "Vine-" .. piece .. "-" .. VINE_VERSION
 end

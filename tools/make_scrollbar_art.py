@@ -21,7 +21,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 # the vine dividers are every window's (Style.lua's WC.Style.Vine), so Core's
 CORE_OUT = os.path.join(ROOT, "addon", "WowCompanion", "Art")
-VINE_VERSION = 4  # Style.lua's VINE_VERSION
+VINE_VERSION = 5  # Style.lua's VINE_VERSION
 LIGHT = np.array([-0.55, -0.75, 0.9]); LIGHT /= np.linalg.norm(LIGHT)
 HALF = LIGHT + np.array([0, 0, 1.0]); HALF /= np.linalg.norm(HALF)
 
@@ -502,8 +502,9 @@ def turned(f, pieces):
     return out
 
 
-def wire(path, w, ends=0.15):
-    """A wire along path, tapering to `ends` of its width at both ends."""
+def wire(path, w, ends=0.55):
+    """A wire along path, tapering to `ends` of its width at both ends (no
+    further: a hairline end reads as fading into the dark)."""
     n = len(path)
     k = np.sin(np.linspace(0, np.pi, n)) ** 0.5
     return [ribbon(path, w * (ends + (1 - ends) * k))]
@@ -522,7 +523,7 @@ def fillet(sx, sy, hw, ahw, r, w, tail):
     arc = np.stack([cx + r * np.cos(th), cy + r * np.sin(th)], 1)
     run_end = np.array([[m + sx * hw, cy + sy * tail * t] for t in np.linspace(1, 0.1, 10)])
     arm_end = np.array([[cx + sx * tail * t, m + sy * ahw] for t in np.linspace(0.1, 1, 10)])
-    return wire(np.vstack([run_end, arc, arm_end]), w, 0.05)
+    return wire(np.vstack([run_end, arc, arm_end]), w, 0.55)
 
 
 def volutes(hw, w, size, turns):
@@ -535,7 +536,7 @@ def volutes(hw, w, size, turns):
                    (m - hw - 1.7 * size, m - s * (hw * 0.4 + 1.1 * size)), (m - hw - 2.3 * size, m - s * (hw * 0.4 + 0.5 * size)), n=30)
         path = scroll(lead, 0.5 * size, s * turns, 0.35)
         # full where it leaves the run, so it is seen to grow from it
-        out.append(ribbon(path, w * np.linspace(1.1, 0.45, len(path))))
+        out.append(ribbon(path, w * np.linspace(1.1, 0.6, len(path))))
     return out
 
 
@@ -548,7 +549,7 @@ def sprig(sx, sy, hw, ahw, r, w, size):
     d = np.array([sx, sy]) / np.sqrt(2)
     lead = np.array([p0 + d * size * t for t in np.linspace(0, 1, 12)])
     path = scroll(lead, 0.45 * size, sx * sy * 0.9, 0.35)
-    return [ribbon(path, w * np.linspace(1.0, 0.4, len(path)))]
+    return [ribbon(path, w * np.linspace(1.0, 0.6, len(path)))]
 
 
 def junction(c, run, arm, f, level, cross=False):
@@ -564,9 +565,11 @@ def junction(c, run, arm, f, level, cross=False):
         if cross:
             runs.append(ribbon([(far[0], m), (m, m)], ahw))
         raised(pen, turned(f, runs), rpal, bevel=0.5 * rhw / 0.55, cast=0.4, grain=False)
-    w = 0.26 + 0.2 * ahw  # the wire: fine, a little heavier on heavier vines
-    # the work's size grows with the vine, and with the level
-    g = (1.2 + 0.6 * ahw) * {"Wisp": 1.25, "Scroll": 1.5, "Filigree": 1.75}[level]
+    # the wire and the work's size grow with the vines met (a lighter vine
+    # growing into a heavier one is sized between the two) and with the level
+    v = (rhw + ahw) / 2
+    w = 0.42 + 0.25 * v
+    g = (1.3 + 0.6 * v) * {"Wisp": 1.35, "Scroll": 1.6, "Filigree": 1.8}[level]
     corners = [(1, -1), (1, 1)] + ([(-1, -1), (-1, 1)] if cross else [])
     work, leaves = [], []
     for sx, sy in corners:
