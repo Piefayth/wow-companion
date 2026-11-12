@@ -161,7 +161,7 @@ class Canvas:
 #   RuleLeft 32x16, RuleMid 64x16: the divider's left end and its line,
 #     stretched whole to the Joint
 
-VERSION = 12
+VERSION = 14
 PRESS = 1.25  # how far a pressed arrow sinks toward the groove, in units
 GT = 24.0  # the arrows' groove end (its round end's centre)
 FOOT = GT - 4.0 - PRESS  # an arrow's foot: under the border's arc, pressed or not
@@ -421,9 +421,12 @@ def bud_rule(c, piece, hw=0.55, pal=BARK):
     if piece == "Mid":
         raised(pen, vine(-12, 76), pal, bevel=bevel, cast=0.4, grain=False)
     elif piece == "Left":
-        raised(pen, vine(9.0, 44), pal, bevel=bevel, cast=0.4, grain=False)
-        raised(pen, stroke(scroll(bez((9.5, 8), (6.5, 8), (4.0, 7.6), (3.0, 5.8), n=24), 1.1, 1.0, 0.35), 0.55, 0.26, knob=False),
-               BARK, bevel=0.45, cast=0.45)
+        # the coil is the vine itself curling: one piece with it, leaving it at
+        # the vine's own width, no seam where they meet
+        k = hw / 0.55
+        coil = stroke(scroll(bez((9.5, 8), (6.5, 8), (4.0, 7.6), (3.0, 8 - 2.2 * k ** 0.5), n=24), 1.1 * k ** 0.5, 1.0, 0.35),
+                      hw, 0.26 * k, knob=False)
+        raised(pen, vine(9.0, 44) + coil, pal, bevel=bevel, cast=0.4, grain=False)
         raised(pen, [leaf((10.0, 8.5), (13.4, 11.2), 1.4)], dim(BUD, 0.8), bevel=0.4, cast=0.4)
     else:
         raised(pen, vine(-12, RAIL[0]) + vine(RAIL[1], 26), pal, bevel=bevel, cast=0.4, grain=False)

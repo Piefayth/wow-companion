@@ -5,7 +5,7 @@
 -- Drawn by tools/make_scrollbar_art.py.
 
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-]]
-local VERSION = 12 -- the generator's VERSION
+local VERSION = 14 -- the generator's VERSION
 local function art(piece)
 	return ART .. piece .. "-" .. VERSION
 end
