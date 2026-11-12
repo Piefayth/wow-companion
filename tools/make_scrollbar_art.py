@@ -19,6 +19,9 @@ from scipy import ndimage
 S = 16  # supersampling
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
+# the vine dividers are every window's (Style.lua's WC.Style.Vine), so Core's
+CORE_OUT = os.path.join(ROOT, "addon", "WowCompanion", "Art")
+VINE_VERSION = 1  # Style.lua's VINE_VERSION
 LIGHT = np.array([-0.55, -0.75, 0.9]); LIGHT /= np.linalg.norm(LIGHT)
 HALF = LIGHT + np.array([0, 0, 1.0]); HALF /= np.linalg.norm(HALF)
 
@@ -432,7 +435,8 @@ def vine(c, h, runs, ends=(), node=None, hw=1.0, pal=WEIGHTS[""][1]):
 
 
 def rule_pieces(weight):
-    """A weight's pieces, its line on each piece's middle. Horizontal, 16 tall:
+    """A weight's pieces (Vine-<weight><piece> in Core's Art), its line on each
+    piece's middle. Horizontal, 16 tall:
     Left and Right (32 wide, a round end 1.2 + hw from the piece's outer edge)
     and Mid (64, stretched). Vertical, 16 wide: Top and Bottom (32 tall) and
     VMid (64, stretched). Junctions, 32 square, centred: Cross, and the T's,
@@ -464,7 +468,7 @@ def rule_pieces(weight):
             img = np.repeat(img.mean(1, keepdims=True), img.shape[1], 1)
         elif piece == "VMid":  # stretched lengthwise: the same in every row
             img = np.repeat(img.mean(0, keepdims=True), img.shape[0], 0)
-        out["Rule" + weight + piece] = img
+        out[weight + piece] = img
     return out
 
 
@@ -586,8 +590,6 @@ def render_set():
     out["Thumb-Mid"] = np.repeat(t[p:2 * p].mean(0, keepdims=True), p, 0)
     out["Thumb-Centre"] = t[2 * p:4 * p]
     out["Thumb-Bottom"] = t[5 * p:]
-    for weight in WEIGHTS:
-        out.update(rule_pieces(weight))
     c = ucanvas(32, 16)
     joint(c)
     out["Joint"] = c.final()
@@ -600,7 +602,14 @@ def main():
         os.remove(old)
     for stem, rgba in art.items():
         write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, VERSION)), rgba)
-    print(len(art), "textures")
+    vines = {}
+    for weight in WEIGHTS:
+        vines.update(rule_pieces(weight))
+    for old in glob.glob(os.path.join(CORE_OUT, "Vine-*.tga")):
+        os.remove(old)
+    for stem, rgba in vines.items():
+        write_tga(os.path.join(CORE_OUT, "Vine-%s-%d.tga" % (stem, VINE_VERSION)), rgba)
+    print(len(art) + len(vines), "textures")
 
 
 if __name__ == "__main__":

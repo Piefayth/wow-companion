@@ -257,20 +257,18 @@ local function buildTabs(frame, messages)
 	-- a row's height, and its name's colour: washed bronze, lit when in view
 	local ROW = 24
 	local NAME, NAME_LIT = { 0.78, 0.69, 0.53 }, { 0.98, 0.92, 0.78 }
-	-- the chat's vine (ChatBar.lua) along a plate's edge, rounded at both ends
+	-- the chat's vine (WC.Style.Vine) along a plate's edge, rounded at both ends
 	local function vine(owner, edge)
-		local art = WC.ChatBar.Art
 		local left = owner:CreateTexture(nil, "ARTWORK")
-		left:SetTexture(art("RuleLeft"))
+		left:SetTexture(WC.Style.Vine("Left"))
 		left:SetSize(32, 16)
 		left:SetPoint("LEFT", owner, edge .. "LEFT", 0, 0)
 		local right = owner:CreateTexture(nil, "ARTWORK")
-		right:SetTexture(art("RuleLeft"))
-		right:SetTexCoord(1, 0, 0, 1)
+		right:SetTexture(WC.Style.Vine("Right"))
 		right:SetSize(32, 16)
 		right:SetPoint("RIGHT", owner, edge .. "RIGHT", 0, 0)
 		local mid = owner:CreateTexture(nil, "ARTWORK")
-		mid:SetTexture(art("RuleMid"))
+		mid:SetTexture(WC.Style.Vine("Mid"))
 		mid:SetHeight(16)
 		mid:SetPoint("LEFT", left, "RIGHT")
 		mid:SetPoint("RIGHT", right, "LEFT")

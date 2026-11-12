@@ -230,6 +230,59 @@ WowCompanion_Style.STONE = {
 	you = ART .. "Slate-" .. STONE_VERSION,
 	claude = ART .. "SlateLight-" .. STONE_VERSION,
 }
+-- The vine dividers, every window's (tools/make_scrollbar_art.py, rule_pieces):
+-- three weights, "Thin", "" (medium, the chat's) and "Thick"; pieces Left,
+-- Mid (stretched), Right, 32 x 16 (Mid 64); Top, VMid (stretched), Bottom,
+-- 16 x 32; the junctions Cross, TUp, TDown, TLeft, TRight, 32 square, named for
+-- the arm that leaves the straight run. The line runs down each piece's middle;
+-- a round end sits 1.2 + its half-width in from a cap's outer edge.
+local VINE_VERSION = 1 -- the generator's VINE_VERSION
+function WowCompanion_Style.Vine(piece)
+	return ART .. "Vine-" .. piece .. "-" .. VINE_VERSION
+end
+-- A vine run through `owner`: across its middle (vertical false, owner 16
+-- tall) or down it (owner 16 wide), with a round end at its start and end when
+-- asked (none where it runs into a junction). Returns its textures.
+function WowCompanion_Style.VineLine(owner, weight, vertical, capStart, capEnd)
+	weight = weight or ""
+	local made = {}
+	local function piece(name, w, h)
+		local t = owner:CreateTexture(nil, "ARTWORK")
+		t:SetTexture(WowCompanion_Style.Vine(weight .. name))
+		if w then t:SetWidth(w) end
+		if h then t:SetHeight(h) end
+		made[#made + 1] = t
+		return t
+	end
+	local first, last, mid
+	if vertical then
+		first = capStart and piece("Top", 16, 32)
+		last = capEnd and piece("Bottom", 16, 32)
+		mid = piece("VMid", 16)
+		if first then first:SetPoint("TOP") end
+		if last then last:SetPoint("BOTTOM") end
+		mid:SetPoint("TOP", first or owner, first and "BOTTOM" or "TOP")
+		mid:SetPoint("BOTTOM", last or owner, last and "TOP" or "BOTTOM")
+	else
+		first = capStart and piece("Left", 32, 16)
+		last = capEnd and piece("Right", 32, 16)
+		mid = piece("Mid", nil, 16)
+		if first then first:SetPoint("LEFT") end
+		if last then last:SetPoint("RIGHT") end
+		mid:SetPoint("LEFT", first or owner, first and "RIGHT" or "LEFT")
+		mid:SetPoint("RIGHT", last or owner, last and "LEFT" or "RIGHT")
+	end
+	return made
+end
+-- A junction (Cross, TUp, TDown, TLeft, TRight) centred on a point of `owner`
+function WowCompanion_Style.VineJoin(owner, weight, kind, point, x, y)
+	local t = owner:CreateTexture(nil, "OVERLAY")
+	t:SetTexture(WowCompanion_Style.Vine((weight or "") .. kind))
+	t:SetSize(32, 32)
+	t:SetPoint("CENTER", owner, point or "CENTER", x or 0, y or 0)
+	return t
+end
+
 -- "hold a conversation's chord": both shoulder buttons with no letters, inline
 -- in text (tools/make_chord_glyph.py draws it on a 64 x 64 canvas, the version
 -- in its name), cut to the rows the bumpers fill so it stands as tall as the

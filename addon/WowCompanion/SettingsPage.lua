@@ -3,7 +3,7 @@
 -- dropdown's menu or presses a button, up and down move between rows). The
 -- page is three sunk wells (below): the section names down the left beside
 -- their rows; the rows from there to the right edge, name at the left,
--- control at the edge, a quest log divider between sections; the focused
+-- control at the edge, the chat's vine between sections; the focused
 -- row's note in the well under them, its name in gold, where Blizzard shows
 -- a tooltip.
 -- Owned by Core so it works without the Agent; each addon adds its own rows.
@@ -137,6 +137,24 @@ end)
 column:SetFrameLevel(scroll:GetFrameLevel() + 5)
 WC.Style.ScrollBar(scroll, column, ROW_H)
 
+-- The seams between the wells are the thick vine (WC.Style.VineLine): down
+-- between the names and the settings, across between the settings and the
+-- note, a T where they meet; over the scrolling rows, under the scroll bar
+local seams = CreateFrame("Frame", nil, page)
+seams:SetAllPoints()
+seams:SetFrameLevel(scroll:GetFrameLevel() + 4)
+local down = CreateFrame("Frame", nil, seams)
+down:SetWidth(16)
+down:SetPoint("TOP", page, "TOPLEFT", SPINE - 2 - SEAM / 2, 7)
+down:SetPoint("BOTTOM", page, "BOTTOMLEFT", SPINE - 2 - SEAM / 2, -7)
+WC.Style.VineLine(down, "Thick", true, true, true)
+local across = CreateFrame("Frame", nil, seams)
+across:SetHeight(16)
+across:SetPoint("LEFT", band, "TOPLEFT", -2 - SEAM / 2, SEAM / 2)
+across:SetPoint("RIGHT", band, "TOPRIGHT", 9, SEAM / 2)
+WC.Style.VineLine(across, "Thick", false, false, true)
+WC.Style.VineJoin(across, "Thick", "TRight", "LEFT")
+
 -- One setting: a row from the names well to the right edge, its name at the left
 -- and its control at the edge; the row is the one stop, shaded white at 0.1
 -- while the cursor or the mouse is on it (Blizzard's HoverBackgroundTemplate),
@@ -262,10 +280,9 @@ local function header(name)
 	h:SetWidth(SPINE - 24)
 	h:SetJustifyH("RIGHT")
 	h:SetText(name)
-	h.divider = content:CreateTexture(nil, "ARTWORK")
-	h.divider:SetAtlas("QuestLog-frame-devider")
-	h.divider:SetAlpha(0.8)
-	h.divider:SetHeight(15)
+	h.divider = CreateFrame("Frame", nil, content)
+	h.divider:SetHeight(16)
+	WC.Style.VineLine(h.divider, "", false, true, true)
 	headers[name] = h
 	return h
 end

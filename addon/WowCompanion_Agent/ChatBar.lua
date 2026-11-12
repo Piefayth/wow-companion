@@ -18,13 +18,6 @@ local FILL = 7.8 / 5.25
 local INSET = 20.4
 
 WC.ChatBar = {}
--- its pieces by name. The vine dividers come in three weights, "Thin", ""
--- (medium, the chat's) and "Thick", as Rule<weight><piece>: Left, Mid
--- (stretched), Right, 16 tall; Top, VMid (stretched), Bottom, 16 wide; and the
--- junctions, 32 square, Cross, TUp, TDown, TLeft, TRight (named for the arm
--- leaving the straight run). The line runs down each piece's middle
--- (tools/make_scrollbar_art.py, rule_pieces).
-WC.ChatBar.Art = art
 -- the text keeps clear of the bar: the column and its border's art beside it
 WC.ChatBar.ROOM = WIDTH + 6
 
@@ -38,7 +31,7 @@ function WC.ChatBar.Divider(content)
 	rule:SetHeight(16)
 	rule:SetFrameLevel(content:GetFrameLevel() + 2)
 	local left = rule:CreateTexture(nil, "ARTWORK")
-	left:SetTexture(art("RuleLeft"))
+	left:SetTexture(WC.Style.Vine("Left"))
 	left:SetSize(32, 16)
 	left:SetPoint("LEFT")
 	local joint = rule:CreateTexture(nil, "ARTWORK")
@@ -46,7 +39,7 @@ function WC.ChatBar.Divider(content)
 	joint:SetSize(32, 16)
 	joint:SetPoint("LEFT", rule, "RIGHT", -(WIDTH + 6), 0) -- its x 6 the column's left edge
 	local mid = rule:CreateTexture(nil, "ARTWORK")
-	mid:SetTexture(art("RuleMid"))
+	mid:SetTexture(WC.Style.Vine("Mid"))
 	mid:SetHeight(16)
 	mid:SetPoint("LEFT", left, "RIGHT")
 	mid:SetPoint("RIGHT", joint, "LEFT")
