@@ -30,7 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 
-VERSION = 6
+VERSION = 7
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -239,7 +239,7 @@ def close(state):
 # --- the inset ------------------------------------------------------------------
 
 INSET = 4.0  # the inset's corners' side and its edges' width
-STONE = (np.array((13, 14, 18.0)), np.array((44, 46, 54.0)), np.array((102, 105, 116.0)))  # the wall: shadow, mid, lit; the slate's cool grey
+STONE = (np.array((11, 11, 13.0)), np.array((32, 33, 37.0)), np.array((70, 71, 76.0)))  # the wall: shadow, mid, lit; the slate's grey, barely cool, the lit walls quiet
 LINE_IN = np.array((5, 4, 3.0))  # the creases at the wall's top and foot
 WALL_FOOT = 3.3  # where the wall meets the floor, its contact shadow on to INSET
 
