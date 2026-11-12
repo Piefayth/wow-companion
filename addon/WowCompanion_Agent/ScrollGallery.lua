@@ -19,7 +19,7 @@ end
 -- the borders closing round its ends under the arrows and the set's own
 -- dividers joining the left border (docs/proposals/scrollbar-concepts.md).
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-]]
-local ROUND6 = 5 -- the generator's VERSION6
+local ROUND6 = 6 -- the generator's VERSION6
 local function art(design, piece)
 	return ART .. design .. "-" .. piece .. "-" .. (design == "Spear" and 1 or ROUND6)
 end
@@ -109,7 +109,7 @@ end
 -- past the groove to the pane's edge.
 -- the thumb art's opaque width, in the art's 32 (alpha over half, measured
 -- off the TGAs), to the groove floor's 7.8
-local FILL = { Lance = 7.8 / 5.75, Fleur = 7.8 / 5.5, Bud = 7.8 / 5.25, Lancet = 7.8 / 6.25 }
+local FILL = { Lance = 7.8 / 5.75, Fleur = 7.8 / 5.5, Bud = 7.8 / 5.25, Bud2 = 7.8 / 5.25, Bud3 = 7.8 / 5.25, Bud4 = 7.8 / 5.25, Lancet = 7.8 / 6.25 }
 local function groove(c, design, lane, ends)
 	local caps = {}
 	for _, spec in ipairs({ { "Up", "TOP" }, { "Down", "BOTTOM" } }) do
@@ -170,6 +170,9 @@ local OPTIONS = {
 	{ "Bronze lance", groove, "Lance" },
 	{ "Iron fleur-de-lis", groove, "Fleur" },
 	{ "Vine and leaf-bud", groove, "Bud" },
+	{ "Fern frond on the vine", groove, "Bud2" },
+	{ "Acorn on the vine", groove, "Bud3" },
+	{ "Briar rosebud", groove, "Bud4" },
 	{ "Inlaid lancet", groove, "Lancet" },
 }
 
