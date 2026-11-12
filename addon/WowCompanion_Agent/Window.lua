@@ -565,28 +565,22 @@ local function buildLog()
 	end
 	local grip = CreateFrame("Button", nil, frame)
 	grip:SetSize(16, 16)
-	grip:SetPoint("BOTTOMRIGHT", -7, 7)
+	grip:SetPoint("BOTTOMRIGHT", -5.5, 5.5)
 	-- Blizzard's only corner grip is the chat frame's 16px file, blurry when
 	-- scaled; this draws its three diagonal ridges as lines (crisp at any scale),
-	-- cut into the panel: a soft shadow on the upper-left wall, a dark core, and
-	-- a light lip on the lower-right wall, as if lit from the top left. The lip
-	-- brightens on hover.
-	local LIP, LIP_LIT = { 0.72, 0.67, 0.55, 0.5 }, { 0.95, 0.88, 0.68, 0.8 }
-	local WALLS = {
-		{ 0, 0, 0, 0.3, -1, 1.5 }, -- shadow
-		{ 0, 0, 0, 0.75, 0, 1 }, -- core
-		{ LIP[1], LIP[2], LIP[3], LIP[4], 1, 1 }, -- lip
-	}
+	-- cut into the panel: each groove is a dark line with a faint light lip on its
+	-- lower-right side, as if lit from the top left. A touch lighter on hover.
+	local LIP, LIP_LIT = { 0.6, 0.57, 0.5, 0.28 }, { 0.85, 0.8, 0.65, 0.55 }
 	local lips = {}
 	for i = 1, 3 do
 		local d = i * 4
-		for _, w in ipairs(WALLS) do
+		for _, part in ipairs({ { 0, 0, 0, 0.6, 0 }, { LIP[1], LIP[2], LIP[3], LIP[4], 1 } }) do
 			local l = grip:CreateLine(nil, "OVERLAY")
-			l:SetThickness(w[6])
-			l:SetColorTexture(w[1], w[2], w[3], w[4])
-			l:SetStartPoint("BOTTOMRIGHT", -d - 1 + w[5], 2 - w[5])
-			l:SetEndPoint("BOTTOMRIGHT", -2 + w[5], d + 1 - w[5])
-			if w[5] == 1 then lips[#lips + 1] = l end
+			l:SetThickness(1)
+			l:SetColorTexture(part[1], part[2], part[3], part[4])
+			l:SetStartPoint("BOTTOMRIGHT", -d - 1 + part[5], 2 - part[5])
+			l:SetEndPoint("BOTTOMRIGHT", -2 + part[5], d + 1 - part[5])
+			if part[5] == 1 then lips[#lips + 1] = l end
 		end
 	end
 	grip:SetScript("OnEnter", function() for _, l in ipairs(lips) do l:SetColorTexture(unpack(LIP_LIT)) end end)
