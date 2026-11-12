@@ -476,6 +476,10 @@ local function buildTabs(frame, messages)
 			local k = chosen and 1 or 0.6
 			tab.floor:SetVertexColor(k, k, k)
 			tab.Text:SetTextColor(unpack(chosen and NAME_LIT or NAME))
+			-- the name centred in its own outline (the template's offsets are
+			-- for its art's heights)
+			tab.Text:ClearAllPoints()
+			tab.Text:SetPoint("CENTER", tab.edge, "CENTER")
 		end
 		local chat = id == 1
 		-- the page's name in the title, as Collections does
