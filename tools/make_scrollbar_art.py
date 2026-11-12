@@ -21,7 +21,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 # the vine dividers are every window's (Style.lua's WC.Style.Vine), so Core's
 CORE_OUT = os.path.join(ROOT, "addon", "WowCompanion", "Art")
-VINE_VERSION = 5  # Style.lua's VINE_VERSION
+VINE_VERSION = 6  # Style.lua's VINE_VERSION
 LIGHT = np.array([-0.55, -0.75, 0.9]); LIGHT /= np.linalg.norm(LIGHT)
 HALF = LIGHT + np.array([0, 0, 1.0]); HALF /= np.linalg.norm(HALF)
 
@@ -470,14 +470,13 @@ def rule_pieces(weight):
 # down x 16, the arm leaving to the right along y 16) and turned to the other
 # ways by moving its points, never its pixels, so its light stays the frame's.
 # No boss over the meeting (the player, 2026-11-12: curvy and wiry, elegant
-# without being too much): fine wire scrollwork in the vine's bark, three
-# levels, for different places:
-#   Wisp      a fillet of wire in each corner the arm makes with the run, its
-#             ends tapering into the vines
-#   Scroll    the fillets with a curling sprig out of each, and on the run's
-#             far side two volutes curling back
-#   Filigree  each fillet doubled by a second, wider one with its own sprig and
-#             a leaf at each end, the volutes larger and doubled
+# without being too much; longer, curvier, decorative, never tool-like):
+# wire scrollwork in the vine's bark, three levels, for different places:
+#   Wisp      in each corner the arm makes with the run, a long S of wire
+#             leaving the arm, sweeping in and up the run to a spiral
+#   Scroll    and on the run's far side a lyre: two long S's parting from the
+#             meeting, each to a spiral turned away
+#   Filigree  the spirals tighter, and a small C curling off each corner's S
 # A lighter vine growing into a heavier one is the same work, its wire the
 # lighter vine's.
 
@@ -510,46 +509,49 @@ def wire(path, w, ends=0.55):
     return [ribbon(path, w * (ends + (1 - ends) * k))]
 
 
-def fillet(sx, sy, hw, ahw, r, w, tail):
-    """Wire in the corner (sx, sy) between the run (x m +- hw) and the arm
-    (y m +- ahw): a quarter circle of radius r joining them, each end running
-    on along its vine for `tail` and tapering into it."""
+def chain(*segments):
+    """Bezier segments (each four points) run end to end as one path."""
+    return np.vstack([bez(*seg, n=26)[(1 if i else 0):] for i, seg in enumerate(segments)])
+
+
+def tendril(sx, sy, hw, ahw, g, w, turns=1.2):
+    """In the corner (sx, sy): a long wire leaving the arm well out along it,
+    sweeping in towards the run, then up along it, ending in a spiral turned
+    away from the run: an S, decorative, never a bracket."""
     m = J / 2
-    cx, cy = m + sx * (hw + r), m + sy * (ahw + r)
-    a0 = np.arctan2(0, -sx)  # towards the run
-    a1 = np.arctan2(-sy, 0)  # towards the arm
-    d = (a1 - a0 + np.pi) % (2 * np.pi) - np.pi
-    th = a0 + d * np.linspace(0, 1, 40)
-    arc = np.stack([cx + r * np.cos(th), cy + r * np.sin(th)], 1)
-    run_end = np.array([[m + sx * hw, cy + sy * tail * t] for t in np.linspace(1, 0.1, 10)])
-    arm_end = np.array([[cx + sx * tail * t, m + sy * ahw] for t in np.linspace(0.1, 1, 10)])
-    return wire(np.vstack([run_end, arc, arm_end]), w, 0.55)
+    X = lambda u: m + sx * (hw + u * g)
+    Y = lambda u: m + sy * (ahw + u * g)
+    path = chain(((X(6.5), Y(0)), (X(4.5), Y(0.1)), (X(1.6), Y(0.6)), (X(1.2), Y(2.6))),
+                 ((X(1.2), Y(2.6)), (X(0.9), Y(4.4)), (X(1.8), Y(5.8)), (X(3.0), Y(6.2))))
+    path = scroll(path, 0.9 * g, -sx * sy * turns, 0.38)
+    return [ribbon(path, w * np.linspace(1.0, 0.6, len(path)))]
 
 
-def volutes(hw, w, size, turns):
-    """On the run's far side, two volutes leaving the run's edge above and
-    below the meeting, sweeping out and curling back towards it."""
+def branch(sx, sy, hw, ahw, g, w):
+    """A small C curling off the middle of the corner's tendril, out into the
+    open corner."""
+    m = J / 2
+    X = lambda u: m + sx * (hw + u * g)
+    Y = lambda u: m + sy * (ahw + u * g)
+    path = bez((X(1.5), Y(1.4)), (X(2.6), Y(2.0)), (X(3.6), Y(2.4)), (X(4.0), Y(3.4)), n=24)
+    path = scroll(path, 0.55 * g, sx * sy * 1.0, 0.38)
+    return [ribbon(path, w * np.linspace(0.9, 0.6, len(path)))]
+
+
+def lyre(hw, g, w, turns):
+    """On the run's far side, two long S's leaving the run at the meeting,
+    swinging out and running along it, away from each other, each ending in a
+    spiral turned away from the run: a lyre, its ends parted."""
     m = J / 2
     out = []
     for s in (1, -1):
-        lead = bez((m - hw + 0.1, m - s * (hw * 0.4 + 0.5)), (m - hw - 0.7 * size, m - s * (hw * 0.4 + 0.9 * size)),
-                   (m - hw - 1.7 * size, m - s * (hw * 0.4 + 1.1 * size)), (m - hw - 2.3 * size, m - s * (hw * 0.4 + 0.5 * size)), n=30)
-        path = scroll(lead, 0.5 * size, s * turns, 0.35)
-        # full where it leaves the run, so it is seen to grow from it
+        X = lambda u: m - hw - u * g
+        Y = lambda u: m - s * u * g
+        path = chain(((X(0), Y(0.4)), (X(1.6), Y(0.6)), (X(2.6), Y(1.4)), (X(2.4), Y(3.0))),
+                     ((X(2.4), Y(3.0)), (X(2.2), Y(4.6)), (X(1.2), Y(5.6)), (X(0.4), Y(6.6))))
+        path = scroll(path, 0.85 * g, -s * turns, 0.38)
         out.append(ribbon(path, w * np.linspace(1.1, 0.6, len(path))))
     return out
-
-
-def sprig(sx, sy, hw, ahw, r, w, size):
-    """From the middle of the corner's fillet, a tendril out along the
-    diagonal, curling at its end."""
-    m = J / 2
-    k = r * (1 - np.sqrt(0.5))  # the fillet's middle, nearest the corner
-    p0 = np.array([m + sx * (hw + k), m + sy * (ahw + k)])
-    d = np.array([sx, sy]) / np.sqrt(2)
-    lead = np.array([p0 + d * size * t for t in np.linspace(0, 1, 12)])
-    path = scroll(lead, 0.45 * size, sx * sy * 0.9, 0.35)
-    return [ribbon(path, w * np.linspace(1.0, 0.6, len(path)))]
 
 
 def junction(c, run, arm, f, level, cross=False):
@@ -569,29 +571,16 @@ def junction(c, run, arm, f, level, cross=False):
     # growing into a heavier one is sized between the two) and with the level
     v = (rhw + ahw) / 2
     w = 0.42 + 0.25 * v
-    g = (1.3 + 0.6 * v) * {"Wisp": 1.35, "Scroll": 1.6, "Filigree": 1.8}[level]
+    g = (1.0 + 0.4 * v) * {"Wisp": 1.15, "Scroll": 1.3, "Filigree": 1.45}[level]
     corners = [(1, -1), (1, 1)] + ([(-1, -1), (-1, 1)] if cross else [])
-    work, leaves = [], []
+    work = []
     for sx, sy in corners:
-        work += fillet(sx, sy, rhw, ahw, 2.4 * g, w, 1.8 * g)
-        if level != "Wisp":
-            work += sprig(sx, sy, rhw, ahw, 2.4 * g, w * 0.85, 1.4 * g)
+        work += tendril(sx, sy, rhw, ahw, g, w, 1.5 if level == "Filigree" else 1.2)
         if level == "Filigree":
-            o = 4.6 * g
-            work += fillet(sx, sy, rhw, ahw, o, w * 0.8, 1.4 * g)
-            work += sprig(sx, sy, rhw, ahw, o, w * 0.8, 2.2 * g)
-            # a leaf where the outer fillet's ends run into the vines
-            leaves.append(leaf((m + sx * (rhw + 0.2), m + sy * (ahw + o + 0.4 * g)),
-                               (m + sx * (rhw + 1.6 * g), m + sy * (ahw + o + 2.0 * g)), 0.9 * g))
-            leaves.append(leaf((m + sx * (rhw + o + 0.4 * g), m + sy * (ahw + 0.2)),
-                               (m + sx * (rhw + o + 2.0 * g), m + sy * (ahw + 1.6 * g)), 0.9 * g))
+            work += branch(sx, sy, rhw, ahw, g, w * 0.85)
     if level != "Wisp" and not cross:
-        work += volutes(rhw, w, 2.6 * g if level == "Filigree" else 2.0 * g, 1.5 if level == "Filigree" else 1.0)
-        if level == "Filigree":
-            work += volutes(rhw, w * 0.8, 1.5 * g, 1.2)
+        work += lyre(rhw, g, w, 1.5 if level == "Filigree" else 1.2)
     raised(pen, turned(f, work), dim(apal, 0.95), bevel=0.35, cast=0.45)
-    if leaves:
-        raised(pen, turned(f, leaves), dim(BUD, 0.8), bevel=0.4, cast=0.4)
 
 
 NAMES = {"Thin": "Thin", "": "Medium", "Thick": "Thick"}

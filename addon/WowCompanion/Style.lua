@@ -234,14 +234,13 @@ WowCompanion_Style.STONE = {
 -- three weights, "Thin", "" (medium, the chat's) and "Thick"; pieces Left,
 -- Mid (stretched), Right, 32 x 16 (Mid 64); Top, VMid (stretched), Bottom,
 -- 16 x 32; the junctions, 64 square, centred where the runs meet, wire
--- scrollwork at three levels, each larger: Wisp (fillets in the corners),
--- Scroll (with sprigs, and volutes on the far side), Filigree (doubled, with
--- leaves): Cross<level> and T<way><level> (TUp, TDown, TLeft, TRight, named for the arm that leaves the
+-- scrollwork at three levels: Wisp (a long S in each corner), Scroll (and a
+-- lyre on the far side), Filigree (tighter spirals, a C off each S): Cross<level> and T<way><level> (TUp, TDown, TLeft, TRight, named for the arm that leaves the
 -- straight run) where runs of one weight meet, and <weight>T<way>From
 -- <Thin|Medium><level> where a lighter vine grows into a heavier run. The line
 -- runs down each piece's middle; a round end sits 1.2 + its half-width in from
 -- a cap's outer edge.
-local VINE_VERSION = 5 -- the generator's VINE_VERSION
+local VINE_VERSION = 6 -- the generator's VINE_VERSION
 function WowCompanion_Style.Vine(piece)
 	return ART .. "Vine-" .. piece .. "-" .. VINE_VERSION
 end
