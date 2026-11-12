@@ -1,42 +1,24 @@
--- A design sheet, for now: the seven tab rows of the study
--- (target/tab-options), each on a full-size copy of the top of the Companion
--- window (its title band, rim, panel and chat well, the real transcript and
--- scroll bar scrolling real turns), so the player compares them live instead of
--- one reload per idea. The copy's tabs are our own plain buttons: a click picks
--- one, the cursor over one shows its hover. Goes when a row is chosen.
+-- A design sheet, for now: round two of the tab study (the player's verdict on
+-- round one is in docs/proposals/companion-tabs.md), each candidate on a
+-- full-size copy of the top of the Companion window (its title band, rim,
+-- panel and chat well, the real transcript and scroll bar scrolling real
+-- turns), so the player compares them live instead of one reload per idea.
+-- The copy's tabs are our own plain buttons: a click picks one, the cursor over
+-- one shows its hover. Goes when a row is chosen.
 
 local STONE = WC.Style.STONE
 -- Window.lua's layout, the copy drawn at the same numbers
 local RIM, TOP, BAND, GAP, INSET, FLOOR, FOOT = 6, 28, 22.6, 4, 4, 3, 20
 local CLOSE, CLOSE_PAD = 14, 3
 local WELL_TOP = 64
+local RISEN = 25.5 -- the chat well's top with no tab row above it
 local FRAME_ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-20]]
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\TabOpt%s-1]]
+-- tools/make_tab_options_art.py's pieces, one tab's each
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\TabOpt%s-2]]
 local NAME, NAME_HL, NAME_LIT = { 0.78, 0.69, 0.53 }, { 0.91, 0.84, 0.67 }, { 0.98, 0.92, 0.78 }
+-- letters cut in the slate: its paler stone where idle, gilt when chosen
+local CUT, CUT_HL = { 0.59, 0.61, 0.66 }, { 0.75, 0.76, 0.80 }
 local LABELS = { "Chat", "Settings", "Status", "Errands" }
-
--- Rows painted by the study's own painters, one picture per chosen tab
--- (tools/make_tab_options_art.py prints this): the picture's rect, each tab's
--- hit rect, its label's centre unchosen then chosen; UI units from the
--- window's top left, y down. wellTop: where the chat well starts once the row
--- above it is gone.
-local BAKED = {
-	[2] = { box = { 13.8, 33.8, 291.2, 59.0 }, wellTop = 64.0,
-		hits = { { 22.0, 36.0, 77.5, 56.0 }, { 77.5, 36.0, 150.4, 56.0 }, { 150.4, 36.0, 213.6, 56.0 }, { 213.6, 36.0, 282.4, 56.0 } },
-		labels = { { 49.7, 46.0, 49.7, 46.0 }, { 113.9, 46.0, 113.9, 46.0 }, { 182.0, 46.0, 182.0, 46.0 }, { 248.0, 46.0, 248.0, 46.0 } } },
-	[3] = { box = { 16.4, 21.2, 277.9, 63.8 }, wellTop = 64.0,
-		hits = { { 20.0, 24.6, 67.5, 50.0 }, { 75.5, 24.6, 140.4, 50.0 }, { 148.4, 24.6, 203.6, 50.0 }, { 211.6, 24.6, 272.4, 50.0 } },
-		labels = { { 43.7, 37.1, 43.7, 37.1 }, { 107.9, 37.1, 107.9, 37.1 }, { 176.0, 37.1, 176.0, 37.1 }, { 242.0, 37.1, 242.0, 37.1 } } },
-	[4] = { box = { -78.1, 41.9, 8.2, 160.8 }, wellTop = 25.5,
-		hits = { { -76.0, 44.0, 0.0, 68.0 }, { -76.0, 73.0, 0.0, 97.0 }, { -76.0, 102.0, 0.0, 126.0 }, { -76.0, 131.0, 0.0, 155.0 } },
-		labels = { { -33.0, 56.0, -38.0, 56.0 }, { -33.0, 85.0, -38.0, 85.0 }, { -33.0, 114.0, -38.0, 114.0 }, { -33.0, 143.0, -38.0, 143.0 } } },
-	[5] = { box = { 11.9, 5.6, 266.7, 22.7 }, wellTop = 25.5,
-		hits = { { 14.0, 6.4, 65.5, 21.9 }, { 67.5, 6.4, 136.4, 21.9 }, { 138.4, 6.4, 197.6, 21.9 }, { 199.6, 6.4, 264.4, 21.9 } },
-		labels = { { 39.7, 14.4, 39.7, 14.4 }, { 101.9, 14.4, 101.9, 14.4 }, { 168.0, 14.4, 168.0, 14.4 }, { 232.0, 14.4, 232.0, 14.4 } } },
-	[7] = { box = { 18.2, 28.2, 282.7, 71.6 }, wellTop = 64.0,
-		hits = { { 20.0, 30.0, 69.5, 64.0 }, { 76.5, 30.0, 143.4, 64.0 }, { 150.4, 30.0, 207.6, 64.0 }, { 214.6, 30.0, 277.4, 64.0 } },
-		labels = { { 44.7, 52.5, 44.7, 44.5 }, { 109.9, 52.5, 109.9, 44.5 }, { 179.0, 52.5, 179.0, 44.5 }, { 246.0, 52.5, 246.0, 44.5 } } },
-}
 
 -- a frame's border from our art on its own bounds, as Window.lua's dress
 local function nine(owner, art, rim, top)
@@ -80,7 +62,7 @@ local SAMPLE = {
 	{ "you", "And the chosen tab?" },
 	{ "claude", "Click a tab in the copy to choose it; the cursor over one shows its hover." },
 	{ "you", "What about the ones that move things?" },
-	{ "claude", "The plaques stand out from the window's left rim, and the title band row lifts the chat well into the freed space." },
+	{ "claude", "The plaques come out from under the window's top or bottom rim, and the chat well rises into the row they free." },
 	{ "you", "Good. Which one sits best?" },
 	{ "claude", "Pick each on the right and compare: the chat's stone stays shaded and apart from the row in all of them." },
 	{ "you", "Show me the end." },
@@ -88,147 +70,129 @@ local SAMPLE = {
 }
 
 -- The options. Each build(r) draws its row into r.layer and places r.buttons
--- (r.rect), and returns show(chosen) and label(i, lit) -> centre.
-local function baked(n)
+-- (r.rect), and returns show(chosen) and label(i, lit) -> x, y (from the
+-- window's top left, or its bottom left for a row under the window).
+
+-- 1a, 1b: the chat's vine along the well's top, the names over it, a bronze
+-- fleur hung in front of the vine under the chosen name; 1b sets each name
+-- on a slate lens
+local VINE_Y, FS, NAME_Y = 55, 1.3, 41
+local function fleur(backed)
 	return function(r)
-		local spec = BAKED[n]
-		local pics = {}
-		local b = spec.box
-		for i = 1, #LABELS do
-			local t = r.layer:CreateTexture(nil, "ARTWORK")
-			t:SetTexture(ART:format(n .. "-Chosen" .. i))
-			t:SetPoint("TOPLEFT", r.win, "TOPLEFT", b[1], -b[2])
-			t:SetSize(b[3] - b[1], b[4] - b[2])
-			pics[i] = t
+		local vine = CreateFrame("Frame", nil, r.layer)
+		vine:SetHeight(16)
+		vine:SetPoint("LEFT", r.win, "TOPLEFT", 14.5, -VINE_Y)
+		vine:SetPoint("RIGHT", r.well, "TOPRIGHT", -4.5, WELL_TOP - VINE_Y)
+		WC.Style.VineLine(vine, "", false, true, true)
+		local spans, backs = {}, {}
+		local x = backed and 14 or 18
+		for i, b in ipairs(r.buttons) do
+			local w = backed and 96 or b.label:GetStringWidth() + 32
+			spans[i] = { x, x + w }
+			x = x + w + (backed and 2 or 6)
+			r.rect(b, spans[i][1], NAME_Y - 10, spans[i][2], NAME_Y + 10)
+			if backed then
+				backs[i] = {}
+				for _, piece in ipairs({ "Idle", "Chosen" }) do
+					local t = r.layer:CreateTexture(nil, "ARTWORK")
+					t:SetTexture(ART:format("1b-" .. piece))
+					t:SetPoint("TOPLEFT", r.win, "TOPLEFT", spans[i][1], -(NAME_Y - 10))
+					t:SetSize(96, 20)
+					backs[i][piece] = t
+				end
+			end
 		end
-		for i, h in ipairs(spec.hits) do r.rect(r.buttons[i], h[1], h[2], h[3], h[4]) end
+		-- its own frame above the vine's, so it hangs in front of it
+		local front = CreateFrame("Frame", nil, r.layer)
+		front:SetAllPoints(r.layer)
+		front:SetFrameLevel(vine:GetFrameLevel() + 2)
+		local f = front:CreateTexture(nil, "ARTWORK")
+		f:SetTexture(ART:format("1-Fleur"))
+		f:SetSize(32 * FS, 36 * FS)
 		return function(chosen)
-			for i, t in ipairs(pics) do t:SetShown(i == chosen) end
-		end, function(i, lit)
-			local l = spec.labels[i]
-			if lit then return l[3], l[4] end
-			return l[1], l[2]
+			local s = spans[chosen]
+			f:ClearAllPoints()
+			f:SetPoint("TOPLEFT", r.win, "TOPLEFT", (s[1] + s[2]) / 2 - 16 * FS, -(VINE_Y - 13.2 * FS))
+			for i, t in ipairs(backs) do
+				t.Idle:SetShown(i ~= chosen)
+				t.Chosen:SetShown(i == chosen)
+			end
+		end, function(i)
+			return (spans[i][1] + spans[i][2]) / 2, NAME_Y
 		end
 	end
 end
 
--- the labels' widths as the game draws them, laid out from x0
-local function widths(buttons, pad, gap, x0, least)
-	local spans, x = {}, x0
-	for i, b in ipairs(buttons) do
-		local w = math.max(b.label:GetStringWidth() + 2 * pad, least or 0)
-		spans[i] = { x, x + w }
-		x = x + w + gap
-	end
-	return spans
-end
-
--- 1: one vine (the chat's medium) along the well's top, the names over it, a
--- bronze fleur hung from the vine under the chosen name
-local function fleur(r)
-	local VINE_Y, FS = 57, 0.95
-	local vine = CreateFrame("Frame", nil, r.layer)
-	vine:SetHeight(16)
-	vine:SetPoint("LEFT", r.win, "TOPLEFT", 14.5, -VINE_Y)
-	vine:SetPoint("RIGHT", r.well, "TOPRIGHT", -4.5, WELL_TOP - VINE_Y)
-	WC.Style.VineLine(vine, "", false, true, true)
-	local spans = widths(r.buttons, 16, 6, 18)
-	for i, s in ipairs(spans) do r.rect(r.buttons[i], s[1], 31, s[2], 55) end
-	local f = r.layer:CreateTexture(nil, "OVERLAY")
-	f:SetTexture(ART:format("1-Fleur"))
-	f:SetSize(32 * FS, 32 * FS)
-	return function(chosen)
-		local s = spans[chosen]
-		f:ClearAllPoints()
-		f:SetPoint("TOPLEFT", r.win, "TOPLEFT", (s[1] + s[2]) / 2 - 16 * FS, -(VINE_Y - 13.25 * FS - 0.6))
-	end, function(i)
-		return (spans[i][1] + spans[i][2]) / 2, 43
-	end
-end
-
--- 6: PanelTopTabButtonTemplate's own atlases, set up as its OnLoad does (the
--- top three quarters, flipped), desaturated and tinted to the window's bronze
-local function blizzard(r)
-	local FOOT_Y = 65.3 -- over the well's top border
-	local TINT = { 0.99, 0.88, 0.72 }
-	local function art(owner, layer, atlas)
-		local t = owner:CreateTexture(nil, layer)
-		local info = C_Texture.GetAtlasInfo(atlas)
-		if not info then return t end
-		t:SetTexture(info.file)
-		local top, bottom = info.topTexCoord, info.bottomTexCoord
-		t:SetTexCoord(info.leftTexCoord, info.rightTexCoord, bottom, top + (bottom - top) * 0.25)
-		t:SetSize(info.width, info.height * 0.75)
-		t:SetDesaturated(true)
-		t:SetVertexColor(TINT[1], TINT[2], TINT[3])
-		return t
-	end
-	local function set(b, layer, kind, left, right)
-		local l = art(b, layer, "uiframe-" .. kind .. "-left")
-		l:SetPoint("BOTTOMLEFT", left, 0)
-		local rt = art(b, layer, "uiframe-" .. kind .. "-right")
-		rt:SetPoint("BOTTOMRIGHT", right, 0)
-		local m = art(b, layer, "_uiframe-" .. kind .. "-center")
-		m:SetPoint("TOPLEFT", l, "TOPRIGHT")
-		m:SetPoint("TOPRIGHT", rt, "TOPLEFT")
-		return { l, m, rt }
-	end
-	local spans = widths(r.buttons, 15, 1, 14, 69)
-	local idle, active = {}, {}
-	for i, b in ipairs(r.buttons) do
-		r.rect(b, spans[i][1], FOOT_Y - 32, spans[i][2], FOOT_Y)
-		idle[i] = set(b, "BACKGROUND", "tab", -3, 7)
-		active[i] = set(b, "BACKGROUND", "activetab", -1, 8)
-		for _, t in ipairs(set(b, "HIGHLIGHT", "tab", -3, 7)) do
-			t:SetBlendMode("ADD")
-			t:SetAlpha(0.4)
+-- 3a..4b: a piece per tab, Idle or Chosen, w x h, the first at x0 and each
+-- `step` on, its top `top` below the anchor's edge; hit: the tab's rect in
+-- the piece; ys: the name's centre in the piece, idle then chosen
+local function plaques(id, s)
+	return function(r)
+		local idle, lit = {}, {}
+		for i, b in ipairs(r.buttons) do
+			local x = s.x0 + (i - 1) * s.step
+			local function art(piece)
+				local t = r.layer:CreateTexture(nil, "ARTWORK")
+				t:SetTexture(ART:format(id .. "-" .. piece))
+				t:SetPoint("TOPLEFT", r.win, r.anchor, x, -s.top)
+				t:SetSize(s.w, s.h)
+				return t
+			end
+			idle[i], lit[i] = art("Idle"), art("Chosen")
+			local h = s.hit
+			r.rect(b, x + h[1], s.top + h[2], x + h[3], s.top + h[4])
+		end
+		return function(chosen)
+			for i = 1, #idle do
+				idle[i]:SetShown(i ~= chosen)
+				lit[i]:SetShown(i == chosen)
+			end
+		end, function(i, isLit)
+			return s.x0 + (i - 1) * s.step + s.w / 2, s.top + s.ys[isLit and 2 or 1]
 		end
 	end
-	return function(chosen)
-		for i = 1, #r.buttons do
-			for _, t in ipairs(idle[i]) do t:SetShown(i ~= chosen) end
-			for _, t in ipairs(active[i]) do t:SetShown(i == chosen) end
-		end
-	end, function(i, lit)
-		return (spans[i][1] + spans[i][2]) / 2, FOOT_Y - (lit and 12 or 9)
-	end
 end
 
--- name, what it is, its builder, and where its row sits: "over" the chat
--- well, "behind" it (its feet under the well's wall) or "under" the window
--- (out from under its rim)
+-- id, name, what it is, its builder, and where its row sits: "over" the
+-- panel, or under the window's rim "above" or "below" it (the chat well
+-- risen into the freed row); its names' font, and "cut" for engraved names
 local OPTIONS = {
-	{ "Fleur on the vine", "Names on the panel over one vine along the chat's top; a bronze fleur hangs from the vine under the chosen name.", fleur, "over" },
-	{ "The scroll groove, laid flat", "A carved groove with bronze rails, as the scroll bar's; the chosen tab is its heartwood thumb.", baked(2), "over" },
-	{ "Banners from the title rule", "Slate banners hung from the bronze rule under the title; the chosen one hangs longest, lit.", baked(3), "over" },
-	{ "Plaques from under the rim", "Slate plaques sliding out from under the window's left rim; the chosen one out furthest. No tab row: the chat well rises.", baked(4), "under" },
-	{ "Tabs in the title band", "No tab row: the names are the window's title, the chosen one in a carved, lit cartouche. The chat well rises.", baked(5), "over" },
-	{ "Blizzard's own tab art, washed", "PanelTopTabButtonTemplate's own art, desaturated and tinted to our bronze, as Blizzard joins it to the well.", blizzard, "over" },
-	{ "Bookmarks behind the wall", "Ribbons rising from behind the chat well's top wall, the wall over their feet; the chosen one tallest.", baked(7), "behind" },
+	{ "1a", "Fleur, heavier names", "The vine along the chat's top, the names over it in the larger type, lit when chosen; the fleur hangs in front of the vine under the chosen name.",
+		fleur(false), "over", "GameFontNormalMed3" },
+	{ "1b", "Fleur, names on lenses", "As 1a, each name on a slate lens rimmed in wire, curled at its points; the chosen lens on the lighter slate, its wire lit.",
+		fleur(true), "over", "GameFontNormalMed3" },
+	{ "3a", "Escutcheon on hooks", "Notched slate plaques on two wire hooks caught over the title rule; the chosen one hangs lower, on the lighter slate, its bronze lit.",
+		plaques("3a", { w = 84, h = 40, x0 = 14, step = 82, top = 20, hit = { 7, 9, 77, 34 }, ys = { 21, 24 } }), "over" },
+	{ "3b", "Cartouche", "Slate cartouches framed in wire scrolled back at both ends, each on one stem crowned on the title rule; the chosen one hangs lower and lit.",
+		plaques("3b", { w = 92, h = 40, x0 = 10, step = 90, top = 20, hit = { 14, 10, 78, 32 }, ys = { 21, 24 } }), "over" },
+	{ "3c", "Framed, engraved", "Slate plaques in a broad bevelled bronze frame, hung as pictures are from the title rule; names cut in the slate, gilt in the chosen one.",
+		plaques("3c", { w = 84, h = 42, x0 = 14, step = 82, top = 20, hit = { 8, 11, 76, 37 }, ys = { 24, 27 } }), "over", nil, "cut" },
+	{ "4a", "Plaques over the top rim", "Round one's plaques, moved from the window's side to rise from under its top rim, so the conversation list stays the one column. The chosen one stands tallest.",
+		plaques("4a", { w = 80, h = 32, x0 = 18, step = 80, top = -28, hit = { 3, 8, 77, 28 }, ys = { 18, 15 } }), "above" },
+	{ "4b", "Plaques under the bottom rim", "The same plaques hanging from under the window's bottom rim, below the legend; the chosen one hangs lowest.",
+		plaques("4b", { w = 80, h = 32, x0 = 18, step = 80, top = -4, hit = { 3, 4, 77, 24 }, ys = { 14, 17 } }), "below" },
 }
-local OUT = 84 -- room on the left for option 4's plaques
+local ROOM = 32 -- the copy's room above or below the window for 4a and 4b
 
 -- one option on its own copy of the window's top, filling `box`
 local function replica(box, n)
 	local option = OPTIONS[n]
+	local place = option[5]
 	local L = box:GetFrameLevel()
-	local spec = BAKED[n]
 	local win = CreateFrame("Frame", nil, box)
 	win:SetFrameLevel(L + 2)
-	win:SetPoint("TOPLEFT", option[4] == "under" and OUT or 0, 0)
-	win:SetPoint("BOTTOMRIGHT")
+	win:SetPoint("TOPLEFT", 0, place == "above" and -ROOM or 0)
+	win:SetPoint("BOTTOMRIGHT", 0, place == "below" and ROOM or 0)
 	nine(win, "Frame", RIM, TOP)
 	local bg = win:CreateTexture(nil, "BACKGROUND")
 	stone(bg, "you", 0.72)
 	bg:SetPoint("TOPLEFT", RIM, -RIM)
 	bg:SetPoint("BOTTOMRIGHT", -RIM, RIM)
-	if n ~= 5 then
-		local title = win:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-		title:SetPoint("TOPLEFT", RIM + CLOSE_PAD + CLOSE, -RIM)
-		title:SetPoint("BOTTOMRIGHT", win, "TOPRIGHT", -(RIM + CLOSE_PAD + CLOSE), -BAND)
-		title:SetTextColor(0.90, 0.79, 0.55)
-		title:SetText("Companion")
-	end
+	local title = win:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	title:SetPoint("TOPLEFT", RIM + CLOSE_PAD + CLOSE, -RIM)
+	title:SetPoint("BOTTOMRIGHT", win, "TOPRIGHT", -(RIM + CLOSE_PAD + CLOSE), -BAND)
+	title:SetTextColor(0.90, 0.79, 0.55)
+	title:SetText("Companion")
 	local close = win:CreateTexture(nil, "OVERLAY")
 	close:SetTexture(FRAME_ART:format("Close", "Normal"))
 	close:SetSize(CLOSE, CLOSE)
@@ -237,7 +201,7 @@ local function replica(box, n)
 	-- the chat well, as Window.lua builds it: the real transcript and scroll bar
 	local well = CreateFrame("Frame", nil, win)
 	well:SetFrameLevel(L + 4)
-	well:SetPoint("TOPLEFT", RIM + GAP, -(spec and spec.wellTop or WELL_TOP))
+	well:SetPoint("TOPLEFT", RIM + GAP, -(place == "over" and WELL_TOP or RISEN))
 	well:SetPoint("BOTTOMRIGHT", -(RIM + GAP), RIM + FOOT)
 	nine(well, "Inset", INSET, INSET)
 	local floor = well:CreateTexture(nil, "BACKGROUND", nil, 1)
@@ -273,15 +237,16 @@ local function replica(box, n)
 	fade:SetPoint("BOTTOMRIGHT")
 	fade:SetGradient("HORIZONTAL", CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 0))
 
-	-- the row, at its place among the window's levels, and its tabs
+	-- the row, over the window or under its rim, and its tabs
 	local layer = CreateFrame("Frame", nil, box)
 	layer:SetAllPoints(win)
-	layer:SetFrameLevel(L + ({ under = 1, behind = 3, over = 20 })[option[4]])
-	local r = { win = win, well = well, layer = layer, buttons = {} }
+	layer:SetFrameLevel(L + (place == "over" and 20 or 1))
+	local r = { win = win, well = well, layer = layer, buttons = {}, anchor = place == "below" and "BOTTOMLEFT" or "TOPLEFT" }
 	function r.rect(b, x0, y0, x1, y1)
-		b:SetPoint("TOPLEFT", win, "TOPLEFT", x0, -y0)
+		b:SetPoint("TOPLEFT", win, r.anchor, x0, -y0)
 		b:SetSize(x1 - x0, y1 - y0)
 	end
+	local cut = option[7] == "cut"
 	local chosen, hover = 1, nil
 	local show, label
 	local function paint()
@@ -289,21 +254,30 @@ local function replica(box, n)
 		for i, b in ipairs(r.buttons) do
 			local x, y = label(i, i == chosen)
 			b.label:ClearAllPoints()
-			b.label:SetPoint("CENTER", win, "TOPLEFT", x, -y)
-			b.label:SetTextColor(unpack(i == chosen and NAME_LIT or i == hover and NAME_HL or NAME))
+			b.label:SetPoint("CENTER", win, r.anchor, x, -y)
+			local idle, hl = NAME, NAME_HL
+			if cut then idle, hl = CUT, CUT_HL end
+			b.label:SetTextColor(unpack(i == chosen and NAME_LIT or i == hover and hl or idle))
 		end
 	end
 	for i, name in ipairs(LABELS) do
 		local b = CreateFrame("Button", nil, layer)
-		b.label = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		b.label = b:CreateFontString(nil, "OVERLAY", option[6] or "GameFontNormal")
 		b.label:SetText(name)
+		if cut then
+			-- sunk: the shade on the cut's top left wall
+			b.label:SetShadowOffset(-1, 1)
+		elseif option[6] then
+			b.label:SetShadowOffset(1.5, -1.5)
+			b.label:SetShadowColor(0, 0, 0, 1)
+		end
 		b:SetScript("OnClick", function() chosen = i paint() end)
 		b:SetScript("OnEnter", function() hover = i paint() end)
 		b:SetScript("OnLeave", function() hover = nil paint() end)
 		WC.MarkFocusable(b)
 		r.buttons[i] = b
 	end
-	show, label = option[3](r)
+	show, label = option[4](r)
 	paint()
 end
 
@@ -335,13 +309,13 @@ WC.Companion.AddTab("Tab styles", function(page)
 				local ok, err = pcall(replica, b, n)
 				if not ok then
 					failed[n] = "|cffff6060" .. tostring(err) .. "|r"
-					buttons[n].label:SetText(n .. ". " .. OPTIONS[n][1] .. " |cffff6060(failed)|r")
+					buttons[n].label:SetText(OPTIONS[n][1] .. ". " .. OPTIONS[n][2] .. " |cffff6060(failed)|r")
 				end
 				boxes[n] = b
 			end
 			for i, b in pairs(boxes) do b:SetShown(i == n) end
 			for i, b in ipairs(buttons) do b.selected:SetShown(i == n) end
-			about:SetText(failed[n] or OPTIONS[n][2])
+			about:SetText(failed[n] or OPTIONS[n][3])
 		end
 		for n, option in ipairs(OPTIONS) do
 			local b = CreateFrame("Button", nil, page)
@@ -364,7 +338,7 @@ WC.Companion.AddTab("Tab styles", function(page)
 			b.label:SetPoint("RIGHT", -6, 0)
 			b.label:SetJustifyH("LEFT")
 			b.label:SetWordWrap(false)
-			b.label:SetText(n .. ". " .. option[1])
+			b.label:SetText(option[1] .. ". " .. option[2])
 			b:SetScript("OnClick", function() pick(n) end)
 			WC.MarkFocusable(b)
 			buttons[n] = b
