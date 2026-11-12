@@ -348,7 +348,7 @@ TAB_ART = os.path.join(OUT, "Tab-%s-3.tga")  # make_tab_art.py's
 
 # Window.lua's layout, in units
 RIM, GAP, FOOT, WELL = 6.0, 4.0, 20.0, 130.0
-WELL_TOP = 25.6 + FOOT  # the rule's foot, then as much stone as the legend's strip
+WELL_TOP = 25.6 + GAP  # the rule's foot, then GAP, as at the sides
 CLOSE_PAD = 3.0  # the close button's gap from the rim
 PLAQUE_W, PLAQUE_H, PLAQUE_UP, TABS_X, STEP = 80.0, 34.0, 30.0, 18.0, 80.0
 IDLE_HEAD, CHOSEN_HEAD = 7.0, 2.0
