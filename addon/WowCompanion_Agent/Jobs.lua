@@ -462,9 +462,6 @@ nowKey:SetScript("OnClick", function()
 	local job = sendable()
 	if job then sendNow(job) end
 end)
--- R3: the next offer on the offered button, when more than one waits
-local offerNextKey = CreateFrame("Button", "WCOfferNextKey", UIParent)
-offerNextKey:SetScript("OnClick", function() WC.Offer.Next() end)
 local keyOwner = CreateFrame("Frame", "WCJobsKeys", UIParent)
 local bound = nil
 local elapsed = 0
@@ -527,7 +524,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 			SetOverrideBindingClick(keyOwner, true, "PADLSTICK", WC.Offer.BUTTON, "LeftButton")
 		end
 		if want == "offers" then
-			SetOverrideBindingClick(keyOwner, true, "PADRSTICK", "WCOfferNextKey")
+			SetOverrideBindingClick(keyOwner, true, "PADRSTICK", WC.Offer.NEXT, "LeftButton")
 		end
 		bound = want
 	end

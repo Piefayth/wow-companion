@@ -1,19 +1,34 @@
 -- WowCompanion_Agent: the offered button.
 -- What this needs from Agent.lua comes through WC.Companion; what it offers,
--- the other files reach through WC.Offer: Show() to redraw it, Next() to step
--- to the next offer, Waiting() (its label while a press waits, else nil),
--- Count() (offers waiting), BUTTON (its name, for a binding).
+-- the other files reach through WC.Offer: Show() to redraw it, Waiting() (its
+-- label while a press waits, else nil), Count() (offers waiting), BUTTON and
+-- NEXT (the button and R3's stepper, by name, for bindings).
 
 -- Every conversation's offers wait in one list, newest first, so one agent's
 -- offer never replaces another's and any of them can be pressed from whichever
 -- conversation is in view. The one secure button shows the picked offer,
--- labelled with its conversation; R3 steps to the next (Jobs.lua binds L3 and
--- R3 while the window has focus).
+-- labelled with its conversation; R3 steps to the next, in combat too (Jobs.lua
+-- binds L3 and R3 while the window has focus). In a fight no offer arrives or
+-- leaves (attributes are written out of combat), so the list is fixed then: the
+-- step is a secure snippet that moves the button's macro along macros written
+-- beforehand, and only the label is redrawn by plain code.
 local BUTTON = "WowCompanionDo"
 local offers = {} -- { slot, label, macro }, newest first
 local picked = 1
 local actionButton
 local showOffer
+-- R3's secure half: it holds every offer's macro (macro1..N), `count` and
+-- `picked`, and moves the next onto the button
+local stepper = CreateFrame("Button", "WCOfferNextKey", UIParent, "SecureHandlerClickTemplate")
+stepper:RegisterForClicks("AnyDown")
+stepper:SetAttribute("_onclick", [[
+	local n = self:GetAttribute("count") or 0
+	if n < 2 then return end
+	local p = (self:GetAttribute("picked") or 1) % n + 1
+	self:SetAttribute("picked", p)
+	self:GetFrameRef("button"):SetAttribute("macrotext", self:GetAttribute("macro" .. p))
+	self:CallMethod("Relabel", p)
+]])
 local logFrame = WC.Companion.window
 local remember = WC.Companion.remember
 local function toast(...) return WC.Board.toast(...) end
@@ -38,6 +53,7 @@ local function buildActionButton()
 			return "could not build the button: " .. tostring(button)
 		end
 		actionButton = button
+		stepper:SetFrameRef("button", actionButton)
 		-- at the foot of the conversation list, the list's width, under its buttons
 		local function place(b)
 			b:SetParent(frame)
@@ -91,15 +107,28 @@ showOffer = function()
 			actionButton.offer = nil
 			actionButton:Hide()
 		end
+		stepper:SetAttribute("count", 0)
 		return "nothing"
 	end
 	buildActionButton()
 	if not actionButton then return "nothing" end
-	actionButton.offer = held
 	actionButton:SetAttribute("macrotext", held.macro)
-	actionButton:SetText(WC.Conversations.Label(held.slot) .. ": " .. held.label)
+	stepper:SetAttribute("count", #offers)
+	stepper:SetAttribute("picked", picked)
+	for i, o in ipairs(offers) do stepper:SetAttribute("macro" .. i, o.macro) end
+	stepper:Relabel(picked)
 	actionButton:Show()
 	return "shown"
+end
+
+-- the label (and which offer a press finishes) follows the picked one; plain
+-- code, so it runs in combat too
+function stepper:Relabel(p)
+	picked = p
+	local held = offers[p]
+	if not (held and actionButton) then return end
+	actionButton.offer = held
+	actionButton:SetText(WC.Conversations.Label(held.slot) .. ": " .. held.label)
 end
 
 local function offer(label, macro, slot)
@@ -144,13 +173,8 @@ for kind, fn in pairs(handlers) do WC.Link.Handle(kind, fn) end
 
 WC.Offer = {
 	BUTTON = BUTTON,
+	NEXT = "WCOfferNextKey",
 	Show = showOffer,
-	-- the next offer on the button (out of combat: its attributes are locked in one)
-	Next = function()
-		if InCombatLockdown() or #offers < 2 then return end
-		picked = picked % #offers + 1
-		showOffer()
-	end,
 	Count = function() return #offers end,
 	-- the label of the offer on the button while it waits for a press, or nil
 	Waiting = function()
