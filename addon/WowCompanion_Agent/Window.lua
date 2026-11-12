@@ -41,7 +41,7 @@ local GLOW = { 14, 10.75, 13, 11 }
 -- Our own frame art (tools/make_frame_art.py) on an owner's NineSlice pieces,
 -- on the owner's bounds: every piece rim wide, the top corners and edge top
 -- tall, so a corner and the edge beside it share their pixels on screen.
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-10]]
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-11]]
 local function dress(owner, art, rim, top)
 	local slice = owner.NineSlice
 	if not slice then return end
@@ -75,7 +75,7 @@ local function dress(owner, art, rim, top)
 	p.RightEdge:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "TOPRIGHT")
 end
 
--- The wells' border, A, C or E while the player chooses between them (2026-11-12,
+-- The wells' border, A, C, D or E while the player chooses between them (2026-11-12,
 -- tools/make_frame_art.py's WELLS); WC.Window.WellStyle(letter) redresses them
 -- all at once and keeps the choice.
 local wells = {}

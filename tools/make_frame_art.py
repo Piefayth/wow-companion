@@ -30,7 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 
-VERSION = 10
+VERSION = 11
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -286,13 +286,15 @@ def carve(d, wall, k=K, lip=False, rim=False):
     return np.stack([ndimage.gaussian_filter(pre[..., i], k * 0.25) for i in range(4)], -1)
 
 
-# The wells' border, three ways while the player chooses (Window.lua's
+# The wells' border, four ways while the player chooses (Window.lua's
 # WC.Window.WellStyle): A the dark wall with a bronze lip, C the dark wall
 # alone, its light evened (the top a shade lighter, the bottom a shade darker
-# than DARK gives), E the dark wall framed by a bar of the window's rim.
+# than DARK gives), D the grey wall the wells had before, E the dark wall
+# framed by a bar of the window's rim.
 DARK = (np.array((7, 7, 9.0)), np.array((20, 21, 24.0)), np.array((46, 47, 52.0)))
 EVEN = (np.array((13, 13, 16.0)), np.array((22, 23, 26.0)), np.array((36, 37, 41.0)))
-WELLS = {"A": dict(wall=DARK, lip=True), "C": dict(wall=EVEN), "E": dict(wall=DARK, rim=True)}
+GREY = (np.array((11, 11, 13.0)), np.array((32, 33, 37.0)), np.array((70, 71, 76.0)))
+WELLS = {"A": dict(wall=DARK, lip=True), "C": dict(wall=EVEN), "D": dict(wall=GREY), "E": dict(wall=DARK, rim=True)}
 
 
 def inset(style):
