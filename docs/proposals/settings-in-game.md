@@ -80,11 +80,12 @@ a toggle.
 - **The mic list on demand:** opening the mic row draws `WCCMD <nonce> mics`;
   the companion answers with one message from `voice::microphones()`. `status`
   says which engines are installed (streaming only with `stream_model`).
-- **The setup window loses these rows** (and its button learning): a second
-  writer of these keys is what clobbered settings.toml on 2026-11-11 at 20:39
-  (95bafad). It keeps the AddOns path, the pad, the models and its mic test.
-  First run uses the defaults above, the default input, rumble and the engine
-  that is downloaded.
+- **The setup window keeps its mic and engine rows and loses its button
+  learning.** It is one more editor of the same file, not a second truth: since
+  95bafad it writes only the fields it changed and follows the file when
+  something else writes it (the stale snapshot that clobbered settings.toml on
+  2026-11-11 at 20:39 cannot recur). A first run needs them before the game has
+  ever loaded. Its talk-button row goes: the button is set on our page.
 
 ## The talking indicator
 
@@ -97,14 +98,51 @@ once in Lua: today it is in Agent.lua (last pulled) and again in Pad.lua's
 `WowCompanion_PadSlot` (a fixed order, used by Offer.lua and ChatWheel.lua),
 which can disagree with each other and with the companion.
 
+## Protocol
+
+The game to the companion: command strips (`WCCMD <nonce> ...`, as Stop and
+cancel are drawn; a new nonce for every draw).
+
+| strip | meaning | the companion answers |
+|---|---|---|
+| `bind <key> start` | the row is waiting for a press; `key` is `talk`, `l1`, `l2`, `r1` or `r2` | collects every button that goes down from now, ignores the talk button meanwhile, and sends `status` with `binding = "<key>"`; only then does the row say "press a button". Ends by itself after 30 s. |
+| `bind <key> <PADNAME>` | the press the row caught, by WoW's name | exactly one button went down since `start`: writes `<key> = "<byte>:<mask> <PADNAME>"` and restarts; the new copy's `status` carries it. Otherwise `status` with `bind = { key = "<key>", error = "<why>" }`. |
+| `bind <key> cancel` | the row left without a press | stops collecting |
+| `set <key> <value>` | `feedback` (`rumble`, `beep`, `both`), `speech` (`whisper`, `streaming`), `mic` (a device name, the rest of the line) | writes it if it differs and restarts; a value it refuses gets `status` with `set = { key = "<key>", error = "<why>" }` |
+| `mics` | the mic row opened | `{ kind = "mics", mics = { "<name>", ... } }`, the inputs Windows lists now |
+
+The companion to the game: `status`, sent when the companion starts, at every
+new session (a reload), when the mic comes or goes, and with the answers above:
+
+```lua
+{ kind = "status", mic = true,
+  settings = { talk = "PADSOCIAL", l1 = "PADLSHOULDER", l2 = "PADLTRIGGER",
+               r1 = "PADRSHOULDER", r2 = "PADRTRIGGER",
+               feedback = "rumble", speech = "streaming",
+               mic = "Headset (AirPods Max Hands-Free AG Audio)",
+               engines = { "whisper", "streaming" } },
+  binding = "talk",                          -- only while collecting
+  bind = { key = "talk", error = "..." },    -- only after a failed bind
+  set = { key = "mic", error = "..." } }     -- only after a refused set
+```
+
+A button key the companion has no button for is absent from `settings`
+(another pad before it is pressed). `engines` lists what is installed: the
+Whisper model file, the streaming model's folder. A restart means a few seconds
+with no `status`; the row shows "applying" until `settings` carries the value.
+
 ## Work
 
-- Rust: the `bind` and `set` verbs in `requests.rs` `watch_commands`, the button
-  bits from the descriptor and the two layouts (crates/pad), `talk`/chord keys
-  stored as bit plus name, `status` carrying the applied settings, the `mics`
-  verb, the setup window's rows removed.
+- Rust: the `bind`, `set` and `mics` verbs in `requests.rs` `watch_commands`;
+  crates/pad gives the bits that are buttons (the descriptor; the DualSense's
+  report 0x31 turned into its 0x01 layout; the Edge's Fn and back buttons; the
+  XInput word) and the defaults for the two layouts; `talk` and the chord keys
+  stored as bit plus name; `status` carrying the settings; the setup window's
+  button learning and talk row removed, and `learn` with them.
 - Lua: the rows (`WC.SettingsPage.Add`), the bind and set strips, writing WoW's
-  binding from `status`, the Bindings.xml entry removed, one slot rule.
+  tap binding from `status` (a `SetBindingClick` on a button of ours, both edges,
+  out of combat, clearing the old key only when it still holds ours), the
+  `WOWCOMPANION_WINDOW` Bindings.xml entry removed, one slot rule.
 - Before moving the rows: check that a `set` or `bind` strip drawn while a Stop
   or cancel strip is pending queues behind it (the strip shows one payload at a
   time).
