@@ -30,7 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 
-VERSION = 9
+VERSION = 10
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -239,64 +239,60 @@ def close(state):
 # --- the inset ------------------------------------------------------------------
 
 INSET = 4.0  # the inset's corners' side and its edges' width
-STONE = (np.array((11, 11, 13.0)), np.array((32, 33, 37.0)), np.array((70, 71, 76.0)))  # the wall: shadow, mid, lit; the slate's grey, barely cool, the lit walls quiet
 LINE_IN = np.array((5, 4, 3.0))  # the creases at the wall's top and foot
 WALL_FOOT = 3.3  # where the wall meets the floor, its contact shadow on to INSET
 
 
-def carve(d, k=K, wall=STONE, lip=False, sunk=False, rim=False):
+def carve(d, wall, k=K, lip=False, rim=False):
     """A well's border painted on a depth field d (units into the cavity from
     its edge, negative outside). The wall: opaque stone carved down from the
     panel, a dark crease where the panel breaks, a rounded, worn wall lit by
     the frame's light (walls facing away fall dark, the others catch it), a
     dark crease at its foot, a short contact shadow onto the floor. lip: a
-    bead of the window's bronze along the wall's top. sunk: no wall at all,
-    the floor running to the edge under a soft shadow cast in from it. The
-    whole is blurred a quarter unit, so no line is razor sharp."""
+    bead of the window's bronze along the wall's top. rim: a bar of the
+    window's rim along it. The whole is blurred a quarter unit, so no line is
+    razor sharp."""
     lay = Layers(d.shape)
     inside = (d >= 0).astype(float)
-    if sunk:
-        lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.12) / 0.25, 0, 1) * inside)
-        lay.over(np.zeros(3), np.clip(1 - d / INSET, 0, 1) ** 1.6 * 0.8 * inside)
-    else:
-        top = 0.35
-        # the wall's height: the panel's level at its top, the floor's at its
-        # foot, rounded over at the lip as worn stone is
-        t = np.clip((d - top) / (WALL_FOOT - top), 0, 1)
-        hgt = 1.6 * (1 - t) ** 1.6
-        col = shade(ndimage.gaussian_filter(hgt, k * 0.15), wall, k, gloss=0.08, power=10)
-        lay.over(col, ((d >= 0) & (d < WALL_FOOT + 0.2)).astype(float))
-        lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.12) / 0.22, 0, 1) * inside * 0.9)
-        if lip:
-            # a rounded bead a unit wide on the wall's top, a crease inside it
-            u = (d - 0.75) / 0.6
-            bh = ndimage.gaussian_filter(bead(np.clip(u, -1, 1)) * (np.abs(u) < 1), k * 0.1)
-            lay.over(shade(bh, BRONZE, k, gloss=0.15, power=12), np.clip((1 - np.abs(u)) / 0.25, 0, 1))
-            lay.over(LINE_IN, np.clip(1 - np.abs(d - 1.45) / 0.2, 0, 1) * 0.7)
-        if rim:
-            # a bar of the frame's own make at the well's edge: its rim's
-            # shoulders and brushed bronze, a dark line outside and a dark lip
-            # down into the wall, so the well is framed as the window is
-            w = 1.7
-            u = np.clip(d / w, 0, 1)
-            sh = np.clip(np.minimum(d, w - d) / 0.5, 0, 1)
-            bh = ndimage.gaussian_filter(((1 - (1 - sh) ** 2) * 0.9 + 0.15 * bead(2 * u - 1)) * (d < w), k * 0.08)
-            col = shade(bh, BRONZE, k, gloss=0.22, power=14) * (1 + 0.09 * brushed(d * 8))[..., None]
-            lay.over(col, ((d >= 0) & (d < w)).astype(float))
-            lay.over(LINE, np.clip(1 - d / 0.25, 0, 1) * inside * 0.9)
-            lay.over(LINE, np.clip(1 - np.abs(d - w) / 0.3, 0, 1) * 0.9)
-        lay.over(LINE_IN, np.clip(1 - np.abs(d - WALL_FOOT) / 0.3, 0, 1) * 0.9)
-        lay.over(np.zeros(3), np.where(d > WALL_FOOT, np.clip(1 - (d - WALL_FOOT) / (INSET - WALL_FOOT), 0, 1) * 0.45, 0))
+    top = 0.35
+    # the wall's height: the panel's level at its top, the floor's at its
+    # foot, rounded over at the lip as worn stone is
+    t = np.clip((d - top) / (WALL_FOOT - top), 0, 1)
+    hgt = 1.6 * (1 - t) ** 1.6
+    col = shade(ndimage.gaussian_filter(hgt, k * 0.15), wall, k, gloss=0.08, power=10)
+    lay.over(col, ((d >= 0) & (d < WALL_FOOT + 0.2)).astype(float))
+    lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.12) / 0.22, 0, 1) * inside * 0.9)
+    if lip:
+        # a rounded bead a unit wide on the wall's top, a crease inside it
+        u = (d - 0.75) / 0.6
+        bh = ndimage.gaussian_filter(bead(np.clip(u, -1, 1)) * (np.abs(u) < 1), k * 0.1)
+        lay.over(shade(bh, BRONZE, k, gloss=0.15, power=12), np.clip((1 - np.abs(u)) / 0.25, 0, 1))
+        lay.over(LINE_IN, np.clip(1 - np.abs(d - 1.45) / 0.2, 0, 1) * 0.7)
+    if rim:
+        # a bar of the frame's own make at the well's edge: its rim's
+        # shoulders and brushed bronze, a dark line outside and a dark lip
+        # down into the wall, so the well is framed as the window is
+        w = 1.7
+        u = np.clip(d / w, 0, 1)
+        sh = np.clip(np.minimum(d, w - d) / 0.5, 0, 1)
+        bh = ndimage.gaussian_filter(((1 - (1 - sh) ** 2) * 0.9 + 0.15 * bead(2 * u - 1)) * (d < w), k * 0.08)
+        col = shade(bh, BRONZE, k, gloss=0.22, power=14) * (1 + 0.09 * brushed(d * 8))[..., None]
+        lay.over(col, ((d >= 0) & (d < w)).astype(float))
+        lay.over(LINE, np.clip(1 - d / 0.25, 0, 1) * inside * 0.9)
+        lay.over(LINE, np.clip(1 - np.abs(d - w) / 0.3, 0, 1) * 0.9)
+    lay.over(LINE_IN, np.clip(1 - np.abs(d - WALL_FOOT) / 0.3, 0, 1) * 0.9)
+    lay.over(np.zeros(3), np.where(d > WALL_FOOT, np.clip(1 - (d - WALL_FOOT) / (INSET - WALL_FOOT), 0, 1) * 0.45, 0))
     pre = lay.pre()
     return np.stack([ndimage.gaussian_filter(pre[..., i], k * 0.25) for i in range(4)], -1)
 
 
-# The wells' border, four ways while the player chooses (Window.lua's
-# WC.Window.WellStyle): A the dark wall with a bronze lip, B no wall, sunk
-# under a soft shadow, C the dark wall alone, D the grey wall as it was, E the
-# dark wall framed by a bar of the window's rim.
+# The wells' border, three ways while the player chooses (Window.lua's
+# WC.Window.WellStyle): A the dark wall with a bronze lip, C the dark wall
+# alone, its light evened (the top a shade lighter, the bottom a shade darker
+# than DARK gives), E the dark wall framed by a bar of the window's rim.
 DARK = (np.array((7, 7, 9.0)), np.array((20, 21, 24.0)), np.array((46, 47, 52.0)))
-WELLS = {"A": dict(wall=DARK, lip=True), "B": dict(sunk=True), "C": dict(wall=DARK), "D": dict(), "E": dict(wall=DARK, rim=True)}
+EVEN = (np.array((13, 13, 16.0)), np.array((22, 23, 26.0)), np.array((36, 37, 41.0)))
+WELLS = {"A": dict(wall=DARK, lip=True), "C": dict(wall=EVEN), "E": dict(wall=DARK, rim=True)}
 
 
 def inset(style):
