@@ -150,7 +150,10 @@ local function groove(c, design, lane, ends)
 		shaft:SetPoint("TOPLEFT", span[1], "BOTTOMLEFT")
 		shaft:SetPoint("BOTTOMRIGHT", span[2], "TOPRIGHT")
 	end
-	return caps.Up, caps.Down, thumb, 32
+	-- the thumb travels to the groove's own rounded ends, which lie inside the
+	-- caps: the groove's floor reaches 21 of each cap's 32 (measured in the art,
+	-- rows 84..127 of 128), so the thumb meets them flush at either end
+	return caps.Up, caps.Down, thumb, 21
 end
 
 -- each: a name, its builder and its art. The spearhead's divider is Blizzard's
