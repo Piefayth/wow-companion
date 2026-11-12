@@ -4,8 +4,12 @@
 --
 -- The glow: the window's FrameGlow (ButtonFrameTemplate's child, shown by
 -- Blizzard while the window has the controller's focus) keeps its show and
--- hide; its own texture is hidden and ours drawn in its place, nine pieces cut
--- from one texture so the corners keep their shape at any window size.
+-- hide; its own texture is hidden and ours drawn in its place, so ours shows
+-- and hides with it. Nine pieces cut from one texture so the corners keep
+-- their shape at any window size, the top edge in two runs either side of
+-- the chosen tab's glow (Focus-Tab): the line runs along the rim, up and
+-- over the chosen plaque and back down as one outline. The glow lies a level
+-- under the tabs (Window.lua), so the other plaques stand in front of it.
 --
 -- The pointer is SmartNavigation's one shared texture. Its art (not Lua
 -- state) is swapped while it points into our window and put back as it was
@@ -19,49 +23,60 @@ local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-1]]
 local TEX, MARGIN, INSET = 128, 48, 32
 local UNIT = 2 * 4 / 3 -- texels a unit
 local M, OUT = MARGIN / UNIT, INSET / UNIT -- 18 and 12 units
+-- the chosen tab's glow, in units: set TAB_LEFT left of its plaque's piece
+-- and TAB_UP above it; its foot is the top edge's, M - OUT under the rim
+local TAB_W, TAB_H, TAB_LEFT, TAB_UP = 96, 48, 8, 12
 
--- the glow's style while the player picks one (A to E, or "" for the first):
--- a letter in WowCompanionAgentDB.focusGlow, switched live by WC.FocusArt.Style
-local function glowPath()
-	local pick = WowCompanionAgentDB and WowCompanionAgentDB.focusGlow or ""
-	return ART:format(pick ~= "" and ("Focus-Glow-" .. pick) or "Focus-Glow")
-end
+local tabGlow -- the chosen tab's glow, once the window is dressed
 
-local function glow(frame)
+-- frame: the window, its focus glow dressed once; plaque: its chosen tab's
+-- plaque, which the glow follows
+local function glow(frame, plaque)
 	local holder = frame.FrameGlow
-	if not holder or holder.wcPieces then return end
-	if holder.GlowTexture then holder.GlowTexture:SetAlpha(0) end
-	local path = glowPath()
-	local a, b = MARGIN / TEX, (TEX - MARGIN) / TEX
-	local cols = { { 0, a }, { a, b }, { b, 1 } }
-	local pieces = {}
-	for row = 1, 3 do
-		for col = 1, 3 do
-			if not (row == 2 and col == 2) then
-				local t = holder:CreateTexture(nil, "BACKGROUND", nil, 1)
-				t:SetTexture(path)
-				t:SetTexCoord(cols[col][1], cols[col][2], cols[row][1], cols[row][2])
-				pieces[#pieces + 1] = { t = t, row = row, col = col }
+	if not holder then return end
+	if not tabGlow then
+		if holder.GlowTexture then holder.GlowTexture:SetAlpha(0) end
+		local a, b = MARGIN / TEX, (TEX - MARGIN) / TEX
+		local cols = { { 0, a }, { a, b }, { b, 1 } }
+		local function piece(row, col)
+			local t = holder:CreateTexture(nil, "BACKGROUND", nil, 1)
+			t:SetTexture(ART:format("Focus-Glow"))
+			t:SetTexCoord(cols[col][1], cols[col][2], cols[row][1], cols[row][2])
+			return t
+		end
+		-- the box: the frame's bounds (the rim's outer edge) set out by OUT
+		local function x(col, side) -- side 1 = left edge of the piece, 2 = right
+			if col == 1 then return side == 1 and { "LEFT", -OUT } or { "LEFT", M - OUT } end
+			if col == 2 then return side == 1 and { "LEFT", M - OUT } or { "RIGHT", OUT - M } end
+			return side == 1 and { "RIGHT", OUT - M } or { "RIGHT", OUT }
+		end
+		local function y(row, side) -- side 1 = top, 2 = bottom
+			if row == 1 then return side == 1 and { "TOP", OUT } or { "TOP", OUT - M } end
+			if row == 2 then return side == 1 and { "TOP", OUT - M } or { "BOTTOM", M - OUT } end
+			return side == 1 and { "BOTTOM", M - OUT } or { "BOTTOM", -OUT }
+		end
+		for row = 1, 3 do
+			for col = 1, 3 do
+				if not (row ~= 3 and col == 2) then
+					local t = piece(row, col)
+					local l, r, tp, bt = x(col, 1), x(col, 2), y(row, 1), y(row, 2)
+					t:SetPoint("TOPLEFT", frame, tp[1] .. l[1], l[2], tp[2])
+					t:SetPoint("BOTTOMRIGHT", frame, bt[1] .. r[1], r[2], bt[2])
+				end
 			end
 		end
+		tabGlow = holder:CreateTexture(nil, "BACKGROUND", nil, 1)
+		tabGlow:SetTexture(ART:format("Focus-Tab"))
+		tabGlow:SetSize(TAB_W, TAB_H)
+		-- the top edge: a run from each top corner to the tab's glow
+		local left, right = piece(1, 2), piece(1, 2)
+		left:SetPoint("TOPLEFT", frame, "TOPLEFT", M - OUT, OUT)
+		left:SetPoint("BOTTOMRIGHT", tabGlow, "BOTTOMLEFT")
+		right:SetPoint("TOPRIGHT", frame, "TOPRIGHT", OUT - M, OUT)
+		right:SetPoint("BOTTOMLEFT", tabGlow, "BOTTOMRIGHT")
 	end
-	-- the box: the frame's bounds (the rim's outer edge) set out by OUT
-	local function x(col, side) -- side 1 = left edge of the piece, 2 = right
-		if col == 1 then return side == 1 and { "LEFT", -OUT } or { "LEFT", M - OUT } end
-		if col == 2 then return side == 1 and { "LEFT", M - OUT } or { "RIGHT", OUT - M } end
-		return side == 1 and { "RIGHT", OUT - M } or { "RIGHT", OUT }
-	end
-	local function y(row, side) -- side 1 = top, 2 = bottom
-		if row == 1 then return side == 1 and { "TOP", OUT } or { "TOP", OUT - M } end
-		if row == 2 then return side == 1 and { "TOP", OUT - M } or { "BOTTOM", M - OUT } end
-		return side == 1 and { "BOTTOM", M - OUT } or { "BOTTOM", -OUT }
-	end
-	for _, p in ipairs(pieces) do
-		local l, r, tp, bt = x(p.col, 1), x(p.col, 2), y(p.row, 1), y(p.row, 2)
-		p.t:SetPoint("TOPLEFT", frame, tp[1] .. l[1], l[2], tp[2])
-		p.t:SetPoint("BOTTOMRIGHT", frame, bt[1] .. r[1], r[2], bt[2])
-	end
-	holder.wcPieces = pieces
+	tabGlow:ClearAllPoints()
+	tabGlow:SetPoint("TOPLEFT", plaque, "TOPLEFT", -TAB_LEFT, TAB_UP)
 end
 
 -- the pointer
@@ -88,7 +103,6 @@ local function sync()
 	local tex, nav = cursor()
 	if not tex then return end
 	if ours(nav.currentButton) then
-		pcall(glow, _G.WowCompanionLog)
 		if not saved then
 			local r, g, b, a = tex:GetVertexColor()
 			saved = { tex:GetAtlas(), r, g, b, a }
@@ -120,17 +134,7 @@ end
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
-events:SetScript("OnEvent", function()
-	pcall(hook)
-	if _G.WowCompanionLog then pcall(glow, _G.WowCompanionLog) end
-end)
+events:SetScript("OnEvent", function() pcall(hook) end)
 
-WC.FocusArt = {
-	Dress = glow,
-	-- "A".."E", or "" for the first glow; the window's glow changes at once
-	Style = function(pick)
-		WowCompanionAgentDB.focusGlow = pick or ""
-		local holder = _G.WowCompanionLog and _G.WowCompanionLog.FrameGlow
-		for _, p in ipairs(holder and holder.wcPieces or {}) do p.t:SetTexture(glowPath()) end
-	end,
-}
+-- Window.lua dresses the window's glow with it, and moves it with the chosen tab
+WC.FocusArt = { Dress = glow }

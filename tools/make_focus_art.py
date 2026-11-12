@@ -4,11 +4,9 @@ the chosen row. Drawn here as vector shapes, many samples to a pixel and
 averaged down, never Blizzard's art.
 
     python tools/make_focus_art.py   writes addon/WowCompanion_Agent/Art/Focus-Glow-<v>.tga,
-                                     Focus-Glow-<style>-<v>.tga (STYLES, alternatives on trial),
-                                     Focus-Pointer-<v>.tga, target/tmp/focus-mock-*.png (both
-                                     pasted into the shot at true size, beside Blizzard's) and
-                                     target/tmp/glow-<style>-1x.png and glow-sheet.png (each
-                                     glow round the window on grass and on darkened ground)
+                                     Focus-Tab-<v>.tga, Focus-Pointer-<v>.tga and
+                                     target/tmp/focus-mock-*.png (the glow and pointer
+                                     pasted into the shot at true size, beside Blizzard's)
 
 Both are drawn TX texels to a screen pixel at the window's scale in the shot
 (1.33 px a unit: its rim, RIM units, is 8 px there).
@@ -17,8 +15,14 @@ The glow is a 9-slice: GLOW_SIZE square, every margin GLOW_MARGIN texels, its
 edges the same all along, its centre empty. The rim's outer edge lies
 GLOW_INSET texels in from the texture's edge, its corners cut by the rim's
 chamfer; nothing is drawn inside it, so it may sit over the frame or under it.
-A bright line hugs the rim and a warm bronze halo fades out from it. STYLES
-are other looks in the same geometry, so any may replace it with no layout change.
+A bright line hugs the rim and a warm bronze halo fades out from it (halo()).
+
+The chosen tab's glow, Focus-Tab, is the same halo round the rim's top and
+the chosen plaque (make_tab_art.py) as one outline: up the plaque's side,
+over its head and back down to the rim. TAB_GLOW units, set TAB_GLOW_LEFT left
+of the plaque's piece and TAB_GLOW_UP above it, at the 9-slice's texels a
+unit; its foot is the top edge piece's, so FocusArt.lua cuts the rim's top
+edge in two either side of it and the line runs on through.
 
 The pointer points right, its tip at POINTER_TIP (texels): a faceted bronze
 blade lit from the top left, a dark outline and a soft shadow so it reads on the
@@ -34,6 +38,7 @@ from PIL import Image, ImageDraw
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 from make_frame_art import RIM, CHAMFER, LINE, octagon_depth
+import make_tab_art as tabs
 
 VERSION = 1
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -59,144 +64,57 @@ def smooth(t):
     return t * t * (3 - 2 * t)
 
 
+def halo(inside):
+    """The glow round `inside` (supersampled, K a screen px): the line and the
+    halo by distance out from it, nothing inside."""
+    d = ndimage.distance_transform_edt(~inside) / K  # px out
+    line = np.exp(-((np.maximum(d - 0.5, 0)) / 1.1) ** 2)  # about 1.5 px, its peak just off the edge
+    fade = (1 - smooth((d - 1.5) / (GLOW_REACH - 1.5))) ** 1.3
+    a = np.clip(line + fade * 0.92, 0, 1)
+    tcol = np.clip(d / GLOW_REACH, 0, 1)[..., None]
+    halo_c = HALO + (EMBER - HALO) * tcol
+    w = (line / np.maximum(a, 1e-6))[..., None]
+    rgb = halo_c + (CREAM - halo_c) * np.clip(w, 0, 1)
+    return rgb, np.where(inside, 0, a)
+
+
 def glow():
     n = GLOW_SIZE / TX  # screen px
     yy, xx = np.mgrid[0:int(n * K), 0:int(n * K)]
     xx, yy = (xx + 0.5) / K, (yy + 0.5) / K
     e = GLOW_INSET / TX
-    c = CHAMFER * PX_UNIT
-    inside = octagon_depth(xx, yy, e, e, n - e, n - e, c) >= 0
-    d = ndimage.distance_transform_edt(~inside) / K  # px out from the rim
-    line = np.exp(-((np.maximum(d - 0.5, 0)) / 1.1) ** 2)  # about 1.5 px, its peak just off the rim
-    halo = (1 - smooth((d - 1.5) / (GLOW_REACH - 1.5))) ** 1.3
-    a = np.clip(line + halo * 0.92, 0, 1)
-    tcol = np.clip(d / GLOW_REACH, 0, 1)[..., None]
-    halo_c = HALO + (EMBER - HALO) * tcol
-    w = (line / np.maximum(a, 1e-6))[..., None]
-    rgb = halo_c + (CREAM - halo_c) * np.clip(w, 0, 1)
-    a = np.where(inside, 0, a)
+    rgb, a = halo(octagon_depth(xx, yy, e, e, n - e, n - e, CHAMFER * PX_UNIT) >= 0)
     return down(rgb, a, GLOW_SIZE)
 
 
-# --- the glow's alternatives: Focus-Glow-<style>-<v>.tga, the same 9-slice ----------
-#
-# Each is drawn from the mitered distance out from the rim (its offsets keep the
-# rim's 45-degree corners) and nothing inside it, so any may stand in for the
-# glow with no change of layout.
-
-GILT = (np.array((74, 54, 34.0)), np.array((156, 124, 86.0)), np.array((230, 204, 160.0)))  # washed bronze, a step above the rim's
-SLATE_NAVY = np.array((30, 36, 52.0))
-EDGE_LIGHT = np.array((246, 230, 196.0))
-COOL = np.array((150, 172, 206.0))
+TAB_GLOW = (96, 48)  # units: 256 x 128 texels
+TAB_GLOW_LEFT, TAB_GLOW_UP = 8, 12  # from the plaque piece's top left
+UNIT_TX = GLOW_MARGIN / 18  # the 9-slice's texels a unit (FocusArt.lua's M is 18 units)
 
 
-def rim_field():
-    """Supersampled x, y (screen px) and the mitered distance out from the rim."""
-    n = GLOW_SIZE / TX
-    yy, xx = np.mgrid[0:int(n * K), 0:int(n * K)]
-    xx, yy = (xx + 0.5) / K, (yy + 0.5) / K
-    e = GLOW_INSET / TX
-    return xx, yy, -octagon_depth(xx, yy, e, e, n - e, n - e, CHAMFER * PX_UNIT)
+def tab_glow():
+    w, h = TAB_GLOW
+    k = PX_UNIT * K  # samples a unit
+    yy, xx = np.mgrid[0:round(h * k), 0:round(w * k)]
+    # in the plaque piece's units
+    xx, yy = (xx + 0.5) / k - TAB_GLOW_LEFT, (yy + 0.5) / k - TAB_GLOW_UP
+    m = Image.new("L", (xx.shape[1], xx.shape[0]), 0)
+    ImageDraw.Draw(m).polygon([((x + TAB_GLOW_LEFT) * k, (y + TAB_GLOW_UP) * k)
+                               for x, y in tabs.outline(tabs.HEADS["Chosen"])], fill=255)
+    plaque = ndimage.distance_transform_edt(np.asarray(m) < 128) / k <= tabs.EDGE
+    rgb, a = halo(plaque | (yy >= tabs.PLAQUE_UP))
+    f = round(k / UNIT_TX)  # samples a texel
+    return down(rgb, a, (round(w * UNIT_TX), round(h * UNIT_TX)), f)
 
 
-def between(dm, a, b):
-    return ((dm >= a) & (dm < b)).astype(float)
-
-
-def bevel(dm, a, b, slope=1.0, cap=1.2):
-    """A raised band from a to b px out: its height, sloped at each side."""
-    return ndimage.gaussian_filter(np.clip(np.minimum(dm - a, b - dm) * slope, 0, cap), K * 0.15)
-
-
-def facing(dm):
-    """How much each point's outward side faces the light, 0 to 1."""
-    gy, gx = np.gradient(dm)
-    g = np.hypot(gx, gy) + 1e-9
-    return np.clip((gx * -LIGHT[0] + gy * -LIGHT[1]) / g / np.hypot(LIGHT[0], LIGHT[1]) * 0.5 + 0.5, 0, 1)
-
-
-def style_inlay():
-    """A second raised bronze band outside the rim, a dark gap between."""
-    _, _, dm = rim_field()
-    rgb, a = np.zeros(dm.shape + (3,)), np.zeros(dm.shape)
-    rgb, a = over(rgb, a, LINE, between(dm, 0, 1.3) * 0.9 + between(dm, 4.8, 5.8) * 0.85)
-    rgb, a = over(rgb, a, np.zeros(3), between(dm, 5.8, 7.3) * 0.3)
-    return over(rgb, a, lit(bevel(dm, 1.3, 4.8), GILT, gloss=0.5), between(dm, 1.3, 4.8))
-
-
-def style_lit_edge():
-    """No halo: a crisp warm line on the rim's edge, strongest facing the light,
-    and a faint cool bloom past it."""
-    _, _, dm = rim_field()
-    f = facing(dm)
-    rgb, a = np.zeros(dm.shape + (3,)), np.zeros(dm.shape)
-    t = np.clip((dm - 1.2) / 2.8, 0, 1)
-    rgb, a = over(rgb, a, COOL, (dm >= 1.2) * (1 - t) ** 2 * 0.6)
-    return over(rgb, a, EDGE_LIGHT, between(dm, 0, 1.2) * (0.7 + 0.3 * f))
-
-
-BRACKET = (5.0, 4.0, 3.0)  # px: the bracket's midline out from the rim, its width, its own small chamfer
-BRACKET_END = 23.0  # px from the texture's edge: the arms end inside the corner pieces (24)
-
-
-def style_brackets():
-    """Raised bronze L brackets standing off the four corners only, a lozenge
-    in the hollow between each and the rim's chamfer; the edges clear."""
-    xx, yy, dm = rim_field()
-    n, e = GLOW_SIZE / TX, GLOW_INSET / TX
-    u, v = np.minimum(xx, n - xx), np.minimum(yy, n - yy)  # from the nearest corner, all four alike
-    off, w, cut = BRACKET
-    db = np.abs(octagon_depth(xx, yy, e - off, e - off, n - e + off, n - e + off, cut))  # from its midline
-    reach = np.maximum(u, v) + db  # the arms' ends cut to a point
-    arms = (db < w / 2) * (reach < BRACKET_END)
-    edge = (db < w / 2 + 0.9) * (reach < BRACKET_END + 1.0)
-    # the lozenge: midway between the bracket's inner corner and the rim's chamfer
-    inner = 2 * (e - off + w / 2) + cut - (2 - np.sqrt(2)) * w / 2
-    mid = (inner + 2 * e + CHAMFER * PX_UNIT) / 4
-    l1 = np.abs(u - mid) + np.abs(v - mid)
-    stud, stud_edge = (l1 < 3.0).astype(float), (l1 < 4.0).astype(float)
-    rgb, a = np.zeros(dm.shape + (3,)), np.zeros(dm.shape)
-    rgb, a = over(rgb, a, LINE, np.maximum(edge, stud_edge) * 0.9)
-    hgt = np.maximum(ndimage.gaussian_filter(np.clip(w / 2 - db, 0, 1.2), K * 0.15) * arms,
-                     ndimage.gaussian_filter(np.clip(3.0 - l1, 0, 3.0) * 0.7, K * 0.15) * stud)
-    return over(rgb, a, lit(hgt, GILT, gloss=0.6), np.maximum(arms, stud))
-
-
-def style_tight():
-    """A short dense warm glow, a brighter core on the rim, gone by 6 px."""
-    _, _, dm = rim_field()
-    d = np.maximum(dm, 0)
-    core = np.exp(-(np.maximum(d - 0.6, 0) / 0.8) ** 2)
-    halo = np.exp(-(d / 3.0) ** 2) * (1 - smooth((d - 4.5) / 2.0))
-    al = np.clip(core + halo * 0.95, 0, 1)
-    warm = np.array((206, 174, 132.0)) + (np.array((168, 136, 98.0)) - (206, 174, 132.0)) * np.clip(d / 6, 0, 1)[..., None]
-    w = np.clip(core / np.maximum(al, 1e-6), 0, 1)[..., None]
-    return warm + (np.array((240, 224, 192.0)) - warm) * w, np.where(dm >= 0, al, 0)
-
-
-def style_mat():
-    """A navy slate mat round the rim between two fine bronze fillets, as a
-    picture is mounted."""
-    _, _, dm = rim_field()
-    rgb, a = np.zeros(dm.shape + (3,)), np.zeros(dm.shape)
-    rgb, a = over(rgb, a, LINE, between(dm, 0, 7.6) * 0.95)
-    shade = (0.85 + 0.3 * facing(dm))[..., None]  # the mat sits a little low: lit on its far side
-    rgb, a = over(rgb, a, SLATE_NAVY * (2 - shade), between(dm, 2.0, 5.2))
-    fil = between(dm, 0.6, 2.0) + between(dm, 5.2, 6.8)
-    hgt = bevel(dm, 0.6, 2.0, cap=0.7) + bevel(dm, 5.2, 6.8, cap=0.8)
-    return over(rgb, a, lit(hgt, GILT, gloss=0.5), fil)
-
-
-STYLES = {"A": ("inlay", style_inlay), "B": ("lit edge", style_lit_edge), "C": ("brackets", style_brackets),
-          "D": ("tight glow", style_tight), "E": ("navy mat", style_mat)}
-
-
-def down(rgb, a, size):
-    """Supersampled colour and alpha averaged down to size x size texels."""
-    f = rgb.shape[0] // size
-    pre = (rgb * a[..., None]).reshape(size, f, size, f, 3).mean((1, 3))
-    al = a.reshape(size, f, size, f).mean((1, 3))
-    out = np.zeros((size, size, 4))
+def down(rgb, a, size, f=None):
+    """Supersampled colour and alpha averaged down to size texels (a side, or
+    w, h), f samples a texel."""
+    w, h = (size, size) if np.isscalar(size) else size
+    f = f or rgb.shape[0] // h
+    pre = (rgb * a[..., None]).reshape(h, f, w, f, 3).mean((1, 3))
+    al = a.reshape(h, f, w, f).mean((1, 3))
+    out = np.zeros((h, w, 4))
     out[..., :3] = np.where(al[..., None] > 0, pre / np.maximum(al[..., None], 1e-6), 0)
     out[..., 3] = al * 255
     return np.clip(out, 0, 255)
@@ -362,61 +280,14 @@ def mocks(glow_tex, ptr_tex):
     return paths
 
 
-def grounds():
-    """The cleaned shot on its own bright grass, and with the ground round the
-    window darkened, as a night or a cave puts it."""
-    base = clean(np.asarray(Image.open(SHOT).convert("RGB")))
-    x0, y0, x1, y1 = RIM_BOX
-    dark = base.copy()
-    out = np.ones(dark.shape[:2], bool)
-    out[y0:y1, x0:x1] = False
-    dark[out] = (dark[out] * 0.22).astype(np.uint8)
-    return base, dark
-
-
-def column(ims, gap=4):
-    out = Image.new("RGB", (max(i.width for i in ims), sum(i.height for i in ims) + gap * (len(ims) - 1)), (52, 50, 46))
-    y = 0
-    for i in ims:
-        out.paste(i, (0, y))
-        y += i.height + gap
-    return out
-
-
-def style_mocks(styles):
-    """Each style round the window at true size, on grass and dark ground: its
-    top-left corner, a stretch of the top edge and the bottom-right corner, 1x
-    and 2x; and a sheet of every corner at 2x."""
-    up = lambda im, z: im.resize((im.width * z, im.height * z), Image.NEAREST)
-    regions = (("tl", (0, 70, 160, 190)), ("top", (380, 70, 560, 150)), ("br", (920, 720, 1080, 840)))
-    os.makedirs(TMP, exist_ok=True)
-    paths, sheet = [], []
-    bright, dark = grounds()
-    for key, tex in styles.items():
-        name = STYLES[key][0] if key in STYLES else {"none": "unfocused", "now": "current"}[key]
-        on = [(g, Image.fromarray(nine_on(b, tex))) for g, b in (("grass", bright), ("dark", dark))]
-        row1 = [label(im.crop(box), "%s %s %s 1x" % (key, r, g)) for g, im in on for r, box in regions]
-        row2 = [label(up(im.crop(regions[0][1]), 2), "%s tl %s 2x" % (key, g)) for g, im in on]
-        p = os.path.join(TMP, "glow-%s-1x.png" % key)
-        column([Image.open(side(r, p)).convert("RGB") for r in (row1, row2)]).save(p)
-        paths.append(p)
-        sheet.append([label(up(im.crop((0, 74, 90, 154)), 2), "%s %s, %s" % (key, name, g)) for g, im in on])
-    paths.append(side([column(c) for c in sheet], os.path.join(TMP, "glow-sheet.png")))
-    return paths
-
-
 def main():
-    art = {"Focus-Glow": glow(), "Focus-Pointer": pointer()}
-    styles = {"none": np.zeros((GLOW_SIZE, GLOW_SIZE, 4)), "now": art["Focus-Glow"]}
-    for key, (_, draw) in STYLES.items():
-        rgb, a = draw()
-        art["Focus-Glow-" + key] = styles[key] = down(rgb, np.where(rim_field()[2] >= 0, a, 0), GLOW_SIZE)
+    art = {"Focus-Glow": glow(), "Focus-Tab": tab_glow(), "Focus-Pointer": pointer()}
     os.makedirs(OUT, exist_ok=True)
     for old in glob.glob(os.path.join(OUT, "Focus-*.tga")):
         os.remove(old)
     for stem, img in art.items():
         write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, VERSION)), img)
-    for p in mocks(art["Focus-Glow"], art["Focus-Pointer"]) + style_mocks(styles):
+    for p in mocks(art["Focus-Glow"], art["Focus-Pointer"]):
         print(p)
 
 

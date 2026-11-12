@@ -111,18 +111,30 @@ So the live directions are 1 (fleur in front, stronger names), 3's placement wit
 
 The player chose 4a; it is the real tabs now and the gallery is gone. Each tab is
 still a `PanelTopTabButtonTemplate` button wearing a slate plaque
-(`Art/Tab-<Idle|Chosen>-1.tga`, `tools/make_tab_art.py`, the gallery's art
-unchanged). The plaques are 80 x 32, each 80 from the last, the first 18 in from the
-left. Each stands 28 above the window's top, so its foot is 4 under the rim. The
-chosen one stands tallest, and each name is centred in its plaque. The tab row inside
-the window is gone, so the wells hang from the title rule's foot (`WELL_TOP` 25.6, was 64).
-The clamp keeps the chosen plaque on screen (`SetClampRectInsets(0, 0, 26, 0)`).
+(`Art/Tab-<Idle|Chosen>-2.tga`, `tools/make_tab_art.py`). The plaque pieces are
+80 x 34, each 80 from the last, the first 18 in from the left. Each piece's top
+is 30 above the window's top, so its foot is 4 under the rim. An idle plaque's
+face stands 23 above the rim, the chosen one's 28, and each name is centred in
+its plaque's face. The tab row inside the window is gone, so the wells hang from
+the title rule's foot (`WELL_TOP` 25.6, was 64). The clamp keeps the chosen
+plaque on screen (`SetClampRectInsets(0, 0, 28, 0)`).
 
-**The focus glow** runs behind the plaques. Each tab sits at the window's own
-level, under its border (the NineSlice, a level up), so the rim covers the plaques'
-feet. `PanelTemplates_SetNumTabs` then sets the `FrameGlow` (frameLevel 505 in
-the template) a level under the first tab (`SharedUIPanelTemplates.lua:542`).
-Blizzard's tabbed windows do the same. Our glow draws nothing inside the rim's
-outer edge (FocusArt.lua), so lying under the window hides none of it. It still
-hugs the rim all round, behind the plaques and in the gaps between them, and no
-glow line crosses a plaque.
+**The tuck** (the player: the join "is not quite perfect", 2026-11-12): a plaque
+runs on behind the rim, so its face and bark darken over the last 3.2 units
+above the rim's top line, steepest at the line, as stone does in a crevice; the
+bark runs straight down into the rim at full width.
+
+**The focus glow** follows the rim and the chosen plaque as one outline (the
+player: "shape it to the highlighted tab", 2026-11-12; behind every plaque it
+was hidden or too faint). Each tab sits at the window's own level, under its
+border (the NineSlice, a level up), so the rim covers the plaques' feet.
+`PanelTemplates_SetNumTabs` then sets the `FrameGlow` (frameLevel 505 in the
+template) a level under the first tab (`SharedUIPanelTemplates.lua:542`), as
+Blizzard's tabbed windows do. FocusArt.lua draws the rim's 9-slice with its top
+edge in two runs either side of `Focus-Tab`, the same halo drawn round the rim's
+top and the chosen plaque (`tools/make_focus_art.py`), which follows the
+selection. Nothing is drawn inside that outline, so the window and the chosen
+plaque hide none of it; the other plaques stand in front of its halo. All of it
+is on the `FrameGlow`, so it shows and hides with Blizzard's focus. The five
+glow styles on trial (`WC.FocusArt.Style`) are gone: the player never picked
+one, and the shaped glow is the default's.

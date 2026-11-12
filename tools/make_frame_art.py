@@ -7,7 +7,8 @@ to a pixel and averaged down, never Blizzard's art.
                                      Inset-*-<v>.tga, Close-*-<v>.tga,
                                      target/window-4k.png (the window mocked at 4K, its
                                      tabs and focus glow too) and target/window-top-4k.png
-                                     (its top, Chat and then Settings chosen)
+                                     (its top, Chat and then Settings chosen, and 3x zooms
+                                     of the tabs' joins to the rim and the glow round them)
 
 The frame replaces its NineSlice region by region: four corners, four edges
 stretched between them (each edge is the same all along its length, so it
@@ -326,8 +327,8 @@ def render():
 # 2.7 px a unit, its top left at 28.8, 208.8; read in game with GetLeft/GetTop),
 # with the controller's focus glow on. Every edge is rounded to a whole pixel,
 # as the game snaps a texture. Drawn in the game's order: the glow (a level
-# under the tabs), the panel and the tabs, then the rim over the tabs' feet
-# and the wells.
+# under the tabs, its top edge cut either side of the chosen tab's glow), the
+# panel and the tabs, then the rim over the tabs' feet and the wells.
 
 PX = 2.7
 ORIGIN = (28.8, 208.8)
@@ -335,16 +336,19 @@ SIZE = (760.0, 520.0)
 SHOT = os.path.join(os.environ.get("LOCALAPPDATA", ""), "wow-companion", "shots", "full4.png")
 SLATE = os.path.join(ROOT, "addon", "WowCompanion", "Art", "%s-6.tga")  # Style.lua's STONE
 GLOW_ART = os.path.join(OUT, "Focus-Glow-1.tga")  # make_focus_art.py's
-TAB_ART = os.path.join(OUT, "Tab-%s-1.tga")  # make_tab_art.py's
+TAB_GLOW_ART = os.path.join(OUT, "Focus-Tab-1.tga")  # make_focus_art.py's
+TAB_ART = os.path.join(OUT, "Tab-%s-2.tga")  # make_tab_art.py's
 
 # Window.lua's layout, in units
 RIM, GAP, WELL_TOP, FOOT, WELL = 6.0, 4.0, 25.6, 20.0, 130.0
 CLOSE_PAD = 3.0  # the close button's gap from the rim
-PLAQUE_W, PLAQUE_H, PLAQUE_UP, TABS_X, STEP = 80.0, 32.0, 28.0, 18.0, 80.0
-IDLE_HEAD, CHOSEN_HEAD = 8.0, 2.0
+PLAQUE_W, PLAQUE_H, PLAQUE_UP, TABS_X, STEP = 80.0, 34.0, 30.0, 18.0, 80.0
+IDLE_HEAD, CHOSEN_HEAD = 7.0, 2.0
 NAME, NAME_LIT = (199, 176, 135), (250, 235, 199)
-# FocusArt.lua: the glow's 9-slice, its margins M units, set out OUT past the frame
+# FocusArt.lua: the glow's 9-slice, its margins M units, set out OUT past the frame;
+# the chosen tab's glow, TAB_GLOW units, set out from its plaque's piece
 GLOW_M, GLOW_OUT, GLOW_TEX, GLOW_MARGIN = 18.0, 12.0, 128, 48
+TAB_GLOW, TAB_GLOW_LEFT, TAB_GLOW_UP = (96.0, 48.0), 8.0, 12.0
 EDGE = INSET
 LABELS = ["Chat", "Settings", "Status", "Errands"]
 # the well's top shadow (ShadowOverlay-Top, the lip), its alpha down from
@@ -397,24 +401,33 @@ class Mock:
         self.put(art[prefix + "LeftEdge"], x0, y0 + top, x0 + rim, y1 - rim)
         self.put(art[prefix + "RightEdge"], x1 - rim, y0 + top, x1, y1 - rim)
 
-    def glow(self, w, h):
+    def glow(self, w, h, tab_x):
         """FocusArt.lua's glow: Focus-Glow cut in nine, round the frame's
-        bounds set out by GLOW_OUT, its corners GLOW_M square."""
+        bounds set out by GLOW_OUT, its corners GLOW_M square; its top edge
+        in two runs either side of Focus-Tab on the chosen plaque's piece,
+        at tab_x."""
         tex = load(GLOW_ART)
         t = (0, GLOW_MARGIN, GLOW_TEX - GLOW_MARGIN, GLOW_TEX)
         o, m = GLOW_OUT, GLOW_M
         xs = (-o, m - o, w - m + o, w + o)
         ys = (-o, m - o, h - m + o, h + o)
+        gx0, gx1 = tab_x - TAB_GLOW_LEFT, tab_x - TAB_GLOW_LEFT + TAB_GLOW[0]
         for j in range(3):
             for i in range(3):
-                if i != 1 or j != 1:
-                    self.put(tex[t[j]:t[j + 1], t[i]:t[i + 1]], xs[i], ys[j], xs[i + 1], ys[j + 1])
+                piece = tex[t[j]:t[j + 1], t[i]:t[i + 1]]
+                if i == 1 and j == 0:
+                    self.put(piece, xs[1], ys[0], gx0, ys[1])
+                    self.put(piece, gx1, ys[0], xs[2], ys[1])
+                elif i != 1 or j != 1:
+                    self.put(piece, xs[i], ys[j], xs[i + 1], ys[j + 1])
+        top = -PLAQUE_UP - TAB_GLOW_UP
+        self.put(load(TAB_GLOW_ART), gx0, top, gx1, top + TAB_GLOW[1])
 
 
 def mock(art, backdrop, chosen=0):
     w, h = SIZE
     m = Mock(backdrop)
-    m.glow(w, h)
+    m.glow(w, h, TABS_X + chosen * STEP)
     m.tile("Slate", RIM, RIM, w - RIM, h - RIM, 0.72)  # the panel's body (frame.Bg)
     piece = {k: load(TAB_ART % k) for k in ("Idle", "Chosen")}
     labels = []
@@ -463,12 +476,16 @@ def sheet(art):
             back.paste(world, (x, y + 100))
     full = mock(art, back)
     full.save(os.path.join(ROOT, "target", "window-4k.png"))
-    # the window's top at 4K's own pixels, Chat and then Settings chosen, and
-    # each zoomed 2x
-    box = (0, 100, 1300, 400)
-    up = lambda im: im.resize((im.width * 2, im.height * 2), Image.NEAREST)
-    crops = [full.crop(box), mock(art, back, chosen=1).crop(box)]
-    rows = [[c] for c in crops] + [[up(c)] for c in crops]
+    # the window's top at 4K's own pixels, Chat and then Settings chosen; then
+    # 3x: the chosen plaque and its glow, and the joins of the plaques to the rim
+    box = (0, 70, 1300, 400)
+    up = lambda im: im.resize((im.width * 3, im.height * 3), Image.NEAREST)
+    second = mock(art, back, chosen=1)
+    rows = [[full.crop(box)], [second.crop(box)]]
+    x0, x1 = (int(ORIGIN[0] + (TABS_X + i * STEP) * PX) for i in (1, 2))
+    y = int(ORIGIN[1])
+    rows.append([up(second.crop((x0 - 40, y - 115, x1 + 40, y + 25)))])
+    rows.append([up(second.crop((x - 50, y - 50, x + 50, y + 22))) for x in (x0 + 8, x1, x1 + int(STEP * PX))])
     return stack(rows, os.path.join(ROOT, "target", "window-top-4k.png"))
 
 

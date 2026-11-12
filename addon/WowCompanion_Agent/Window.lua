@@ -31,10 +31,11 @@ local WELL_TOP, FOOT = 25.6, 20 -- WELL_TOP: the rule's foot, its shadow on the 
 -- The tabs' plaques (tools/make_tab_art.py), one PLAQUE-sized piece a tab, its
 -- top PLAQUE_UP above the window's top, so its foot runs under the rim; the
 -- plaque itself spans the piece from x 3 to 77, its head IDLE_HEAD or
--- CHOSEN_HEAD down. The first piece is TABS_X in; each next STEP on.
-local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s-1]]
-local PLAQUE_W, PLAQUE_H, PLAQUE_UP = 80, 32, 28
-local IDLE_HEAD, CHOSEN_HEAD = 8, 2
+-- CHOSEN_HEAD down. The first piece is TABS_X in; each next STEP on. The
+-- chosen tab's focus glow (FocusArt.lua) is drawn for these numbers.
+local TAB_ART = [[Interface\AddOns\WowCompanion_Agent\Art\Tab-%s-2]]
+local PLAQUE_W, PLAQUE_H, PLAQUE_UP = 80, 34, 30
+local IDLE_HEAD, CHOSEN_HEAD = 7, 2
 local TABS_X, STEP = 18, 80
 -- a tab button: the plaque's idle height over the rim, centred on it, as wide
 -- as leaves PanelTemplates_AnchorTabs' 3 between two a STEP apart
@@ -407,8 +408,9 @@ local function buildTabs(frame, messages)
 	-- so its border (the NineSlice, a level up) covers the plaques' feet.
 	-- PanelTemplates_SetNumTabs then sets the controller's focus glow a level
 	-- under the first tab (SharedUIPanelTemplates.lua), as on Blizzard's tabbed
-	-- windows: the glow hugs the rim behind the plaques. It draws nothing inside
-	-- the rim (FocusArt.lua), so lying under the window hides none of it.
+	-- windows: the glow runs round the rim and the chosen plaque (FocusArt.lua),
+	-- and the other plaques stand in front of it. It draws nothing inside that
+	-- outline, so lying under the window and the chosen plaque hides none of it.
 	local names = {}
 	-- PanelTemplates_TabResize sizes every tab to these
 	frame.minTabWidth, frame.maxTabWidth = TAB_W, TAB_W
@@ -461,6 +463,7 @@ local function buildTabs(frame, messages)
 			tab:SetDisabledFontObject(TAB_FONT_LIT)
 			tab.Text:SetPoint("CENTER", tab, "CENTER", 0, chosen and (IDLE_HEAD - CHOSEN_HEAD) / 2 or 0)
 		end
+		WC.FocusArt.Dress(frame, frame.Tabs[id].plaque)
 		local chat = id == 1
 		-- the page's name in the title, as Collections does
 		if frame.SetTitle then frame:SetTitle(chat and "Companion" or names[id]) end
@@ -502,8 +505,7 @@ local function buildLog()
 	-- our wells take the template's inset's place
 	if frame.Inset then frame.Inset:Hide() end
 	if frame.SetTitle then frame:SetTitle("Companion") end
-	-- our border and title bar over the template's, on the frame's bounds,
-	-- and the focus glow fitted round them
+	-- our border and title bar over the template's, on the frame's bounds
 	dress(frame, "Frame", RIM, TOP)
 	-- The panel's body: the chat's slate, darker, so the window is one stone
 	-- trimmed in bronze; to the rim's inner edge on every side (the template
