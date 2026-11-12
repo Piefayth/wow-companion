@@ -284,7 +284,7 @@ def render():
 #   RuleLeft 32x16, RuleMid 64x16: the divider's left end and its line,
 #     stretched whole to the Joint
 
-VERSION6 = 9
+VERSION6 = 10
 PRESS = 1.25  # how far a pressed arrow sinks toward the groove, in units
 GT = 24.0  # the arrows' groove end (its round end's centre)
 FOOT = GT - 4.0 - PRESS  # an arrow's foot: under the border's arc, pressed or not
@@ -583,7 +583,7 @@ def lance_rule(c, piece):
 
 # --- 3. The wrought-iron fleur-de-lis: a slim petal and four volutes over a twisted collar
 
-def twist_marks(c, pen, y0, y1, hw):
+def twist_marks(c, pen, y0, y1, hw, pal=IRN):
     """The twist: a square bar's faces turning, as broad slanted bands."""
     bar = pen.mask([[(16 - hw, y0), (16 + hw, y0), (16 + hw, y1), (16 - hw, y1)]])
     dark, light = [], []
@@ -593,10 +593,10 @@ def twist_marks(c, pen, y0, y1, hw):
         light.append([(16 - hw, y + 1.75), (16 + hw, y + 0.35), (16 + hw, y + 0.65), (16 - hw, y + 2.05)])
     blur = U * c.s * 0.1
     c.over(np.zeros_like(c.rgb), ndimage.gaussian_filter(pen.mask(dark), blur) * bar * 0.62)
-    c.over(np.broadcast_to(np.array(IRN[2], float), c.rgb.shape), ndimage.gaussian_filter(pen.mask(light), blur) * bar * 0.45)
+    c.over(np.broadcast_to(np.array(pal[2], float), c.rgb.shape), ndimage.gaussian_filter(pen.mask(light), blur) * bar * 0.45)
 
 
-def fleur_cap(c, down, mode):
+def fleur_cap(c, down, mode, pal=IRN):
     still = Pen(c, 32, down)
     pen = Pen(c, 32, down, PRESS if mode == "Pushed" else 0)
     if mode != "Bare":
@@ -606,15 +606,15 @@ def fleur_cap(c, down, mode):
                                        0.95, -s * 0.9, 0.4), 0.6, 0.3))
     vol += pair(lambda s: stroke(scroll(bez((X(s, 17.2), 15.6), (X(s, 20.2), 16.0), (X(s, 23.2), 16.9), (X(s, 23.9), 19.4), n=24),
                                         0.85, s * 0.85, 0.4), 0.55, 0.28))
-    raised(pen, vol, IRN, bevel=0.55, cast=0.45)
-    raised(pen, [[(16 - 1.2, 15), (16 + 1.2, 15), (16 + 1.2, FOOT), (16 - 1.2, FOOT)]], IRN, bevel=0.7)  # the stem, its foot under the border
-    raised(pen, [profile([(1.0, 0), (2.6, 0.8), (5.2, 1.75), (8.0, 2.3), (10.2, 1.9), (11.8, 1.1), (12.8, 0.9)])], IRN, bevel=1.0)
-    raised(pen, [profile([(2.4, 0), (5, 0.3), (9.6, 0.35), (12.2, 0.2)])], IRN, bevel=0.3, cast=0, gloss=0.7)
-    raised(pen, [[(16 - 1.55, 12.6), (16 + 1.55, 12.6), (16 + 1.55, 16.6), (16 - 1.55, 16.6)]], IRN, bevel=0.7, cast=0.4)
-    twist_marks(c, pen, 12.6, 16.6, 1.55)
+    raised(pen, vol, pal, bevel=0.55, cast=0.45)
+    raised(pen, [[(16 - 1.2, 15), (16 + 1.2, 15), (16 + 1.2, FOOT), (16 - 1.2, FOOT)]], pal, bevel=0.7)  # the stem, its foot under the border
+    raised(pen, [profile([(1.0, 0), (2.6, 0.8), (5.2, 1.75), (8.0, 2.3), (10.2, 1.9), (11.8, 1.1), (12.8, 0.9)])], pal, bevel=1.0)
+    raised(pen, [profile([(2.4, 0), (5, 0.3), (9.6, 0.35), (12.2, 0.2)])], pal, bevel=0.3, cast=0, gloss=0.7)
+    raised(pen, [[(16 - 1.55, 12.6), (16 + 1.55, 12.6), (16 + 1.55, 16.6), (16 - 1.55, 16.6)]], pal, bevel=0.7, cast=0.4)
+    twist_marks(c, pen, 12.6, 16.6, 1.55, pal)
     sink(c, pen, under)
     if mode != "Bare":  # the highlight glows round the arrow alone, not the groove's border
-        border(still, [ribbon(border_path(still), BORDER_HW)], IRN)
+        border(still, [ribbon(border_path(still), BORDER_HW)], pal)
     glint(c, pen, 16, 2.6, 1.8, 0.8 if mode == "Pushed" else 0.55)  # the point's one warm light
 
 
@@ -679,9 +679,14 @@ def bud_cap(c, down, mode):
     vine_cap(c, down, mode, bud)
 
 
-def bud_thumb(c):
+def bud_body(c):
     pen = Pen(c, 48)
     raised(pen, [profile([(0.6, 0), (1.4, 1.8), (3.0, 2.5), (45.0, 2.5), (46.6, 1.8), (47.4, 0)])], dim(BARK, 0.85), bevel=1.3, cast=0.4)
+    return pen
+
+
+def bud_thumb(c):
+    pen = bud_body(c)
     raised(pen, [profile([(23.0, 2.7), (23.6, 3.05), (24.4, 3.05), (25.0, 2.7)])], BARK, bevel=0.6, cast=0.35)  # the node, a ring
 
 
@@ -1097,6 +1102,11 @@ def lancet_thick(c, piece):
         clip_right(c, 26)
 
 
+def bark_fleur_cap(c, down, mode):
+    """The fleur-de-lis arrow wrought in the vine's bark, one solid material as the iron is."""
+    fleur_cap(c, down, mode, BARK)
+
+
 DESIGNS6 = {
     # name: (cap, thumb, thin divider, thick divider, border material ("flush": inlaid))
     "Lance": (lance_cap, spear_thumb, lance_rule, lance_thick, BRZ),
@@ -1105,6 +1115,8 @@ DESIGNS6 = {
     "Bud2": (bud_cap, strands_thumb, bud_rule, bud_thick, BARK),
     "Bud3": (bud_cap, heart_thumb, bud_rule, bud_thick, BARK),
     "Bud4": (bud_cap, furl_thumb, bud_rule, bud_thick, BARK),
+    "Bud5": (bark_fleur_cap, heart_thumb, bud_rule, bud_thick, BARK),
+    "Bud6": (bark_fleur_cap, bud_body, bud_rule, bud_thick, BARK),
     "Lancet": (lancet_cap, inlay_thumb, lancet_rule, lancet_thick, "flush"),
 }
 
@@ -1322,7 +1334,7 @@ def panes6(art, names):
 
 
 LABELS = {"Lance": "Bronze lance", "Fleur": "Wrought-iron fleur-de-lis", "Bud": "Vine and leaf-bud", "Bud2": "Vine: bound strands thumb",
-          "Bud3": "Vine: heartwood capsule thumb", "Bud4": "Vine: furled leaf thumb", "Lancet": "Inlaid bronze lancet"}
+          "Bud3": "Vine: heartwood capsule thumb", "Bud4": "Vine: furled leaf thumb", "Bud5": "Heartwood, bark fleur arrows", "Bud6": "Vine, bark fleur arrows, plain thumb", "Lancet": "Inlaid bronze lancet"}
 
 
 def sheet6(art):
