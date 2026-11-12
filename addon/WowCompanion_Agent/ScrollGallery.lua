@@ -162,14 +162,17 @@ local OPTIONS = {
 	{ "Inlaid bronze lancet", groove, "Lancet" },
 }
 
--- six turns, so five dividers, as a long conversation shows them
+-- a conversation as the chat shows it, long enough to scroll: each turn's
+-- band height, its owner's stone, the header and the text in the chat's fonts
 local SAMPLE = {
-	{ "you", "|cffffd100You|r 20:47\nWrap the ends, please.", 44 },
-	{ "claude", "|cffffd100Claude|r 20:48\nThe arrows are set into the groove's ends.", 60 },
-	{ "you", "|cffffd100You|r 20:49\nAnd the dividers?", 44 },
-	{ "claude", "|cffffd100Claude|r 20:50\nEach meets the groove at its lip.", 60 },
-	{ "you", "|cffffd100You|r 20:51\nSix turns now.", 44 },
-	{ "claude", "|cffffd100Claude|r 20:52\nThe length stays quiet.", 0 },
+	{ "you", "You 20:47", "The scroll bar again. Show me the real thing this time, at full size.", 64 },
+	{ "claude", "Claude 20:48", "This is the chat at its real size, with the design you picked on its right. The arrows sit at the groove's ends and each divider meets the groove's edge.", 104 },
+	{ "you", "You 20:49", "And the dividers between turns?", 64 },
+	{ "claude", "Claude 20:50", "Each one runs the full width and joins the gutter's border, never the thumb, since the thumb moves.", 86 },
+	{ "you", "You 20:51", "What about the stone behind the bar?", 64 },
+	{ "claude", "Claude 20:52", "Each turn's stone runs on behind the groove to the panel's edge, so the bands never stop short.", 86 },
+	{ "you", "You 20:53", "Good. Pick one on the right to compare.", 64 },
+	{ "claude", "Claude 20:54", "Each button shows its design here, in the same place.", 0 },
 }
 
 -- a divider at y across the pane, as the bands run: Blizzard's to the
@@ -207,12 +210,10 @@ local function divider(text, column, y, design)
 	line:SetPoint("RIGHT", column, "TOPLEFT", -6, y) -- where the Joint takes it on
 end
 
-local function pane(page, i, option)
+-- one design on a full-size copy of the chat well, in the chat well's place
+local function pane(page, option)
 	local box = CreateFrame("Frame", nil, page, "InsetFrameTemplate")
 	if box.Bg then box.Bg:Hide() end
-	local label = page:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	label:SetPoint("BOTTOM", box, "TOP", 0, 4)
-	label:SetText(i .. ". " .. option[1])
 	local column = CreateFrame("Frame", nil, box)
 	column:SetPoint("TOPRIGHT", -EDGE, -EDGE)
 	column:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
@@ -226,42 +227,70 @@ local function pane(page, i, option)
 	for n, turn in ipairs(SAMPLE) do
 		local band = text:CreateTexture(nil, "BACKGROUND")
 		stone(band, turn[1])
-		local fs = text:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		local head = text:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		head:SetPoint("TOPLEFT", 10, y - 8)
+		head:SetText(turn[2])
+		local fs = text:CreateFontString(nil, "OVERLAY", ChatFontNormal and "ChatFontNormal" or "GameFontHighlight")
 		fs:SetJustifyH("LEFT")
 		fs:SetTextColor(0.86, 0.83, 0.76)
-		fs:SetPoint("TOPLEFT", 8, y - 8)
-		fs:SetPoint("RIGHT", -8, 0)
-		fs:SetText(turn[2])
+		fs:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -4)
+		fs:SetPoint("RIGHT", -10, 0)
+		fs:SetText(turn[3])
 		band:SetPoint("TOPLEFT", 0, y)
 		band:SetPoint("RIGHT", column) -- on behind the groove, to the pane's edge
-		if n == #SAMPLE then band:SetPoint("BOTTOM") else band:SetHeight(turn[3]) end
+		if n == #SAMPLE then band:SetPoint("BOTTOM") else band:SetHeight(turn[4]) end
 		if n > 1 then
 			divider(text, column, y, option[3])
 			ends[#ends + 1] = y
 		end
-		y = y - turn[3]
+		y = y - turn[4]
 	end
 	local ok, err = pcall(option[2], column, option[3], ends)
-	if not ok then
-		label:SetText(i .. ". " .. option[1] .. " |cffff6060" .. tostring(err) .. "|r")
-	end
-	return box
+	return box, not ok and tostring(err) or nil
 end
 
+-- The tab: the preview where the chat sits, the designs as buttons where the
+-- conversation list sits, in its buttons' art; the one picked shows.
 WC.Companion.AddTab("Scroll bars", function(page)
-	local boxes = {}
-	for i, option in ipairs(OPTIONS) do boxes[i] = pane(page, i, option) end
-	local function layout()
-		local w, h = page:GetWidth(), page:GetHeight()
-		if w <= 0 then return end
-		local gap = 8
-		local each = (w - 16 - gap * (#boxes - 1)) / #boxes
-		for i, box in ipairs(boxes) do
-			box:ClearAllPoints()
-			box:SetPoint("TOPLEFT", page, "TOPLEFT", 8 + (i - 1) * (each + gap), -24)
-			box:SetSize(each, math.max(120, h - 32))
-		end
+	local log = WowCompanionLog
+	local chatWell = log and log.chatWell
+	local boxes, buttons = {}, {}
+	local function pick(i)
+		for n, box in ipairs(boxes) do box:SetShown(n == i) end
+		for n, b in ipairs(buttons) do b.selected:SetShown(n == i) end
 	end
-	page:HookScript("OnSizeChanged", layout)
-	page:HookScript("OnShow", layout)
+	for i, option in ipairs(OPTIONS) do
+		local box, err = pane(page, option)
+		box:SetFrameLevel(page:GetFrameLevel() + 5)
+		if chatWell then
+			box:SetPoint("TOPLEFT", chatWell, "TOPLEFT")
+			box:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT")
+		else
+			box:SetAllPoints(page)
+		end
+		boxes[i] = box
+		local b = CreateFrame("Button", nil, page)
+		b:SetSize(150, 21)
+		b:SetPoint("TOPRIGHT", page, "TOPRIGHT", -6, -(i - 1) * 24)
+		local function art(layer, atlas)
+			local t = b:CreateTexture(nil, layer)
+			t:SetAtlas(atlas)
+			t:SetPoint("TOPLEFT", -2, 0)
+			t:SetPoint("BOTTOMRIGHT", 2, 0)
+			return t
+		end
+		art("BACKGROUND", "auctionhouse-nav-button")
+		b.selected = art("ARTWORK", "auctionhouse-nav-button-select")
+		b.selected:SetBlendMode("ADD")
+		art("HIGHLIGHT", "auctionhouse-nav-button-highlight"):SetBlendMode("ADD")
+		local label = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		label:SetPoint("LEFT", 10, 0)
+		label:SetPoint("RIGHT", -6, 0)
+		label:SetJustifyH("LEFT")
+		label:SetText(i .. ". " .. option[1] .. (err and " |cffff6060(failed)|r" or ""))
+		b:SetScript("OnClick", function() pick(i) end)
+		WC.MarkFocusable(b)
+		buttons[i] = b
+	end
+	pick(1)
 end)
