@@ -389,15 +389,18 @@ local function buildTabs(frame, messages)
 	pageShade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
 	pageShade:SetAllPoints()
 
-	-- The tabs, in the same language as the conversation list beside them
-	-- (the player's look, 2026-11-12): the chosen tab is drawn as the list's
-	-- chosen row (a plate of the replies' slate, the vine along its top, its
-	-- name lit), standing on the chat well; the others are only their names
-	-- in washed bronze, on the panel. The row's spacing is here: every tab at least TAB_MIN wide
-	-- (PanelTemplates_TabResize reads frame.minTabWidth), TAB_GAP between
+	-- The tabs are folder tabs cut from the chat well itself: each is outlined
+	-- by the wells' own border (dress "Inset") on its top and sides, open at
+	-- its foot, standing on the well's top border. The chosen one is taller,
+	-- its sides run down through the well's top border, and its floor (the
+	-- well's own slate) covers that border between them, so it opens into the
+	-- well as one piece; its name is lit. The others are shorter, their floor
+	-- dimmed, the well's top border running unbroken under them, their names
+	-- in washed bronze. The row's spacing is here: every tab at least TAB_MIN
+	-- wide (PanelTemplates_TabResize reads frame.minTabWidth), TAB_GAP between
 	-- them, the first over the well's inner edge (EDGE).
 	local names = {}
-	local TAB_MIN, TAB_GAP = 69, 3
+	local TAB_MIN, TAB_GAP, TAB_H, TAB_LOW = 69, 3, 26, 4 -- TAB_LOW: how much shorter the unchosen are
 	frame.minTabWidth = TAB_MIN
 	local function makeTab(name)
 		local i = #names + 1
@@ -410,16 +413,26 @@ local function buildTabs(frame, messages)
 				if t then t:SetTexture(nil) end
 			end
 		end
-		-- the chosen one: the conversation list's chosen row, a plate of the
-		-- replies' slate with the vine along its top
-		tab:SetHeight(ROW)
-		local plate = tab:CreateTexture(nil, "BACKGROUND", nil, -8)
-		plate:SetTexture(WC.Style.STONE.claude, "REPEAT", "REPEAT")
-		plate:SetHorizTile(true)
-		plate:SetVertTile(true)
-		plate:SetAllPoints()
-		tab.chosenParts = { plate }
-		for _, t in ipairs(vine(tab, "TOP")) do tab.chosenParts[#tab.chosenParts + 1] = t end
+		tab:SetHeight(TAB_H)
+		-- the outline: the wells' border, its foot left open
+		local made, edge = pcall(CreateFrame, "Frame", nil, tab, "InsetFrameTemplate")
+		if not made or not edge then edge = CreateFrame("Frame", nil, tab) end
+		dress(edge, "Inset", INSET, INSET)
+		local slice = edge.NineSlice
+		if slice then
+			slice.BottomEdge:Hide()
+			slice.BottomLeftCorner:Hide()
+			slice.BottomRightCorner:Hide()
+			slice.LeftEdge:SetPoint("BOTTOMRIGHT", edge, "BOTTOMLEFT", INSET, 0)
+			slice.RightEdge:SetPoint("BOTTOMRIGHT", edge, "BOTTOMRIGHT")
+		end
+		if edge.Bg then edge.Bg:Hide() end
+		-- the floor: the well's own slate, inside the border's inner fade
+		local floor = tab:CreateTexture(nil, "BACKGROUND", nil, -8)
+		floor:SetTexture(WC.Style.STONE.you, "REPEAT", "REPEAT")
+		floor:SetHorizTile(true)
+		floor:SetVertTile(true)
+		tab.edge, tab.floor = edge, floor
 		names[i] = name
 		tab:SetID(i)
 		tab:SetText(name)
@@ -454,7 +467,16 @@ local function buildTabs(frame, messages)
 		PanelTemplates_SetTab(frame, id)
 		for i, tab in ipairs(frame.Tabs) do
 			local chosen = i == id
-			for _, part in ipairs(tab.chosenParts) do part:SetShown(chosen) end
+			local top = chosen and 0 or -TAB_LOW
+			local foot = chosen and -INSET or 0
+			tab.edge:ClearAllPoints()
+			tab.edge:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, top)
+			tab.edge:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, foot)
+			tab.floor:ClearAllPoints()
+			tab.floor:SetPoint("TOPLEFT", tab, "TOPLEFT", FLOOR, top - FLOOR)
+			tab.floor:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -FLOOR, chosen and -INSET or 0)
+			local k = chosen and 1 or 0.6
+			tab.floor:SetVertexColor(k, k, k)
 			tab.Text:SetTextColor(unpack(chosen and NAME_LIT or NAME))
 		end
 		local chat = id == 1
