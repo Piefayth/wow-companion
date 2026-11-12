@@ -40,6 +40,9 @@ none of this. When the player states a new preference or changes one, write it h
   feature should feel before building it, and never add pad bindings (d-pad,
   face buttons) to a window or feature unasked. Chat mode lasts one minus hold,
   never longer.
+- **No paging through lists** (2026-11-11): never propose a design where a key
+  steps through items one by one (cycling offers, conversations). Pick things
+  directly, e.g. by the conversation's own trigger chord.
 - **One focus, always** (2026-11-10): a window of ours is focused the same way as
   the game's own windows (the controller's native focus cycle), in combat too.
   Never a second "focus this window" press or mode beside it; not acceptable,
