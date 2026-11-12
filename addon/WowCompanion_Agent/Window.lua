@@ -33,7 +33,7 @@ local function buildTabs(frame, messages)
 	-- Settings: Core's page (SettingsPage.lua), shown in this tab; the
 	-- window's own rows are added here
 	pages[2]:SetScript("OnShow", function(self) WC.SettingsPage.ShowIn(self) end)
-	WC.SettingsPage.Add({ kind = "dropdown", order = 10, label = "Window size",
+	WC.SettingsPage.Add({ kind = "dropdown", section = "Companion window", order = 10, label = "Window size",
 		text = "The size the Companion window opens at. Its corner grip changes it just for now.",
 		options = function() return frame.SIZE_NAMES or { "Small", "Medium", "Large" } end,
 		get = function() return (frame.SIZE_NAMES or {})[WowCompanionAgentDB.windowSize or 2] end,
@@ -42,13 +42,13 @@ local function buildTabs(frame, messages)
 				if n == name and frame.SetDefaultSize then frame.SetDefaultSize(i) end
 			end
 		end })
-	WC.SettingsPage.Add({ kind = "slider", order = 40, label = "Window scale",
+	WC.SettingsPage.Add({ kind = "slider", section = "Companion window", order = 15, label = "Window scale",
 		text = "The Companion window and everything in it, apart from the rest of the interface.",
 		min = 80, max = 200, steps = 12,
 		get = function() return math.floor((WowCompanionAgentDB.windowScale or 1) * 100 + 0.5) end,
 		set = function(value) frame.SetWindowScale(math.floor(value + 0.5) / 100) end,
 		format = function(value) return ("%d%%"):format(math.floor(value + 0.5)) end })
-	WC.SettingsPage.Add({ kind = "button", order = 90, label = "Clear transcript", button = "Clear",
+	WC.SettingsPage.Add({ kind = "button", section = "Clean up", order = 90, label = "Clear transcript", button = "Clear",
 		text = "Empty the Companion window. The conversation itself carries on.",
 		onClick = function()
 			WowCompanionAgentDB.log = {}
@@ -61,15 +61,6 @@ local function buildTabs(frame, messages)
 	-- blind-safe word for good or bad (green ok, red problem) and grey detail.
 	local ROW = 30
 	local rows = {}
-	-- One stone over the whole page well (the inset the page sits in, edge to
-	-- edge inside its border), so only one texture shows, divided by the row
-	-- dividers; the well's own backing no longer peeks out around a smaller
-	-- card (the player, 2026-11-11). Anchored once the page has its parent.
-	local stone = pages[3]:CreateTexture(nil, "BACKGROUND")
-	stone:SetTexture(WC.Transcript.STONE.claude, "REPEAT", "REPEAT")
-	stone:SetHorizTile(true)
-	stone:SetVertTile(true)
-	pages[3].stone = stone
 	local function row(i)
 		local r = rows[i]
 		if r then return r end
@@ -320,8 +311,16 @@ local function buildTabs(frame, messages)
 		p:SetPoint("BOTTOMRIGHT", -12, 10)
 	end
 	for _, p in pairs(pages) do place(p) end
-	pages[3].stone:SetPoint("TOPLEFT", pageWell, "TOPLEFT", 3, -3)
-	pages[3].stone:SetPoint("BOTTOMRIGHT", pageWell, "BOTTOMRIGHT", -3, 3)
+	-- One stone over the whole page well, edge to edge inside its border, for
+	-- every tab but Chat: one texture, divided by the pages' dividers (the
+	-- well's own backing peeked out around a smaller card, the player,
+	-- 2026-11-11; Settings looked bare beside Status without it).
+	local stone = pageWell:CreateTexture(nil, "BACKGROUND", nil, 1)
+	stone:SetTexture(WC.Transcript.STONE.claude, "REPEAT", "REPEAT")
+	stone:SetHorizTile(true)
+	stone:SetVertTile(true)
+	stone:SetPoint("TOPLEFT", 3, -3)
+	stone:SetPoint("BOTTOMRIGHT", -3, 3)
 	-- the same shadow under the tabs as the chat well has, on every other tab
 	local pageLip = CreateFrame("Frame", nil, pageWell)
 	pageLip:SetPoint("TOPLEFT", 3, -3)

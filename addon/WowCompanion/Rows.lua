@@ -9,8 +9,11 @@
 -- out of combat only (cleared as a fight starts). The window's legend shows the
 -- row's prompt (WC.RowPrompt).
 --
---   WC.RowStop(button, step, prompt)  step(-1 | 1) changes the value; prompt is
---                                     the legend's word ("Adjust", "Change")
+--   WC.RowStop(button, step, prompt)  step(-1 | 1) changes the value (nil: a
+--                                     row with nothing to step, left and right
+--                                     do nothing); prompt is the legend's word
+--                                     ("Adjust", "Change"); button.OnRowFocus(),
+--                                     when set, runs as the cursor arrives
 --   WC.RowPrompt(window)              the legend's words while a row in window
 --                                     has the cursor, else nil
 
@@ -19,9 +22,9 @@ local current -- the row the left and right keys change now, or nil
 local keys = CreateFrame("Frame", "WCRowKeys", UIParent)
 
 local less = CreateFrame("Button", "WCRowLess", UIParent)
-less:SetScript("OnClick", function() if current then current.rowStep(-1) end end)
+less:SetScript("OnClick", function() if current and current.rowStep then current.rowStep(-1) end end)
 local more = CreateFrame("Button", "WCRowMore", UIParent)
-more:SetScript("OnClick", function() if current then current.rowStep(1) end end)
+more:SetScript("OnClick", function() if current and current.rowStep then current.rowStep(1) end end)
 
 local function focused()
 	for _, row in ipairs(rows) do
@@ -32,6 +35,7 @@ end
 local function bind(row)
 	if row == current then return end
 	current = row
+	if row and row.OnRowFocus then row.OnRowFocus() end
 	ClearOverrideBindings(keys)
 	if row then
 		SetOverrideBindingClick(keys, true, "PADDLEFT", "WCRowLess")
@@ -59,7 +63,7 @@ end
 
 function WC.RowPrompt(window)
 	local row = current
-	if not (row and window) then return end
+	if not (row and row.rowStep and window) then return end
 	local parent = row:GetParent()
 	while parent and parent ~= window do parent = parent:GetParent() end
 	if parent then

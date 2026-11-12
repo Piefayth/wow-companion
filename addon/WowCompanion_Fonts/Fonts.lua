@@ -158,7 +158,7 @@ end
 WowCompanion_SetFont = Fonts.Set
 
 -- its rows in the settings page (Core's SettingsPage.lua)
-WC.SettingsPage.Add({ kind = "dropdown", order = 20, label = "Font",
+WC.SettingsPage.Add({ kind = "dropdown", section = "Interface text", order = 20, label = "Font",
 	text = "The interface font. Changes at once, kept across reloads.",
 	options = function()
 		local names = {}
@@ -170,7 +170,7 @@ WC.SettingsPage.Add({ kind = "dropdown", order = 20, label = "Font",
 		local said = Fonts.Set(name)
 		if said:find("refused") or said:find("failed") then print(said) end
 	end })
-WC.SettingsPage.Add({ kind = "slider", order = 30, label = "Text size",
+WC.SettingsPage.Add({ kind = "slider", section = "Interface text", order = 30, label = "Text size",
 	text = "All interface text, with any font.",
 	min = SCALES[1] * 100, max = SCALES[#SCALES] * 100, steps = #SCALES - 1,
 	get = function() return math.floor(scale() * 100 + 0.5) end,

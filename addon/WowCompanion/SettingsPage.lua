@@ -1,13 +1,18 @@
--- The settings page: one column of rows in Blizzard's look, each row one
--- controller stop (Rows.lua: left and right change it, confirm opens a
--- dropdown's menu, up and down move between rows). Owned by Core so it works
--- without the Agent; each addon adds its own rows. Shown in a window of its own
--- (the minimap mark, Blizzard's AddOns settings) or inside another frame (the
--- Companion window's Settings tab), one page moved between them.
+-- The settings page: Blizzard's Settings list in our window. Rows grouped
+-- under section headers (their SettingsListSectionHeaderTemplate), a quest log
+-- divider between rows as on the Status tab, each row one controller stop
+-- (Rows.lua: left and right change it, confirm opens a dropdown's menu or
+-- presses a button, up and down move between rows). The focused row's note is
+-- read in one band at the foot of the page, where Blizzard shows a tooltip.
+-- Owned by Core so it works without the Agent; each addon adds its own rows.
+-- Shown in a window of its own (the minimap mark, Blizzard's AddOns settings)
+-- or inside another frame (the Companion window's Settings tab).
 --
 --   WC.SettingsPage.Add(row)     row: { kind = "dropdown" | "slider" | "button",
---                                label, text (the note beside it), order (lower
---                                first), and by kind: options()/get()/set(name);
+--                                section (its header), label, text (its note),
+--                                order (lower first; a section goes where its
+--                                first row does), and by kind:
+--                                options()/get()/set(name);
 --                                min, max, steps, get()/set(value), format(value);
 --                                button (its text), onClick() }
 --   WC.SettingsPage.Open()       the page in its own window
@@ -16,45 +21,70 @@
 local Page = {}
 WC.SettingsPage = Page
 
-local pending = {} -- rows added and not placed yet
-local LABEL_W, CONTROL_W = 130, 190
+local rows = {}    -- every row added: { row = the caller's table, frame = once made }
+local headers = {} -- section name -> header frame
+local ROW_H, HEADER_H, CONTROL_W = 36, 45, 250
+-- Blizzard's columns: the label from the left to the middle, the control from
+-- just left of the middle (SettingsListElementMixin, SettingsSliderControlMixin)
+local LABEL_X, CONTROL_X = 24, -80
 
 local page = CreateFrame("Frame", "WowCompanionSettingsPage", UIParent)
 page:Hide()
-local y = 0
+
+local function divider(parent)
+	local d = parent:CreateTexture(nil, "ARTWORK")
+	d:SetAtlas("QuestLog-frame-devider")
+	d:SetAlpha(0.8)
+	d:SetHeight(15)
+	-- edge to edge of the well's backing (the page sits 9 px inside it)
+	d:SetPoint("LEFT", parent, "TOPLEFT", -9, 0)
+	d:SetPoint("RIGHT", parent, "TOPRIGHT", 9, 0)
+	return d
+end
+
+-- the band at the foot: the note of the row under the cursor or the mouse
+local band = CreateFrame("Frame", nil, page)
+band:SetPoint("BOTTOMLEFT", 0, 0)
+band:SetPoint("BOTTOMRIGHT", 0, 0)
+band:SetHeight(56)
+divider(band)
+local bandText = band:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
+bandText:SetPoint("TOPLEFT", LABEL_X, -14)
+bandText:SetPoint("BOTTOMRIGHT", -LABEL_X, 4)
+bandText:SetJustifyH("LEFT")
+bandText:SetJustifyV("TOP")
+local function describe(row)
+	bandText:SetText(row and row.text or "")
+end
 
 -- One setting as Blizzard's Settings lay one out (SettingsListElementTemplate):
--- a row the width of the page holding its name, the control and a note; the
--- row is the one controller stop, shaded white at 0.1 while the cursor is on it
--- (their HoverBackgroundTemplate), the cursor at its left. The control inside
--- is out of the cycle, as theirs is.
-local ROW_H = 34
+-- a row the width of the page holding its name and its control; the row is the
+-- one stop, shaded white at 0.1 while the cursor or the mouse is on it (their
+-- HoverBackgroundTemplate), the cursor just left of its name. The control
+-- inside is out of the cycle, as theirs is.
 local function settingRow(row, step, prompt)
 	local r = CreateFrame("Button", nil, page)
-	r:SetPoint("TOPLEFT", 0, -y)
 	r:SetPoint("RIGHT", page, "RIGHT", 0, 0)
 	r:SetHeight(ROW_H)
 	local hover = r:CreateTexture(nil, "HIGHLIGHT")
-	hover:SetPoint("TOPLEFT", -10, 0)
-	hover:SetPoint("BOTTOMRIGHT", -5, 0)
+	hover:SetPoint("TOPLEFT", -9, -3)
+	hover:SetPoint("BOTTOMRIGHT", 9, 3)
 	hover:SetColorTexture(1, 1, 1, 0.1)
+	r.divider = divider(r)
 	local fs = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	fs:SetPoint("LEFT", 0, 0)
-	fs:SetWidth(LABEL_W)
+	fs:SetPoint("LEFT", LABEL_X, 0)
+	fs:SetPoint("RIGHT", r, "CENTER", CONTROL_X - 5, 0)
 	fs:SetJustifyH("LEFT")
+	fs:SetWordWrap(false)
 	fs:SetText(row.label)
-	y = y + ROW_H
-	WC.SetCursorAnchor(r, 30)
-	if step then WC.RowStop(r, step, prompt) else WC.MarkFocusable(r) end
+	r:SetScript("OnEnter", function() describe(row) end)
+	r.OnRowFocus = function() describe(row) end
+	WC.SetCursorAnchor(r, LABEL_X - 6)
+	WC.RowStop(r, step, prompt)
 	return r
 end
-local function note(r, anchor, text)
-	if not text then return end
-	local fs = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	fs:SetPoint("LEFT", anchor, "RIGHT", 12, 0)
-	fs:SetPoint("RIGHT", r, "RIGHT", 0, 0)
-	fs:SetJustifyH("LEFT")
-	fs:SetText(text)
+local function place(r, control)
+	control:SetPoint("LEFT", r, "CENTER", CONTROL_X, 0)
 end
 
 -- A choice from a list: their dropdown with steppers
@@ -70,9 +100,10 @@ local function dropdown(row)
 	end, "Change")
 	control = CreateFrame("Frame", nil, r, "Metal2DropdownWithSteppersAndLabelTemplate")
 	local dd = control.Dropdown
+	-- the steppers either side, inside the column's width
 	dd:SetWidth(CONTROL_W - 50)
 	control:SetSize(CONTROL_W, 26)
-	control:SetPoint("LEFT", LABEL_W, 0)
+	place(r, control)
 	dd:SetupMenu(function(_, root)
 		for _, name in ipairs(row.options()) do
 			root:CreateRadio(name, function(n) return n == row.get() end, function(n) row.set(n) dd:SignalUpdate() end, name)
@@ -81,59 +112,102 @@ local function dropdown(row)
 	control:SetSteppersShown(true)
 	WC.MarkIgnored(control)
 	r:SetScript("OnClick", function() dd:MouseDown() dd:MouseUp() end)
-	note(r, control.IncrementButton, row.text)
+	return r
 end
 
--- A number in a range: their slider with steppers; left and right step it as
--- their footer does (OnStepperClicked).
+-- A number in a range: their slider with steppers, its value after it; left
+-- and right step it as their footer does (OnStepperClicked).
 local function slider(row)
 	local s
 	local r = settingRow(row, function(dir) s:OnStepperClicked(dir > 0) end, "Adjust")
 	s = CreateFrame("Frame", nil, r, "MinimalSliderWithSteppersTemplate")
 	s:SetWidth(CONTROL_W)
-	s:SetPoint("LEFT", LABEL_W, 0)
+	place(r, s)
 	local formatters = {
 		[MinimalSliderWithSteppersMixin.Label.Right] = CreateMinimalSliderFormatter(MinimalSliderWithSteppersMixin.Label.Right, row.format),
 	}
 	s:Init(row.get(), row.min, row.max, row.steps, formatters)
 	s:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, value) row.set(value) end, s)
+	if s.RightText then s.RightText:SetFontObject("GameFontHighlight") end
 	WC.MarkIgnored(s)
-	note(r, s.RightText or s, row.text)
+	return r
 end
 
 -- An action: their button in the control column (SettingsButtonControlTemplate),
--- the row the stop as on every other row, so the cursor goes straight down
--- the page; confirm presses it.
+-- footer-sized (their Defaults button is 96 x 22) so a rarely used action is
+-- not the loudest thing on the page; confirm on the row presses it.
 local function button(row)
 	local r = settingRow(row)
 	local b = CreateFrame("Button", nil, r, "UIPanelButtonTemplate")
-	b:SetSize(CONTROL_W, 26)
-	b:SetPoint("LEFT", LABEL_W, 0)
+	b:SetSize(120, 22)
+	place(r, b)
 	b:SetText(row.button)
 	b:SetScript("OnClick", row.onClick)
 	r:SetScript("OnClick", row.onClick)
 	WC.MarkIgnored(b)
-	note(r, b, row.text)
+	return r
 end
 
 local KINDS = { dropdown = dropdown, slider = slider, button = button }
 
--- rows are placed when the page is shown, in order; one added later goes
--- below them
-local function build()
-	table.sort(pending, function(a, b) return (a.order or 50) < (b.order or 50) end)
-	for _, row in ipairs(pending) do
-		local ok, err = pcall(KINDS[row.kind] or button, row)
-		if not ok then geterrorhandler()(("settings row %s: %s"):format(tostring(row.label), tostring(err))) end
-	end
-	pending = {}
-	page:SetHeight(math.max(y, 1))
+local function header(name)
+	if headers[name] then return headers[name] end
+	local h = CreateFrame("Frame", nil, page, "SettingsListSectionHeaderTemplate")
+	h:SetPoint("RIGHT", page, "RIGHT", 0, 0)
+	h.Title:SetText(name)
+	headers[name] = h
+	return h
 end
-page:SetScript("OnShow", build)
+
+-- Every row made once; the page laid out again whenever one is added:
+-- sections in the order of their first row, rows in order within each, the
+-- first row under a header without a divider.
+local function sectionOf(e) return e.row.section or "General" end
+local function orderOf(e) return e.row.order or 50 end
+local function layout()
+	for _, e in ipairs(rows) do
+		if not e.frame then
+			local ok, made = pcall(KINDS[e.row.kind] or button, e.row)
+			if ok then e.frame = made
+			else geterrorhandler()(("settings row %s: %s"):format(tostring(e.row.label), tostring(made))) end
+		end
+	end
+	local first = {}
+	for _, e in ipairs(rows) do
+		local s = sectionOf(e)
+		first[s] = math.min(first[s] or math.huge, orderOf(e))
+	end
+	table.sort(rows, function(a, b)
+		local sa, sb = sectionOf(a), sectionOf(b)
+		if sa ~= sb then
+			if first[sa] ~= first[sb] then return first[sa] < first[sb] end
+			return sa < sb
+		end
+		return orderOf(a) < orderOf(b)
+	end)
+	local y, section = 0, nil
+	for _, e in ipairs(rows) do
+		if e.frame then
+			local s = sectionOf(e)
+			e.frame.divider:SetShown(s == section)
+			if s ~= section then
+				section = s
+				header(s):SetPoint("TOPLEFT", 0, -y)
+				y = y + HEADER_H
+			end
+			e.frame:SetPoint("TOPLEFT", 0, -y)
+			y = y + ROW_H
+		end
+	end
+end
+page:SetScript("OnShow", function()
+	layout()
+	describe(nil)
+end)
 
 function Page.Add(row)
-	pending[#pending + 1] = row
-	if page:IsShown() then build() end
+	rows[#rows + 1] = { row = row }
+	if page:IsShown() then layout() end
 end
 
 function Page.ShowIn(frame)
