@@ -154,7 +154,7 @@ events:SetScript("OnEvent", function() pcall(hook) end)
 WC.FocusArt = {
 	-- Window.lua dresses the window's glow with it, and moves it with the chosen tab
 	Dress = glow,
-	-- "A".."E", or "" for the first glow; the window's glow changes at once
+	-- "A".."E" (and D's round, "D1".."D5"), or "" for the first glow; the window's glow changes at once
 	Style = function(pick)
 		WowCompanionAgentDB.focusGlow = pick or ""
 		for _, d in ipairs(dressed) do d.t:SetTexture(styled(d.stem)) end

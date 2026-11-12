@@ -198,15 +198,34 @@ def style_brackets(f):
     return over(rgb, a, lit(hgt, GILT, gloss=0.6), np.maximum(arms, stud))
 
 
-def style_tight(f):
-    """A short dense warm glow, a brighter core on the outline, gone by 6 px."""
-    d = np.maximum(f.dm, 0)
-    core = np.exp(-(np.maximum(d - 0.6, 0) / 0.8) ** 2)
-    glow = np.exp(-(d / 3.0) ** 2) * (1 - smooth((d - 4.5) / 2.0))
-    al = np.clip(core + glow * 0.95, 0, 1)
-    warm = np.array((206, 174, 132.0)) + (np.array((168, 136, 98.0)) - (206, 174, 132.0)) * np.clip(d / 6, 0, 1)[..., None]
-    w = np.clip(core / np.maximum(al, 1e-6), 0, 1)[..., None]
-    return warm + (np.array((240, 224, 192.0)) - warm) * w, al
+def tight(core_c, near, far, core_w=0.8, sigma=3.0, end=4.5, body=0.95):
+    """A short dense warm glow, a brighter core on the outline: core_c the
+    core's colour, near and far the glow's colour at the edge and where it
+    ends, core_w the core's width, sigma and end its reach in px, body the
+    glow's strength under the core."""
+    def style(f):
+        d = np.maximum(f.dm, 0)
+        core = np.exp(-(np.maximum(d - 0.6, 0) / core_w) ** 2)
+        glow = np.exp(-(d / sigma) ** 2) * (1 - smooth((d - end) / 2.0))
+        al = np.clip(core + glow * body, 0, 1)
+        n, fa = np.array(near, float), np.array(far, float)
+        warm = n + (fa - n) * np.clip(d / (end + 1.5), 0, 1)[..., None]
+        w = np.clip(core / np.maximum(al, 1e-6), 0, 1)[..., None]
+        return warm + (np.array(core_c, float) - warm) * w, al
+    return style
+
+
+# D, the player's near miss (2026-11-12: "a little too white, a little too
+# bright, already pretty subtle"), and its round of variants: each less white
+# without growing dimmer
+style_tight = tight((240, 224, 192), (206, 174, 132), (168, 136, 98))
+TIGHT_ROUND = {
+    "D1": ("D, bronze core", tight((228, 200, 152), (206, 172, 124), (168, 132, 90))),
+    "D2": ("D, amber", tight((236, 196, 128), (210, 164, 100), (166, 118, 66))),
+    "D3": ("D, no white line", tight((214, 178, 124), (210, 172, 118), (170, 130, 84), core_w=0.6, body=1.0)),
+    "D4": ("D, amber, wider", tight((236, 196, 128), (210, 164, 100), (166, 118, 66), sigma=3.6, end=5.5)),
+    "D5": ("D, deep bronze", tight((216, 172, 112), (190, 146, 92), (150, 104, 60), core_w=0.9, body=1.0)),
+}
 
 
 def style_mat(f):
@@ -223,7 +242,8 @@ def style_mat(f):
 
 
 STYLES = {"": ("first", halo), "A": ("inlay", style_inlay), "B": ("lit edge", style_lit_edge),
-          "C": ("brackets", style_brackets), "D": ("tight glow", style_tight), "E": ("navy mat", style_mat)}
+          "C": ("brackets", style_brackets), "D": ("tight glow", style_tight), "E": ("navy mat", style_mat),
+          **TIGHT_ROUND}
 
 
 def draw(style, f, size, per=None):
