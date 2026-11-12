@@ -1,8 +1,7 @@
--- A design sheet, for now: the chat's slim grey bar with candidate ornate
--- arrows and divider edges side by side, each on a small copy of the chat well (two turns on the
--- stone, the quest log divider between), so the player compares them in the
--- Companion window instead of one reload per idea. Shown only; nothing scrolls.
--- Goes when a bar is chosen.
+-- A design sheet, for now: candidate scroll bars side by side, each on a small
+-- copy of the chat well (two turns on the stone, a divider between meeting the
+-- bar), so the player compares them in the Companion window instead of one
+-- reload per idea. Shown only; nothing scrolls. Goes when a bar is chosen.
 
 local STONE = WC.Transcript.STONE
 local EDGE = 3
@@ -13,13 +12,13 @@ local function stone(tex, which)
 	tex:SetVertTile(true)
 end
 
--- The arrows and the dividers' edge, drawn by tools/make_scrollbar_art.py
--- (ornate, not Blizzard's): each candidate's up and down arrow as real buttons
--- with all four states, and where the dividers end, its edge: a rod down the
--- column's left side with caps, and a joint on each divider's end.
-local ART_VERSION = 1
+-- All drawn by tools/make_scrollbar_art.py. The spearhead (round 1) is
+-- arrows over the slim grey bar, a rod and joints; the others (round 2) are
+-- one object each: end caps that are the arrows, rails and groove between.
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-]]
-local function art(design, piece) return ART .. design .. "-" .. piece .. "-" .. ART_VERSION end
+local function art(design, piece)
+	return ART .. design .. "-" .. piece .. "-" .. (design == "Spear" and 1 or 2)
+end
 local ARROW = 16 -- an arrow's square, its art about 12 of it
 
 local function arrows(c, design)
@@ -55,12 +54,12 @@ local function rule(c, design)
 	mid:SetPoint("BOTTOM", bottom, "TOP")
 end
 
--- The slim bar: MinimalScrollBar's track and thumb, 8 wide, untinted, the
+-- The spearhead: MinimalScrollBar's slim track and thumb, 8 wide, untinted, the
 -- thumb a sixth of the way down and a third of the height. ends: the dividers'
 -- right ends, each given the design's joint.
-local function marker(c, design, hasRule, ends)
+local function spear(c, design, ends)
 	local inset = arrows(c, design)
-	if hasRule then rule(c, design) end
+	rule(c, design)
 	for _, at in ipairs(ends) do
 		local joint = c:CreateTexture(nil, "OVERLAY")
 		joint:SetTexture(art(design, "Joint"))
@@ -96,16 +95,58 @@ local function marker(c, design, hasRule, ends)
 	column3(thumb, "ARTWORK", "minimal-scrollbar-small-thumb", "minimal-scrollbar-small-thumb-middle")
 end
 
--- each: a name, the column's width, the design's art, and whether it has a rod
+-- One object, 16 wide in the 20-wide column: the caps (16x16) are the
+-- arrow buttons, the rails and groove (Mid) stretch between them, the thumb
+-- (8 wide) rides in the groove. Each divider's end gets the design's Joint,
+-- 16x16, its right 2.5 the left rail (column x 3 to 5.5).
+local function onePiece(c, design, ends)
+	local caps = {}
+	for _, spec in ipairs({ { "Up", "TOP" }, { "Down", "BOTTOM" } }) do
+		local b = CreateFrame("Button", nil, c)
+		b:SetSize(16, 16)
+		b:SetPoint(spec[2])
+		local base = "Cap-" .. spec[1] .. "-"
+		b:SetNormalTexture(art(design, base .. "Normal"))
+		b:SetPushedTexture(art(design, base .. "Pushed"))
+		b:SetHighlightTexture(art(design, base .. "Highlight"), "ADD")
+		b:SetDisabledTexture(art(design, base .. "Disabled"))
+		caps[spec[1]] = b
+	end
+	local mid = c:CreateTexture(nil, "BACKGROUND")
+	mid:SetTexture(art(design, "Mid"))
+	mid:SetPoint("TOP", caps.Up, "BOTTOM")
+	mid:SetPoint("BOTTOM", caps.Down, "TOP")
+	mid:SetWidth(16)
+	local room = (c:GetHeight() > 0 and c:GetHeight() or 300) - 32
+	local function thumb(piece, h, y)
+		local t = c:CreateTexture(nil, "ARTWORK")
+		t:SetTexture(art(design, "Thumb-" .. piece))
+		t:SetSize(8, h)
+		t:SetPoint("TOP", mid, "TOP", 0, y)
+		return t
+	end
+	thumb("Top", 4, -room / 6)
+	thumb("Mid", room / 3 - 8, -room / 6 - 4)
+	thumb("Bottom", 4, -room / 6 - room / 3 + 4)
+	for _, at in ipairs(ends) do
+		local joint = c:CreateTexture(nil, "OVERLAY")
+		joint:SetTexture(art(design, "Joint"))
+		joint:SetSize(16, 16)
+		joint:SetPoint("CENTER", at, "TOPRIGHT", -2.5, 0)
+	end
+end
+
+-- each: a name, its builder, its art, and its divider: Blizzard's quest log
+-- divider, or the design's own (RuleLeft, RuleMid stretched, into the Joint)
 local OPTIONS = {
-	{ "Gilded chevron, ruby", 20, "Gilded", true },
-	{ "Bronze spearhead", 20, "Spear", true },
-	{ "Fleur, sapphire, no rod", 20, "Fleur", false },
-	{ "Iron and gold, amber", 20, "Ember", true },
+	{ "Bronze spearhead", spear, "Spear", "blizzard" },
+	{ "Gold sceptre, ruby", onePiece, "Sceptre", "own" },
+	{ "Blackiron arrowhead", onePiece, "Blackiron", "blizzard" },
+	{ "Iron onion, sapphire", onePiece, "Onion", "own" },
 }
 
 local SAMPLE = {
-	{ "you", "|cffffd100You|r 20:47\nArrows worthy of the bar, please." },
+	{ "you", "|cffffd100You|r 20:47\nOne bar, one piece, please." },
 	{ "claude", "|cffffd100Claude|r 20:48\nThe slim grey bar with new ornate arrows, and an edge where each divider ends. Each pane is a small chat well with your stone and mine." },
 }
 
@@ -118,7 +159,7 @@ local function pane(page, i, option)
 	local column = CreateFrame("Frame", nil, box)
 	column:SetPoint("TOPRIGHT", -EDGE, -EDGE)
 	column:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
-	column:SetWidth(option[2])
+	column:SetWidth(20)
 	column:SetFrameLevel(box:GetFrameLevel() + 2)
 	local text = CreateFrame("Frame", nil, box)
 	text:SetPoint("TOPLEFT", EDGE, -EDGE)
@@ -142,7 +183,7 @@ local function pane(page, i, option)
 		band:SetPoint("TOPLEFT", 0, y)
 		band:SetPoint("RIGHT")
 		if n == #SAMPLE then band:SetPoint("BOTTOM") else band:SetHeight(64) end
-		if last then
+		if last and option[4] == "blizzard" then
 			local divider = text:CreateTexture(nil, "ARTWORK")
 			divider:SetAtlas("QuestLog-frame-devider")
 			divider:SetAlpha(0.8)
@@ -150,11 +191,22 @@ local function pane(page, i, option)
 			divider:SetPoint("LEFT", band, "TOPLEFT")
 			divider:SetPoint("RIGHT", band, "TOPRIGHT")
 			ends[#ends + 1] = band
+		elseif last then
+			local left = text:CreateTexture(nil, "ARTWORK")
+			left:SetTexture(art(option[3], "RuleLeft"))
+			left:SetSize(16, 8)
+			left:SetPoint("LEFT", band, "TOPLEFT")
+			local line = text:CreateTexture(nil, "ARTWORK")
+			line:SetTexture(art(option[3], "RuleMid"))
+			line:SetHeight(8)
+			line:SetPoint("LEFT", left, "RIGHT")
+			line:SetPoint("RIGHT", band, "TOPRIGHT", -9, 0)
+			ends[#ends + 1] = band
 		end
 		last = band
 		y = y - 64
 	end
-	local ok, err = pcall(marker, column, option[3], option[4], ends)
+	local ok, err = pcall(option[2], column, option[3], ends)
 	if not ok then
 		label:SetText(i .. ". " .. option[1] .. " |cffff6060" .. tostring(err) .. "|r")
 	end
