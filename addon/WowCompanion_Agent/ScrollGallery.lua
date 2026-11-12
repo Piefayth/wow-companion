@@ -13,12 +13,12 @@ local function stone(tex, which)
 end
 
 -- All drawn by tools/make_scrollbar_art.py. The spearhead (round 1) is
--- arrows over the slim grey bar, a rod and joints; the others (round 4) are a
--- groove carved into the stone, its ends and its joints with the dividers
--- ornaments raised round it.
+-- arrows over the slim grey bar, a rod and joints; the others (round 4.5) are
+-- a groove carved into the stone through forged sockets at its ends (the
+-- arrows) and plates where the dividers meet it, in Blizzard's painted metal.
 local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-]]
 local function art(design, piece)
-	return ART .. design .. "-" .. piece .. "-" .. (design == "Spear" and 1 or 4)
+	return ART .. design .. "-" .. piece .. "-" .. (design == "Spear" and 1 or 5)
 end
 local ARROW = 16 -- an arrow's square, its art about 12 of it
 
@@ -188,8 +188,8 @@ local function divider(text, band, option)
 	local line = text:CreateTexture(nil, "ARTWORK")
 	line:SetTexture(art(option[3], "RuleMid"))
 	line:SetHeight(16)
-	line:SetPoint("LEFT", left, "RIGHT")
-	line:SetPoint("RIGHT", band, "TOPRIGHT", -32, 0) -- the Joint carries it on
+	line:SetPoint("LEFT", left, "RIGHT", -4, 0) -- under both ends' last pixels: no seam
+	line:SetPoint("RIGHT", band, "TOPRIGHT", -24, 0)
 	local knot = text:CreateTexture(nil, "OVERLAY")
 	knot:SetTexture(art(option[3], "Knot"))
 	knot:SetSize(32, 16)
