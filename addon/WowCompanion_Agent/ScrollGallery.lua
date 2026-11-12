@@ -214,6 +214,9 @@ end
 local function pane(page, option)
 	local box = CreateFrame("Frame", nil, page, "InsetFrameTemplate")
 	if box.Bg then box.Bg:Hide() end
+	-- above the page well's own top shadow (Window.lua's pageLip, the well's
+	-- level + 20), which would shade the bar; set first, so its children follow
+	box:SetFrameLevel(page:GetParent():GetFrameLevel() + 25)
 	-- the turns past the well's bottom are cut off there, as the chat's scroll does
 	box:SetClipsChildren(true)
 	local column = CreateFrame("Frame", nil, box)
@@ -248,20 +251,17 @@ local function pane(page, option)
 		y = y - turn[4]
 	end
 	local ok, err = pcall(option[2], column, option[3], ends)
-	-- The chat's top shadow (Blizzard's ShadowOverlay-Top, as Window.lua's lip),
-	-- here across the whole well, the bar included: the groove is cut into the
-	-- same stone, so the shadow falls into it too. The arrows sit above it, lit.
+	-- The chat's top shadow (Blizzard's ShadowOverlay-Top, as Window.lua's lip)
+	-- over the turns only: the bar stands above the chat, unshadowed, as the
+	-- old scroll column did.
 	local lip = CreateFrame("Frame", nil, box)
 	lip:SetPoint("TOPLEFT", EDGE, -EDGE)
-	lip:SetPoint("TOPRIGHT", -EDGE, -EDGE)
+	lip:SetPoint("TOPRIGHT", column, "TOPLEFT")
 	lip:SetHeight(24)
-	lip:SetFrameLevel(column:GetFrameLevel() + 4)
+	lip:SetFrameLevel(text:GetFrameLevel() + 1)
 	local shade = lip:CreateTexture(nil, "OVERLAY")
 	shade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
 	shade:SetAllPoints()
-	for _, child in ipairs({ column:GetChildren() }) do
-		if child:IsObjectType("Button") then child:SetFrameLevel(lip:GetFrameLevel() + 1) end
-	end
 	return box, not ok and tostring(err) or nil
 end
 
@@ -277,7 +277,6 @@ WC.Companion.AddTab("Scroll bars", function(page)
 	end
 	for i, option in ipairs(OPTIONS) do
 		local box, err = pane(page, option)
-		box:SetFrameLevel(page:GetFrameLevel() + 5)
 		if chatWell then
 			box:SetPoint("TOPLEFT", chatWell, "TOPLEFT")
 			box:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT")
