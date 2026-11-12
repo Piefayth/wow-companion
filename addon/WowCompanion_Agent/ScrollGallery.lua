@@ -255,16 +255,24 @@ local function pane(page, option)
 	end
 	local ok, err = pcall(option[2], column, option[3], ends)
 	-- The chat's top shadow (Blizzard's ShadowOverlay-Top, as Window.lua's lip)
-	-- across the whole well's stone, so the stone has no seam; the bar's pieces
-	-- draw above it, unshadowed, standing over the chat as the old column did.
+	-- over the turns, fading out sideways as it nears the bar, so the stone
+	-- round the top arrow is as clean as round the bottom one, with no edge
+	-- where the shadow stops.
+	local FADE = 48
 	local lip = CreateFrame("Frame", nil, box)
 	lip:SetPoint("TOPLEFT", EDGE, -EDGE)
-	lip:SetPoint("TOPRIGHT", -EDGE, -EDGE)
+	lip:SetPoint("TOPRIGHT", column, "TOPLEFT", -6, 0)
 	lip:SetHeight(24)
 	lip:SetFrameLevel(text:GetFrameLevel() + 1)
 	local shade = lip:CreateTexture(nil, "OVERLAY")
 	shade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
-	shade:SetAllPoints()
+	shade:SetPoint("TOPLEFT")
+	shade:SetPoint("BOTTOMRIGHT", -FADE, 0)
+	local fade = lip:CreateTexture(nil, "OVERLAY")
+	fade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
+	fade:SetPoint("TOPLEFT", shade, "TOPRIGHT")
+	fade:SetPoint("BOTTOMRIGHT")
+	fade:SetGradient("HORIZONTAL", CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 0))
 	return box, not ok and tostring(err) or nil
 end
 
