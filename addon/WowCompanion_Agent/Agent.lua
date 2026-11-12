@@ -287,8 +287,6 @@ function WowCompanion_ViewSlot() return viewSlot end
 function WowCompanion_SetConversation(slot)
 	viewSlot = slot or ""
 	setUnread(viewSlot, false)
-	-- the button follows the view: each conversation shows its own offer
-	WC.Offer.Show(viewSlot)
 	if renderPending then renderPending() end
 	logFrame().messages:Clear()
 	replayLog()
