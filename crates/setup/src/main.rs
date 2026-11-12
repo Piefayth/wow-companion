@@ -16,7 +16,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -62,7 +62,12 @@ fn main() -> eframe::Result<()> {
 }
 
 struct Setup {
+    /// The file as this window last read or wrote it, and when it was modified.
+    /// The file is the truth: the window shows what it says and writes only
+    /// what the player changes here, so an edit made elsewhere while the window
+    /// is open (by hand, by another window) is never written over.
     settings: Settings,
+    file_modified: Option<SystemTime>,
     addons: String,
     model: String,
     pad: String,
@@ -148,6 +153,7 @@ impl Setup {
             speech: value("speech"),
             stream_model: value("stream_model"),
             settings,
+            file_modified: file_modified(),
             found_addons: find_addons(),
             models: find_models(),
             other_model: false,
@@ -203,27 +209,63 @@ impl Setup {
             .unwrap_or_default();
     }
 
+    fn fields(&mut self) -> [(&'static str, &mut String); 9] {
+        [
+            ("addons", &mut self.addons),
+            ("model", &mut self.model),
+            ("pad", &mut self.pad),
+            ("ask", &mut self.ask),
+            ("mic", &mut self.mic),
+            ("agent", &mut self.agent),
+            ("engine", &mut self.engine),
+            ("speech", &mut self.speech),
+            ("stream_model", &mut self.stream_model),
+        ]
+    }
+
+    /// What the player changed here goes into the file as it is now.
     fn save(&mut self) {
-        for (key, value) in [
-            ("addons", &self.addons),
-            ("model", &self.model),
-            ("pad", &self.pad),
-            ("ask", &self.ask),
-            ("mic", &self.mic),
-            ("agent", &self.agent),
-            ("engine", &self.engine),
-            ("speech", &self.speech),
-            ("stream_model", &self.stream_model),
-        ] {
-            self.settings.set(key, value.trim());
+        let read = std::mem::take(&mut self.settings);
+        let mut file = Settings::load();
+        for (key, value) in self.fields() {
+            if value.trim() != read.get(key).unwrap_or_default() {
+                file.set(key, value.trim());
+            }
         }
-        *self.report.lock().unwrap() = match self.settings.save() {
+        *self.report.lock().unwrap() = match file.save() {
             Ok(path) => {
                 self.saved = true;
+                self.settings = file;
+                self.file_modified = file_modified();
                 format!("Saved to {}.", path.display())
             }
-            Err(err) => format!("Could not save: {err}"),
+            Err(err) => {
+                self.settings = read;
+                format!("Could not save: {err}")
+            }
         };
+    }
+
+    /// The file changed outside this window: what it changed is shown as it
+    /// now says.
+    fn follow_file(&mut self) {
+        let modified = file_modified();
+        if modified == self.file_modified {
+            return;
+        }
+        self.file_modified = modified;
+        let file = Settings::load();
+        let read = std::mem::replace(&mut self.settings, file.clone());
+        let mic = self.mic.clone();
+        for (key, value) in self.fields() {
+            if file.get(key) != read.get(key) {
+                *value = file.get(key).unwrap_or_default().to_string();
+            }
+        }
+        if self.mic != mic {
+            self.meter.watch(&self.mic);
+        }
+        self.other_model = !self.model.is_empty() && !self.models.contains(&self.model);
     }
 }
 
@@ -231,6 +273,7 @@ impl eframe::App for Setup {
     // eframe 0.37 hands the app its root Ui instead of a Context
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.ctx().request_repaint_after(Duration::from_millis(33));
+        self.follow_file();
         *self.pad_target.lock().unwrap() = (self.pad.clone(), self.ask.clone());
 
         egui::Panel::bottom("actions")
@@ -1391,6 +1434,11 @@ fn claude_version() -> String {
         }
         _ => String::new(),
     }
+}
+
+/// When the settings file was last modified; None while there is none.
+fn file_modified() -> Option<SystemTime> {
+    std::fs::metadata(Settings::path()?).ok()?.modified().ok()
 }
 
 /// Whether the companion is running: the lock it holds while it runs.
