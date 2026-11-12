@@ -63,8 +63,15 @@ bandText:SetPoint("TOPLEFT", LABEL_X, -8)
 bandText:SetPoint("BOTTOMRIGHT", -EDGE, 4)
 bandText:SetJustifyH("LEFT")
 bandText:SetJustifyV("TOP")
+-- with no row under the cursor, what the band is for, dimmed
 local function describe(row)
-	bandText:SetText(row and row.text or "")
+	if row and row.text then
+		bandText:SetText(row.text)
+		bandText:SetTextColor(1, 1, 1)
+	else
+		bandText:SetText("Move onto a setting to read what it does.")
+		bandText:SetTextColor(0.5, 0.5, 0.5)
+	end
 end
 
 -- the rows and section names above it, in a scroll frame the controller's
@@ -166,7 +173,8 @@ local function button(row)
 	local r = settingRow(row)
 	local b = CreateFrame("Button", nil, r, "UIPanelButtonTemplate")
 	b:SetSize(120, 22)
-	place(r, b)
+	-- level with the dropdowns' outer arrows, which overhang their frame
+	b:SetPoint("RIGHT", r, "RIGHT", -(EDGE - 5), 0)
 	b:SetText(row.button)
 	b:SetScript("OnClick", row.onClick)
 	r:SetScript("OnClick", row.onClick)
