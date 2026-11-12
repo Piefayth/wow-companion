@@ -68,3 +68,76 @@ The game is the truth, settings.toml becomes the companion's cache of it.
   `ask` at start. It would need to take a new button without a restart.
 - First run before the game has ever loaded: the setup window's defaults stand
   until the first save.
+
+## Review (2026-11-12, the Rust side)
+
+I agree with the rule, and the Rust side is small with the changes below. One
+question the proposal leaves out decides the talk button.
+
+**The decision for the player: how a WoW button name maps to a pad bit.** The
+game knows the talk button as a WoW name (`PADSOCIAL`); the companion reads an
+HID byte and mask (`9:0x10`, crates/pad). Mirroring `set talk PADSOCIAL` needs a
+map from one to the other. The two vocabularies are what let the two homes
+disagree.
+
+- Now, exact and small: WoW's names become the companion's button names
+  (`PADSOCIAL`, `PADSYSTEM`, `PADFORWARD`, `PADLSHOULDER`, `PADLTRIGGER`,
+  `PADLSTICK`...) in `pad::press`/`press_for`, beside the Sony table and
+  `xinput::NAMES`; `minus`/`home`/`l1` go. WoW's raw order in
+  `WTF/GamePadConfig_Default.json` looks like SDL's (raw 4 Back = `PADSOCIAL`,
+  5 Guide = `PADSYSTEM`, 15 = `PAD5`, 16-19 the paddles), so a standard button's
+  meaning is fixed. That covers the DualSense, the Edge and XInput.
+  `PADPADDLE1-4` join once their Edge bits are measured (only `Edge_R_Fn`, byte
+  10 0x20, is).
+- Not covered: an HID pad with no table. It would need the setup window's learn
+  (a second home again) or an exact pairing: the row says "hold the button", the
+  game draws `WCCMD n learn talk PADxxx` while it is held, and the companion
+  takes the one button bit held when it reads the strip. That needs the pad
+  learn fix first (button bits from the HID report descriptor, not a baseline
+  diff that takes byte 31's counter for a button).
+- The root fix: the companion reads the pad the way WoW does (SDL's controller
+  layer), so a name means the same button in both by construction. It is a big
+  change (rumble, the DualSense report).
+
+On the game side, the binding itself is the truth: the row reads
+`GetBindingKey("WOWCOMPANION_WINDOW")` and writes it with `SetBinding`, with no
+copy in `WowCompanionLinkDB` to drift from the Keybindings screen. (On
+2026-11-11 the binding was simply empty after 5834a61, and minus did nothing.)
+The row is one `WC.SettingsPage.Add` call (addon/WowCompanion/SettingsPage.lua).
+
+**A change applies by restart, not live.** `talk`, `feedback`, `speech` and `mic`
+are all read once at the top of `voice::listen()`. Applying one = write
+settings.toml (`Settings::set` + `save`) + the existing handover (restart.rs):
+the new copy opens the mic and loads the engine while the old one serves, so the
+headset link never drops and no press is handled twice. One path for all four
+and no change to the voice loop; an engine or mic switch needs a reload or a
+reopen anyway. This closes the open question. Costs: a few seconds of model load,
+a wait for `lifecycle::idle()` (a long request delays it), and it moves onto
+whatever `SOURCE_EXE` is (the same build for players, target/debug for us).
+
+**One path, not three.** Path 2 (the save read at session start) goes; the loop
+closes instead. The companion's `status` message (heartbeat.rs, sent on a change
+and after a reload) carries the settings it runs with; the page shows those and
+redraws `WCCMD n set <key> <value>` while the game's value differs. That covers a
+missed strip, a companion that was off, and the first start after a change, and
+shows the player when a change has taken. `set` carries a value, never a toggle;
+the nonce gets it past strip.rs's same-payload dedupe.
+
+**The mic list on demand.** Opening the mic row draws `WCCMD n mics`; the
+companion answers with one message from `voice::microphones()`. No polling, and no
+list sent at a reload that a headset connecting later would make stale. `status`
+also says which engines are installed (streaming only with `stream_model`
+downloaded).
+
+**The setup window loses the moved rows** rather than showing them read-only: a
+second writer of these keys is what clobbered settings.toml on 2026-11-11 at
+20:39 (95bafad). First run uses defaults (`default_talk`, the default input,
+rumble, the engine that is downloaded). It keeps the AddOns path, the pad, the
+models and its mic test.
+
+So the Rust work is a `set` verb in `requests.rs` `watch_commands` (check the
+value, write the file, request a restart), `status` carrying the applied values,
+and a `mics` verb: tens of lines each, on existing machinery. Since this changes
+how the game reaches the PC, check before moving the rows that a `set` drawn
+while a Stop or cancel strip is pending queues behind it rather than replacing
+it (the strip shows one payload at a time).
