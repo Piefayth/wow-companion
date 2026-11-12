@@ -74,16 +74,15 @@ local function buildTabs(frame, messages)
 		local r = rows[i]
 		if r then return r end
 		r = CreateFrame("Frame", nil, pages[3])
-		r:SetPoint("TOPLEFT", 0, -(i - 1) * ROW)
-		r:SetPoint("TOPRIGHT", 0, -(i - 1) * ROW)
 		r:SetHeight(ROW)
 		if i > 1 then
+			-- edge to edge of the stone (the page sits 9 px inside it)
 			local divider = r:CreateTexture(nil, "ARTWORK")
 			divider:SetAtlas("QuestLog-frame-devider")
 			divider:SetAlpha(0.8)
 			divider:SetHeight(15)
-			divider:SetPoint("LEFT", r, "TOPLEFT")
-			divider:SetPoint("RIGHT", r, "TOPRIGHT")
+			divider:SetPoint("LEFT", r, "TOPLEFT", -9, 0)
+			divider:SetPoint("RIGHT", r, "TOPRIGHT", 9, 0)
 		end
 		r.label = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 		r.label:SetPoint("LEFT", 12, 0)
@@ -146,6 +145,14 @@ local function buildTabs(frame, messages)
 			#failed == 1 and "" or "s", grey, failed[1]) or good .. "whole|r")
 		add("Combat", InCombatLockdown() and bad .. "yes|r " .. grey .. "(changes wait until it ends)|r" or "no")
 		for i = n + 1, #rows do rows[i]:Hide() end
+		-- the rows share the page's height, so the card is filled to its foot
+		local h = math.max(ROW, math.floor((pages[3]:GetHeight() or 0) / n))
+		for i = 1, n do
+			rows[i]:ClearAllPoints()
+			rows[i]:SetPoint("TOPLEFT", 0, -(i - 1) * h)
+			rows[i]:SetPoint("TOPRIGHT", 0, -(i - 1) * h)
+			rows[i]:SetHeight(h)
+		end
 	end
 	local since = 0
 	pages[3]:SetScript("OnShow", function() since = 0 refreshStatus() end)
@@ -315,6 +322,15 @@ local function buildTabs(frame, messages)
 	for _, p in pairs(pages) do place(p) end
 	pages[3].stone:SetPoint("TOPLEFT", pageWell, "TOPLEFT", 3, -3)
 	pages[3].stone:SetPoint("BOTTOMRIGHT", pageWell, "BOTTOMRIGHT", -3, 3)
+	-- the same shadow under the tabs as the chat well has, on every other tab
+	local pageLip = CreateFrame("Frame", nil, pageWell)
+	pageLip:SetPoint("TOPLEFT", 3, -3)
+	pageLip:SetPoint("TOPRIGHT", -3, -3)
+	pageLip:SetHeight(24)
+	pageLip:SetFrameLevel(pageWell:GetFrameLevel() + 20)
+	local pageShade = pageLip:CreateTexture(nil, "OVERLAY")
+	pageShade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
+	pageShade:SetAllPoints()
 
 	-- the tabs, their foot resting on the chat well's top border (one pixel
 	-- in, no more: deeper, they covered the top line of text), drawn under
