@@ -134,7 +134,6 @@ scroll:SetScript("OnMouseWheel", function(self, delta)
 	self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW_H)))
 end)
 -- over the rows' 9 px under it, as the dividers run to the backing's edge
-column:SetFrameLevel(scroll:GetFrameLevel() + 6)
 WC.Style.ScrollBar(scroll, column, ROW_H)
 
 -- The seams between the wells are the thick vine (WC.Style.VineLine): down
@@ -142,7 +141,6 @@ WC.Style.ScrollBar(scroll, column, ROW_H)
 -- note, a T where they meet; over the scrolling rows, under the scroll bar
 local seams = CreateFrame("Frame", nil, page)
 seams:SetAllPoints()
-seams:SetFrameLevel(scroll:GetFrameLevel() + 4)
 local down = CreateFrame("Frame", nil, seams)
 down:SetWidth(16)
 down:SetPoint("TOP", page, "TOPLEFT", SPINE - 2 - SEAM / 2, 7)
@@ -284,7 +282,6 @@ local function header(name)
 	-- vine's own (WC.Style.VineJoin), drawn over the spine as it scrolls past
 	h.divider = CreateFrame("Frame", nil, content)
 	h.divider:SetHeight(16)
-	h.divider:SetFrameLevel(scroll:GetFrameLevel() + 5)
 	WC.Style.VineLine(h.divider, "", false, false, true)
 	WC.Style.VineJoin(h.divider, "Thick", "TRightFromMediumWisp", "LEFT")
 	headers[name] = h
@@ -296,6 +293,17 @@ end
 -- and a divider between sections.
 local function sectionOf(e) return e.row.section or "General" end
 local function orderOf(e) return e.row.order or 50 end
+-- The vines and the scroll bar above the drop shadow of whatever window shows
+-- the page (the Companion's page well casts one from its top, its level + 20),
+-- so the vines' joints read as joined; set on each show, as the page is moved
+-- into another frame, which resets levels set before
+local LIFT = 25
+local function lift()
+	local base = page:GetFrameLevel() + LIFT
+	for _, f in ipairs({ seams, down, across }) do f:SetFrameLevel(base) end
+	for _, h in pairs(headers) do h.divider:SetFrameLevel(base) end
+	column:SetFrameLevel(base + 1)
+end
 local function layout()
 	for _, e in ipairs(rows) do
 		if not e.frame then
@@ -336,6 +344,7 @@ local function layout()
 		end
 	end
 	content:SetHeight(math.max(y, 1))
+	lift()
 end
 page:SetScript("OnShow", function()
 	layout()

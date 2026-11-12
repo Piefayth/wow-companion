@@ -233,15 +233,15 @@ WowCompanion_Style.STONE = {
 -- The vine dividers, every window's (tools/make_scrollbar_art.py, rule_pieces):
 -- three weights, "Thin", "" (medium, the chat's) and "Thick"; pieces Left,
 -- Mid (stretched), Right, 32 x 16 (Mid 64); Top, VMid (stretched), Bottom,
--- 16 x 32; the junctions, 32 square, centred where the runs meet, wire
--- scrollwork at three levels, Wisp (fillets in the corners), Scroll (and
--- volutes on the far side), Filigree (doubled, with sprigs): Cross<level> and
--- T<way><level> (TUp, TDown, TLeft, TRight, named for the arm that leaves the
+-- 16 x 32; the junctions, 64 square, centred where the runs meet, wire
+-- scrollwork at three levels, each larger: Wisp (fillets in the corners),
+-- Scroll (with sprigs, and volutes on the far side), Filigree (doubled, with
+-- leaves): Cross<level> and T<way><level> (TUp, TDown, TLeft, TRight, named for the arm that leaves the
 -- straight run) where runs of one weight meet, and <weight>T<way>From
 -- <Thin|Medium><level> where a lighter vine grows into a heavier run. The line
 -- runs down each piece's middle; a round end sits 1.2 + its half-width in from
 -- a cap's outer edge.
-local VINE_VERSION = 3 -- the generator's VINE_VERSION
+local VINE_VERSION = 4 -- the generator's VINE_VERSION
 function WowCompanion_Style.Vine(piece)
 	return ART .. "Vine-" .. piece .. "-" .. VINE_VERSION
 end
@@ -279,11 +279,11 @@ function WowCompanion_Style.VineLine(owner, weight, vertical, capStart, capEnd)
 	end
 	return made
 end
--- A junction (Cross, TUp, TDown, TLeft, TRight) centred on a point of `owner`
+-- A junction (64 square: room for its work to spread) centred on a point of `owner`
 function WowCompanion_Style.VineJoin(owner, weight, kind, point, x, y)
 	local t = owner:CreateTexture(nil, "OVERLAY")
 	t:SetTexture(WowCompanion_Style.Vine((weight or "") .. kind))
-	t:SetSize(32, 32)
+	t:SetSize(64, 64)
 	t:SetPoint("CENTER", owner, point or "CENTER", x or 0, y or 0)
 	return t
 end
