@@ -30,7 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF
 
-VERSION = 15
+VERSION = 16
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -259,9 +259,10 @@ def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0, rim_pal=BR
     # foot, rounded over at the lip as worn stone is
     t = np.clip((d - top) / (WALL_FOOT - top), 0, 1)
     hgt = 1.6 * (1 - t) ** 1.6
-    col = shade(ndimage.gaussian_filter(hgt, k * 0.15), wall, k, gloss=0.08, power=10)
-    lay.over(col, ((d >= 0) & (d < WALL_FOOT + 0.2)).astype(float))
-    lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.12) / 0.22, 0, 1) * inside * 0.9)
+    if wall is not None:  # none: the floor runs right up to the rim's bar
+        col = shade(ndimage.gaussian_filter(hgt, k * 0.15), wall, k, gloss=0.08, power=10)
+        lay.over(col, ((d >= 0) & (d < WALL_FOOT + 0.2)).astype(float))
+        lay.over(LINE_IN, np.clip(1 - np.abs(d - 0.12) / 0.22, 0, 1) * inside * 0.9)
     if lip:
         # a rounded bead a unit wide on the wall's top, a crease inside it
         u = (d - 0.75) / 0.6
@@ -283,7 +284,10 @@ def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0, rim_pal=BR
             lay.over(LINE, np.clip(1 - np.abs(d - w) / 0.3, 0, 1) * 0.9)
     if foot:  # the crease where the wall meets the floor
         lay.over(LINE_IN, np.clip(1 - np.abs(d - WALL_FOOT) / 0.3, 0, 1) * 0.9)
-    lay.over(np.zeros(3), np.where(d > WALL_FOOT, np.clip(1 - (d - WALL_FOOT) / (INSET - WALL_FOOT), 0, 1) * 0.45, 0))
+    if wall is not None:
+        lay.over(np.zeros(3), np.where(d > WALL_FOOT, np.clip(1 - (d - WALL_FOOT) / (INSET - WALL_FOOT), 0, 1) * 0.45, 0))
+    else:  # a soft shadow cast onto the floor from the bar, no edge to it
+        lay.over(np.zeros(3), np.where(d > rim_w, np.clip(1 - (d - rim_w) / (INSET - rim_w), 0, 1) ** 2 * 0.12, 0))
     pre = lay.pre()
     return np.stack([ndimage.gaussian_filter(pre[..., i], k * 0.25) for i in range(4)], -1)
 
@@ -293,15 +297,15 @@ def carve(d, wall, k=K, lip=False, rim=False, rim_w=1.7, rim_dim=1.0, rim_pal=BR
 # alone, its light evened (the top a shade lighter, the bottom a shade darker
 # than DARK gives), D the grey wall the wells had before, E the dark wall
 # framed by a bar of the window's rim, F that bar thinner and darker, G F's
-# bar in the wall's own grey stone, no bronze, no dark line inside it nor
-# at the wall's foot:
+# bar in grey stone, no bronze, and no wall inside it: the floor runs to the
+# bar under a soft shadow, no dark line anywhere:
 # there, but barely seen.
 DARK = (np.array((7, 7, 9.0)), np.array((20, 21, 24.0)), np.array((46, 47, 52.0)))
 EVEN = (np.array((13, 13, 16.0)), np.array((22, 23, 26.0)), np.array((36, 37, 41.0)))
 GREY = (np.array((11, 11, 13.0)), np.array((32, 33, 37.0)), np.array((70, 71, 76.0)))
 WELLS = {"A": dict(wall=DARK, lip=True), "C": dict(wall=EVEN), "D": dict(wall=GREY), "E": dict(wall=DARK, rim=True),
          "F": dict(wall=DARK, rim=True, rim_w=1.1, rim_dim=0.62),
-         "G": dict(wall=DARK, rim=True, rim_w=1.1, rim_pal=GREY, rim_inner=False, foot=False)}
+         "G": dict(wall=None, rim=True, rim_w=1.1, rim_pal=GREY, rim_inner=False, foot=False)}
 
 
 def inset(style):
