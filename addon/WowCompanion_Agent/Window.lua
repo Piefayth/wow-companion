@@ -405,7 +405,7 @@ local function buildLog()
 	frame:SetFrameStrata("DIALOG")
 	frame:SetClampedToScreen(true)
 	frame:Hide()
-	if ButtonFrameTemplate_HidePortrait and frame.PortraitContainer then ButtonFrameTemplate_HidePortrait(frame) end
+	WC.Style.NoPortrait(frame)
 	-- our wells take the template's inset's place
 	if frame.Inset then frame.Inset:Hide() end
 	if frame.SetTitle then frame:SetTitle("Companion") end

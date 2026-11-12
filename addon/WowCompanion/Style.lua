@@ -167,4 +167,16 @@ function WowCompanion_ConfirmDestroy(bag, slot, onClose)
 	return true
 end
 
+-- A ButtonFrameTemplate window of ours without its portrait. Blizzard's
+-- HidePortrait swaps the border, but the controller's focus glow (FrameGlow,
+-- FocusEffects.lua) took its shape from the portrait layout when the frame was
+-- made: a portrait's corner at the top left, set out past the frame. Its own
+-- OnLoad, run again under the portrait-less layout, fits it to the frame.
+function WowCompanion_Style.NoPortrait(frame)
+	if not (ButtonFrameTemplate_HidePortrait and frame.PortraitContainer) then return end
+	ButtonFrameTemplate_HidePortrait(frame)
+	frame.layoutType = "ButtonFrameTemplateNoPortrait"
+	if frame.FrameGlow and frame.FrameGlow.OnLoad then frame.FrameGlow:OnLoad() end
+end
+
 WC.Style = WowCompanion_Style

@@ -229,7 +229,7 @@ local function buildWindow()
 	f:SetFrameStrata("DIALOG")
 	f:SetClampedToScreen(true)
 	f:Hide()
-	if ButtonFrameTemplate_HidePortrait and f.PortraitContainer then ButtonFrameTemplate_HidePortrait(f) end
+	WC.Style.NoPortrait(f)
 	if f.SetTitle then f:SetTitle("WoW Companion settings") end
 	if f.CloseButton then f.CloseButton:SetScript("OnClick", function() f:Hide() end) end
 	local well = f.Inset or f
