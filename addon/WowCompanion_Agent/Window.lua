@@ -41,7 +41,7 @@ local GLOW = { 14, 10.75, 13, 11 }
 -- Our own frame art (tools/make_frame_art.py) on an owner's NineSlice pieces,
 -- on the owner's bounds: every piece rim wide, the top corners and edge top
 -- tall, so a corner and the edge beside it share their pixels on screen.
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-5]]
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-6]]
 local function dress(owner, art, rim, top)
 	local slice = owner.NineSlice
 	if not slice then return end
@@ -208,9 +208,9 @@ local function buildTabs(frame, messages)
 		if since > 1 then since = 0 refreshStatus() end
 	end)
 
-	-- The conversation picker: a well on the right, the auction house's category
-	-- list art (auctionhouse-nav-button, -select, -highlight, the categories
-	-- background, an inset border). Chat tab only.
+	-- The conversation picker: a well on the right in the chat's own language,
+	-- the darker slate under the names; the one in view a plate of the
+	-- replies' slate between two vines, as a reply sits in the chat. Chat tab only.
 	local WELL = 130
 	local made, well = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
 	if not made or not well then well = CreateFrame("Frame", nil, frame) end
@@ -219,9 +219,11 @@ local function buildTabs(frame, messages)
 	well:SetPoint("BOTTOMRIGHT", -(RIM + GAP), RIM + FOOT)
 	well:SetWidth(WELL)
 	local back = well:CreateTexture(nil, "BACKGROUND", nil, 1)
-	back:SetAtlas("auctionhouse-background-categories")
-	back:SetPoint("TOPLEFT", 3, -3)
-	back:SetPoint("BOTTOMRIGHT", -3, 3)
+	back:SetTexture(WC.Style.STONE.you, "REPEAT", "REPEAT")
+	back:SetHorizTile(true)
+	back:SetVertTile(true)
+	back:SetPoint("TOPLEFT", INSET, -INSET)
+	back:SetPoint("BOTTOMRIGHT", -INSET, INSET)
 	frame.chatParts = frame.chatParts or {}
 	table.insert(frame.chatParts, well)
 	-- The transcript sits in a well of its own, an inset like the conversation
@@ -247,42 +249,67 @@ local function buildTabs(frame, messages)
 	messages.content:SetFrameLevel(level + 2)
 	local column, up, down = WC.ChatBar.Build(chatWell, messages.scroll, EDGE, level)
 	for _, part in ipairs({ column, up, down }) do table.insert(frame.chatParts, part) end
+	-- a row's height, and its name's colour: washed bronze, lit when in view
+	local ROW = 24
+	local NAME, NAME_LIT = { 0.78, 0.69, 0.53 }, { 0.98, 0.92, 0.78 }
+	-- the chat's vine (ChatBar.lua) along a plate's edge, rounded at both ends
+	local function vine(owner, edge)
+		local art = WC.ChatBar.Art
+		local left = owner:CreateTexture(nil, "ARTWORK")
+		left:SetTexture(art("RuleLeft"))
+		left:SetSize(32, 16)
+		left:SetPoint("LEFT", owner, edge .. "LEFT", 0, 0)
+		local right = owner:CreateTexture(nil, "ARTWORK")
+		right:SetTexture(art("RuleLeft"))
+		right:SetTexCoord(1, 0, 0, 1)
+		right:SetSize(32, 16)
+		right:SetPoint("RIGHT", owner, edge .. "RIGHT", 0, 0)
+		local mid = owner:CreateTexture(nil, "ARTWORK")
+		mid:SetTexture(art("RuleMid"))
+		mid:SetHeight(16)
+		mid:SetPoint("LEFT", left, "RIGHT")
+		mid:SetPoint("RIGHT", right, "LEFT")
+		return { left, mid, right }
+	end
 	frame.convButtons = {}
 	for i, key in ipairs(WC.Conversations.list) do
 		local b = CreateFrame("Button", nil, well)
-		-- Blizzard's own geometry (AuctionCategoryButtonTemplate): a 21-tall
-		-- button, its art 32 tall from the top-left (-2, 0), since the atlas has
-		-- empty space at the bottom; the select glow on the art's exact bounds.
-		-- Stretched to the button, the art sat high and the text low.
-		b:SetSize(WELL - 10, 21)
-		b:SetPoint("TOP", well, "TOP", 0, -8 - (i - 1) * 24)
-		local function art(layer, atlas)
-			local t = b:CreateTexture(nil, layer)
-			t:SetAtlas(atlas)
-			t:SetPoint("TOPLEFT", -2, 0)
-			t:SetSize(WELL - 10 + 4, 32)
-			return t
-		end
-		art("BACKGROUND", "auctionhouse-nav-button")
-		-- the glow and highlight have no empty band: they cover the art's
-		-- visible part, which is the button itself (measured from a screenshot)
-		local function glowOn(t)
-			t:ClearAllPoints()
-			t:SetPoint("TOPLEFT", -2, 0)
-			t:SetPoint("BOTTOMRIGHT", 2, 0)
-			return t
-		end
-		local selected = glowOn(art("ARTWORK", "auctionhouse-nav-button-select"))
-		selected:SetBlendMode("ADD")
-		selected:Hide()
-		b.selected = selected
-		local glow = glowOn(art("HIGHLIGHT", "auctionhouse-nav-button-highlight"))
-		glow:SetBlendMode("ADD")
+		-- rows edge to edge across the well, flush one under the next
+		b:SetHeight(ROW)
+		b:SetPoint("TOPLEFT", well, "TOPLEFT", INSET, -INSET - 4 - (i - 1) * ROW)
+		b:SetPoint("TOPRIGHT", well, "TOPRIGHT", -INSET, -INSET - 4 - (i - 1) * ROW)
 		local text = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 		text:SetPoint("LEFT", 12, 0)
 		text:SetPoint("RIGHT", -8, 0)
 		text:SetJustifyH("LEFT")
+		text:SetTextColor(unpack(NAME))
 		b:SetFontString(text)
+		-- the one in view: a plate of the replies' slate, a vine along its
+		-- top and its foot, its name lit (Agent.lua shows it with SetShown)
+		local plate = b:CreateTexture(nil, "BACKGROUND")
+		plate:SetTexture(WC.Style.STONE.claude, "REPEAT", "REPEAT")
+		plate:SetHorizTile(true)
+		plate:SetVertTile(true)
+		plate:SetAllPoints()
+		local parts = { plate }
+		for _, edge in ipairs({ "TOP", "BOTTOM" }) do
+			for _, t in ipairs(vine(b, edge)) do parts[#parts + 1] = t end
+		end
+		local selected = {}
+		function selected:SetShown(on)
+			for _, t in ipairs(parts) do t:SetShown(on) end
+			text:SetTextColor(unpack(on and NAME_LIT or NAME))
+		end
+		function selected:Show() self:SetShown(true) end
+		selected:SetShown(false)
+		b.selected = selected
+		-- the cursor's: the replies' slate laid faintly over the row
+		local glow = b:CreateTexture(nil, "HIGHLIGHT")
+		glow:SetTexture(WC.Style.STONE.claude, "REPEAT", "REPEAT")
+		glow:SetHorizTile(true)
+		glow:SetVertTile(true)
+		glow:SetAllPoints()
+		glow:SetAlpha(0.45)
 		-- news kept across a reload shows from the start
 		local kept = type(WowCompanionAgentDB) == "table" and WowCompanionAgentDB.unread
 		-- Main is the one in view after a reload, so its news is being read
@@ -510,6 +537,8 @@ local function buildLog()
 			bar.TitleText:ClearAllPoints()
 			bar.TitleText:SetPoint("LEFT")
 			bar.TitleText:SetPoint("RIGHT")
+			-- a soft old gold, not Blizzard's bright yellow: the window's bronze lit
+			bar.TitleText:SetTextColor(0.90, 0.79, 0.55)
 		end
 	end
 	-- our close button inside the title band's right end, centred in it; the

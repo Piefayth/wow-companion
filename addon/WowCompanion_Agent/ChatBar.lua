@@ -18,6 +18,8 @@ local FILL = 7.8 / 5.25
 local INSET = 20.4
 
 WC.ChatBar = {}
+-- its pieces by name (the conversation list draws its vine from them)
+WC.ChatBar.Art = art
 -- the text keeps clear of the bar: the column and its border's art beside it
 WC.ChatBar.ROOM = WIDTH + 6
 
