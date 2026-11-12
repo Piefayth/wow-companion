@@ -314,11 +314,14 @@ local function pane(page, option)
 	local function by(pages)
 		local view = scroll:GetHeight()
 		local range = math.max(0, total - view)
-		local to = math.max(0, math.min(range, scroll:GetVerticalScroll() + pages * view * 0.75))
-		scroll:SetVerticalScroll(to)
-		over:SetVerticalScroll(to)
-		paint()
+		scroll:SetVerticalScroll(math.max(0, math.min(range, scroll:GetVerticalScroll() + pages * view * 0.75)))
 	end
+	-- Whatever moves the turns (the arrows, a wheel, the stick, any offset at
+	-- all), the joints and the thumb follow from here, the one place.
+	scroll:SetScript("OnVerticalScroll", function(self, offset)
+		over:SetVerticalScroll(offset)
+		paint()
+	end)
 	if up then up:SetScript("OnClick", function() by(-1) end) end
 	if down then down:SetScript("OnClick", function() by(1) end) end
 	scroll:SetScript("OnSizeChanged", paint)
