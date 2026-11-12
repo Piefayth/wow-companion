@@ -88,8 +88,9 @@ local function buildToast()
 	return frame
 end
 
--- each state's mark: Blizzard's ready-check atlases, a coloured square if missing
-local MARKS = { hearing = "UI-LFG-PendingMark", working = "UI-LFG-PendingMark",
+-- each state's mark: Blizzard's voice chat mic while talking, its ready-check
+-- atlases after; a coloured square if the build lacks one
+local MARKS = { talking = "voicechat-icon-mic", hearing = "UI-LFG-PendingMark", working = "UI-LFG-PendingMark",
 	replied = "UI-LFG-ReadyMark", problem = "UI-LFG-DeclineMark" }
 local function setMark(tex, state, r, g, b)
 	local atlas = MARKS[state]
