@@ -18,7 +18,7 @@ import os
 import struct
 import numpy as np
 
-VERSION = 4
+VERSION = 5
 SIZE = 64
 OVER = 4
 OUT = os.path.join(os.path.dirname(__file__), "..", "addon", "WowCompanion", "Art")
@@ -31,22 +31,34 @@ def rounded_box(x, y, cx, cy, hw, hh, r):
     return np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0) - r
 
 
+def one_bumper(x, y, inset, cx, cy, angle, drop):
+    """One shoulder button: a short pill, its top a little rounder than its
+    bottom, turned `angle` degrees about its centre."""
+    a = np.radians(angle)
+    u = np.cos(a) * (x - cx) + np.sin(a) * (y - cy - drop)
+    v = -np.sin(a) * (x - cx) + np.cos(a) * (y - cy - drop)
+    hw, hh = 12.5 - inset, 8.5 - inset
+    body = rounded_box(u, v, 0, 0, hw, hh, max(7.5 - inset, 1)) <= 0
+    # the top bulges: an arch over the pill
+    arch = v >= -hh - 2.5 * (1 - (u / max(hw, 1)) ** 2)
+    top = rounded_box(u, v + 1.5, 0, 0, hw, hh + 1.5, max(7.5 - inset, 1)) <= 0
+    return (body | top) & arch
+
+
 def bumper(x, y, inset, drop=0.0):
-    """A shoulder button seen from the front: a wide bar, its bottom corners
-    rounded, its top edge arched (high in the middle, low at the ends), shrunk
-    by `inset`."""
-    cx, cy = 32, 30 + drop
-    hw, hh, r = 27 - inset, 17 - inset, max(8 - inset, 1)
-    box = rounded_box(x, y, cx, cy, hw, hh, r) <= 0
-    top = (13 + drop) + 11 * ((x - cx) / 27) ** 2 + inset
-    return box & (y >= top)
+    """Both shoulders, as on the top edge of a controller: two bumpers side by
+    side, their outer ends dipping, within the same square as the game's icons
+    so the chord takes no more room than one button."""
+    left = one_bumper(x, y, inset, 18, 33, -14, drop)
+    right = one_bumper(x, y, inset, 46, 33, 14, drop)
+    return left | right
 
 
 def main():
     n = SIZE * OVER
     c = (np.arange(n) + 0.5) / OVER
     x, y = np.meshgrid(c, c)
-    cx, cy, hh = 32, 38, 9
+    cx, cy, hh = 32, 33, 9
     rim_w = 2.6
     shape = bumper(x, y, 0).astype(float)
     face = bumper(x, y, rim_w).astype(float)
