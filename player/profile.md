@@ -29,6 +29,11 @@ none of this. When the player states a new preference or changes one, write it h
   Ornament is wire scrollwork in the vine's bark, never a ball or boss; its
   wire has weight and never tapers to a hairline (thin ends read as fading
   into the dark), and errs bigger rather than smaller (2026-11-12).
+  **No heart motifs**, ever: not the ornament asked for (2026-11-12).
+  Nothing floats: every element sits in structure (a rule it grows from,
+  a cell it fills, a border it closes); a mark or crest placed alone in
+  empty stone reads as unfinished. A selection must be the same structure
+  as its unselected neighbours, only lit (2026-11-12).
   Every vine joint comes in two variants, ornamental and plain; plain where
   space is tight, like the Status rows (2026-11-12).
   Tabs never open into the chat (2026-11-12): its stone is shaded to sit back
