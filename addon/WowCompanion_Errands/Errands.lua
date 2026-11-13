@@ -533,19 +533,22 @@ local function describeDone(done)
 end
 -- The Errands tab, made of our other pages' parts (WC.Style), so it changes
 -- with them: the list in a well of dark stone down the left, as Settings' and
--- Status's names are, its rows the conversation picker's (WC.Style.ChoiceRow)
--- under a heading, scrolled with the chat's bar (WC.ScrollBar); the chosen
--- errand's details on the light stone beside it, the thick vine down the
--- seam, headings as Settings' sections, the facts' names in its bronze, the
--- chat's vine between sections, and our buttons (WC.Style.Button) along its
--- foot. The details follow the cursor; every colour names a kind of fact.
--- Nothing secure: works in combat.
+-- Status's names are, its rows a list's items (WC.Style.List: the name over
+-- its distance) under a heading, scrolled with the chat's bar (WC.ScrollBar);
+-- the chosen errand's details on the light stone beside it, the thick vine
+-- down the seam, headings as Settings' sections, the facts on the dark stone
+-- as Status's rows, between two of the chat's vines grown out of the spine
+-- (plain joints: the scroll bar stands close on the spine's other side), and
+-- our buttons (WC.Style.Button) along its foot. The details follow the
+-- cursor; every colour names a kind of fact. Nothing secure: works in combat.
 local S = WC.Style
 local NL = string.char(10)
 local C_WHITE, C_GREY, C_GREEN = "|cffffffff", S.GREY, S.GOOD
--- the list well's right edge from the page's left; its heading's band; a row
-local LIST, HEAD, ROW = 214, 30, 24
-local list, content, detail, rows, selectedId = nil, nil, nil, {}, nil
+-- the list well's right edge from the page's left; its heading's band
+local LIST, HEAD = 214, 30
+-- the details' left edge from the spine's middle
+local INDENT = 12 + S.SEAM / 2
+local list, content, detail, items, selectedId = nil, nil, nil, nil, nil
 local function atlasOK(name) return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil end
 local function font(parent, object, colour)
 	local fs = parent:CreateFontString(nil, "OVERLAY", object)
@@ -559,6 +562,16 @@ local function divider(parent)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetHeight(16)
 	S.VineLine(f, "", false, true, true)
+	return f
+end
+-- a section's vine across the details, grown out of the spine through a plain
+-- joint; in the seam's frame, over the spine, so the joint lies on it
+local function joinedDivider(seam)
+	local f = CreateFrame("Frame", nil, seam)
+	f:SetHeight(16)
+	f:SetFrameLevel(seam:GetFrameLevel() + 1)
+	S.VineLine(f, "", false, false, true)
+	S.VineJoin(f, "Thick", "TRightFromMediumPlain", "LEFT")
 	return f
 end
 local function distText(m)
@@ -582,31 +595,22 @@ local function rowLine2(e)
 end
 local drawPage
 local function choose(id) if selectedId ~= id then selectedId = id drawPage() end end
--- one row per errand: its name on the left, its detail ("19 min away")
--- right-aligned short of the pin
+-- one row per errand: its name, whole, over its detail ("19 min away"),
+-- the pin at the detail's end
 local function rowFor(i)
-	if rows[i] then return rows[i] end
-	local b = S.ChoiceRow(content)
-	b:SetHeight(ROW)
-	b.l2 = font(b.face, "GameFontHighlightSmall")
-	b.l2:SetPoint("RIGHT", -30, 0)
-	b.l2:SetJustifyH("RIGHT")
-	b.l2:SetJustifyV("MIDDLE")
-	b.l2:SetWordWrap(false)
-	b.text:ClearAllPoints()
-	b.text:SetPoint("LEFT", 12, 0)
-	b.text:SetPoint("RIGHT", b.l2, "LEFT", -8, 0)
+	local b = items:Row(i)
+	if b.wired then return b end
+	b.wired = true
 	if atlasOK("Waypoint-MapPin-Tracked") then
 		b.pinMark = b.face:CreateTexture(nil, "OVERLAY")
 		b.pinMark:SetAtlas("Waypoint-MapPin-Tracked")
 		b.pinMark:SetSize(14, 14)
-		b.pinMark:SetPoint("RIGHT", -10, 0)
+		b.pinMark:SetPoint("TOPRIGHT", b.detail, "TOPRIGHT", 0, 1)
 	end
 	-- the details follow the cursor; A goes on to the first button
 	b:SetScript("OnEnter", function(self) if self.errand then choose(self.errand.id) end end)
 	b:SetScript("OnClick", function(self) if self.errand then choose(self.errand.id) end end)
 	WC.MarkFocusable(b)
-	rows[i] = b
 	return b
 end
 local function build(p)
@@ -636,11 +640,13 @@ local function build(p)
 	content = CreateFrame("Frame", nil, scroll)
 	content:SetSize(1, 1)
 	scroll:SetScrollChild(content)
-	scroll:SetScript("OnSizeChanged", function(_, w) content:SetWidth(w) end)
+	-- the rows' heights follow their words' wrapping, so the width first
+	scroll:SetScript("OnSizeChanged", function(_, w) content:SetWidth(w) drawPage() end)
+	items = S.List(content, drawPage, 2, 6 + WC.ScrollBar.ROOM)
 	scroll:EnableMouseWheel(true)
 	scroll:SetScript("OnMouseWheel", function(self, delta)
 		local most = math.max(0, content:GetHeight() - self:GetHeight())
-		self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW)))
+		self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * 30)))
 	end)
 	-- the bar at the list's right, clear of the spine's bark
 	local barWell = CreateFrame("Frame", nil, list)
@@ -676,8 +682,14 @@ local function build(p)
 	detail.note:SetMaxLines(4)
 	detail.note:SetSpacing(2)
 	detail.note:SetTextColor(0.8, 0.8, 0.8)
-	detail.rule = divider(detail)
-	detail.rule2 = divider(detail)
+	detail.rule = joinedDivider(seam)
+	detail.rule2 = joinedDivider(seam)
+	-- the facts' band, on the dark stone as Status's rows, from vine to vine:
+	-- its edges under their middles, so the vines hide where the stone changes
+	detail.band = p:CreateTexture(nil, "BACKGROUND", nil, 0)
+	S.Stone(detail.band, "you")
+	detail.band:SetPoint("TOPLEFT", detail.rule, "LEFT", S.SEAM / 2, 0)
+	detail.band:SetPoint("BOTTOMRIGHT", detail.rule2, "RIGHT")
 	-- facts: their names right-aligned in one column, in bronze, values in the next
 	detail.facts = {}
 	for i = 1, 6 do
@@ -743,27 +755,15 @@ drawPage = function()
 	local found = false
 	for _, e in ipairs(open) do if e.id == selectedId then found = true end end
 	if not found then selectedId = open[1] and open[1].id or nil end
-	-- the rows edge to edge across the well, flush one under the next, clear of the bar
-	local y = -4
-	for i = 1, math.max(#open, #rows) do
-		local e = open[i]
-		if e then
-			local b = rowFor(i)
-			b.errand = e
-			b:SetText(e.text)
-			b.l2:SetText(rowLine2(e))
-			b:SetChosen(e.id == selectedId)
-			if b.pinMark then b.pinMark:SetShown(e.place ~= nil and e.pinned ~= false) end
-			b:ClearAllPoints()
-			b:SetPoint("TOPLEFT", content, "TOPLEFT", 2, y)
-			b:SetPoint("TOPRIGHT", content, "TOPRIGHT", -(6 + WC.ScrollBar.ROOM), y)
-			b:Show()
-			y = y - ROW
-		elseif rows[i] then
-			rows[i]:Hide()
-			rows[i].errand = nil
-		end
+	-- the rows across the well, flush one under the next, clear of the bar
+	for i, e in ipairs(open) do
+		local b = rowFor(i)
+		b.errand = e
+		b:SetLines(e.text, rowLine2(e))
+		b:SetChosen(e.id == selectedId)
+		if b.pinMark then b.pinMark:SetShown(e.place ~= nil and e.pinned ~= false) end
 	end
+	local y = items:Lay(#open, -S.LIST_MARGIN) - S.LIST_MARGIN
 	-- done: up to three, dimmed, under the chat's vine
 	local finished = {}
 	for _, e in ipairs(store().items) do if e.doneAt then finished[#finished + 1] = e end end
@@ -794,7 +794,7 @@ drawPage = function()
 	local e
 	for _, x in ipairs(open) do if x.id == selectedId then e = x end end
 	local showing = e ~= nil
-	for _, r in ipairs({ detail.title, detail.added, detail.whenLabel, detail.when, detail.note, detail.noteLabel, detail.rule, detail.rule2 }) do r:SetShown(showing) end
+	for _, r in ipairs({ detail.title, detail.added, detail.whenLabel, detail.when, detail.note, detail.noteLabel, detail.rule, detail.rule2, detail.band }) do r:SetShown(showing) end
 	for _, f in ipairs(detail.facts) do f.label:Hide() f.value:Hide() end
 	for _, b in ipairs({ detail.arrow, detail.pin, detail.remove }) do b:SetShown(showing) end
 	detail.empty:SetShown(not showing)
@@ -816,12 +816,12 @@ drawPage = function()
 			or ("Get %s into your bags"):format(name)
 	end
 	detail.when:SetText("- " .. C_WHITE .. when .. "|r")
-	-- a section's vine across the details' stone, from the seam to the edge
+	-- a section's vine from the spine's middle to the well's floor
 	local function ruleUnder(r, anchor)
 		r:ClearAllPoints()
 		r:SetPoint("TOP", anchor, "BOTTOM", 0, -4)
-		r:SetPoint("LEFT", detail, "LEFT", -6, 0)
-		r:SetPoint("RIGHT", detail, "RIGHT", 0, 0)
+		r:SetPoint("LEFT", detail, "LEFT", -INDENT, 0)
+		r:SetPoint("RIGHT", detail, "RIGHT", S.BLEED_X, 0)
 	end
 	ruleUnder(detail.rule, detail.when)
 	-- facts: one fact per row, the same spacing throughout
@@ -849,25 +849,31 @@ drawPage = function()
 		slot.value:SetText(f[2])
 		slot.label:ClearAllPoints()
 		slot.value:ClearAllPoints()
-		slot.label:SetPoint("TOPLEFT", detail.rule, "BOTTOMLEFT", 6, y2 - 1)
-		slot.value:SetPoint("TOPLEFT", detail.rule, "BOTTOMLEFT", 90, y2)
+		slot.label:SetPoint("TOPLEFT", detail.rule, "BOTTOMLEFT", INDENT, y2 - 1)
+		slot.value:SetPoint("TOPLEFT", detail.rule, "BOTTOMLEFT", INDENT + 84, y2)
 		slot.value:SetPoint("RIGHT", detail, "RIGHT", -4, 0)
 		slot.label:Show()
 		slot.value:Show()
 		y2 = y2 - math.max(slot.value:GetStringHeight(), 14) - 7
 		last = slot.value
 	end
-	-- Notes last, under their own vine
+	-- the facts on their band between two vines; Notes last, under the
+	-- second, or under the first when there are no facts
+	local hasFacts = #facts > 0
+	detail.rule2:SetShown(hasFacts)
+	detail.band:SetShown(hasFacts)
+	detail.rule:SetShown(hasFacts or e.note ~= nil)
+	if hasFacts then ruleUnder(detail.rule2, last) end
 	if e.note then
-		ruleUnder(detail.rule2, last)
+		local over = hasFacts and detail.rule2 or detail.rule
 		detail.noteLabel:ClearAllPoints()
-		detail.noteLabel:SetPoint("TOPLEFT", detail.rule2, "BOTTOMLEFT", 6, -4)
+		detail.noteLabel:SetPoint("TOPLEFT", over, "BOTTOMLEFT", INDENT, -4)
 		detail.note:ClearAllPoints()
 		detail.note:SetPoint("TOPLEFT", detail.noteLabel, "BOTTOMLEFT", 10, -5)
 		detail.note:SetPoint("RIGHT", detail, "RIGHT", -4, 0)
 		detail.note:SetText(e.note)
 	else
-		detail.rule2:Hide() detail.noteLabel:Hide() detail.note:Hide()
+		detail.noteLabel:Hide() detail.note:Hide()
 	end
 	local has = e.place ~= nil
 	detail.arrow:SetEnabled(has and WC.Has("nav", "aim") ~= nil)
