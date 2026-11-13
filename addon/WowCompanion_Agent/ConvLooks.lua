@@ -213,6 +213,8 @@ local function stack(look, H, offered)
 		top, drop, lead = CAP, CAP, 2
 		row = math.max(12, math.min(row, (H - top - drop - 2 * lead - extra) / #KEYS))
 	end
+	-- centre: the whole list stands in the middle of the well's height
+	if look.centre then top = top + math.max(0, (H - (top + 2 * lead + #KEYS * row + extra + drop)) / 2) end
 	local rows, y = {}, top + lead
 	for i, key in ipairs(KEYS) do
 		rows[i] = { key = key, y = y, h = row, y0 = y + gap / 2, y1 = y + row - gap / 2 }
@@ -285,7 +287,7 @@ looks.plinth = { label = "Plinth", row = 26, gap = 4, lead = 3, chord = 96, draw
 	sockets(t, L, open, 96)
 end }
 
-looks.channel = { label = "Channel", row = 30, gap = 4, lead = 0, draw = function(t, L, open)
+looks.channel = { label = "Channel", row = 30, gap = 4, lead = 8, centre = true, draw = function(t, L, open)
 	ends(t, L)
 	-- an inset of its own between the rules: the well's walls under the head
 	-- rule and over the foot's, the head's shadow falling in
