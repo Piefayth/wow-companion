@@ -198,12 +198,6 @@ function R:Light(pick, entries)
 	end
 end
 
--- The slot lit stays lit until the stick is STICK_MARGIN (radians) further
--- into another slot than into it: wobble on a border never flips the pick.
-local STICK_MARGIN = math.rad(10)
-local function angleTo(x, y, m, entry)
-	return math.acos(math.max(-1, math.min(1, (x * entry.dx + y * entry.dy) / m)))
-end
 function R:Picked(entries)
 	local x, y = rightStick()
 	if not x or x * x + y * y < PICK_SQ then return nil end
@@ -213,11 +207,6 @@ function R:Picked(entries)
 			local dot = x * entry.dx + y * entry.dy
 			if not bestDot or dot > bestDot then best, bestDot = index, dot end
 		end
-	end
-	local lit = self.lit and entries[self.lit]
-	if best and lit and lit.dx and best ~= self.lit then
-		local m = math.sqrt(x * x + y * y)
-		if angleTo(x, y, m, lit) - angleTo(x, y, m, entries[best]) < STICK_MARGIN then return self.lit end
 	end
 	return best
 end
