@@ -9,7 +9,8 @@ paints the vine (the thick vine's palette, no grain, worn lit edges, the
 dark warm outline, its cast), the strap pressed over the vine as a shallow
 ridge in its height. Round 9 (259c200) was "pretty close"; round 10
 (d99cde6) varied how it stands up and its D, pressed harder, was liked;
-round 11 varies D (LOOKS), each pickable on the Settings page's Trial row. A gusset over
+round 11 varies D (LOOKS), and E (flat) with a piece where the vine comes
+out (feet), each pickable on the Settings page's Trial row. A gusset over
 the names panel's corner, its arm along the panel's edge carried on as a
 strap over the vine, cut square where the vine comes out. Drawn in place for
 each end, the light from the top left on both:
@@ -46,6 +47,11 @@ LOOKS = {
     "D7": dict(bevel=0.25, cast=0.3, outline=1.1, ridge=3.2, span=2.2, shape=2),  # thinner edges
     "D8": dict(bevel=0.45, cast=0.5, outline=1.1, ridge=3.2, span=2.2, shape=2),  # a deeper shadow
 }
+# the player's other idea: round 10's E, flat across the vine, with a little
+# piece where the strap lets the vine out (foot: FEET's kinds)
+FLAT = dict(bevel=0.45, cast=0.3, outline=1.1, ridge=0.0, span=2.2, shape=2)
+for key, foot in (("E", None), ("E1", "taper"), ("E2", "tongue"), ("E3", "cuff"), ("E4", "step")):
+    LOOKS[key] = dict(FLAT, foot=foot)
 
 
 def gusset():
@@ -53,14 +59,32 @@ def gusset():
     return [(EDGE_X - 10, 0), (STRAP, 0), (STRAP, TIP)] + [tuple(p) for p in sweep]
 
 
-def draw(flip, bevel, cast, outline, ridge, span, shape):
+def feet(kind):
+    """The piece where the strap's square end lets the vine out (drawn for the
+    top end, the vine leaving downward), one metal with the sheet."""
+    L, R = EDGE_X - 3.0, STRAP  # the strap's end
+    vl, vr = MID - VINE, MID + VINE
+    if kind == "taper":  # the end drawn in onto the vine, its sides curving in
+        left = sb.bez((L, TIP - 0.1), (L + 0.2, TIP + 1.6), (vl - 0.4, TIP + 1.8), (vl - 0.2, TIP + 3.2))
+        right = sb.bez((vr + 0.2, TIP + 3.2), (vr + 0.4, TIP + 1.8), (R - 0.1, TIP + 1.6), (R, TIP - 0.1))
+        return [[tuple(p) for p in left] + [tuple(p) for p in right]]
+    if kind == "tongue":  # a point down the vine
+        return [[(L, TIP - 0.1), (R, TIP - 0.1), (vr + 0.3, TIP + 1.4), (MID, TIP + 3.6), (vl - 0.3, TIP + 1.4)]]
+    if kind == "cuff":  # a short band round the vine, a hair below the end
+        return [[(vl - 0.5, TIP + 0.8), (vr + 0.5, TIP + 0.8), (vr + 0.5, TIP + 2.4), (vl - 0.5, TIP + 2.4)]]
+    if kind == "step":  # a narrower plate under the end, the vine's width and a little
+        return [[(vl - 0.7, TIP - 0.1), (vr + 0.5, TIP - 0.1), (vr + 0.5, TIP + 1.8), (vl - 0.7, TIP + 1.8)]]
+    return []
+
+
+def draw(flip, bevel, cast, outline, ridge, span, shape, foot=None):
     c = sb.ucanvas(TW, TH)
     pen = sb.Pen(c, TH, flip)
     xx = (np.arange(c.W) / c.s - c.pad) / U  # units across
     d = (xx - MID) / span
     lift = np.where(np.abs(d) < 1, ridge * np.cos(np.pi / 2 * d) ** shape, 0)
     lift = np.broadcast_to(lift[None, :], (c.H, c.W))
-    sb.raised(pen, [gusset()], PAL, bevel=bevel, cast=cast, outline=outline, lift=lift, grain=False)
+    sb.raised(pen, [gusset()] + feet(foot), PAL, bevel=bevel, cast=cast, outline=outline, lift=lift, grain=False)
     return c.final()
 
 
