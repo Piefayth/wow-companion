@@ -137,7 +137,7 @@ end
 -- the well's own inset wall (Window.lua's dress: Inset, INSET deep) along
 -- the box x, y, w, h's top (edge "Top") or foot ("Bottom")
 local function wall(t, edge, x, y, w, h)
-	put(t, { tex = AGENT .. "Inset-" .. edge .. "Edge-21", x = x, y = edge == "Top" and y or y + h - INSET, w = w,
+	put(t, { tex = AGENT .. "Inset-" .. edge .. "Edge-22", x = x, y = edge == "Top" and y or y + h - INSET, w = w,
 		h = INSET, layer = "BACKGROUND", sub = 2 })
 end
 -- the thick vine across at y from x0 to x1, its ends bare (under the walls)

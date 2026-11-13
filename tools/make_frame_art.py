@@ -32,7 +32,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 from make_scrollbar_art import write_tga, LIGHT, HALF, FOCUS_GLOW
 
-VERSION = 21
+VERSION = 22
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -56,18 +56,36 @@ def grid(w, h, k=K):
     return (xx + 0.5) / k, (yy + 0.5) / k
 
 
-def shade(hgt, pal, k=K, gloss=0.35, power=18):
+def shade(hgt, pal, k=K, gloss=0.35, power=18, out=None):
     """A height field's colour lit from the top left: the palette's shadow,
-    mid and light by how the surface faces the light, a highlight on top."""
+    mid and light by how the surface faces the light, a highlight on top.
+    `out`, each point's outward direction (x, y) where the field is a rim,
+    turns the light with it: every edge is lit as the top edge is, so a rim
+    reads the same on all four sides and through every bend."""
     gy, gx = np.gradient(hgt, 1 / k)
     n = np.stack([-gx, -gy, np.ones_like(gx)], -1)
     n /= np.linalg.norm(n, axis=-1, keepdims=True)
-    diff = np.clip(n @ LIGHT, 0, 1)[..., None]
+    if out is None:
+        light, half = LIGHT, HALF
+    else:
+        ox, oy = out[..., 0], out[..., 1]
+        # LIGHT is -LIGHT[1] along the top edge's outward (0, -1) and LIGHT[0] along it (1, 0)
+        light = np.stack([-LIGHT[1] * ox - LIGHT[0] * oy, -LIGHT[1] * oy + LIGHT[0] * ox, np.full_like(ox, LIGHT[2])], -1)
+        half = light + np.array([0, 0, 1.0])
+        half /= np.linalg.norm(half, axis=-1, keepdims=True)
+    diff = np.clip(np.sum(n * light, -1), 0, 1)[..., None]
     flat = LIGHT[2]
     sh, mid, li = pal
     col = np.where(diff < flat, sh + (mid - sh) * (diff / flat), mid + (li - mid) * ((diff - flat) / (1 - flat)))
-    spec = np.clip(n @ HALF, 0, 1) ** power * gloss
+    spec = np.clip(np.sum(n * half, -1), 0, 1) ** power * gloss
     return np.clip(col + spec[..., None] * 255, 0, 255)
+
+
+def outward(depth, k=K):
+    """The outward direction of a depth field (x, y), smoothed over its creases."""
+    gy, gx = np.gradient(depth, 1 / k)
+    o = np.stack([ndimage.gaussian_filter(-gx, k * 0.15), ndimage.gaussian_filter(-gy, k * 0.15)], -1)
+    return o / np.maximum(np.linalg.norm(o, axis=-1, keepdims=True), 1e-6)
 
 
 def bead(u):
@@ -82,10 +100,10 @@ def bar(u, w):
     return (1 - (1 - sh) ** 2) * 0.9 + 0.15 * bead(np.clip(2 * u / w - 1, -1, 1))
 
 
-def rim_metal(hgt, pal=BRONZE, k=K):
+def rim_metal(hgt, pal=BRONZE, k=K, out=None):
     """The rim's metal on a height field, k samples a unit: the tabs' trim
     is the same (make_tab_art.py)."""
-    return shade(hgt, pal, k, gloss=0.22, power=14)
+    return shade(hgt, pal, k, gloss=0.22, power=14, out=out)
 
 
 class Layers:
@@ -171,7 +189,8 @@ def frame():
     hrule = np.where(hrule > hr, hrule, 0)  # the rim's bar runs over the rule's end
     hgt = ndimage.gaussian_filter(np.maximum(hr, hrule), K * 0.1)
     metal = (s >= 0) & (s < RIM) | (hrule > 0)
-    col = rim_metal(hgt)
+    out = np.where(((hrule > hr) | (s >= RIM))[..., None], np.array((0, -1.0)), outward(s))
+    col = rim_metal(hgt, out=out)
     col = col * (1 + 0.09 * brushed(s))[..., None]
     rule = hrule > 0
     col = np.where(rule[..., None], col * (1 + 0.07 * brushed(yy, 5))[..., None], col)
@@ -211,13 +230,12 @@ def frame_pieces():
     }
 
 
-DRAWER_VERSION = 23  # ConvMenu.lua's
+DRAWER_VERSION = 24  # ConvMenu.lua's
 DW, DH = 60.0, 60.0  # the drawn drawer, from the window's outer edge
 DRULE = DH - RIM - 24.0  # the legend's rule (ConvMenu.lua's FOOT under it)
 ELBOW = 11.0  # the radius the drawer's rims bend up and down into the window's by
 WIRE = 1.4  # the volute's wire, its radius
 JOIN = 24.0  # how far a joint piece reaches past the window's rim, out and up
-DK = 16  # samples a unit for the drawer
 
 
 def volute(cx, cy, r0, a0, hug, turns, shrink, sense=1, n=700):
@@ -240,7 +258,7 @@ def drawer():
     RIM), JOIN above and below the drawer for the elbows, and ELBOW + 4 past its right
     edge for the depth; returns the picture from y -JOIN, x 0."""
     from scipy.spatial import cKDTree
-    k = DK
+    k = K
     w = RIM + DW
     xx, yy = grid(w + ELBOW + 4, DH + 2 * JOIN, k)
     yy = yy - JOIN
@@ -252,18 +270,23 @@ def drawer():
     shape = ndimage.distance_transform_edt(grown) / k > ELBOW
     sd = (ndimage.distance_transform_edt(shape) / k).astype(np.float32)
     # members by height, the higher showing where they overlap
+    # and the way each faces, for its light (shade's out): the rims outward,
+    # the rule and the wire as the top edge
     h = np.zeros(xx.shape)
     dark = np.zeros(xx.shape)
     grain = np.zeros(xx.shape)
+    face = np.broadcast_to(np.array((0, -1.0)), xx.shape + (2,))
     m = np.zeros(xx.shape, bool)
+    up = np.array((0, -1.0))
 
-    def add(mask, hh, dd, gg):
-        nonlocal h, dark, grain, m
+    def add(mask, hh, dd, gg, oo=up):
+        nonlocal h, dark, grain, face, m
         won = mask & (~m | (hh > h))
         h, dark, grain = np.where(won, hh, h), np.where(won, dd, dark), np.where(won, gg, grain)
+        face = np.where(won[..., None], oo, face)
         m = m | mask
-    add((sw > 0) & (sw < RIM), rim_height(sw), rim_dark(sw), brushed(np.clip(sw, 0, N - 1)))
-    add((sw <= 0) & (sd > 0) & (sd < RIM), rim_height(sd), rim_dark(sd), brushed(np.clip(sd, 0, N - 1)))
+    add((sw > 0) & (sw < RIM), rim_height(sw), rim_dark(sw), brushed(np.clip(sw, 0, N - 1)), np.array((1, 0.0)))
+    add((sw <= 0) & (sd > 0) & (sd < RIM), rim_height(sd), rim_dark(sd), brushed(np.clip(sd, 0, N - 1)), outward(sd, k))
     u = yy - DRULE
     rule = (u >= 0) & (u < 3.0) & (xx >= RIM) & (sd > 2.5)
     add(rule, bar(np.clip(u, 0, 3.0), 3.0) * 0.85, np.clip(1 - np.minimum(u, 3.0 - u) / 0.4, 0, 1), brushed(u * 9, 5))
@@ -277,7 +300,7 @@ def drawer():
     wire = d > 0
     add(wire, np.sqrt(dd * (2 * WIRE - dd)) / WIRE * 1.05 + 0.25, np.clip(1 - d / 0.45, 0, 1), brushed(np.clip(d * 6, 0, 59), 9))
     hgt = ndimage.gaussian_filter(h, k * 0.1)
-    col = rim_metal(hgt, BRONZE, k) * (1 + 0.09 * grain)[..., None]
+    col = rim_metal(hgt, BRONZE, k, face) * (1 + 0.09 * grain)[..., None]
     col = col + (LINE - col) * np.clip(dark, 0, 0.9)[..., None]
     # the legend's band: the title band's dark slate, shadowed under the rule
     # and over the bottom rim
@@ -298,14 +321,14 @@ def drawer_pieces():
     over the window's own) and its elbow and volute, above or below the
     drawer; the rest as the frame's are."""
     pre = drawer()
-    k = DK
+    k = K
 
     def cut(x0, y0, x1, y1):
         return pre[int(round((y0 + JOIN) * k)):int(round((y1 + JOIN) * k)), int(round(x0 * k)):int(round(x1 * k))]
     c, w, mid = RIM, RIM + DW, RIM + DW / 2
     return {
-        "Drawer-TopJoin": fit(cut(0, -JOIN, c + JOIN, c), (256, 256)),
-        "Drawer-BottomJoin": fit(cut(0, DH - c, c + JOIN, DH + JOIN), (256, 256)),
+        "Drawer-TopJoin": fit(cut(0, -JOIN, c + JOIN, c), (128, 128)),
+        "Drawer-BottomJoin": fit(cut(0, DH - c, c + JOIN, DH + JOIN), (128, 128)),
         "Drawer-TopEdge": fit(cut(mid - 1, 0, mid + 1, c), (16, 64)),
         "Drawer-BottomEdge": fit(cut(mid - 1, DH - c, mid + 1, DH), (16, 64)),
         "Drawer-TopRightCorner": fit(cut(w - c, 0, w, c), (64, 64)),

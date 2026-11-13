@@ -62,7 +62,7 @@ local CLOSE, CLOSE_PAD = 14, 3 -- the close button, inside the title band, CLOSE
 -- Our own frame art (tools/make_frame_art.py) on an owner's NineSlice pieces,
 -- on the owner's bounds: every piece rim wide, the top corners and edge top
 -- tall, so a corner and the edge beside it share their pixels on screen.
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-21]]
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\%s-%s-22]]
 local function dress(owner, art, rim, top)
 	local slice = owner.NineSlice
 	if not slice then return end

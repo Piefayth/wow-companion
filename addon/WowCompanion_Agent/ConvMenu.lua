@@ -21,7 +21,7 @@
 local W, ROW, FOOT, PAD = 160, 24, 24, 6
 local RIM, RULE = 6, 3 -- the window's rim (Window.lua), the rule's width
 local JOIN = 24 -- a joint piece's reach past the window's rim, out and up (make_frame_art.py's)
-local DRAWER = [[Interface\AddOns\WowCompanion_Agent\Art\Drawer-%s-23]] -- make_frame_art.py's DRAWER_VERSION
+local DRAWER = [[Interface\AddOns\WowCompanion_Agent\Art\Drawer-%s-24]] -- make_frame_art.py's DRAWER_VERSION
 local menu = CreateFrame("Frame", "WCConvMenu", UIParent)
 menu:Hide()
 local function piece(name, layer, sub)
