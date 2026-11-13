@@ -1,11 +1,10 @@
-"""A trial's art: buttons for the settings page, the cut-cornered slab (round
-7's pick for elegance) made more of a button: crossed with the thick block and
-the swelling face, and the bronze corners taken further; each at rest, lit
-(under the cursor) and pressed. Drawn whole,
+"""A trial's art: the settings page's button, round 8's pick (Facets), with
+six ways to light it under the cursor (round 8's lit face, the light stone,
+blended into the page). Drawn whole,
 the stone baked in, 160 x 36 units with the 128 x 28 body in the middle so
 ornament can reach past it. Goes when one is chosen.
 
-    python tools/make_button_art.py   writes addon/WowCompanion/Art/Btn-<Kind>-<Rest|Lit|Pushed>-<ROUND>.tga
+    python tools/make_button_art.py   writes addon/WowCompanion/Art/Btn-Facets-<State>-<ROUND>.tga
 """
 import os
 import sys
@@ -20,7 +19,7 @@ import make_tab_art as tab  # noqa: E402
 from make_listitem_art import rounded, cast, mirrored_x  # noqa: E402
 from make_scrollbar_art import Pen, Wire, U, WEIGHTS, LIGHT, ucanvas, raised, ribbon  # noqa: E402
 
-ROUND = 8
+ROUND = 9
 W, H = 160, 36
 X0, Y0, X1, Y1 = 16, 4, 144, 32  # the body
 HW, PAL = WEIGHTS[""]
@@ -74,65 +73,58 @@ def cut(k=5.0, inset=0.0, dy=0.0):
     return chamfered(X0 + inset, Y0 + inset + dy, X1 - inset, Y1 - inset + dy, max(k - inset * 0.6, 0.5))
 
 
-def draw(kind, state):
-    lit, pushed = state == "Lit", state == "Pushed"
+GLOW = np.array(M.FOCUS_GLOW, float)  # every hover glow of ours
+
+
+def halo(c, m, width, k):
+    """The focus glow's colour spread out round m, outside it."""
+    s = U * c.s
+    g = np.clip(ndimage.gaussian_filter(m, s * width) * 2.2, 0, 1) * (1 - m)
+    c.over(np.broadcast_to(GLOW, c.rgb.shape), g * k)
+
+
+def draw(state):
+    """Round 8's pick (Facets: cut corners, a faceted bevel, a bark rim) at
+    rest, pressed, and lit six ways: the face stays the dark stone in each, so
+    the button under the cursor stands out of the page rather than into it."""
+    pushed = state == "Pushed"
     c = ucanvas(W, H)
     pen = Pen(c, H)
-    pal = PAL if lit else REST_PAL
-    dy = 0.8 if pushed else 0.0  # pressed, the face sits a little lower
-    m = pen.mask([cut(dy=dy)])
+    m = pen.mask([cut(dy=0.8 if pushed else 0.0)])
+    outline = pen.mask([cut()])
     ring = (cut(), cut(5.0, 2 * HW))
-    if kind == "CutBlock":  # cut corners, the block's deep bevel, no metal
-        face(c, m, lit, bevel=3.2, shade=1.7, pushed=pushed)
-    elif kind == "CutBlockRim":  # the same, in a bark rim
-        face(c, m, lit, bevel=2.8, shade=1.6, pushed=pushed)
-        rim(c, pen, *ring, pal)
-    elif kind == "CutPillow":  # cut corners, the face swelling, in a rim
-        face(c, m, lit, bevel=2.0, pillow=2.6, shade=1.5, pushed=pushed)
-        rim(c, pen, *ring, pal)
-    elif kind == "CutBlockPillow":  # deep bevel and the swell together
-        face(c, m, lit, bevel=3.0, pillow=2.2, shade=1.7, pushed=pushed)
-        rim(c, pen, *ring, pal)
-    elif kind == "Facets":  # the bevel cut flat, as a dressed stone, in a rim
-        face(c, m, lit, bevel=3.4, shade=1.9, facets=True, pushed=pushed)
-        rim(c, pen, *ring, pal)
-    elif kind == "Plinth":  # the slab standing on a darker step of itself
-        base = pen.mask([cut(6.0, -1.8, 2.2)])
-        cast(c, base, 0.8)
-        c.metal(base, M.dim(PAL, 0.55), bevel=BEVEL * U, outline=1.1, shadow=False, sheen=False, paint=True, gloss=0.2, grain=False)
-        face(c, m, lit, bevel=2.2, pillow=0.8, pushed=pushed)
-        rim(c, pen, *ring, pal)
-    elif kind == "CutCorners":  # six on the cut slab: bronze laid along each cut, arms down the sides
-        face(c, m, lit, bevel=2.4, pillow=0.8, pushed=pushed)
-        k, L, o = 5.0, 4.5, HW * 0.7
-        bars = []
-        for sx, sy, x, y in ((1, 1, X0, Y0), (-1, 1, X1, Y0), (1, -1, X0, Y1), (-1, -1, X1, Y1)):
-            bars.append(ribbon([(x + sx * (k + L), y + sy * o), (x + sx * k, y + sy * o),
-                                (x + sx * o, y + sy * k), (x + sx * o, y + sy * (k + L * 0.5))], HW * 1.2))
-        raised(pen, bars, pal, bevel=BEVEL, cast=0.5, grain=False)
-    elif kind == "CornerScrolls":  # six's corners curling: a scroll of wire on each cut
-        face(c, m, lit, bevel=2.4, pillow=0.8, pushed=pushed)
-        rim(c, pen, *ring, pal)
-        w = Wire((X0 + 1.4, Y0 + 3.6), 200).volute((X0 - 5.4, Y0 + 5.0), 4.8, 270, -1, 1.05, eye=1.5, out=0.3, inn=0.3)
-        pieces = w.pieces(HW * 0.9, 0.8, swell=1.0) + mirrored_x(w, W / 2).pieces(HW * 0.9, 0.8, swell=1.0)
-        lo = w.mirrored(H / 2)
-        pieces += lo.pieces(HW * 0.9, 0.8, swell=1.0) + mirrored_x(lo, W / 2).pieces(HW * 0.9, 0.8, swell=1.0)
-        raised(pen, pieces, pal, bevel=BEVEL, cast=0.4, grain=False)
+    s = U * c.s
+    if state == "LitHalo":  # the focus glow round it, outside the rim
+        halo(c, outline, 2.4, 1.0)
+    if state == "LitHaloRim":
+        halo(c, outline, 1.8, 0.8)
+    face(c, m, False, bevel=3.4, shade=1.9, facets=True, pushed=pushed)
+    d = ndimage.distance_transform_edt(m > 0.5) / s
+    yy = np.arange(c.H)[:, None] / s - c.pad / U + 0 * m
+    if state == "LitInner":  # a warm light round the inside of the face
+        c.over(np.broadcast_to(GLOW, c.rgb.shape), m * np.clip(1 - (d - 1.6) / 4.0, 0, 1) ** 1.3 * 0.75)
+    elif state == "LitLamp":  # lamplight rising from its foot
+        c.over(np.broadcast_to(GLOW, c.rgb.shape), m * np.clip((yy - Y0) / (Y1 - Y0), 0, 1) ** 2.2 * 0.5)
+    elif state == "LitGilt":  # the facets catch gold: the bevel lit, the flat face dark
+        c.over(np.broadcast_to(GLOW, c.rgb.shape), m * np.clip(1 - (d - 1.6) / 2.6, 0, 1) * 0.9)
+    bright = M.dim(PAL, 1.9)
+    pal = {"Rest": REST_PAL, "Pushed": REST_PAL, "LitRim": bright, "LitHaloRim": bright, "LitGilt": bright}.get(state, PAL)
+    rim(c, pen, *ring, pal)
     return c.final()
 
 
-KINDS = ["CutBlock", "CutBlockRim", "CutPillow", "CutBlockPillow", "Facets", "Plinth", "CutCorners", "CornerScrolls"]
+STATES = ["Rest", "Pushed", "LitHalo", "LitRim", "LitHaloRim", "LitInner", "LitLamp", "LitGilt"]
 
 
-def render(kind):
-    return {"%s-%s" % (kind, state): draw(kind, state) for state in ("Rest", "Lit", "Pushed")}
+def render(state):
+    return {"Facets-" + state: draw(state)}
 
 
 def main():
     from multiprocessing import Pool
     out = {}
     with Pool(4) as pool:
-        for part in pool.map(render, KINDS):
+        for part in pool.map(render, STATES):
             out.update(part)
     artout.clear(M.CORE_OUT, "Btn-*.tga")
     for stem, rgba in out.items():
