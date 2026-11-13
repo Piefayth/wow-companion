@@ -122,16 +122,16 @@ end
 
 -- the rows and section names above it, in a scroll frame the controller's
 -- cursor scrolls as it moves (SmartNavigation's HandleScroll), 9 px wider
--- on the left than the page so the names reach the edge; the chat's scroll
--- bar (WC.ScrollBar) down the settings well's right edge, the rows keeping
--- clear of it as the turns do
+-- on the left than the page so the names reach the edge, and out to the
+-- well's right edge so the section bands run under the chat's scroll bar
+-- (WC.ScrollBar), the rows keeping clear of it as the turns do
 local barWell = CreateFrame("Frame", nil, page)
 barWell:SetPoint("TOPRIGHT", 9, 7)
 barWell:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, SEAM)
 barWell:SetWidth(40)
 local scroll = CreateFrame("ScrollFrame", nil, page)
 scroll:SetPoint("TOPLEFT", -9, 0)
-scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9 - 3 - WC.ScrollBar.ROOM, SEAM + 3)
+scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, SEAM + 3)
 local content = CreateFrame("Frame", nil, scroll)
 content:SetSize(1, 1)
 scroll:SetScrollChild(content)
@@ -178,7 +178,7 @@ WC.Style.VineJoin(across, "Thick", "TRightBig", "LEFT")
 -- as in Blizzard's Settings.
 local function settingRow(row, step, prompt)
 	local r = CreateFrame("Button", nil, content)
-	r:SetPoint("RIGHT", content, "RIGHT", -9, 0)
+	r:SetPoint("RIGHT", content, "RIGHT", -(12 + WC.ScrollBar.ROOM), 0)
 	r:SetHeight(ROW_H)
 	local hover = r:CreateTexture(nil, "HIGHLIGHT")
 	hover:SetPoint("TOPLEFT", 2, -3)
