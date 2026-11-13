@@ -1,5 +1,7 @@
-"""A trial (the player, 2026-11-13): spine ends round 6, the folded corner
-cover laid over the real spine, smaller (round 5, 2ecc90e, drew the eye). Round 4 (a33d974) drew its own vine and a
+"""A trial (the player, 2026-11-13): spine ends round 7, the folded corner
+cover laid over the real spine, smaller (round 5, 2ecc90e, drew the eye);
+round 6 (d4896a6) was too bulbous over the vine and stood out in colour, so
+here its ridge is shallow and its metal is the vine's own bark. Round 4 (a33d974) drew its own vine and a
 mock panel's side face the game does not have, so its vine missed the spine's
 and the bottom was not the top's. Here the spine is the game's own, whole, its
 round end under the cover; the cover is only a thin sheet: a gusset over the
@@ -7,7 +9,7 @@ names panel's corner, its arm along the panel's edge carried on as a strap
 over the vine, pressed round it, cut square where the vine comes out. Drawn
 in place for each end, the light from the top left on both:
 
-    python tools/make_cover_trial.py   writes addon/WowCompanion/Art/Vine-CornerCover<Top|Bottom>-T5.tga
+    python tools/make_cover_trial.py   writes addon/WowCompanion/Art/Vine-CornerCover<Top|Bottom>-T7.tga
 
 48 x 16 units, 4 texels each; the spine's middle at x 24, the panel's edge
 at x 22.5 and at the texture's top (bottom). Removed with the trial once one
@@ -25,7 +27,8 @@ MID, EDGE_X = 24.0, 22.5  # the spine's middle, the panel's edge
 VINE = sb.WEIGHTS["Thick"][0]  # the spine's half-width
 STRAP = MID + VINE + 0.5  # the strap's right edge, past the vine
 TIP = 12.0  # where the cover's arm ends down the panel's edge
-FACE = np.array((116, 99, 77.)); LIGHT = np.array((206, 188, 152.)); DARK = np.array((44, 33, 22.))
+# the thick vine's own colours (Vine-ThickVMid): its body, its lit crest, its shade
+FACE = np.array((88, 72, 54.)); LIGHT = np.array((124, 106, 86.)); DARK = np.array((38, 28, 19.))
 L = np.array((-1., -1.)) / math.sqrt(2)
 
 
@@ -70,16 +73,16 @@ def draw(flip):
     rgb = lay(rgb, c, np.zeros(3)); a = c + a * (1 - c)
     # the face, flat, a faint sheen across it
     t = ((xx - xx[m > 0.5].min()) + (yy - yy[m > 0.5].min())) / (TW * 0.6)
-    face = FACE * (1 + 0.14 * (0.5 - t))[..., None]
-    # pressed round the vine: a half cylinder's light across the strap
+    face = FACE * (1 + 0.08 * (0.5 - t))[..., None]
+    # pressed over the vine: a shallow ridge, lit a little on its left, shaded on its right
     d = (xx - MID) / (VINE + 0.3)
-    bump = np.where(np.abs(d) < 1, d, 0)
-    face = face * (1 - 0.35 * np.clip(bump, 0, 1) ** 1.5)[..., None]
-    face = lay(face, np.clip(-bump, 0, 1) ** 2 * 0.35 * (np.abs(d) < 1), LIGHT)
+    bump = np.where(np.abs(d) < 1, np.sin(np.pi * d), 0)
+    face = face * (1 - 0.12 * np.clip(bump, 0, 1))[..., None]
+    face = lay(face, np.clip(-bump, 0, 1) * 0.3, LIGHT)
     rgb = lay(rgb, m, face); a = m + a * (1 - m)
     # its cut edges, a texel: lit toward the light, dark away
     ring = np.clip(m - nd.grey_erosion(m, size=SS + 1), 0, 1)
-    rgb = lay(rgb, ring * np.clip(dot, 0, 1) * 0.85, LIGHT)
+    rgb = lay(rgb, ring * np.clip(dot, 0, 1) * 0.7, LIGHT)
     rgb = lay(rgb, ring * np.clip(-dot, 0, 1) * 0.7, DARK)
     # the vine coming out from under the strap's square end: its shadow on the vine
     end = (np.abs(yy - Y(TIP)) < 0.9) * (np.abs(xx - MID) < VINE) * (1 - m)
@@ -100,7 +103,7 @@ def draw(flip):
 
 def main():
     for flip, end in ((False, "Top"), (True, "Bottom")):
-        sb.write_tga(os.path.join(sb.CORE_OUT, "Vine-CornerCover%s-T6.tga" % end), draw(flip))
+        sb.write_tga(os.path.join(sb.CORE_OUT, "Vine-CornerCover%s-T7.tga" % end), draw(flip))
     print("2 textures")
 
 

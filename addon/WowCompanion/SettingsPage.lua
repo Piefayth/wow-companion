@@ -143,7 +143,7 @@ across:SetHeight(16)
 across:SetPoint("LEFT", band, "TOPLEFT", -2 - SEAM / 2, SEAM / 2)
 across:SetPoint("RIGHT", band, "TOPRIGHT", BX, SEAM / 2)
 WC.Style.VineLine(across, "Thick", false, false, true)
-WC.Style.VineJoin(across, "Thick", "TRightBig", "LEFT")
+WC.Style.VineJoin(across, "Thick", "TRightBigPlain", "LEFT")
 -- the section joints' frame: each joint carries its own stretch of the spine,
 -- which near the page's top or foot reached past the spine's end, up through
 -- the floor to the title rule (seen on screen, 2026-11-13); cut to the spine,
@@ -170,7 +170,7 @@ local ENDS = {
 	{ key = "Heavier", name = "Square, a little heavier", wide = 48, cut = 9 },
 	{ key = "Deeper", name = "Square, further inside", wide = 48, cut = 11 },
 	{ key = "Brace", name = "Square, braced", wide = 48, cut = 13 },
-	-- round 6 (tools/make_cover_trial.py): a thin sheet over the panel's corner and the spine's round end
+	-- round 7 (tools/make_cover_trial.py): a thin sheet over the panel's corner and the spine's round end
 	{ key = "Cover", name = "Folded corner cover", wide = 16, cut = 17, cover = true },
 }
 local END_OFF = 2 -- the fittings' art starts this far past the panel's edge (make_spine_trials.py's OFF)
@@ -204,7 +204,7 @@ local function paintEnds()
 		capped.covers = capped.covers or {}
 		local c = capped.covers[i] or WC.Style.Unsnapped(capped:CreateTexture(nil, "OVERLAY"))
 		capped.covers[i] = c
-		c:SetTexture(([[Interface\AddOns\WowCompanion\Art\Vine-CornerCover%s-T6]]):format(which), "CLAMP", "CLAMP")
+		c:SetTexture(([[Interface\AddOns\WowCompanion\Art\Vine-CornerCover%s-T7]]):format(which), "CLAMP", "CLAMP")
 		c:SetSize(48, 16)
 		c:ClearAllPoints()
 		c:SetPoint(which:upper(), capped, which:upper())
