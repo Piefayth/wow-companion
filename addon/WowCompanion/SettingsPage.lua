@@ -279,12 +279,17 @@ local function header(name)
 	h:SetJustifyH("RIGHT")
 	h:SetText(name)
 	-- grown out of the thick spine between the wells, forged into it
-	-- (WC.Style.VineJoin): the joint draws its own stretch of the spine, over
-	-- the spine as it scrolls past
+	-- (WC.Style.VineJoin). The joint is the seams' (over the spine, following
+	-- the divider), never the scroll child's: what a scroll frame holds draws
+	-- at the scroll frame's level, under the spine whatever its own level, and
+	-- the spine then cut across every joint (seen on screen, 2026-11-12)
 	h.divider = CreateFrame("Frame", nil, content)
 	h.divider:SetHeight(16)
 	WC.Style.VineLine(h.divider, "", false, false, true)
-	WC.Style.VineJoin(h.divider, "Thick", "TRightFromMediumPlain", "LEFT")
+	h.join = CreateFrame("Frame", nil, seams)
+	h.join:SetSize(1, 1)
+	h.join:SetPoint("CENTER", h.divider, "LEFT")
+	WC.Style.VineJoin(h.join, "Thick", "TRightFromMediumPlain", "CENTER")
 	headers[name] = h
 	return h
 end
@@ -305,9 +310,19 @@ local function lift()
 	seams:SetFrameLevel(base)
 	down:SetFrameLevel(base)
 	across:SetFrameLevel(base + 1)
-	for _, h in pairs(headers) do h.divider:SetFrameLevel(base + 1) end
+	for _, h in pairs(headers) do h.join:SetFrameLevel(base + 1) end
 	column:SetFrameLevel(base + 2)
 end
+-- the joints, outside the scroll frame, shown only while their divider is
+-- shown and inside it
+local function joints()
+	local top, bottom = scroll:GetTop(), scroll:GetBottom()
+	for _, h in pairs(headers) do
+		local y = h.divider:IsShown() and top and select(2, h.divider:GetCenter())
+		h.join:SetShown(y and y <= top and y >= bottom or false)
+	end
+end
+scroll:HookScript("OnVerticalScroll", joints)
 local function layout()
 	for _, e in ipairs(rows) do
 		if not e.frame then
@@ -349,6 +364,8 @@ local function layout()
 	end
 	content:SetHeight(math.max(y, 1))
 	lift()
+	joints()
+	C_Timer.After(0, joints) -- once the new layout's positions are resolved
 end
 page:SetScript("OnShow", function()
 	layout()
