@@ -7,15 +7,17 @@
 --
 -- Buttons are set by pressing, as in any game's key settings: confirming a row
 -- draws `bind <key> start`; once the companion's status says it is collecting
--- (`binding`), the row says so and takes the next pad press, whose WoW name it
--- draws as `bind <key> <PADNAME>`. The companion takes the one button that
--- went down between the two, so both sides learn it from the same press.
+-- (`binding`), the row says so and takes the press. The talk button is one
+-- button; a conversation's is a chord, every button that goes down from the first
+-- press until all are let go. The row draws `bind <key> <NAMES>` (WoW names
+-- joined with +); the companion takes the buttons that went down between the
+-- two, so both sides learn it from the same press, and refuses a chord another
+-- key has or one holding the talk button.
 
 local SECTION = "Companion"
 local BIND_SECONDS = 30
 -- the game keeps these to itself: Focus UI and the game menu
 local REFUSED = { PADBACK = true, PADFORWARD = true }
-local BUTTON_KEYS = { "talk", "l1", "l2", "r1", "r2" }
 
 local function command(words)
 	if WowCompanion_Strip and WowCompanion_Strip.Command then WowCompanion_Strip.Command(words) end
@@ -28,12 +30,16 @@ local pending, errors = {}, {}
 
 -- ── buttons ────────────────────────────────────────────────────────────────
 local bindKey, waiting -- the row binding now; true once the companion collects
+-- the chord being pressed: every button down since the first, in order, and how
+-- many are still held
+local pressed, holding = {}, 0
 local capture = _G["WCBindCapture"] or CreateFrame("Frame", "WCBindCapture", UIParent)
 capture:Hide()
 local function stopCapture()
 	capture:Hide()
 	capture:EnableGamePadButton(false)
 	capture:SetScript("OnUpdate", nil)
+	pressed, holding = {}, 0
 end
 local function cancelBind()
 	if not bindKey then return end
@@ -42,32 +48,31 @@ local function cancelBind()
 	stopCapture()
 	refresh()
 end
--- the button another of the companion's keys already has, or nil
-local function takenBy(name, key)
-	local now = settings() or {}
-	for _, other in ipairs(BUTTON_KEYS) do
-		if other ~= key and now[other] == name then return other end
-	end
-end
-capture:SetScript("OnGamePadButtonDown", function(_, name)
-	if not (bindKey and waiting) then return end
-	local key = bindKey
-	if REFUSED[name] then
-		errors[key] = ("%s is the game's own; press another."):format(name)
-		refresh()
-		return
-	end
-	local other = takenBy(name, key)
-	if other then
-		errors[key] = ("%s is already the %s button; press another."):format(name, other)
-		refresh()
-		return
-	end
-	command(("bind %s %s"):format(key, name))
-	pending[key], errors[key] = name, nil
+local function finish()
+	local key, names = bindKey, table.concat(pressed, "+")
+	command(("bind %s %s"):format(key, names))
+	pending[key], errors[key] = names, nil
 	bindKey, waiting = nil, nil
 	stopCapture()
 	refresh()
+end
+capture:SetScript("OnGamePadButtonDown", function(_, name)
+	if not (bindKey and waiting) then return end
+	if REFUSED[name] then
+		errors[bindKey] = ("%s is the game's own; press another."):format(name)
+		pressed, holding = {}, 0
+		refresh()
+		return
+	end
+	pressed[#pressed + 1] = name
+	holding = holding + 1
+	-- the talk button is one button: the first press is it
+	if bindKey == "talk" then finish() end
+end)
+capture:SetScript("OnGamePadButtonUp", function()
+	if not (bindKey and waiting) or holding == 0 then return end
+	holding = holding - 1
+	if holding == 0 then finish() end
 end)
 
 local function startBind(key)
@@ -90,11 +95,18 @@ end
 
 local function buttonText(key)
 	return function()
-		if bindKey == key then return waiting and "Press a button" or "Waiting..." end
+		if bindKey == key then
+			if not waiting then return "Waiting..." end
+			return key == "talk" and "Press a button" or "Hold the buttons, then let go"
+		end
 		local now = settings()
 		if not now then return "Not reported" end
 		if pending[key] and now[key] ~= pending[key] then return "Applying..." end
-		return now[key] and WowCompanion_Glyph(now[key]) or "Not set"
+		if not now[key] then return "Not set" end
+		-- a chord: each button's glyph, joined
+		local glyphs = {}
+		for name in now[key]:gmatch("[^+]+") do glyphs[#glyphs + 1] = WowCompanion_Glyph(name) end
+		return table.concat(glyphs, " + ")
 	end
 end
 local function note(key, what)
@@ -107,11 +119,13 @@ local function note(key, what)
 end
 
 local BUTTON_ROWS = {
-	{ "talk", "Talk button", "Hold to talk to the conversation the triggers pick; tap to open the Companion window. Press the row, then the button." },
-	{ "l1", "L1 conversation", "Held with the talk button, talks to L1. Held with the R1 button: dictation into chat." },
-	{ "l2", "L2 conversation", "Held with the talk button, talks to L2. Held with the R2 button: Quick." },
+	{ "talk", "Talk button", "Hold to talk to the conversation the buttons held pick; tap to open the Companion window. Press the row, then the button." },
+	{ "l1", "L1 conversation", "Held with the talk button, talks to L1. Press the row, then hold the buttons and let go." },
+	{ "l2", "L2 conversation", "Held with the talk button, talks to L2." },
 	{ "r1", "R1 conversation", "Held with the talk button, talks to R1." },
 	{ "r2", "R2 conversation", "Held with the talk button, talks to R2." },
+	{ "quick", "Quick conversation", "Held with the talk button, asks Quick: fast, for chat, links and buttons." },
+	{ "say", "Dictation", "Held with the talk button, what you say goes into chat as you said it." },
 }
 for i, def in ipairs(BUTTON_ROWS) do
 	local key, label, what = def[1], def[2], def[3]
@@ -159,14 +173,14 @@ valueRow("speech", 111, "Speech engine", "Whisper is more accurate; streaming is
 		local now = settings()
 		return now and type(now.engines) == "table" and now.engines or {}
 	end)
--- the mic list: asked for when the page is first shown (below), never from the
--- row's menu, which is built over and over
+-- the inputs Windows lists now, which every status carries (re-sent when they change)
 valueRow("mic", 112, "Microphone", "The input the companion listens on.",
 	function()
 		local list = {}
-		for _, name in ipairs(WC.Link.Mics()) do list[#list + 1] = name end
-		local now = current("mic")
-		if #list == 0 and now then list[1] = now end
+		local now = settings()
+		for _, name in ipairs(now and type(now.mics) == "table" and now.mics or {}) do list[#list + 1] = name end
+		local chosen = current("mic")
+		if #list == 0 and chosen then list[1] = chosen end
 		return list
 	end)
 
@@ -191,13 +205,4 @@ bus:On("COMPANION_STATUS", function(inbox)
 	end
 	refresh()
 end)
-bus:On("COMPANION_MICS", function() refresh() end)
--- asked once a UI session: the companion answers once a session too, and the
--- list it sent stays here (WC.Link.Mics)
-local askedMics
-WowCompanionSettingsPage:HookScript("OnShow", function()
-	if settings() and #WC.Link.Mics() == 0 and not askedMics then
-		askedMics = true
-		command("mics")
-	end
-end)
+

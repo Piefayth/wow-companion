@@ -1,17 +1,18 @@
 -- WowCompanion_Link: the pad as the client maps it, and which conversation the
 -- buttons held pick.
 --   WC.Pad.State() -> modifiers (sorted names), bases ({ [PADDUP] = true, ... }) | nil
---   WC.Pad.Held()  -> the conversation buttons held: { l1 = true, ... }, by the
---                     WoW names the companion reports for them (settings in its
---                     status, WC.Link.Settings()); none while it has reported none
+--   WC.Pad.Held()  -> the conversations whose whole chord is held: { l1 = true, ... }
 --   WowCompanion_PadSlot() -> the conversation the buttons held now pick
 --   WC.Pad.Latch() -> a pick followed through one hold: l:Update() each frame,
 --                     l.slot the conversation
 --
+-- Every conversation key is a chord of one or more buttons, by the WoW names the
+-- companion reports in its status (WC.Link.Settings(): "PADLTRIGGER+PADRTRIGGER").
 -- The rule is the companion's (crates/voice, the voice loop), written once here:
--- at the press, L2+R2 is Quick and L1+R1 dictation, else the first held of l1,
--- l2, r1, r2, else Main; during the hold the last button pulled picks (with its
--- partner held, the pair), and letting it go keeps the pick.
+-- at the press, the fully held chord with the most buttons wins (ties in KEYS
+-- order), none held is Main; during the hold each newly pressed button picks the
+-- fully held chord with the most buttons among those containing it, and letting
+-- go keeps the pick.
 
 -- The pad as the client maps it: modifiers held (triggers, shoulders, sticks,
 -- sorted) and the d-pad and face buttons held. nil when there is no pad to read.
@@ -42,49 +43,84 @@ local function padState()
 	return modifiers, bases
 end
 
-local KEYS = { "l1", "l2", "r1", "r2" }
--- each key's partner and the conversation the two make together
-local PAIR = { l1 = { "r1", WC.Conversations.DICTATION }, r1 = { "l1", WC.Conversations.DICTATION },
-	l2 = { "r2", "quick" }, r2 = { "l2", "quick" } }
+-- the conversation keys in tie order; each key is also its conversation's slot
+-- ("say" is WC.Conversations.DICTATION)
+local KEYS = { "l1", "l2", "r1", "r2", "quick", "say" }
 
-local function held()
+-- every button down now, by WoW name
+local function down()
+	local set = {}
+	local modifiers, bases = padState()
+	if not modifiers then return set end
+	for _, name in ipairs(modifiers) do set[name] = true end
+	for name in pairs(bases) do set[name] = true end
+	return set
+end
+
+-- each key's chord from the companion's status: { key = { names... } }
+local function chords()
 	local out = {}
 	local settings = WC.Link and WC.Link.Settings and WC.Link.Settings()
-	local modifiers, bases = padState()
-	if not (settings and modifiers) then return out end
-	local down = {}
-	for _, name in ipairs(modifiers) do down[name] = true end
-	for name in pairs(bases) do down[name] = true end
+	if not settings then return out end
 	for _, key in ipairs(KEYS) do
-		if settings[key] and down[settings[key]] then out[key] = true end
+		local value = settings[key]
+		if type(value) == "string" and value ~= "" then
+			local names = {}
+			for name in value:gmatch("[^+]+") do names[#names + 1] = name end
+			out[key] = names
+		end
 	end
 	return out
 end
 
--- the pick at the press, from the buttons held then
-local function pickNow(h)
-	if h.l2 and h.r2 then return "quick" end
-	if h.l1 and h.r1 then return WC.Conversations.DICTATION end
-	for _, key in ipairs(KEYS) do
-		if h[key] then return key end
+local function whole(chord, set)
+	for _, name in ipairs(chord) do
+		if not set[name] then return false end
 	end
-	return ""
+	return true
+end
+local function contains(chord, button)
+	for _, name in ipairs(chord) do
+		if name == button then return true end
+	end
+	return false
+end
+
+-- the fully held chord with the most buttons (ties in KEYS order), among those
+-- containing `button` when given; nil when none
+local function best(set, all, button)
+	local pick, size = nil, 0
+	for _, key in ipairs(KEYS) do
+		local chord = all[key]
+		if chord and #chord > size and whole(chord, set) and (not button or contains(chord, button)) then
+			pick, size = key, #chord
+		end
+	end
+	return pick
+end
+
+local function held()
+	local out, set, all = {}, down(), chords()
+	for key, chord in pairs(all) do
+		if whole(chord, set) then out[key] = true end
+	end
+	return out
 end
 
 function WowCompanion_PadSlot()
-	return pickNow(held())
+	return best(down(), chords()) or ""
 end
 
 local Latch = {}
 Latch.__index = Latch
 function Latch:Update()
-	local now = held()
-	for _, key in ipairs(KEYS) do
-		if now[key] and not self.held[key] then
-			self.slot = now[PAIR[key][1]] and PAIR[key][2] or key
+	local now, all = down(), chords()
+	for name in pairs(now) do
+		if not self.down[name] then
+			self.slot = best(now, all, name) or self.slot
 		end
 	end
-	self.held = now
+	self.down = now
 	return self.slot
 end
 
@@ -92,7 +128,7 @@ WC.Pad = {
 	State = padState,
 	Held = held,
 	Latch = function()
-		local now = held()
-		return setmetatable({ held = now, slot = pickNow(now) }, Latch)
+		local now = down()
+		return setmetatable({ down = now, slot = best(now, chords()) or "" }, Latch)
 	end,
 }

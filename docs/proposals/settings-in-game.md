@@ -80,9 +80,11 @@ a toggle.
   taking it (heartbeat.rs). The first build applied by restart, which waits for
   no request in flight: with an agent busy, the player's mic changes sat on
   "applying" for minutes.
-- **The mic list on demand:** opening the mic row draws `WCCMD <nonce> mics`;
-  the companion answers with one message from `voice::microphones()`. `status`
-  says which engines are installed (streaming only with `stream_model`).
+- **The mic list rides in `status`** (2026-11-12, replacing the `mics` command
+  and message): `settings.mics` is the inputs Windows lists now, re-sent when
+  the list changes, so a headset connected mid-session appears without a
+  reload. `status` also says which engines are installed (streaming only with
+  `stream_model`).
 - **The setup window keeps its mic and engine rows and loses its button
   learning.** It is one more editor of the same file, not a second truth: since
   95bafad it writes only the fields it changed and follows the file when
@@ -108,11 +110,10 @@ cancel are drawn; a new nonce for every draw).
 
 | strip | meaning | the companion answers |
 |---|---|---|
-| `bind <key> start` | the row is waiting for a press; `key` is `talk`, `l1`, `l2`, `r1` or `r2` | collects every button that goes down from now, ignores the talk button meanwhile, and sends `status` with `binding = "<key>"`; only then does the row say "press a button". Ends by itself after 30 s. |
-| `bind <key> <PADNAME>` | the press the row caught, by WoW's name | exactly one button went down since `start`: writes `<key> = "<byte>:<mask> <PADNAME>"` and the voice loop takes it; `status` carries it. Otherwise `status` with `bind = { key = "<key>", error = "<why>" }`. |
+| `bind <key> start` | the row is waiting for a press; `key` is `talk`, `l1`, `l2`, `r1`, `r2`, `quick` or `say` (dictation) | collects every button that goes down from now, ignores the talk button meanwhile, and sends `status` with `binding = "<key>"`; only then does the row say "press a button". Ends by itself after 30 s. |
+| `bind <key> <NAMES>` | the press the row caught, by WoW's names joined with `+`: for `talk` the first button pressed; for a conversation every button that went down from the first press until all were let go (a chord) | exactly one button went down since `start`: writes `<key> = "<byte>:<mask> <PADNAME>"` and the voice loop takes it; `status` carries it. Otherwise `status` with `bind = { key = "<key>", error = "<why>" }`. |
 | `bind <key> cancel` | the row left without a press | stops collecting |
 | `set <key> <value>` | `feedback` (`rumble`, `beep`, `both`), `speech` (`whisper`, `streaming`), `mic` (a device name, the rest of the line) | writes it if it differs and the voice loop takes it; a value it refuses gets `status` with `set = { key = "<key>", error = "<why>" }` |
-| `mics` | the mic row opened | `{ kind = "mics", mics = { "<name>", ... } }`, the inputs Windows lists now |
 
 The companion to the game: `status`, sent when the companion starts, at every
 new session (a reload), when the mic comes or goes, and with the answers above:
@@ -121,13 +122,23 @@ new session (a reload), when the mic comes or goes, and with the answers above:
 { kind = "status", mic = true,
   settings = { talk = "PADSOCIAL", l1 = "PADLSHOULDER", l2 = "PADLTRIGGER",
                r1 = "PADRSHOULDER", r2 = "PADRTRIGGER",
+               quick = "PADLTRIGGER+PADRTRIGGER", say = "PADLSHOULDER+PADRSHOULDER",
                feedback = "rumble", speech = "streaming",
                mic = "Headset (AirPods Max Hands-Free AG Audio)",
+               mics = { "Headset (AirPods Max Hands-Free AG Audio)", ... },
                engines = { "whisper", "streaming" } },
   binding = "talk",                          -- only while collecting
   bind = { key = "talk", error = "..." },    -- only after a failed bind
   set = { key = "mic", error = "..." } }     -- only after a refused set
 ```
+
+Each conversation key is a chord: its buttons' WoW names joined with `+`
+(`talk` is always one). The game picks a conversation from them by one rule
+(addon/WowCompanion_Link/Pad.lua, the companion's own): at the talk press the
+fully held chord with the most buttons wins, ties in the order l1, l2, r1, r2,
+quick, say, none held is Main; during the hold each newly pressed button picks
+the fully held chord with the most buttons among those containing it, and
+letting go keeps the pick.
 
 A button key the companion has no button for is absent from `settings`
 (another pad before it is pressed). `engines` lists what is installed: the

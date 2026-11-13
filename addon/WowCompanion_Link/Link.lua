@@ -9,16 +9,16 @@
 --   WC.Link.Current()           the conversation slot of the message being handled
 --   WC.Link.Slash(word, fn)     a /wc subcommand
 --   WC.Link.Settings()          the companion's settings as its last status said
---                               (talk, l1..r2 as WoW names, feedback, speech, mic,
---                               engines), or nil while it has said none
+--                               (talk, and the chords l1, l2, r1, r2, quick, say,
+--                               as WoW names joined with +; feedback, speech, mic,
+--                               engines, mics: the inputs Windows lists now), or
+--                               nil while it has said none
 --   WC.Link.Status()            that last status message itself
---   WC.Link.Mics()              the inputs Windows listed at the last `mics`
 -- Bus messages sent: TALK_TAP (a tap of the talk button), TALK_DOWN and
 -- TALK_UP (its press and release), TALK_HOLD (the press outlasted a tap),
 -- JOB_MESSAGE(inbox) (a handled message that names a job or lists jobs: their
 -- states for whoever keeps them), LINK_STEP(step, ok, outcome) (a follow-up step
--- ran), LINK_FAILED(text), MAILBOX_JOBS(jobs), COMPANION_STATUS(inbox),
--- COMPANION_MICS(list).
+-- ran), LINK_FAILED(text), MAILBOX_JOBS(jobs), COMPANION_STATUS(inbox).
 
 local SLOTS_PREFIX = "WowCompanion"
 local SIGNALS = "Interface\\AddOns\\WowCompanion_Link\\Signals\\"
@@ -130,14 +130,6 @@ function handlers.status(inbox)
 	if talk then WC.AfterCombat(function() writeTalkBinding(talk) end) end
 	WC.Send("COMPANION_STATUS", inbox)
 	return "status: mic " .. tostring(mic)
-end
-
--- The inputs Windows lists now, the answer to the page's `mics` command.
-local mics = {}
-function handlers.mics(inbox)
-	mics = type(inbox.mics) == "table" and inbox.mics or {}
-	WC.Send("COMPANION_MICS", mics)
-	return ("mics: %d"):format(#mics)
 end
 
 -- With the agents off (dictation only), what would be a conversation line (a
@@ -377,7 +369,6 @@ WC.Link = {
 	TalkKey = function() return type(lastStatus.settings) == "table" and lastStatus.settings.talk or nil end,
 	Settings = function() return type(lastStatus.settings) == "table" and lastStatus.settings or nil end,
 	Status = function() return lastStatus end,
-	Mics = function() return mics end,
 	-- false while the companion has no microphone (handlers.status)
 	Mic = function() return mic end,
 }
