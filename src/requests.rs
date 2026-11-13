@@ -11,7 +11,7 @@ pub(crate) const PROGRESS_LIMIT: u32 = 16;
 // how many times a request that ran out of steps carries on by itself
 pub(crate) const CONTINUES: u32 = 3;
 // at this many slots used, offer the Reload button once, while slots remain
-// Margins below the slots the game knows (see known_slots): offer Reload at 16
+// Margins below the slots the game knows (see slots_used): offer Reload at 16
 // left, stop progress lines at 14 left, and from 8 left every reply says so.
 pub(crate) const SLOTS_OFFER_RELOAD: u32 = 16;
 pub(crate) const SLOTS_LOW: u32 = 8;
@@ -539,8 +539,8 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, lead: u64, run
     // and being offered the button. This one carries no `pending`, which stops the
     // spinner.
     // running low: offer the cure once per UI session, while a slot remains for it
-    let used = slots_used(addons);
-    if used + SLOTS_OFFER_RELOAD >= known_slots(addons) {
+    let slots = slots_used(addons);
+    if slots.is_some_and(|(used, known)| used + SLOTS_OFFER_RELOAD >= known) {
         let stamp = session_key(addons).unwrap_or_default();
         let mut offered = RELOAD_OFFERED.lock().unwrap();
         if *offered != stamp {
@@ -549,7 +549,7 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, lead: u64, run
         }
     }
     // near the end of the session's slots, say so while a reply can still arrive
-    let say = if slots_used(addons) + SLOTS_LOW >= known_slots(addons) {
+    let say = if slots.is_some_and(|(used, known)| used + SLOTS_LOW >= known) {
         format!("{}\n(Messages are running low for this session: press Reload soon.)", answer.say)
     } else {
         answer.say.clone()

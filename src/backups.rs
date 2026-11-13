@@ -91,8 +91,8 @@ pub(crate) fn snapshot(addons: &Path) -> Vec<String> {
         prune(&folder, |name| !name.contains("-before-edit"));
         // the main save only: a reset there costs the player their history
         if save.file_name().is_some_and(|name| name == "WowCompanion_Link.lua") {
-            if let (Some(previous), Ok(now)) = (previous, fs::read_to_string(&save)) {
-                if let Ok(before) = fs::read_to_string(&previous) {
+            if let (Some(previous), Ok(now)) = (previous, crate::savedvars::read(&save)) {
+                if let Ok(before) = crate::savedvars::read(&previous) {
                     if let Some(why) = reset_suspected(&before, &now) {
                         notes.push(format!(
                             "Your companion's saved data looks reset by the last save ({why}). The last {KEEP} saves are kept in {}. With the game closed, run `wow-companion restore-save` (or ask an agent to) to put the newest good one back.",
@@ -208,7 +208,7 @@ pub(crate) fn restore(addons: &Path, chosen: Option<&Path>) -> io::Result<()> {
         None => {
             let kept = copies(&folder, |_| true);
             let texts: Vec<(PathBuf, String)> =
-                kept.into_iter().filter_map(|path| fs::read_to_string(&path).ok().map(|text| (path, text))).collect();
+                kept.into_iter().filter_map(|path| crate::savedvars::read(&path).ok().map(|text| (path, text))).collect();
             // oldest first, so max_by_key keeps the newest of equal counts
             texts
                 .iter()
@@ -224,7 +224,7 @@ pub(crate) fn restore(addons: &Path, chosen: Option<&Path>) -> io::Result<()> {
                 })?
         }
     };
-    let text = fs::read_to_string(&pick)?;
+    let text = crate::savedvars::read(&pick)?;
     crate::savedvars::globals(&text).map_err(|why| io::Error::other(format!("{} does not parse as a save: {why}", pick.display())))?;
     let undo = before_edit(&save)?;
     let temporary = save.with_extension("lua.companion");
@@ -276,7 +276,7 @@ mod tests {
         let found = saves(&addons);
         assert!(!found.is_empty());
         for save in found {
-            let text = fs::read_to_string(&save).unwrap();
+            let text = crate::savedvars::read(&save).unwrap();
             assert!(crate::savedvars::globals(&text).is_ok(), "{}", save.display());
             println!("sound: {} ({} bytes, loads {:?})", save.display(), text.len(), loads(&text));
         }

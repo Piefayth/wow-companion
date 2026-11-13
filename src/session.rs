@@ -36,7 +36,7 @@ impl Session {
             return Some(Session { loads: 0, slots: None, began: 0, game });
         };
         let began = modified_millis(&path)?;
-        let db = savedvars::global(&fs::read_to_string(&path).ok()?, "WowCompanionLinkDB")?;
+        let db = savedvars::global(&savedvars::read(&path).ok()?, "WowCompanionLinkDB")?;
         let count = |key: &str| db.get(key).and_then(Lua::number).filter(|n| *n >= 0.0 && n.fract() == 0.0);
         Some(Session {
             loads: count("loads").unwrap_or(0.0) as u64,

@@ -12,7 +12,7 @@ pub(crate) const AGENT: &str = "WowCompanion_Agent";
 
 /// An addon's save file, as text.
 pub(crate) fn saved_variables_text(addons: &Path, addon: &str) -> Option<String> {
-    fs::read_to_string(saved_variables(addons, addon)?).ok()
+    crate::savedvars::read(&saved_variables(addons, addon)?).ok()
 }
 
 /// `context <AddOns> <out>`: one string of the Agent addon's save (the export,
@@ -28,7 +28,7 @@ pub(crate) fn pull(addons: &Path, key: &str, out: &Path) -> io::Result<()> {
 pub(crate) fn saved_string(addons: &Path, key: &str) -> io::Result<String> {
     let saved = saved_variables(addons, AGENT)
         .ok_or_else(|| io::Error::other("no SavedVariables yet: /reload in game first"))?;
-    let db = crate::savedvars::global(&fs::read_to_string(&saved)?, "WowCompanionAgentDB")
+    let db = crate::savedvars::global(&crate::savedvars::read(&saved)?, "WowCompanionAgentDB")
         .ok_or_else(|| io::Error::other(format!("{} does not parse (the game may be writing it)", saved.display())))?;
     match db.get(key) {
         Some(crate::savedvars::Lua::Text(text)) => Ok(text.clone()),

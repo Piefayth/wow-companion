@@ -653,3 +653,15 @@ stayed running for good, and the game draws one work line over a conversation's
 running jobs, from the oldest. The field is gone: a conversation runs one agent
 at a time, so its running jobs are that run's, which the states alone say, and
 the game already read them that way.
+
+## The pad buzzed and nothing reached the game (2026-11-13)
+
+From a reload at 16:25 every send failed and the pad buzzed three short pulses
+at each one. The game's audit had saved a line cut by bytes inside a "→", so
+Link's save was not UTF-8, the companion read it as UTF-8 and gave up, and the
+session could not be read. The slot count read 0 when the session could not be
+read, and a failed send compared the slots used (also 0) with it and called
+every slot spent, which is the alarm. Saves are now read as the bytes the game
+wrote (a cut character reads as U+FFFD), all through `savedvars::read`; the slot
+count is unknown, not 0, when the save does not read; and the alarm rings where
+the cursor finds every slot spent, not from a second reading after a failure.

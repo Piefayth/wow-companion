@@ -1,6 +1,14 @@
 //! The game's SavedVariables, read as values: the one reader of the save file
 //! (the session, the ledger's confirmations, the agent's export, the backups).
 
+/// A save file's text. The game writes Lua strings as bytes and cuts them by
+/// bytes, so a save need not be UTF-8: a character cut in two reads as U+FFFD.
+/// (Read as UTF-8, one log line cut inside a "→" made Link's save unreadable,
+/// and every send failed until the next save, 2026-11-13.)
+pub(crate) fn read(path: &std::path::Path) -> std::io::Result<String> {
+    Ok(String::from_utf8_lossy(&std::fs::read(path)?).into_owned())
+}
+
 /// Every `Name = value` of a save file, in order; an error when any part does
 /// not parse (a save the game is still writing, or a broken one).
 pub(crate) fn globals(text: &str) -> Result<Vec<(String, Lua)>, String> {
@@ -217,5 +225,18 @@ mod tests {
                 assert!(globals(&whole[..cut]).is_err(), "cut at {cut}: {:?}", &whole[..cut]);
             }
         }
+    }
+
+    /// A string the game cut by bytes, inside a character, still reads.
+    #[test]
+    fn a_string_cut_inside_a_character_reads() {
+        let path = std::env::temp_dir().join(format!("wc-cut-{}.lua", std::process::id()));
+        let mut bytes = b"DB = {\n[\"log\"] = {\n\"Settings ".to_vec();
+        bytes.extend_from_slice(&"\u{2192}".as_bytes()[..1]);
+        bytes.extend_from_slice(b"\",\n},\n[\"loads\"] = 308,\n}\n");
+        std::fs::write(&path, &bytes).unwrap();
+        let db = global(&read(&path).unwrap(), "DB").unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(db.get("loads").and_then(Lua::number), Some(308.0));
     }
 }

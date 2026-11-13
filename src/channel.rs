@@ -43,11 +43,6 @@ pub(crate) fn game_running() -> bool {
     game().is_some()
 }
 
-/// How many slots the running game knows (`Session::known_slots`); 0 while its
-/// save does not parse, so nothing is spent on a guess.
-pub(crate) fn known_slots(addons: &Path) -> u32 {
-    Session::now(addons).map(|session| session.known_slots()).unwrap_or(0)
-}
 
 /// What waits for the next slot, in the order it was posted: lines (numbered
 /// and kept by the ledger first) and messages about now.
@@ -209,7 +204,7 @@ fn deliver_batch(addons: &Path, batch: Vec<Pending>) {
         return set_aside(addons, batch, "the game is closed");
     }
     // the last slots are for replies: what a request is doing can go unsaid
-    if slots_used(addons) + PROGRESS_STOP >= known_slots(addons) {
+    if slots_used(addons).is_some_and(|(used, known)| used + PROGRESS_STOP >= known) {
         batch.retain(|item| item.progress_of().is_none());
     }
     if batch.is_empty() {
@@ -217,10 +212,6 @@ fn deliver_batch(addons: &Path, batch: Vec<Pending>) {
     }
     let list = slot_message(&batch);
     if let Err(err) = ring(addons, list) {
-        if slots_used(addons) >= known_slots(addons) {
-            // every slot spent: nothing can reach the game to say so; the pad can
-            voice::ALERT.store(true, Ordering::SeqCst);
-        }
         set_aside(addons, batch, &err.to_string());
     }
 }
@@ -293,6 +284,8 @@ fn next_slot(addons: &Path) -> io::Result<(u32, u64, u64)> {
         }
     }
     if cursor > session.known_slots() {
+        // every slot spent: nothing can reach the game to say so; the pad can
+        voice::ALERT.store(true, Ordering::SeqCst);
         return Err(io::Error::other(format!(
             "all {} slots are spent this UI session: `send reload`, or /reload in game",
             session.known_slots()
@@ -302,17 +295,17 @@ fn next_slot(addons: &Path) -> io::Result<(u32, u64, u64)> {
     Ok((cursor, session.set(), session.number()))
 }
 
-/// Slots spent in the running UI session (0 after a reload), without spending one.
-pub(crate) fn slots_used(addons: &Path) -> u32 {
-    let state = addons.join(LINK).join(STATE);
-    let Some(stamp) = session_key(addons) else { return 0 };
-    let Ok(text) = fs::read_to_string(&state) else { return 0 };
+/// Slots spent in the running UI session (0 after a reload), without spending
+/// one, and how many it has (`Session::known_slots`); None while its save does
+/// not read, when neither is known (a save that did not read once counted as
+/// every slot spent, and the pad buzzed at every send, 2026-11-13).
+pub(crate) fn slots_used(addons: &Path) -> Option<(u32, u32)> {
+    let session = Session::now(addons).ok()?;
+    let text = fs::read_to_string(addons.join(LINK).join(STATE)).unwrap_or_default();
     let mut lines = text.lines();
     let cursor: u32 = lines.next().and_then(|line| line.trim().parse().ok()).unwrap_or(1);
-    if lines.next().unwrap_or_default().trim() != stamp {
-        return 0;
-    }
-    cursor.saturating_sub(1)
+    let used = if lines.next().unwrap_or_default().trim() == session.key() { cursor.saturating_sub(1) } else { 0 };
+    Some((used, session.known_slots()))
 }
 
 /// The game's UI session, as the slot cursor knows it (`Session::key`); None
@@ -469,10 +462,10 @@ mod tests {
     #[test]
     fn slots_count_up_and_start_over_in_the_next_set_when_the_game_saves() {
         let (addons, link) = game("cursor", 100);
-        assert_eq!(slots_used(&addons), 0);
+        assert_eq!(slots_used(&addons), Some((0, 100)));
         assert_eq!(next_slot(&addons).unwrap(), (1, 8 % SETS, 8));
         assert_eq!(next_slot(&addons).unwrap(), (2, 8 % SETS, 8));
-        assert_eq!(slots_used(&addons), 2);
+        assert_eq!(slots_used(&addons), Some((2, 100)));
         // another addon's save landing first is no new session (2026-11-12: read
         // from Core's save, the cursor started over a set early)
         let core = link.with_file_name(format!("{ADDON}.lua"));
@@ -481,14 +474,14 @@ mod tests {
         assert_eq!(next_slot(&addons).unwrap(), (3, 8 % SETS, 8));
         // a /reload's save of Link: the cursor back at slot 1, in the next set
         save(&link, 8, 100);
-        assert_eq!(slots_used(&addons), 0);
+        assert_eq!(slots_used(&addons), Some((0, 100)));
         assert_eq!(next_slot(&addons).unwrap(), (1, 9 % SETS, 9));
     }
 
     #[test]
     fn sends_stop_at_the_slots_the_game_can_see() {
         let (addons, _) = game("limit", 2);
-        assert_eq!(known_slots(&addons), 2);
+        assert_eq!(slots_used(&addons), Some((0, 2)));
         next_slot(&addons).unwrap();
         next_slot(&addons).unwrap();
         let err = next_slot(&addons).unwrap_err().to_string();

@@ -70,10 +70,13 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
     }
 
     // slots: how many this UI session has spent, of how many the game can see
-    let used = crate::slots_used(addons);
-    let known = crate::known_slots(addons);
-    line(used + 16 < known, "slots", &format!("{used} of {known} used this session{}",
-        if used + 16 >= known { ": nearly out, /reload refills them" } else { "" }));
+    let slots = crate::slots_used(addons);
+    let used = slots.map_or(0, |(used, _)| used);
+    match slots {
+        Some((used, known)) => line(used + 16 < known, "slots", &format!("{used} of {known} used this session{}",
+            if used + 16 >= known { ": nearly out, /reload refills them" } else { "" })),
+        None => line(false, "slots", "unknown: Link's save does not read"),
+    }
 
     // bells: what each file holds, not its size. A ringing bell has its `data`
     // chunk right after the header; the heartbeat's quiet bell is the same size
