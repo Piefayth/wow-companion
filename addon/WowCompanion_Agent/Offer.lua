@@ -38,19 +38,13 @@ local function buildActionButton()
 			return "could not build the button: " .. tostring(button)
 		end
 		actionButton = button
-		-- at the foot of the conversation list, the list's width, under its buttons
+		-- in the conversation list's own cell for it, above the list's foot
 		local function place(b)
+			local slot = frame.convOfferSlot
 			b:SetParent(frame)
 			b:ClearAllPoints()
-			local last = frame.convButtons and (frame.convButtons.quick or frame.convButtons.r2)
-			if last then
-				b:SetSize(last:GetWidth(), 24)
-				b:SetPoint("TOP", last, "BOTTOM", 0, -10)
-				b:SetFrameLevel(last:GetFrameLevel() + 2)
-			else
-				b:SetSize(150, 22)
-				b:SetPoint("BOTTOMRIGHT", -18, 8)
-			end
+			b:SetAllPoints(slot)
+			b:SetFrameLevel(slot:GetFrameLevel() + 4)
 		end
 		place(actionButton)
 		WC.Companion.stow(actionButton, place)
@@ -109,6 +103,7 @@ showOffer = function()
 		if actionButton then
 			actionButton.slot = nil
 			actionButton:Hide()
+			if frame and frame.ConvLayout then frame.ConvLayout(false) end
 		end
 		return "nothing"
 	end
@@ -118,6 +113,7 @@ showOffer = function()
 	actionButton:SetAttribute("macrotext", held.macro)
 	actionButton:SetText(labelOf(held))
 	actionButton:Show()
+	if frame and frame.ConvLayout then frame.ConvLayout(true) end
 	return "shown"
 end
 

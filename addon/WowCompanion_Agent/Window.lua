@@ -322,69 +322,170 @@ local function buildTabs(frame, messages)
 	messages.content:SetFrameLevel(level + 2)
 	local column, up, down = WC.ScrollBar.Build(chatWell, messages.scroll, EDGE, level)
 	for _, part in ipairs({ column, up, down }) do table.insert(frame.chatParts, part) end
-	-- a row's height; each row WC.Style.ChoiceRow, chosen while in view
-	local ROW = 24
-	-- The list between a crest and a tailpiece of the vine's wire, and a
-	-- lozenge before each name not in view, lit while it works or has news
-	-- (tools/make_list_art.py; the player, 2026-11-12, after Hollow Knight's
-	-- pause menu and The Blood of Dawnwalker's codex)
-	local LIST_ART = [[Interface\AddOns\WowCompanion_Agent\Art\List-%s-1]]
-	local HEAD, MARK = 32, 16
-	local head = well:CreateTexture(nil, "ARTWORK")
-	head:SetTexture(LIST_ART:format("Head"), "CLAMP", "CLAMP")
-	head:SetSize(128, HEAD)
-	head:SetPoint("TOP", well, "TOP", 0, -INSET - 2)
-	local TOP = INSET + 2 + HEAD + 2
-	frame.convButtons = {}
+	-- The conversation list (tools/make_convlist_art.py; the player,
+	-- 2026-11-12: nothing floats, the selection is its neighbours lit): six cells
+	-- sharing the well's height between a thick vine under a wire crest and one
+	-- over the crest hung at its foot, the chat's medium vine between cells,
+	-- each cell sunk by a shadow under its upper vine. The open one is the same
+	-- cell lit: the light stone, its two vines lit. Too short a well drops the
+	-- crests for the thick vine alone. An offered button takes a cell of its
+	-- own above the foot (Offer.lua, frame.ConvLayout).
+	local CONV = [[Interface\AddOns\WowCompanion_Agent\Art\Conv-%s-1]]
 	local order = WC.Conversations.list
+	local N = #order
+	local ORNATE, OFFER = 248, 36
+	local layer = CreateFrame("Frame", nil, well)
+	layer:SetAllPoints()
+	layer:SetFrameLevel(well:GetFrameLevel() + 1)
+	-- the walls over every vine's ends
+	if well.NineSlice then well.NineSlice:SetFrameLevel(layer:GetFrameLevel() + 3) end
+	local function art(name, w, h)
+		local t = layer:CreateTexture(nil, "ARTWORK")
+		t:SetTexture(CONV:format(name), "CLAMP", "CLAMP")
+		t:SetSize(w, h)
+		return t
+	end
+	local head, headLit = art("Head", WELL, 37), art("Head-Lit", WELL, 37)
+	local foot, footLit = art("Foot", WELL, 28), art("Foot-Lit", WELL, 28)
+	for _, t in ipairs({ head, headLit }) do t:SetPoint("TOPLEFT", well, "TOPLEFT") end
+	for _, t in ipairs({ foot, footLit }) do t:SetPoint("BOTTOMLEFT", well, "BOTTOMLEFT") end
+	-- vine k (0..N, and N + 1 over an offer's cell): a run across the well,
+	-- idle and lit; the thick ones (0 and the last) only in a short well
+	local vines = {}
+	local function vine(k)
+		if vines[k] then return vines[k] end
+		local f = CreateFrame("Frame", nil, layer)
+		f:SetSize(WELL, 16)
+		local function run(path)
+			local t = f:CreateTexture(nil, "ARTWORK")
+			t:SetTexture(path, "CLAMP", "CLAMP")
+			t:SetAllPoints()
+			return t
+		end
+		f.idle, f.lit = run(WC.Style.Vine("Mid")), run(CONV:format("Rule-Lit"))
+		f.thickIdle, f.thickLit = run(WC.Style.Vine("ThickMid")), run(CONV:format("RuleThick-Lit"))
+		vines[k] = f
+		return f
+	end
+	frame.convButtons = {}
+	local cells = {}
+	local openCell -- the cell in view, whose vines are lit
+	local ys, ornate = {}, true
+	-- each vine's look: thick at the ends of a short well, lit round the open cell
+	local function lightVines()
+		local lastK = #ys - 1
+		for k = 0, lastK do
+			local f = vines[k]
+			local lit = openCell and (k == openCell - 1 or k == openCell)
+			local ends = k == 0 or k == lastK
+			local crest = ornate and ends
+			f:SetShown(not crest)
+			f.idle:SetShown(not ends and not lit)
+			f.lit:SetShown(not ends and lit)
+			f.thickIdle:SetShown(ends and not lit)
+			f.thickLit:SetShown(ends and lit)
+		end
+		for k = lastK + 1, #vines do vines[k]:Hide() end
+		head:SetShown(ornate and openCell ~= 1)
+		headLit:SetShown(ornate and openCell == 1)
+		local lastLit = openCell == N and #ys - 1 == N
+		foot:SetShown(ornate and not lastLit)
+		footLit:SetShown(ornate and lastLit)
+	end
+	local offerSlot = CreateFrame("Frame", nil, well)
+	frame.convOfferSlot = offerSlot
+	local offered = false
+	local function layout()
+		local H = well:GetHeight() or 0
+		if H <= 0 then return end
+		ornate = H >= ORNATE
+		local top, bottom = 8, H - 8
+		if ornate then top, bottom = 32, H - 24 end
+		-- the cells end above an offer's own cell
+		local cellsEnd = offered and bottom - OFFER or bottom
+		wipe(ys)
+		for i = 0, N do ys[#ys + 1] = top + i * (cellsEnd - top) / N end
+		if offered then ys[#ys + 1] = bottom end
+		for k = 0, #ys - 1 do
+			local f = vine(k)
+			f:ClearAllPoints()
+			f:SetPoint("TOPLEFT", well, "TOPLEFT", 0, -(ys[k + 1] - 8))
+		end
+		for i, c in ipairs(cells) do
+			local y0, y1 = ys[i], ys[i + 1]
+			c:ClearAllPoints()
+			c:SetPoint("TOPLEFT", well, "TOPLEFT", INSET, -y0)
+			c:SetSize(WELL - 2 * INSET, y1 - y0)
+			c.plate:ClearAllPoints()
+			c.plate:SetPoint("TOPLEFT", well, "TOPLEFT", 3, -y0)
+			c.plate:SetPoint("BOTTOMRIGHT", well, "TOPRIGHT", -3, -y1)
+			c.shade:ClearAllPoints()
+			c.shade:SetPoint("TOPLEFT", well, "TOPLEFT", INSET, -y0)
+			c.shade:SetPoint("TOPRIGHT", well, "TOPRIGHT", -INSET, -y0)
+		end
+		offerSlot:ClearAllPoints()
+		offerSlot:SetPoint("TOPLEFT", well, "TOPLEFT", INSET + 6, -(cellsEnd + 6))
+		offerSlot:SetPoint("BOTTOMRIGHT", well, "TOPRIGHT", -INSET - 6, -(bottom - 6))
+		lightVines()
+	end
+	-- Offer.lua: the offered button shown or gone; the list makes room for it
+	function frame.ConvLayout(shown)
+		offered = shown and true or false
+		if InCombatLockdown() then WC.AfterCombat(layout) else layout() end
+	end
 	for i, key in ipairs(order) do
-		local b = WC.Style.ChoiceRow(well)
-		-- rows edge to edge across the well, flush one under the next
-		b:SetHeight(ROW)
-		b:SetPoint("TOPLEFT", well, "TOPLEFT", INSET, -TOP - (i - 1) * ROW)
-		b:SetPoint("TOPRIGHT", well, "TOPRIGHT", -INSET, -TOP - (i - 1) * ROW)
-		local mark = b.face:CreateTexture(nil, "ARTWORK")
-		mark:SetSize(MARK, MARK)
-		mark:SetPoint("CENTER", b, "LEFT", 14, 0)
-		b.text:SetPoint("LEFT", 26, 0)
-		local lit = false
-		local function dressMark()
-			mark:SetTexture(LIST_ART:format(lit and "Mark-Lit" or "Mark-Idle"), "CLAMP", "CLAMP")
-			mark:SetShown(not b.chosen)
+		local b = CreateFrame("Button", nil, well)
+		b:SetFrameLevel(layer:GetFrameLevel() + 2)
+		b.plate = layer:CreateTexture(nil, "BACKGROUND")
+		WC.Style.Stone(b.plate, "claude")
+		b.shade = layer:CreateTexture(nil, "BORDER")
+		b.shade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
+		b.shade:SetHeight(12)
+		b.shade:SetAlpha(0.5)
+		local name = b:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+		name:SetPoint("LEFT", 12, 0)
+		name:SetJustifyH("LEFT")
+		local state = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		state:SetPoint("RIGHT", -6, 0)
+		state:SetJustifyH("RIGHT")
+		local open, hover = false, false
+		local function tint()
+			name:SetTextColor(unpack(open and WC.Style.NAME_LIT or hover and WC.Style.NAME_HL or WC.Style.NAME))
 		end
-		-- Agent.lua: lit while the conversation works or has news
-		function b.Lit(on)
-			lit = on and true or false
-			dressMark()
+		b:SetScript("OnEnter", function() hover = true tint() end)
+		b:SetScript("OnLeave", function() hover = false tint() end)
+		-- the controller's pointer locks the highlight of the row it is on
+		hooksecurefunc(b, "LockHighlight", function() hover = true tint() end)
+		hooksecurefunc(b, "UnlockHighlight", function() hover = false tint() end)
+		-- Agent.lua: the name, and the state word at the cell's right ("12s", "new")
+		function b.Paint(label, word)
+			name:SetText(label)
+			state:SetText(word or "")
 		end
-		-- the one in view is the chosen row (Agent.lua shows it with SetShown);
-		-- the pointer stands where its lozenge was
+		-- the one in view is the open cell (Agent.lua shows it with SetShown)
 		local selected = {}
 		function selected:SetShown(on)
-			b:SetChosen(on)
-			dressMark()
+			open = on and true or false
+			b.plate:SetShown(open)
+			if open then openCell = i elseif openCell == i then openCell = nil end
+			tint()
+			if #ys > 0 then lightVines() end
 		end
 		function selected:Show() self:SetShown(true) end
-		selected:SetShown(false)
 		b.selected = selected
+		selected:SetShown(false)
 		-- news kept across a reload shows from the start
 		local kept = type(WowCompanionAgentDB) == "table" and WowCompanionAgentDB.unread
 		-- Main is the one in view after a reload, so its news is being read
 		if kept and key == "" then kept[""] = nil end
-		if kept and kept[key] then
-			b:SetText("|cff40ff40" .. WC.Conversations.Label(key) .. "  new|r")
-			b.Lit(true)
-		else
-			b:SetText(WC.Conversations.Label(key))
-		end
+		b.Paint(WC.Conversations.Label(key), kept and kept[key] and WC.Style.GOOD .. "new|r")
 		b:SetScript("OnClick", function() WowCompanion_SetConversation(key) end)
 		WC.MarkFocusable(b)
+		cells[i] = b
 		frame.convButtons[key] = b
 	end
-	local tail = well:CreateTexture(nil, "ARTWORK")
-	tail:SetTexture(LIST_ART:format("Tail"), "CLAMP", "CLAMP")
-	tail:SetSize(128, 16)
-	tail:SetPoint("TOP", frame.convButtons[order[#order]], "BOTTOM", 0, -2)
+	well:HookScript("OnSizeChanged", layout)
+	layout()
 	frame.convButtons[""].selected:Show()
 
 	-- each message's own panel (Jobs.lua) docks at the bottom of the chat well

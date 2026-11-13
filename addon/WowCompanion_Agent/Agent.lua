@@ -187,22 +187,22 @@ local function paintConversations()
 	local frame = logWindow
 	if not (frame and frame.convButtons) then return end
 	for key, button in pairs(frame.convButtons) do
-		local label = slotLabel(key)
-		-- each conversation shows its own progress in the list: the seconds while its agent works, "new" once it answered
+		-- each conversation shows its own progress at its cell's right: the
+		-- seconds while its agent works, "new" once it answered
 		local heard, running = work(key)
+		local word
 		if talking.on and talking.slot == key then
 			-- the Companion key is held with this conversation's chord
-			label = "|cffff8080" .. label .. "  talking|r"
+			word = WC.Style.BAD .. "talking|r"
 		elseif heard then
 			-- Whisper still has this conversation's clip
-			label = label .. "  |cff9ad5ff" .. WC.Jobs.Age(heard.since) .. "s|r"
+			word = "|cff9ad5ff" .. WC.Jobs.Age(heard.since) .. "s|r"
 		elseif running then
-			label = label .. "  |cffb0b0b0" .. WC.Jobs.Age(running.since) .. "s|r"
+			word = "|cffb0b0b0" .. WC.Jobs.Age(running.since) .. "s|r"
 		elseif unreadSet()[key] then
-			label = "|cff40ff40" .. label .. "  new|r"
+			word = WC.Style.GOOD .. "new|r"
 		end
-		button:SetText(label)
-		if button.Lit then button.Lit(heard or running or unreadSet()[key]) end
+		button.Paint(slotLabel(key), word)
 		if button.selected then button.selected:SetShown(key == viewSlot) end
 	end
 	-- each message's panel, with its Cancel and Send now (Jobs.lua)
