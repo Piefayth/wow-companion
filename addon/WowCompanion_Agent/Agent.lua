@@ -183,14 +183,22 @@ local function setUnread(slot, on)
 	unreadSet()[slot] = on or nil
 	WC.Send("UNREAD", unreadSet())
 end
+-- how full each conversation's context is after its last answer (the PC's
+-- `context` message), kept through a reload; none until it has answered once
+local function contextSet()
+	if type(WowCompanionAgentDB) ~= "table" then return {} end
+	WowCompanionAgentDB.context = WowCompanionAgentDB.context or {}
+	return WowCompanionAgentDB.context
+end
 local function paintConversations()
 	local frame = logWindow
 	if not (frame and frame.convButtons) then return end
 	for key, button in pairs(frame.convButtons) do
 		-- each conversation shows its own progress in its chord's place: the
 		-- mic while it is talked to, the seconds while its agent works, "new"
-		-- once it answered
+		-- once it answered, else how full its context is
 		local heard, running = work(key)
+		local context = contextSet()[key]
 		local word
 		if talking.on and talking.slot == key then
 			-- the Companion key is held with this conversation's chord: the
@@ -203,6 +211,8 @@ local function paintConversations()
 			word = "|cffb0b0b0" .. WC.Jobs.Age(running.since) .. "s|r"
 		elseif unreadSet()[key] then
 			word = WC.Style.GOOD .. "new|r"
+		elseif context then
+			word = ("|cffb0b0b0%d%%|r"):format(math.floor(context.tokens / context.window * 100 + 0.5))
 		end
 		button.Paint(slotLabel(key), word)
 		if button.selected then button.selected:SetShown(key == viewSlot) end
@@ -370,6 +380,15 @@ function handlers.progress()
 	return "progress"
 end
 
+-- A conversation's context after its answer: tokens of the model's window
+function handlers.context(inbox)
+	local tokens, window = tonumber(inbox.tokens), tonumber(inbox.window)
+	if not (tokens and window and window > 0) then return "context: no size" end
+	contextSet()[inbox.slot or ""] = { tokens = tokens, window = window }
+	paintConversations()
+	return "context"
+end
+
 -- The PC read a press (Send now): the window stops drawing it again.
 function handlers.ack(inbox)
 	if WC.Jobs and WC.Jobs.Model() then WC.Jobs.Model():Acked(inbox.verb, inbox.job) end
@@ -403,6 +422,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- mailbox's lines come at PLAYER_ENTERING_WORLD, WowCompanion_Link)
 		logFrame()
 		replayLog()
+		-- the list's words as the reload left them: news, and each context
+		paintConversations()
 		WC.Send("UNREAD", unreadSet())
 		-- the last reply per conversation, as it stood when the reload saved
 		pcall(function()

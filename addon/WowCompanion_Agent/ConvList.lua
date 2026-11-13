@@ -164,11 +164,11 @@ function WC.Companion.ConvList(frame, well)
 		end
 		function selected:Show() self:SetShown(true) end
 		b.selected = selected
-		-- news kept across a reload shows from the start
+		-- Main is the one in view after a reload, so its news is being read; the
+		-- words (news, context) are Agent.lua's to paint
 		local kept = type(WowCompanionAgentDB) == "table" and WowCompanionAgentDB.unread
-		-- Main is the one in view after a reload, so its news is being read
 		if kept and key == "" then kept[""] = nil end
-		b.Paint(WC.Conversations.Label(key), kept and kept[key] and S.GOOD .. "new|r")
+		b.Paint(WC.Conversations.Label(key))
 		b:SetScript("OnClick", function() WowCompanion_SetConversation(key) end)
 		WC.MarkFocusable(b)
 		buttons[key] = b
