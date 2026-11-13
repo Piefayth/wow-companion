@@ -700,8 +700,8 @@ local function build(p)
 	end
 	-- Trial, temporary: the Trials tab's button 5 (cut corners, faceted bevel;
 	-- tools/make_button_art.py, Btn-Facets-*-9) on these buttons, the art cut
-	-- in three so it stretches to the word: rest, lit under the cursor (its glow round
-	-- it, Trials' 1), pressed.
+	-- in three so it stretches to the word: rest, lit under the cursor (its glow and bright
+	-- rim, Trials' 3), pressed.
 	-- Goes when the player picks a button for Style.Button.
 	local FACETS = [[Interface\AddOns\WowCompanion\Art\Btn-Facets-%s-9]]
 	local function facets(b)
@@ -726,7 +726,7 @@ local function build(p)
 		parts[2]:SetPoint("RIGHT", parts[3], "LEFT")
 		local over, down = false, false
 		local function paint()
-			local state = down and "Pushed" or over and "LitHalo" or "Rest"
+			local state = down and "Pushed" or over and "LitHaloRim" or "Rest"
 			for _, t in ipairs(parts) do
 				t:SetTexture(FACETS:format(state))
 				t:SetDesaturated(not b:IsEnabled())
