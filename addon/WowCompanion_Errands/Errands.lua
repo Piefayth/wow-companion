@@ -628,12 +628,10 @@ local function build(p)
 	p.raised = dark
 	local cast = CreateFrame("Frame", nil, p)
 	cast:SetAllPoints()
-	cast:SetFrameLevel(p:GetFrameLevel() + 4)
 	S.CastOn(cast, light, "LEFT")
 	local seam = CreateFrame("Frame", nil, p)
 	seam:SetAllPoints()
-	seam:SetFrameLevel(p:GetFrameLevel() + 5)
-	S.SpineCovers(seam, S.Spine(seam, p, LIST + SEAM / 2)):SetFrameLevel(p:GetFrameLevel() + 6)
+	S.OverShade(p, { cast, seam, S.SpineCovers(seam, S.Spine(seam, p, LIST + SEAM / 2)) })
 
 	-- the list: its heading, then the rows and what is done, scrolling under it
 	list = CreateFrame("Frame", nil, p)

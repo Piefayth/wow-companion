@@ -151,16 +151,13 @@ local function buildTabs(frame, messages)
 	status.raised = names
 	local rules = CreateFrame("Frame", nil, status)
 	rules:SetAllPoints()
-	rules:SetFrameLevel(status:GetFrameLevel() + 3)
 	local cast = CreateFrame("Frame", nil, status)
 	cast:SetAllPoints()
-	cast:SetFrameLevel(status:GetFrameLevel() + 4)
 	WC.Style.CastOn(cast, values, "LEFT")
 	local vines = CreateFrame("Frame", nil, status)
 	vines:SetAllPoints()
-	vines:SetFrameLevel(status:GetFrameLevel() + 5)
 	local spine = WC.Style.Spine(vines, status, SPINE - 2 - SEAM / 2)
-	WC.Style.SpineCovers(vines, spine):SetFrameLevel(status:GetFrameLevel() + 6)
+	local covers = WC.Style.SpineCovers(vines, spine)
 	local ROW = 30
 	local rows = {}
 	local function row(i)
@@ -256,6 +253,7 @@ local function buildTabs(frame, messages)
 	end
 	local since = 0
 	pages[3]:SetScript("OnShow", function() since = 0 refreshStatus() end)
+	WC.Style.OverShade(pages[3], { rules, cast, vines, covers })
 	pages[3]:SetScript("OnUpdate", function(_, dt)
 		since = since + dt
 		if since > 1 then since = 0 refreshStatus() end

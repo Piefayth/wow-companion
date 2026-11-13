@@ -459,9 +459,8 @@ local function orderOf(e) return e.row.order or 50 end
 -- the page (the Companion's page well casts one from its top, its level + 20),
 -- so the vines' joints read as joined; set on each show, as the page is moved
 -- into another frame, which resets levels set before
-local LIFT = 25
 local function lift()
-	local base = page:GetFrameLevel() + LIFT
+	local base = page:GetFrameLevel() + WC.Style.OVER_SHADE
 	-- the joints, the shadow over them, the spine over both
 	seams:SetFrameLevel(base)
 	joins:SetFrameLevel(base)

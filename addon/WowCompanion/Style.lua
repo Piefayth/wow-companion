@@ -462,6 +462,20 @@ function WowCompanion_Style.Spine(owner, page, x)
 	WowCompanion_Style.VineLine(spine, "Thick", true, true, true)
 	return spine
 end
+-- A page's rules, casts, spine and covers stand over the window's top shadow
+-- (Window.lua's page lip, 20 levels over its page well), so the shadow falls
+-- on the stone and the rows, never across the vines: frames, lowest first,
+-- set from OVER_SHADE over the page each time it shows, as a page shown in
+-- another frame has its levels reset.
+WowCompanion_Style.OVER_SHADE = 25
+function WowCompanion_Style.OverShade(page, frames)
+	local function lift()
+		local base = page:GetFrameLevel() + WowCompanion_Style.OVER_SHADE
+		for i, f in ipairs(frames) do f:SetFrameLevel(base + i - 1) end
+	end
+	page:HookScript("OnShow", lift)
+	lift()
+end
 -- The covers over a spine's ends where it meets a raised well's top and
 -- bottom (tools/make_cover_art.py), in a frame of owner's over the spine;
 -- returns it, for the caller to set its level. What else draws a stretch of
