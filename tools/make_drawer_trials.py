@@ -6,8 +6,9 @@ has picked one.
     python tools/make_drawer_trials.py   writes addon/WowCompanion_Agent/Art/DrawerTrial-*-<v>.tga
                                          and target/drawer-trials.png (all of them, text mocked)
 
-Round 3 (round 1, the six concepts, is d5d8e49; round 2, filleted joints,
-4c49c05): the settings page's joinery. A cell is drawn as the game would draw
+Round 4 (round 1, the six concepts, d5d8e49; round 2, filleted joints,
+4c49c05; round 3, the settings crests' halves, beb6100): the settings page's
+technique, its shapes drawn here (below). A cell is drawn as the game would draw
 the drawer: a base picture (a slice of the window's right side, faded where
 it is cut, and the drawer butted against its rim, with the legend's panel)
 and, over each place the drawer's top and bottom rims meet the window's rim, a
@@ -27,11 +28,10 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 import artout
-import make_scrollbar_art as M
 from make_frame_art import grid, bead, rim_metal, Layers, fit, octagon_depth, brushed, streaks, BRONZE, LINE, BAND
 from make_scrollbar_art import write_tga, Wire
 
-VERSION = 3  # DrawerTrials.lua's
+VERSION = 4  # DrawerTrials.lua's
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 STONE = os.path.join(ROOT, "addon", "WowCompanion", "Art", "%s-6.tga")
@@ -136,8 +136,8 @@ class Joint:
     rim's swell, extra metal, ornament (polygons and circles, in place) and
     the meetings where the drawer's rim runs through the window's."""
 
-    def __init__(self, outer, inner, bulge=no_bulge, extra=None, pieces=(), through=()):
-        self.outer, self.inner, self.bulge = outer, inner, bulge
+    def __init__(self, outer, inner, bulge=no_bulge, extra=None, pieces=(), through=(), weld=0.8):
+        self.outer, self.inner, self.bulge, self.weld = outer, inner, bulge, weld
         self.extra = extra if extra is not None else np.zeros(xx.shape, bool)
         self.pieces = list(pieces)
         self.through = through
@@ -164,13 +164,13 @@ def metal(j, legend_extra):
     for meeting in j.through:
         top = meeting == "Top"
         y0 = DT if top else DB - RIM
-        m = m | rect(XL, y0, X0 + 1, y0 + RIM) | polys([(XL, y0 + RIM / 2, RIM / 2)])
+        m = m | rect(XL, y0, X0 + 1, y0 + RIM)
         band = (xx >= XL - RIM / 2) & (xx < X0 + 2) & (yy >= y0) & (yy < y0 + RIM)
         s_t = np.where(band, (yy - DT) if top else (DB - yy), s_t)
     if j.pieces:
         orn = polys(j.pieces)
         # fillets only where a wire meets the frame; a volute's own gaps stay open
-        m = m | orn | (closing(m | orn, 0.8) & (edt(~m) < 1.5))
+        m = m | orn | (closing(m | orn, j.weld) & (edt(~m) < j.weld + 0.7))
     return m, s_out, np.where(strip, s_w, np.inf), s_t
 
 
@@ -277,121 +277,91 @@ def joints(j, g, base_cast):
     return out
 
 
-# --- the joints: the settings page's technique (make_scrollbar_art.junction) ------
+# --- round 4: drawn in place (L1, 2026-11-12) -------------------------------------
 #
-# The drawer's top and bottom rims run through the window's rim as one forged
-# piece, to a round end just inside it, and over each crossing stands a crest
-# of the settings page's own scrollwork: its flourish's wires, drawn by its own
-# code (M.junction, M.flourish), then moved into place, rotated about the
-# crossing (points moved, so the light stays the frame's), and painted in the
-# rim's bronze. The scrollwork stays outside the window, over none of the
-# conversation list: up the window's rim, along the drawer's, or both (the
-# crest's axis between them, in the corner).
+# The settings joint's technique, not its crest: the members are one forged
+# metal, the drawer's rims run through the window's (the bead crossing makes the
+# diamond the player likes), and the ornament grows out of the meeting: its
+# wires leave the joint tangentially, through real fillets (weld), at the rim's
+# own weight, never laid on top of a rim on little feet. Drawn in the drawer's
+# own coordinates: x right from the window's outer edge X0, y down; the space
+# for ornament is above the drawer (and mirrored below), outside the window.
+# Each design is the top joint's wires; the bottom joint is the same mirrored
+# about the drawer's middle (points moved, so the light stays top left).
 
-def lance(base, y, L, k=1.0):
-    """The fleur's lance on its side (make_junction_trials.py, 599418d)."""
-    from scipy.interpolate import PchipInterpolator
-    knots = [(0, 1.5), (L * 0.22, 2.4), (L * 0.45, 2.64), (L * 0.72, 2.0), (L * 0.92, 0.9), (L, 0.45)]
-    f = PchipInterpolator([q[0] for q in knots], [q[1] * (0.6 + 0.4 * k) for q in knots])
-    t = np.linspace(0, L, 120)
-    hw = f(t)
-    return [(base - u, y - w) for u, w in zip(t, hw)] + [(base - u, y + w) for u, w in zip(t[::-1], hw[::-1])]
-
-
-def lyre_draw(m, x0, P, k, e, w, t):
-    """Lyre (the junction trials' A, 599418d): horns into big volutes, an S
-    satellite off each, a lance on the axis."""
-    horn = Wire((x0, m + 1.0 * k), 125).volute(P(-21, 14), 9.0 * k, 0, 1, t(2.0), eye=e(2.1), out=0.5, inn=0.5)
-    sat = horn.fork(0.34).volute(P(-34, 23), 5.0 * k, 270, -1, t(1.0), eye=e(1.9))
-    return M.mirror_pair(m, [(horn, w(1.45), w(0.95)), (sat, w(1.15), w(0.85))]) + [lance(x0, m, 28 * k, k)]
-
-
-def triskele_draw(m, x0, P, k, e, w, t):
-    """Triskele (the junction trials' C, 599418d): three volutes a side."""
-    a = Wire((x0, m + 0.6 * k), 175).volute(P(-14, 10), 8.0 * k, 270, -1, t(1.75), eye=e(2.1))
-    b = a.fork(0.2).volute(P(-34, 11), 7.5 * k, 90, 1, t(1.75), eye=e(2.0))
-    c = a.fork(0.3).volute(P(-27.5, 22), 5.2 * k, 0, 1, t(1.0), eye=e(1.9))
-    return M.mirror_pair(m, [(a, w(1.4), w(0.95)), (b, w(1.25), w(0.9)), (c, w(1.05), w(0.8))])
-
-
-def work(style, big):
-    """A style's flourish as the settings page draws it (M.flourish hands
-    forge its `work`), in its own square: the meeting's middle and the pieces."""
-    got = {}
-    real = M.forge
-    M.forge = lambda N, big_, work=(), arm_from=None: got.setdefault("w", (N / 2, list(work)))
-    try:
-        if style == "Cascade":
-            M.junction(big)
-        else:
-            M.flourish(big, lyre_draw if style == "Lyre" else triskele_draw)
-    finally:
-        M.forge = real
-    return got["w"]
-
-
-def crest(style, big, at, axis, side=0, scale=1.0, bottom=False):
-    """The flourish moved into place: its far side (where it blooms) along
-    `axis`, its meeting on `at`, scaled; side +1 or -1 keeps the one half
-    whose wires lie that side of the settings joint's arm, 0 both. bottom:
-    mirrored about the drawer's middle, for the bottom crossing (points moved)."""
-    m, pieces = work(style, big)
-    dx, dy = np.array(axis, float) / np.hypot(*axis)
-    rot = np.array([[-dx, dy], [-dy, -dx]])  # the far side (-1, 0) onto the axis
-
-    def move(x, y):
-        q = np.asarray(at, float) + scale * rot @ np.array([x - m, y - m])
-        if bottom:
-            q[1] = DT + DB - q[1]
-        return float(q[0]), float(q[1])
+def flip(pieces):
+    """Mirrored about the drawer's middle, for the bottom joint."""
     out = []
     for p in pieces:
-        ys = [p[1]] if isinstance(p, tuple) else [q[1] for q in p]
-        mean = np.mean(ys) - m
-        if side and abs(mean) > 1.0 and np.sign(mean) != side:
-            continue
         if isinstance(p, tuple):
-            out.append(move(p[0], p[1]) + (p[2] * scale,))
+            out.append((p[0], DT + DB - p[1], p[2]))
         else:
-            out.append([move(*q) for q in p])
+            out.append([(x, DT + DB - y) for x, y in p])
     return out
 
 
-CROSS = (X0 - RIM / 2, DT + RIM / 2)  # the top crossing's middle
-UP, ALONG = (0, -1), (1, 0)
-BOTH = ("Top", "Bottom")
-# A whole crest (both halves) would lie half inside the window, over the
-# list, or inside the drawer, over its rows; turned into the corner between,
-# its two halves close into a heart. So a crest here is the settings joint's
-# one half, rooted in the crossing: up the window's rim (its outer half) or
-# along the drawer's rim (its upper half; mirrored, the lower one's lower).
+def both(pieces):
+    return list(pieces) + flip(pieces)
 
 
-def half(style, big, axis, scale, bottom_too=True):
-    side = -1 if axis == UP else 1
-    top = crest(style, big, CROSS, axis, side, scale)
-    return top + (crest(style, big, CROSS, axis, side, scale, bottom=True) if bottom_too else [])
+def wires(*ws):
+    """(wire, root half-width, tip half-width) as metal."""
+    return [q for w, w0, w1 in ws for q in w.pieces(w0, w1)]
 
 
-def options():
+BOTH = ("Top", "Bottom")  # the meetings where the drawer's rim runs through
+
+
+def climb():
+    """A stem leaving the window's rim steeply, rising into a big volute over
+    the drawer; a satellite off its root turning down toward the drawer."""
+    stem = Wire((X0 - 0.5, 36), -35).volute((X0 + 18, 16), 8.5, 180, 1, 2.0, eye=2.2, out=0.5, inn=0.45)
+    sat = stem.fork(0.18, 75).volute((X0 + 15, 36), 4.8, 180, -1, 1.0, eye=1.9, out=0.6, inn=0.5)
+    return wires((stem, 2.0, 0.85), (sat, 1.5, 0.9))
+
+
+def runner():
+    """A stem leaving the drawer's rim steeply out along it, into a volute
+    curling away from the window; a satellite off it curling back toward it."""
+    stem = Wire((X0 + 12, DT + 0.5), -55).volute((X0 + 30, 22), 8.0, 180, 1, 2.0, eye=2.2, out=0.5, inn=0.45)
+    sat = stem.fork(0.22, -55).volute((X0 + 8, 18), 5.0, 0, -1, 1.0, eye=1.9, out=0.55, inn=0.5)
+    return wires((stem, 2.0, 0.85), (sat, 1.5, 0.9))
+
+
+def bracket():
+    """A shelf bracket forged into both rims, square to each where it meets
+    it, a volute grown off its belly into the corner."""
+    s = Wire((X0 - 0.5, 8), 0).to((X0 + 34, DT + 0.5), 90, out=0.55, inn=0.55)
+    bud = s.fork(0.5, 95).volute((X0 + 12, 30), 5.0, 0, 1, 1.0, eye=1.9, out=0.5, inn=0.5)
+    return wires((s, 2.0, 2.0), (bud, 1.5, 0.9))
+
+
+def bracket_out():
+    """The bracket, a volute grown off its back out of the corner."""
+    s = Wire((X0 - 0.5, 8), 0).to((X0 + 34, DT + 0.5), 90, out=0.55, inn=0.55)
+    bud = s.fork(0.42, -80).volute((X0 + 33, 12), 5.5, 180, 1, 1.0, eye=1.9, out=0.5, inn=0.5)
+    return wires((s, 2.0, 2.0), (bud, 1.5, 0.9))
+
+
+def cascade():
+    """A stem leaving the drawer's rim near the window and run out along it a
+    hand above it, scrolls budding off it in turn, ending in a volute: the
+    settings Cascade laid along."""
+    stem = Wire((X0 + 6, DT + 0.5), -60).to((X0 + 22, 32), 0, out=0.45, inn=0.45)         .volute((X0 + 34, 25), 6.5, 180, 1, 1.25, eye=2.0, out=0.4, inn=0.4)
+    a = stem.fork(0.22, -55).volute((X0 + 13, 16), 5.0, 90, -1, 1.0, eye=1.9, out=0.5, inn=0.5)
+    return wires((stem, 1.9, 0.85), (a, 1.5, 0.9))
+
+
+def designs():
     band = legend_band()
+    weld = dict(through=BOTH, weld=1.4)
     return [
-        (1, "Cascade along the drawer's rim, the settings joint's size",
-         Joint(3.0, 3.0, pieces=half("Cascade", True, ALONG, 1.0), through=BOTH), band),
-        (2, "Cascade up the window's rim",
-         Joint(3.0, 3.0, pieces=half("Cascade", True, UP, 0.95), through=BOTH), band),
-        (3, "Lyre along the drawer's rim, its lance on the rim",
-         Joint(3.0, 3.0, pieces=half("Lyre", True, ALONG, 1.0), through=BOTH), band),
-        (4, "Triskele up the window's rim",
-         Joint(3.0, 3.0, pieces=half("Triskele", True, UP, 0.95), through=BOTH), band),
-        (5, "Triskele along the drawer's rim",
-         Joint(3.0, 3.0, pieces=half("Triskele", True, ALONG, 1.0), through=BOTH), band),
-        (6, "Cascade along the drawer, smaller (the branch joints' size)",
-         Joint(3.0, 3.0, pieces=half("Cascade", False, ALONG, 1.0), through=BOTH), band),
-        (7, "Cascade along the drawer above; the bottom crossing plain",
-         Joint(3.0, 3.0, pieces=half("Cascade", True, ALONG, 1.0, bottom_too=False), through=BOTH), band),
-        (8, "Plain: the rims run through the window's, no ornament",
-         Joint(3.0, 3.0, through=BOTH), band),
+        (1, "Climb: from the window's rim into a big volute", Joint(5.0, 3.0, pieces=both(climb()), **weld), band),
+        (2, "Runner: from the drawer's rim, a scroll each way", Joint(5.0, 3.0, pieces=both(runner()), **weld), band),
+        (3, "Bracket into both rims, a bud in the corner", Joint(5.0, 3.0, pieces=both(bracket()), **weld), band),
+        (4, "Bracket into both rims, a bud outside it", Joint(5.0, 3.0, pieces=both(bracket_out()), **weld), band),
+        (5, "Cascade laid along the drawer's rim", Joint(5.0, 3.0, pieces=both(cascade()), **weld), band),
+        (6, "Plain: forged through, the diamond, a deep fillet", Joint(9.0, 3.0, through=BOTH), band),
     ]
 
 
@@ -422,7 +392,7 @@ def main():
     # earlier rounds go (committed); this round's files are rewritten in place
     artout.clear(OUT, *("DrawerTrial-*-%d.tga" % v for v in range(1, VERSION)))
     bases, casts, cells = {}, {}, []
-    for n, title, j, g in options():
+    for n, title, j, g in designs():
         if g.name not in bases:
             bases[g.name] = base(g)
             casts[g.name] = metal_layer(BUTT, g.extra)[1]
