@@ -74,9 +74,11 @@ class Canvas:
         self.a = out_a[..., 0]
 
     def metal(self, m, pal, bevel=1.6, outline=0.8, shadow=True, dome=False, gloss=0.55, sheen=True, glow=True,
-              paint=False, grain=True):
+              paint=False, grain=True, lift=None):
         """A raised piece: its outline and drop shadow under it, then the face
-        shaded from a height field (a bevel `bevel` px wide, or a dome).
+        shaded from a height field (a bevel `bevel` px wide, or a dome, plus
+        `lift`, a height field over the canvas in final pixels: a sheet pressed
+        over what lies under it).
         paint: Blizzard's painted metal instead of clean vector metal: a dark
         warm edge rather than a black line, grain and wear in the face, a broad
         soft speculars, a little colour taken out; grain=False leaves out the
@@ -96,6 +98,8 @@ class Canvas:
         else:
             t = np.clip(d / bevel, 0, 1)
             hgt = (1 - (1 - t) ** 2) * bevel
+        if lift is not None:
+            hgt = hgt + lift
         hgt = ndimage.gaussian_filter(hgt, self.s * 0.18)
         gy, gx = np.gradient(hgt * self.s)
         n = np.stack([-gx, -gy, np.ones_like(gx)], -1)

@@ -1,46 +1,32 @@
-"""A trial (the player, 2026-11-13): spine ends round 7, the folded corner
-cover laid over the real spine, smaller (round 5, 2ecc90e, drew the eye);
-round 6 (d4896a6) was too bulbous over the vine and stood out in colour, so
-here its ridge is shallow and its metal is the vine's own bark. Round 4 (a33d974) drew its own vine and a
-mock panel's side face the game does not have, so its vine missed the spine's
-and the bottom was not the top's. Here the spine is the game's own, whole, its
-round end under the cover; the cover is only a thin sheet: a gusset over the
-names panel's corner, its arm along the panel's edge carried on as a strap
-over the vine, pressed round it, cut square where the vine comes out. Drawn
-in place for each end, the light from the top left on both:
+"""A trial (the player, 2026-11-13): spine ends round 8, the folded corner
+cover laid over the real spine. Round 5 (2ecc90e) drew the eye; round 6
+(d4896a6) smaller; round 7 (0563890) flatter and in the vine's colours, but
+flat paint: no grain, no wear, its edges drawn by hand, so it read as a
+colour beside the vine's metal. Here it is the vine's own metal, painted by
+make_scrollbar_art's raised() as the vine and its joints are (the thick
+vine's palette, grain, worn lit edges, the dark warm outline, its cast), the
+strap pressed over the vine as a shallow ridge in its height. A gusset over
+the names panel's corner, its arm along the panel's edge carried on as a
+strap over the vine, cut square where the vine comes out. Drawn in place for
+each end, the light from the top left on both:
 
-    python tools/make_cover_trial.py   writes addon/WowCompanion/Art/Vine-CornerCover<Top|Bottom>-T7.tga
+    python tools/make_cover_trial.py   writes addon/WowCompanion/Art/Vine-CornerCover<Top|Bottom>-T8.tga
 
 48 x 16 units, 4 texels each; the spine's middle at x 24, the panel's edge
 at x 22.5 and at the texture's top (bottom). Removed with the trial once one
 is picked (docs/looks.md).
 """
-import math, os
+import os
 import numpy as np
-from PIL import Image, ImageDraw
-from scipy import ndimage as nd
 import make_scrollbar_art as sb
 
-U, SS = sb.U, 4
+U = sb.U
 TW, TH = 48, 16
 MID, EDGE_X = 24.0, 22.5  # the spine's middle, the panel's edge
-VINE = sb.WEIGHTS["Thick"][0]  # the spine's half-width
+VINE, PAL = sb.WEIGHTS["Thick"]  # the spine's half-width and metal
 STRAP = MID + VINE + 0.5  # the strap's right edge, past the vine
 TIP = 12.0  # where the cover's arm ends down the panel's edge
-# the thick vine's own colours (Vine-ThickVMid): its body, its lit crest, its shade
-FACE = np.array((88, 72, 54.)); LIGHT = np.array((124, 106, 86.)); DARK = np.array((38, 28, 19.))
-L = np.array((-1., -1.)) / math.sqrt(2)
-
-
-def mask(polys, circles=()):
-    s = U * SS
-    im = Image.new("L", (TW * s, TH * s), 0); d = ImageDraw.Draw(im)
-    for p in polys: d.polygon([(x * s, y * s) for x, y in p], fill=255)
-    for cx, cy, r in circles: d.ellipse([(cx - r) * s, (cy - r) * s, (cx + r) * s, (cy + r) * s], fill=255)
-    return np.asarray(im, float) / 255
-
-
-def down(a): return np.asarray(Image.fromarray(a).resize((TW * U, TH * U), Image.BOX), float) if a.ndim == 2 else a
+RIDGE = 1.0  # how high the strap stands over the vine, in texels
 
 
 def gusset():
@@ -48,62 +34,20 @@ def gusset():
     return [(EDGE_X - 10, 0), (STRAP, 0), (STRAP, TIP)] + [tuple(p) for p in sweep]
 
 
-def outward(m):
-    g = nd.gaussian_filter(m, SS * 0.8); gy, gx = np.gradient(g)
-    n = np.hypot(gx, gy) + 1e-9
-    return (-gx * L[0] - gy * L[1]) / n
-
-
-def lay(img, a, col):
-    a = np.clip(a, 0, 1)[..., None]
-    return img * (1 - a) + col * a
-
-
 def draw(flip):
-    Y = (lambda y: TH - y) if flip else (lambda y: y)
-    poly = [(x, Y(y)) for x, y in gusset()]
-    m = mask([poly])
-    h, w = m.shape
-    yy, xx = np.mgrid[0:h, 0:w] / (U * SS)
-    rgb = np.zeros((h, w, 3)); a = np.zeros((h, w))
-    # the hairline where the sheet's edges away from the light meet the panel
-    ring_out = np.clip(nd.grey_dilation(m, size=SS + 1) - m, 0, 1) * (xx < EDGE_X)
-    dot = outward(m)
-    c = ring_out * 0.5 * np.clip(-dot + 0.2, 0, 1)
-    rgb = lay(rgb, c, np.zeros(3)); a = c + a * (1 - c)
-    # the face, flat, a faint sheen across it
-    t = ((xx - xx[m > 0.5].min()) + (yy - yy[m > 0.5].min())) / (TW * 0.6)
-    face = FACE * (1 + 0.08 * (0.5 - t))[..., None]
-    # pressed over the vine: a shallow ridge, lit a little on its left, shaded on its right
-    d = (xx - MID) / (VINE + 0.3)
-    bump = np.where(np.abs(d) < 1, np.sin(np.pi * d), 0)
-    face = face * (1 - 0.12 * np.clip(bump, 0, 1))[..., None]
-    face = lay(face, np.clip(-bump, 0, 1) * 0.3, LIGHT)
-    rgb = lay(rgb, m, face); a = m + a * (1 - m)
-    # its cut edges, a texel: lit toward the light, dark away
-    ring = np.clip(m - nd.grey_erosion(m, size=SS + 1), 0, 1)
-    rgb = lay(rgb, ring * np.clip(dot, 0, 1) * 0.7, LIGHT)
-    rgb = lay(rgb, ring * np.clip(-dot, 0, 1) * 0.7, DARK)
-    # the vine coming out from under the strap's square end: its shadow on the vine
-    end = (np.abs(yy - Y(TIP)) < 0.9) * (np.abs(xx - MID) < VINE) * (1 - m)
-    sh = end * np.clip(1 - np.abs(yy - Y(TIP)) / 0.9, 0, 1) * 0.55
-    rgb = lay(rgb, sh, np.zeros(3)); a = sh + a * (1 - sh)
-    # a flush pin
-    pm = mask([], [(EDGE_X - 7.5, Y(2.6), 0.55)])
-    pr = np.clip(pm - nd.grey_erosion(pm, size=SS + 1), 0, 1); pd = outward(pm)
-    rgb = lay(rgb, pm, FACE * 0.9)
-    rgb = lay(rgb, pr * np.clip(-pd, 0, 1) * 0.8, DARK); rgb = lay(rgb, pr * np.clip(pd, 0, 1) * 0.6, LIGHT)
-    pre = (rgb * a[..., None]).reshape(TH * U, SS, TW * U, SS, 3).mean((1, 3))
-    al = a.reshape(TH * U, SS, TW * U, SS).mean((1, 3))
-    out = np.zeros((TH * U, TW * U, 4))
-    out[..., :3] = np.where(al[..., None] > 0, pre / np.maximum(al[..., None], 1e-6), 0)
-    out[..., 3] = al * 255
-    return out
+    c = sb.ucanvas(TW, TH)
+    pen = sb.Pen(c, TH, flip)
+    xx = (np.arange(c.W) / c.s - c.pad) / U  # units across
+    d = (xx - MID) / (VINE + 0.6)
+    ridge = np.where(np.abs(d) < 1, RIDGE * np.cos(np.pi / 2 * d) ** 2, 0)
+    lift = np.broadcast_to(ridge[None, :], (c.H, c.W))
+    sb.raised(pen, [gusset()], PAL, bevel=0.45, cast=0.3, lift=lift)
+    return c.final()
 
 
 def main():
     for flip, end in ((False, "Top"), (True, "Bottom")):
-        sb.write_tga(os.path.join(sb.CORE_OUT, "Vine-CornerCover%s-T7.tga" % end), draw(flip))
+        sb.write_tga(os.path.join(sb.CORE_OUT, "Vine-CornerCover%s-T8.tga" % end), draw(flip))
     print("2 textures")
 
 
