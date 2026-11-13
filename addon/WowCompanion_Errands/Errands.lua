@@ -553,7 +553,6 @@ end
 -- our buttons (WC.Style.Button) along its foot. The details follow the
 -- cursor; every colour names a kind of fact. Nothing secure: works in combat.
 local S = WC.Style
-local NL = string.char(10)
 local C_WHITE, C_GREY, C_GREEN = "|cffffffff", S.GREY, S.GOOD
 -- the list well's right edge from the page's left; its heading's band
 local LIST, HEAD = 214, 30
@@ -567,13 +566,6 @@ local function font(parent, object, colour)
 	fs:SetJustifyV("TOP")
 	if colour then fs:SetTextColor(unpack(colour)) end
 	return fs
-end
--- the chat's vine across a 16-tall frame, rounded at both ends
-local function divider(parent)
-	local f = CreateFrame("Frame", nil, parent)
-	f:SetHeight(16)
-	S.VineLine(f, "", false, true, true)
-	return f
 end
 -- a section's vine across the details, grown out of the spine through a plain
 -- joint; in the seam's frame, over the spine, so the joint lies on it
@@ -683,11 +675,6 @@ local function build(p)
 	barWell:SetPoint("BOTTOMRIGHT", -6, B - 10)
 	barWell:SetWidth(40)
 	WC.MarkIgnored((WC.ScrollBar.Build(barWell, scroll, 0, list:GetFrameLevel())))
-	list.doneRule = divider(content)
-	list.doneHead = S.Heading(content)
-	list.doneHead:SetText("Done")
-	list.done = font(content, "GameFontHighlightSmall", S.DIM)
-	list.done:SetSpacing(6)
 
 	-- the chosen errand, on the light stone
 	detail = CreateFrame("Frame", nil, p)
@@ -792,32 +779,7 @@ drawPage = function()
 		if b.pinMark then b.pinMark:SetShown(e.place ~= nil and e.pinned ~= false) end
 	end
 	local y = items:Lay(#open, 0, 2)
-	-- done: up to three, dimmed, under the chat's vine
-	local finished = {}
-	for _, e in ipairs(store().items) do if e.doneAt then finished[#finished + 1] = e end end
-	table.sort(finished, function(a, b) return a.doneAt > b.doneAt end)
-	local lines = {}
-	for i, e in ipairs(finished) do
-		if i > 3 then lines[#lines + 1] = ("+%d more"):format(#finished - 3) break end
-		lines[#lines + 1] = e.text .. "  " .. date("%b %d", e.doneAt)
-	end
-	local anyDone = #finished > 0
-	list.doneRule:SetShown(anyDone)
-	list.doneHead:SetShown(anyDone)
-	list.done:SetShown(anyDone)
-	if anyDone then
-		list.doneRule:ClearAllPoints()
-		list.doneRule:SetPoint("LEFT", content, "TOPLEFT", 6, y - 10)
-		list.doneRule:SetPoint("RIGHT", content, "TOPRIGHT", -6, y - 10)
-		list.doneHead:ClearAllPoints()
-		list.doneHead:SetPoint("TOPLEFT", content, "TOPLEFT", 14, y - 22)
-		list.done:ClearAllPoints()
-		list.done:SetPoint("TOPLEFT", list.doneHead, "BOTTOMLEFT", 0, -6)
-		list.done:SetPoint("RIGHT", content, "RIGHT", -6, 0)
-		list.done:SetText(table.concat(lines, NL))
-		y = y - 22 - list.doneHead:GetStringHeight() - 6 - list.done:GetStringHeight()
-	end
-	content:SetHeight(math.max(1, 6 - y))
+	content:SetHeight(math.max(1, -y))
 	-- the chosen errand
 	local e
 	for _, x in ipairs(open) do if x.id == selectedId then e = x end end
