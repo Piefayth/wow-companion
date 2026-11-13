@@ -698,9 +698,52 @@ local function build(p)
 		label:SetJustifyH("RIGHT")
 		detail.facts[i] = { label = label, value = font(detail, "GameFontHighlight") }
 	end
+	-- Trial, temporary: the Trials tab's button 5 (cut corners, faceted bevel;
+	-- tools/make_button_art.py, Btn-Facets-*-8) on these buttons, the art cut
+	-- in three so it stretches to the word: rest, lit under the cursor, pressed.
+	-- Goes when the player picks a button for Style.Button.
+	local FACETS = [[Interface\AddOns\WowCompanion\Art\Btn-Facets-%s-8]]
+	local function facets(b)
+		b:ClearNormalTexture()
+		b:ClearPushedTexture()
+		b:ClearHighlightTexture()
+		b:ClearDisabledTexture()
+		-- the art is 160 x 36 with the 128 x 28 body in its middle; the caps keep the cuts
+		local parts = {}
+		for i, p in ipairs({ { 0, 28 }, { 28, 132 }, { 132, 160 } }) do
+			local t = b:CreateTexture(nil, "BACKGROUND")
+			t:SetTexCoord(p[1] / 160, p[2] / 160, 0, 1)
+			t:SetPoint("TOP", 0, 4)
+			t:SetPoint("BOTTOM", 0, -4)
+			parts[i] = t
+		end
+		parts[1]:SetWidth(28)
+		parts[1]:SetPoint("LEFT", -16, 0)
+		parts[3]:SetWidth(28)
+		parts[3]:SetPoint("RIGHT", 16, 0)
+		parts[2]:SetPoint("LEFT", parts[1], "RIGHT")
+		parts[2]:SetPoint("RIGHT", parts[3], "LEFT")
+		local over, down = false, false
+		local function paint()
+			local state = down and "Pushed" or over and "Lit" or "Rest"
+			for _, t in ipairs(parts) do
+				t:SetTexture(FACETS:format(state))
+				t:SetDesaturated(not b:IsEnabled())
+			end
+			b:GetFontString():SetTextColor(unpack(over and b:IsEnabled() and S.NAME_LIT or S.BRONZE))
+		end
+		b:HookScript("OnEnter", function() over = true paint() end)
+		b:HookScript("OnLeave", function() over, down = false, false paint() end)
+		b:HookScript("OnMouseDown", function() down = true paint() end)
+		b:HookScript("OnMouseUp", function() down = false paint() end)
+		b:HookScript("OnEnable", paint)
+		b:HookScript("OnDisable", paint)
+		paint()
+	end
 	local last
 	local function button(label, onClick)
 		local b = S.Button(detail)
+		facets(b)
 		b:SetLabel(label)
 		if last then b:SetPoint("LEFT", last, "RIGHT", 8, 0) else b:SetPoint("BOTTOMLEFT", -2, 0) end
 		last = b
