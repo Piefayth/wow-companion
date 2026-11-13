@@ -34,9 +34,6 @@ function WC.Companion.ConvList(frame, well)
 	local S = WC.Style
 	local layer = CreateFrame("Frame", nil, well)
 	layer:SetAllPoints()
-	layer:SetFrameLevel(well:GetFrameLevel() + 1)
-	-- the walls over every vine's ends
-	if well.NineSlice then well.NineSlice:SetFrameLevel(layer:GetFrameLevel() + 3) end
 	local pool = {} -- the look's textures, reused
 	local function draw(i, d)
 		local t = pool[i] or layer:CreateTexture()
@@ -92,6 +89,18 @@ function WC.Companion.ConvList(frame, well)
 		local H = well:GetHeight() or 0
 		if H <= 0 then return end
 		local lay = C.Lay(picked(), H, offered, open or false)
+		-- a bare look hides the well's walls and floor, its art on the window's
+		-- stone; one that reaches the chat's scroll bar draws over the chat
+		-- well's wall (its level and the bar's column are the chat well's + 0
+		-- and + 3; the bar's arrows + 6)
+		for _, part in pairs({ well.NineSlice or false, well.Bg or false, well.floor }) do
+			if part then part:SetShown(not lay.bare) end
+		end
+		local base = lay.reach and frame.chatWell and frame.chatWell:GetFrameLevel() + 4 or well:GetFrameLevel() + 1
+		layer:SetFrameLevel(base)
+		-- the walls over every vine's ends
+		if well.NineSlice then well.NineSlice:SetFrameLevel(base + 3) end
+		for _, b in pairs(buttons) do b:SetFrameLevel(base + 2) end
 		for i, d in ipairs(lay.pieces) do draw(i, d) end
 		for i = #lay.pieces + 1, #pool do pool[i]:Hide() end
 		for key, b in pairs(buttons) do
@@ -133,7 +142,6 @@ function WC.Companion.ConvList(frame, well)
 	for _, key in ipairs(WC.Conversations.list) do
 		local b = CreateFrame("Button", nil, well)
 		b.key, b.word = key, ""
-		b:SetFrameLevel(layer:GetFrameLevel() + 2)
 		b.name = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 		b.name:SetJustifyH("LEFT")
 		b.chord = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")

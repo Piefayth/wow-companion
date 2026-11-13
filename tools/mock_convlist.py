@@ -11,7 +11,7 @@ bare stone, the names scaled to the normal font) and the pad's glyphs (the
 round 4 shot, glyphs in sockets). Blizzard's voice chat mic (not in our files)
 is drawn here in its shape.
 
-    python tools/mock_convlist.py     writes target/tmp/convlist7/<look>.png and all.png
+    python tools/mock_convlist.py     writes target/tmp/convlist8/<look>.png and all.png (--offer: each with the offered button too)
 """
 import os
 import re
@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-TMP = os.path.join(ROOT, "target", "tmp", "convlist7")
+TMP = os.path.join(ROOT, "target", "tmp", "convlist8")
 SHOTS = os.path.join(os.environ.get("LOCALAPPDATA", ""), "wow-companion", "shots")
 SHOT = os.path.join(SHOTS, "convlist5-full.png")  # 3840 x 2160, the window open on Chat, round 4's brass rows
 WORDS = os.path.join(SHOTS, "convlist4-full.png")  # the same window, round 2's rows: names on bare stone
@@ -74,7 +74,7 @@ def lay(lua, C, key, H, offered):
         r = out.rows[key_]
         rows[key_] = dict(x=r.x, y=r.y, w=r.w, h=r.h, name=r.name, chord=r.chord)
     offer = [out.offer[i] for i in range(1, 5)] if out.offer else None
-    return pieces, rows, offer
+    return pieces, rows, offer, dict(bare=out.bare, x0=out.x0, x1=out.x1)
 
 
 # --- the textures ---------------------------------------------------------------
@@ -103,6 +103,14 @@ def drawn(p, ow, oh):
     and cut by its texcoords, out to its rectangle, ow x oh px."""
     src = texture(p["tex"])
     ulx, uly, llx, lly, urx, ury, lrx, lry = p["coords"]
+    # a repeated art (texcoords past 1): the art laid that many times, the coords into it
+    rs = int(np.ceil(max(ulx, llx, urx, lrx) - 1e-6))
+    rt = int(np.ceil(max(uly, lly, ury, lry) - 1e-6))
+    if rs > 1 or rt > 1:
+        rs, rt = max(rs, 1), max(rt, 1)
+        src = np.tile(src, (rt, rs, 1))
+        ulx, llx, urx, lrx = (v / rs for v in (ulx, llx, urx, lrx))
+        uly, lly, ury, lry = (v / rt for v in (uly, lly, ury, lry))
     # the whole art's size on screen, so it is filtered once at that scale
     span_s = np.hypot(urx - ulx, ury - uly)  # texcoord length along the drawn width
     span_t = np.hypot(llx - ulx, lly - uly)
@@ -293,8 +301,13 @@ def mock(lua, C, key, base, sample, words, gl, ptr, offered=False):
     H = (foot - top) / PX
     X = lambda u: left + u * PX  # noqa: E731
     Y = lambda u: top + u * PX  # noqa: E731
-    clip = (int(round(X(4))), int(round(X(W - 4))))  # the walls cover the rest
-    pieces, rows, offer = lay(lua, C, key, H, offered)
+    pieces, rows, offer, how = lay(lua, C, key, H, offered)
+    if how["bare"]:  # the well hidden: the window's own stone (Window.lua's frame.Bg, the dark stone at 0.72)
+        x0, x1 = int(round(left)), int(round(right)) + 1
+        img[int(top):int(foot) + 1, x0:x1] = stone_like(sample, int(foot) + 1 - int(top), x1 - x0) * 0.72
+        clip = (int(round(X(how["x0"]))), int(round(X(how["x1"]))))
+    else:
+        clip = (int(round(X(4))), int(round(X(W - 4))))  # the walls cover the rest
     ratio = light_ratio()
     pieces.sort(key=lambda p: (LAYERS[p["layer"]], p["sub"], p["i"]))
     for p in pieces:
