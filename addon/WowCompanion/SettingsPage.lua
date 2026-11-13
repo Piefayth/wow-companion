@@ -179,7 +179,7 @@ local ENDS = {
 	{ key = "Heavier", name = "Square, a little heavier", wide = 48, cut = 9 },
 	{ key = "Deeper", name = "Square, further inside", wide = 48, cut = 11 },
 	{ key = "Brace", name = "Square, braced", wide = 48, cut = 13 },
-	-- round 8 (tools/make_cover_trial.py): a thin sheet over the panel's corner and the spine's round end
+	-- round 9 (tools/make_cover_trial.py): a thin sheet over the panel's corner and the spine's round end
 	{ key = "Cover", name = "Folded corner cover", wide = 16, cut = 17, cover = true },
 }
 local END_OFF = 2 -- the fittings' art starts this far past the panel's edge (make_spine_trials.py's OFF)
@@ -213,7 +213,7 @@ local function paintEnds()
 		capped.covers = capped.covers or {}
 		local c = capped.covers[i] or WC.Style.Unsnapped(capped:CreateTexture(nil, "OVERLAY"))
 		capped.covers[i] = c
-		c:SetTexture(([[Interface\AddOns\WowCompanion\Art\Vine-CornerCover%s-T8]]):format(which), "CLAMP", "CLAMP")
+		c:SetTexture(([[Interface\AddOns\WowCompanion\Art\Vine-CornerCover%s-T9]]):format(which), "CLAMP", "CLAMP")
 		c:SetSize(48, 16)
 		c:ClearAllPoints()
 		c:SetPoint(which:upper(), capped, which:upper())
