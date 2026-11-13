@@ -31,7 +31,7 @@ local MAX_SLOTS = WC.Ring.PAGE
 local AXIS_CVAR = "GamePadStickAxisButtons"
 local MODIFIERS_LUA = [[newtable("", "SHIFT-", "CTRL-", "ALT-", "CTRL-SHIFT-", "ALT-SHIFT-", "CTRL-ALT-", "CTRL-ALT-SHIFT-")]]
 
-local ringData = {} -- [wheel] = { { label, icon, dx, dy }, ... }
+local ringData = {} -- [wheel] = { { label, icon, itemID, count, dx, dy }, ... }
 local pending = false
 
 local function Print(...) print("|cff66ccffWheel|r:", ...) end
@@ -226,8 +226,23 @@ ring:SetScript("OnUpdate", function()
     local pick = ring:GetAttribute("wc-sticky")
     if pick ~= look.lit then look:Light(pick, ringData[ring:GetAttribute("wc-active")] or {}) end
 end)
+-- An item slot shows how many are carried, as a bar button does: a stack or a
+-- consumable (its charges counted), never a single thing like the Hearthstone.
+-- Read at each opening, so a fight's use is counted too.
+local function Counts(entries)
+    for _, entry in ipairs(entries) do
+        local id = entry.itemID
+        if id then
+            local consumable = C_Item.IsConsumableItem(id)
+            if consumable or (C_Item.GetItemMaxStackSizeByID(id) or 1) > 1 then
+                entry.count = tostring(C_Item.GetItemCount(id, false, consumable))
+            end
+        end
+    end
+end
 ring:HookScript("OnShow", function()
     local key = ring:GetAttribute("wc-active")
+    Counts(ringData[key] or {})
     local wheel = WowCompanionWheelDB.wheels[key]
     look:Open(wheel and wheel.label or key, ringData[key] or {})
 end)
@@ -247,7 +262,7 @@ local function Resolve(slot)
     elseif slot.item then
         local id = tonumber(slot.item) or (C_Item.GetItemInfoInstant(slot.item))
         if not id then return nil, "no item " .. tostring(slot.item) end
-        return { type = "item", attr = "item", value = "item:" .. id,
+        return { type = "item", attr = "item", value = "item:" .. id, itemID = id,
             label = slot.label or C_Item.GetItemNameByID(id) or ("item " .. id),
             icon = slot.icon or C_Item.GetItemIconByID(id) }
     elseif slot.macro then

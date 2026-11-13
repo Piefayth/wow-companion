@@ -11,8 +11,9 @@
 -- a secure frame; it is built at load, out of combat.
 --
 --   local r = WC.Ring.Build(frame, { prompt = "..." })   frame: the owner's
---   r:Open(title, entries)    entries: up to WC.Ring.PAGE of { label, icon };
---                             each gets dx, dy, angle (its segment)
+--   r:Open(title, entries)    entries: up to WC.Ring.PAGE of { label, icon,
+--                             count }; each gets dx, dy, angle (its segment);
+--                             count (text) shows on the icon as on a bar button
 --   r:Aim(entries, sticky)    in the owner's OnUpdate: lights what the right
 --                             stick points at, else `sticky`; returns it
 --   r:Picked(entries)         the slot the right stick points at, or nil
@@ -138,6 +139,11 @@ function Ring.Build(frame, opts)
 		atlas(slot.shadow, "gamepad-actionbar-circleslot-dropshadow")
 		slot.shadow:SetPoint("TOPLEFT", slot.icon, "TOPLEFT", -4, 4)
 		slot.shadow:SetPoint("BOTTOMRIGHT", slot.icon, "BOTTOMRIGHT", 4, -4)
+		-- the bar button's own count: its font, bottom right of the icon
+		slot.count = frame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+		slot.count:SetDrawLayer("OVERLAY", 3) -- over the round border
+		slot.count:SetJustifyH("RIGHT")
+		slot.count:SetPoint("BOTTOMRIGHT", slot.icon, "BOTTOMRIGHT", 2, -2)
 		slot.label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 		slot.label:SetSize(80, 40)
 		slot.label:SetWordWrap(true)
@@ -170,8 +176,9 @@ function R:Open(title, entries)
 			slot.label:ClearAllPoints()
 			slot.label:SetPoint("CENTER", slot.icon, "CENTER", lx, ly)
 			slot.label:SetText(entry.label)
+			slot.count:SetText(entry.count or "")
 		end
-		for _, part in ipairs({ slot.icon, slot.shadow, slot.border, slot.label }) do part:SetShown(entry ~= nil) end
+		for _, part in ipairs({ slot.icon, slot.shadow, slot.border, slot.label, slot.count }) do part:SetShown(entry ~= nil) end
 	end
 	self.lit = false
 	self:Light(nil, entries)
