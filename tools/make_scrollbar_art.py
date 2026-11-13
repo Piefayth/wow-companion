@@ -11,6 +11,7 @@ VERSION (and ScrollBar.lua's); older files are deleted.
 """
 import glob
 import os
+import artout
 import struct
 import numpy as np
 from PIL import Image, ImageDraw
@@ -787,8 +788,7 @@ def render_set():
 
 def main():
     art = render_set()
-    for old in glob.glob(os.path.join(OUT, "Scroll-*.tga")):
-        os.remove(old)
+    artout.clear(OUT, "Scroll-*.tga")
     for stem, rgba in art.items():
         write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, VERSION)), rgba)
     vines = {}
@@ -797,8 +797,7 @@ def main():
     vines["ThickTRightBig"], vines["ThickTRightFromMedium"] = junction(True), junction(False)
     vines["ThickTRightBigPlain"] = forge(JOIN_SIZE[True], True)
     vines["ThickTRightFromMediumPlain"] = forge(JOIN_SIZE[False], False)
-    for old in glob.glob(os.path.join(CORE_OUT, "Vine-*.tga")):
-        os.remove(old)
+    artout.clear(CORE_OUT, "Vine-*.tga")
     for stem, rgba in vines.items():
         write_tga(os.path.join(CORE_OUT, "Vine-%s-%d.tga" % (stem, VINE_VERSION)), rgba)
     print(len(art) + len(vines), "textures")

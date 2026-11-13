@@ -27,6 +27,7 @@ VERSION (and Style.lua's LIST_ITEM_VERSION); older files are deleted.
 """
 import glob
 import os
+import artout
 import sys
 
 import numpy as np
@@ -427,8 +428,7 @@ def sheet():
 def main():
     if "--sheet-only" not in sys.argv:
         made = render()
-        for old in glob.glob(os.path.join(OUT, "ListItem-*.tga")):
-            os.remove(old)
+        artout.clear(OUT, "ListItem-*.tga")
         for name, rgba in made.items():
             write_tga(os.path.join(OUT, "ListItem-%s-%d.tga" % (name, VERSION)), rgba)
         print(len(made), "textures")

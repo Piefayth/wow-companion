@@ -23,6 +23,7 @@ VERSION (and Window.lua's TAB_ART); older files are deleted.
 """
 import glob
 import os
+import artout
 
 import numpy as np
 from PIL import Image
@@ -118,8 +119,7 @@ def plaque(kind):
 
 
 def main():
-    for old in glob.glob(os.path.join(OUT, "Tab-*.tga")):
-        os.remove(old)
+    artout.clear(OUT, "Tab-*.tga")
     for kind in HEADS:
         img = Image.fromarray(np.clip(plaque(kind), 0, 255).astype(np.uint8), "RGBA")
         # stretched to power-of-two sides (the game draws it at its rect)

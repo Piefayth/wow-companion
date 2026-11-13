@@ -24,6 +24,7 @@ deleted.
 """
 import glob
 import os
+import artout
 import sys
 
 import numpy as np
@@ -188,8 +189,7 @@ def main():
     out["Button-Normal"], out["Button-Pushed"] = b, pushed
     # the glow warms the bark border alone, never the face
     out["Button-Highlight"], out["Button-Disabled"] = sb.glow(plate(128, 28, None)), sb.greyed(b)
-    for old in glob.glob(os.path.join(OUT, "Control-*.tga")):
-        os.remove(old)
+    artout.clear(OUT, "Control-*.tga")
     for stem, rgba in out.items():
         sb.write_tga(os.path.join(OUT, "Control-%s-%d.tga" % (stem, VERSION)), np.clip(rgba, 0, 255))
     print(len(out), "textures")

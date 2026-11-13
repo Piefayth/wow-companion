@@ -152,6 +152,13 @@ extras a player may use, never required (the player, 2026-11-11).
   (gitignored, reread at every /reload) and also runs it at once. The save file's
   copy is only a fallback; the file wins.
 
+**Art is drawn by tools (`tools/make_*.py`), and every round shown to the player
+is committed before the next is drawn**: a tool clears its old textures only
+through `tools/artout.py`, which refuses to delete anything uncommitted. One line
+per round goes in `docs/looks.md` (options, pick, commit); the looks not picked
+leave the working tree after the pick and are fetched back from that commit when
+wanted. A tool used only for a trial is committed with it and removed after.
+
 Build with `CUDAARCHS` set to the GPU's generation (the profile says which; one
 generation skips most of ggml's CUDA build);
 libclang is in `C:\Program Files\LLVM`. No Lua here: check addon files with

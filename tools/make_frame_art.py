@@ -26,6 +26,7 @@ VERSION (and Window.lua's ART); older files are deleted.
 """
 import glob
 import os
+import artout
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
@@ -542,9 +543,7 @@ def stack(rows, path):
 def main():
     art = render()
     os.makedirs(OUT, exist_ok=True)
-    for pat in ("Frame-*.tga", "Drawer-*.tga", "Inset-*.tga", "Close-*.tga"):
-        for old in glob.glob(os.path.join(OUT, pat)):
-            os.remove(old)
+    artout.clear(OUT, "Frame-*.tga", "Drawer-*.tga", "Inset-*.tga", "Close-*.tga")
     for stem, img in art.items():
         write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, VERSION)), img)
     print(len(art), "textures;", sheet(art))

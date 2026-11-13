@@ -39,6 +39,7 @@ VERSION; older files are deleted.
 """
 import glob
 import os
+import artout
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
@@ -456,8 +457,7 @@ def main():
         art["Focus-Tab" + name] = draw(key, tab, (round(TAB_GLOW[0] * UNIT_TX), round(TAB_GLOW[1] * UNIT_TX)),
                                        round(PX_UNIT * K / UNIT_TX))
     os.makedirs(OUT, exist_ok=True)
-    for old in glob.glob(os.path.join(OUT, "Focus-*.tga")):
-        os.remove(old)
+    artout.clear(OUT, "Focus-*.tga")
     for stem, img in art.items():
         write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, VERSION)), img)
     for p in mocks(art["Focus-Glow"], art["Focus-Pointer"]) + [styles_sheet()]:

@@ -15,6 +15,7 @@ periodic in both axes so the tile repeats without a seam.
 """
 import glob
 import os
+import artout
 import re
 import struct
 import numpy as np
@@ -74,8 +75,7 @@ if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     lua = open(os.path.join(OUT, "..", "Style.lua"), encoding="utf-8").read()
     v = re.search(r"local STONE_VERSION = (\d+)", lua).group(1)
-    for old in glob.glob(os.path.join(OUT, "Slate*.tga")):
-        os.remove(old)
+    artout.clear(OUT, "Slate*.tga")
     # Two tiles of one stone, each its own (the player, 2026-11-11: two real
     # textures, variants, not one with a lighter wash): the same recipe from
     # different seeds, so the grain differs, at two values; a cool charcoal,

@@ -15,6 +15,7 @@ CHORD, run this, reload. Older versions are deleted.
 """
 import glob
 import os
+import artout
 import struct
 import numpy as np
 
@@ -93,8 +94,7 @@ def main():
     rgba = np.concatenate([colour, a[..., None] * 255], axis=-1)
 
     os.makedirs(OUT, exist_ok=True)
-    for old in glob.glob(os.path.join(OUT, "Chord-*.tga")):
-        os.remove(old)
+    artout.clear(OUT, "Chord-*.tga")
     path = os.path.join(OUT, "Chord-%d.tga" % VERSION)
     bgra = np.clip(rgba[..., [2, 1, 0, 3]], 0, 255).astype(np.uint8)
     header = struct.pack("<BBBHHBHHHHBB", 0, 0, 2, 0, 0, 0, 0, 0, SIZE, SIZE, 32, 8 | 0x20)
