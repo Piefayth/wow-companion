@@ -67,6 +67,8 @@ none of this. When the player states a new preference or changes one, write it h
 - **Nothing of ours opens itself** (2026-11-10). The Companion window opens only
   when they ask (minus tap, `/wc log`); news goes to the board/toast. No data cards
   left on screen: the data strip shows only for the moment of the shot.
+- **Data on screen is fine, but the strip is never a ping back to the PC**
+  (2026-11-13): no acknowledgements or delivery confirmations over it.
 - **API first; screenshots only to read our own displays** (2026-11-10): reading
   anything else on their screen needs their explicit ask; never input to the game
   window.
