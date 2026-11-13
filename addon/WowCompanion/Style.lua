@@ -369,12 +369,103 @@ function WowCompanion_Style.PageRock(page)
 	return rock
 end
 -- A well of stone on page, sunk by a soft shadow inside its top and left
--- edges, light falling from the top left, no rim. Returns its stone, for the
--- caller to anchor; what lies on the stone under the shadow goes at sublevel 0.
-function WowCompanion_Style.Well(page, which, shade)
+-- edges (sunk: the sides that have one, by default both), light falling from
+-- the top left, no rim. Returns its stone, for the caller to anchor; what lies
+-- on the stone under the shadow goes at sublevel 0.
+--
+-- Raised, it stands up out of the page instead. Nothing is painted on it: its
+-- height is told by what is round it, as light from the top left would. The
+-- page's lower well beside it takes its shadow, hard-edged, over whatever lies
+-- there (WC.Style.CastOn, drawn in a frame of the caller's over the lower
+-- well's contents and under the vines); the window's top shadow is cut or
+-- shortened over it (Window.lua, page.raised); its own stone lighter, nearer
+-- the light. On trial (the player, 2026-11-12): RAISE_LOOKS, picked live on
+-- the Settings page (WowCompanionDB.raisedLook); the looks not picked go when
+-- one is chosen. Each: the raised stone's shade; the shadow's solid width,
+-- its fading edge and its darkness; the window's top shadow over it ("cut" or
+-- "short"); a faint lit line along its top and left edges (rim), or none.
+local RAISE_LOOKS = {
+	{ name = "Hard shadow", shade = 0.6, cast = 6, soft = 3, alpha = 0.6, lip = "cut" },
+	{ name = "Hard shadow, lighter stone", shade = 0.8, cast = 6, soft = 3, alpha = 0.6, lip = "cut" },
+	{ name = "Lighter, frame shadow short", shade = 0.8, cast = 6, soft = 3, alpha = 0.6, lip = "short" },
+	{ name = "Lighter, lit rim", shade = 0.8, cast = 6, soft = 3, alpha = 0.6, lip = "cut", rim = 0.08 },
+	{ name = "Taller", shade = 0.85, cast = 11, soft = 4, alpha = 0.65, lip = "cut" },
+	{ name = "Lower", shade = 0.75, cast = 3, soft = 2, alpha = 0.5, lip = "short" },
+}
+WowCompanion_Style.RAISE_LOOKS = RAISE_LOOKS
+local raisedStones, casts, lookHooks = {}, {}, {}
+function WowCompanion_Style.RaisedLook()
+	local want = WowCompanionDB and WowCompanionDB.raisedLook
+	for _, look in ipairs(RAISE_LOOKS) do
+		if look.name == want then return look end
+	end
+	return RAISE_LOOKS[1]
+end
+-- the shadow along side of stone ("LEFT" or "TOP"): a solid band, then its edge fading
+local function paintCast(c, look)
+	local across = c.side == "TOP"
+	local solid, fade = c.tex[1], c.tex[2]
+	solid:ClearAllPoints()
+	solid:SetPoint("TOPLEFT", c.stone)
+	solid:SetPoint(across and "TOPRIGHT" or "BOTTOMLEFT", c.stone)
+	solid:SetColorTexture(0, 0, 0, look.alpha)
+	fade:ClearAllPoints()
+	fade:SetPoint(across and "TOPLEFT" or "TOPLEFT", solid, across and "BOTTOMLEFT" or "TOPRIGHT")
+	fade:SetPoint(across and "TOPRIGHT" or "BOTTOMLEFT", solid, across and "BOTTOMRIGHT" or "BOTTOMRIGHT")
+	fade:SetColorTexture(1, 1, 1, 1)
+	local dark, clear = CreateColor(0, 0, 0, look.alpha), CreateColor(0, 0, 0, 0)
+	if across then
+		solid:SetHeight(look.cast)
+		fade:SetHeight(look.soft)
+		fade:SetGradient("VERTICAL", clear, dark)
+	else
+		solid:SetWidth(look.cast)
+		fade:SetWidth(look.soft)
+		fade:SetGradient("HORIZONTAL", dark, clear)
+	end
+end
+local function paintRaised(r, look)
+	r.stone:SetVertexColor(look.shade, look.shade, look.shade)
+	for _, line in ipairs(r.rim) do
+		line:SetColorTexture(1, 1, 1, look.rim or 0)
+		line:SetShown(look.rim ~= nil)
+	end
+end
+function WowCompanion_Style.PaintRaised(name)
+	if name and WowCompanionDB then WowCompanionDB.raisedLook = name end
+	local look = WowCompanion_Style.RaisedLook()
+	for _, r in ipairs(raisedStones) do paintRaised(r, look) end
+	for _, c in ipairs(casts) do paintCast(c, look) end
+	for _, fn in ipairs(lookHooks) do fn(look) end
+end
+-- fn(look) runs as the look changes (the window's top shadow, Window.lua)
+function WowCompanion_Style.OnRaisedLook(fn)
+	lookHooks[#lookHooks + 1] = fn
+end
+-- a raised well's shadow along side of the lower well's stone, drawn in over
+function WowCompanion_Style.CastOn(over, stone, side)
+	local c = { stone = stone, side = side, tex = { over:CreateTexture(nil, "BACKGROUND"), over:CreateTexture(nil, "BACKGROUND") } }
+	casts[#casts + 1] = c
+	paintCast(c, WowCompanion_Style.RaisedLook())
+end
+function WowCompanion_Style.Well(page, which, shade, raised, sunk)
 	local t = page:CreateTexture(nil, "BACKGROUND", nil, -1)
 	WowCompanion_Style.Stone(t, which, shade)
-	for _, side in ipairs({ "Top", "Left" }) do
+	if raised then
+		local r = { stone = t, rim = {} }
+		for i, edge in ipairs({ { "TOPLEFT", "TOPRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" } }) do
+			local line = page:CreateTexture(nil, "BACKGROUND", nil, 2)
+			line:SetBlendMode("ADD")
+			line:SetPoint(edge[1], t)
+			line:SetPoint(edge[2], t)
+			if i == 1 then line:SetHeight(1) else line:SetWidth(1) end
+			r.rim[i] = line
+		end
+		raisedStones[#raisedStones + 1] = r
+		paintRaised(r, WowCompanion_Style.RaisedLook())
+		return t
+	end
+	for _, side in ipairs(sunk or { "Top", "Left" }) do
 		local s = page:CreateTexture(nil, "BACKGROUND", nil, 2)
 		s:SetTexture([[Interface\Common\ShadowOverlay-]] .. side)
 		s:SetAlpha(0.7)

@@ -52,16 +52,20 @@ band:SetPoint("BOTTOMLEFT", SPINE, 0)
 band:SetPoint("BOTTOMRIGHT", 0, 0)
 band:SetHeight(FOOT)
 WC.Style.PageRock(page)
-local function well(which, left, top, right, bottom, shade)
-	local t = WC.Style.Well(page, which, shade)
+local function well(which, left, top, right, bottom, shade, raised, sunk)
+	local t = WC.Style.Well(page, which, shade, raised, sunk)
 	t:SetPoint("TOPLEFT", left[1], left[2], left[3], top)
 	t:SetPoint("BOTTOMRIGHT", right[1], right[2], right[3], bottom)
+	return t
 end
 -- names: the left edge to the seam; settings: the seam to the right edge,
 -- down to the note's seam; the note: under the settings
-well("you", { page, "TOPLEFT", -BX }, BY, { page, "BOTTOMLEFT", SPINE - 2 - SEAM }, -BY, WC.Style.DEEPER)
-well("claude", { page, "TOPLEFT", SPINE - 2 }, BY, { band, "TOPRIGHT", BX }, SEAM)
-well("you", { band, "TOPLEFT", -2 }, 0, { band, "BOTTOMRIGHT", BX }, -BY, WC.Style.DEEPER)
+-- The dark wells raised, on trial (the player, 2026-11-12; Style.lua's
+-- Well): the settings well lies lower, between them, and takes the names
+-- well's shadow down its left edge in place of its own
+local names = well("you", { page, "TOPLEFT", -BX }, BY, { page, "BOTTOMLEFT", SPINE - 2 - SEAM }, -BY, WC.Style.DEEPER, true)
+local settings = well("claude", { page, "TOPLEFT", SPINE - 2 }, BY, { band, "TOPRIGHT", BX }, SEAM, nil, false, { "Top" })
+well("you", { band, "TOPLEFT", -2 }, 0, { band, "BOTTOMRIGHT", BX }, -BY, WC.Style.DEEPER, true)
 -- a setting's name and the note's title in LABEL; the section names stay white
 local LABEL = WC.Style.LABEL
 local bandName = band:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -140,6 +144,9 @@ across:SetPoint("LEFT", band, "TOPLEFT", -2 - SEAM / 2, SEAM / 2)
 across:SetPoint("RIGHT", band, "TOPRIGHT", BX, SEAM / 2)
 WC.Style.VineLine(across, "Thick", false, false, true)
 WC.Style.VineJoin(across, "Thick", "TRightBig", "LEFT")
+-- the names well's shadow on the settings, over their rows and dividers, under the vines
+WC.Style.CastOn(seams, settings, "LEFT")
+page:HookScript("OnShow", function() WC.Style.PaintRaised() end)
 
 -- One setting: a row from the names well to the right edge, its name at the left
 -- and its control at the edge; the row is the one stop, the cursor just left
@@ -524,6 +531,7 @@ end
 -- frame is the page's area: its holder decides the margin (the Companion
 -- window's pages already sit 12 px inside their well)
 function Page.ShowIn(frame)
+	frame.raised = names
 	page:SetParent(frame)
 	page:ClearAllPoints()
 	page:SetAllPoints()
@@ -589,3 +597,14 @@ login:SetScript("OnEvent", function()
 		Settings.RegisterAddOnCategory(Settings.RegisterCanvasLayoutCategory(canvas, "WoW Companion"))
 	end)
 end)
+
+-- Trial, temporary: the raised wells' look, picked live (Style.lua's RAISE_LOOKS)
+Page.Add({ kind = "dropdown", section = "Trial", order = 1, label = "Raised panels",
+	text = "On trial: how the dark panels stand above the settings. Left and right switch it live.",
+	options = function()
+		local names = {}
+		for i, look in ipairs(WC.Style.RAISE_LOOKS) do names[i] = look.name end
+		return names
+	end,
+	get = function() return WC.Style.RaisedLook().name end,
+	set = function(name) WC.Style.PaintRaised(name) end })
