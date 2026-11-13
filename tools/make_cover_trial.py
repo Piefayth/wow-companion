@@ -9,8 +9,8 @@ paints the vine (the thick vine's palette, no grain, worn lit edges, the
 dark warm outline, its cast), the strap pressed over the vine as a shallow
 ridge in its height. Round 9 (259c200) was "pretty close"; round 10
 (d99cde6) varied how it stands up and its D, pressed harder, was liked;
-round 11 varies D (LOOKS), and E (flat) with a piece where the vine comes
-out (feet), each pickable on the Settings page's Trial row. A gusset over
+round 11 varies D (LOOKS); round 11b's E with a foot was rejected (one
+shape, not a piece); round 12 is E with a connector of its own, each pickable on the Settings page's Trial row. A gusset over
 the names panel's corner, its arm along the panel's edge carried on as a
 strap over the vine, cut square where the vine comes out. Drawn in place for
 each end, the light from the top left on both:
@@ -47,44 +47,63 @@ LOOKS = {
     "D7": dict(bevel=0.25, cast=0.3, outline=1.1, ridge=3.2, span=2.2, shape=2),  # thinner edges
     "D8": dict(bevel=0.45, cast=0.5, outline=1.1, ridge=3.2, span=2.2, shape=2),  # a deeper shadow
 }
-# the player's other idea: round 10's E, flat across the vine, with a little
-# piece where the strap lets the vine out (foot: FEET's kinds)
+# the player's other idea, round 12: E (flat) and a connector where the vine
+# comes out, a piece of its own (CONNECTORS' kinds), raised above the cover or
+# set under it, never one shape with it (round 11's feet were rejected)
 FLAT = dict(bevel=0.45, cast=0.3, outline=1.1, ridge=0.0, span=2.2, shape=2)
-for key, foot in (("E", None), ("E1", "taper"), ("E2", "tongue"), ("E3", "cuff"), ("E4", "step")):
-    LOOKS[key] = dict(FLAT, foot=foot)
-
+for key, part in (("F1", "clamp"), ("F2", "collar"), ("F3", "tab"), ("F4", "sleeve"),
+                  ("F5", "bands"), ("F6", "bridge")):
+    LOOKS[key] = dict(FLAT, part=part)
 
 def gusset():
     sweep = sb.bez((EDGE_X - 3.0, TIP), (EDGE_X - 3.2, TIP * 0.5), (EDGE_X - 5.6, 2), (EDGE_X - 10, 0))
     return [(EDGE_X - 10, 0), (STRAP, 0), (STRAP, TIP)] + [tuple(p) for p in sweep]
 
 
-def feet(kind):
-    """The piece where the strap's square end lets the vine out (drawn for the
-    top end, the vine leaving downward), one metal with the sheet."""
+def connector(kind):
+    """The connector at the top end (the vine leaving downward): its pieces,
+    whether it sits over the cover (else under it), and how round it stands
+    across the vine (half-width in units, height in texels)."""
     L, R = EDGE_X - 3.0, STRAP  # the strap's end
     vl, vr = MID - VINE, MID + VINE
-    if kind == "taper":  # the end drawn in onto the vine, its sides curving in
-        left = sb.bez((L, TIP - 0.1), (L + 0.2, TIP + 1.6), (vl - 0.4, TIP + 1.8), (vl - 0.2, TIP + 3.2))
-        right = sb.bez((vr + 0.2, TIP + 3.2), (vr + 0.4, TIP + 1.8), (R - 0.1, TIP + 1.6), (R, TIP - 0.1))
-        return [[tuple(p) for p in left] + [tuple(p) for p in right]]
-    if kind == "tongue":  # a point down the vine
-        return [[(L, TIP - 0.1), (R, TIP - 0.1), (vr + 0.3, TIP + 1.4), (MID, TIP + 3.6), (vl - 0.3, TIP + 1.4)]]
-    if kind == "cuff":  # a short band round the vine, a hair below the end
-        return [[(vl - 0.5, TIP + 0.8), (vr + 0.5, TIP + 0.8), (vr + 0.5, TIP + 2.4), (vl - 0.5, TIP + 2.4)]]
-    if kind == "step":  # a narrower plate under the end, the vine's width and a little
-        return [[(vl - 0.7, TIP - 0.1), (vr + 0.5, TIP - 0.1), (vr + 0.5, TIP + 1.8), (vl - 0.7, TIP + 1.8)]]
-    return []
+    box = lambda x0, y0, x1, y1: [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    if kind == "clamp":  # a band wider than the strap, laid across its end and the vine
+        return [box(L - 0.8, TIP - 1.6, R + 0.8, TIP + 0.9)], True, (4.2, 1.6)
+    if kind == "collar":  # a ring round the vine, seated against the strap's end
+        return [box(vl - 1.1, TIP - 0.6, vr + 1.1, TIP + 2.0)], True, (2.8, 2.6)
+    if kind == "tab":  # a strip riveted on the strap and lapped down over the vine
+        return [box(vl - 0.5, TIP - 3.4, vr + 0.5, TIP + 2.8)], True, (2.2, 2.0)
+    if kind == "sleeve":  # a ferrule the strap's end is set over, narrowing to the vine
+        side = sb.bez((vl - 1.6, TIP - 1.5), (vl - 1.6, TIP + 1.4), (vl - 0.4, TIP + 2.0), (vl - 0.2, TIP + 3.4))
+        return [[tuple(p) for p in side] + [(2 * MID - x, y) for x, y in [tuple(p) for p in side][::-1]]], False, (3.0, 2.4)
+    if kind == "bands":  # two thin rings round the vine below the end
+        return [box(vl - 0.8, TIP + 0.4, vr + 0.8, TIP + 1.4), box(vl - 0.8, TIP + 2.2, vr + 0.8, TIP + 3.2)], True, (2.4, 2.0)
+    if kind == "bridge":  # a bar across the end whose ends turn down round the vine
+        return [box(vl - 1.8, TIP - 1.0, vr + 1.8, TIP + 0.6), box(vl - 1.8, TIP - 1.0, vl - 0.6, TIP + 2.8),
+                box(vr + 0.6, TIP - 1.0, vr + 1.8, TIP + 2.8)], True, (3.4, 1.4)
+    return None
 
 
-def draw(flip, bevel, cast, outline, ridge, span, shape, foot=None):
+def draw(flip, bevel, cast, outline, ridge, span, shape, part=None):
     c = sb.ucanvas(TW, TH)
     pen = sb.Pen(c, TH, flip)
     xx = (np.arange(c.W) / c.s - c.pad) / U  # units across
-    d = (xx - MID) / span
-    lift = np.where(np.abs(d) < 1, ridge * np.cos(np.pi / 2 * d) ** shape, 0)
-    lift = np.broadcast_to(lift[None, :], (c.H, c.W))
-    sb.raised(pen, [gusset()] + feet(foot), PAL, bevel=bevel, cast=cast, outline=outline, lift=lift, grain=False)
+
+    def swell(height, half, power):
+        d = (xx - MID) / half
+        line = np.where(np.abs(d) < 1, height * np.cos(np.pi / 2 * d) ** power, 0)
+        return np.broadcast_to(line[None, :], (c.H, c.W))
+
+    cover = lambda: sb.raised(pen, [gusset()], PAL, bevel=bevel, cast=cast, outline=outline,
+                              lift=swell(ridge, span, shape), grain=False)
+    if part is None:
+        cover()
+        return c.final()
+    pieces, over, (half, height) = connector(part)
+    joint = lambda: sb.raised(pen, pieces, PAL, bevel=0.4, cast=0.45, outline=1.1,
+                              lift=swell(height, half, 1), grain=False)
+    (cover, joint)[0 if over else 1]()
+    (cover, joint)[1 if over else 0]()
     return c.final()
 
 

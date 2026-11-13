@@ -183,11 +183,12 @@ local ENDS = {
 	{ key = "CoverD6", name = "D6, a full round ridge", cut = 17, cover = "D6" },
 	{ key = "CoverD7", name = "D7, thinner edges", cut = 17, cover = "D7" },
 	{ key = "CoverD8", name = "D8, deeper shadow", cut = 17, cover = "D8" },
-	{ key = "CoverE", name = "E, flat", cut = 17, cover = "E" },
-	{ key = "CoverE1", name = "E1, tapered onto the vine", cut = 17, cover = "E1" },
-	{ key = "CoverE2", name = "E2, a point down the vine", cut = 17, cover = "E2" },
-	{ key = "CoverE3", name = "E3, a cuff round the vine", cut = 17, cover = "E3" },
-	{ key = "CoverE4", name = "E4, a narrower step", cut = 17, cover = "E4" },
+	{ key = "CoverF1", name = "F1, a clamp across the end", cut = 17, cover = "F1" },
+	{ key = "CoverF2", name = "F2, a collar round the vine", cut = 17, cover = "F2" },
+	{ key = "CoverF3", name = "F3, a tab lapped over the vine", cut = 17, cover = "F3" },
+	{ key = "CoverF4", name = "F4, a sleeve under the end", cut = 17, cover = "F4" },
+	{ key = "CoverF5", name = "F5, two thin bands", cut = 17, cover = "F5" },
+	{ key = "CoverF6", name = "F6, a bracket round the vine", cut = 17, cover = "F6" },
 }
 local MEETS = {
 	{ key = "joined", name = "Joined, as now" },
