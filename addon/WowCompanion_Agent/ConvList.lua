@@ -1,5 +1,5 @@
 -- The conversation list in the Companion window's right well, in the look on
--- trial (ConvLooks.lua lays each out and says its idea): WC.Companion.ConvLook(key),
+-- trial (ConvLooks.lua lays each out and says its style): WC.Companion.ConvLook(key),
 -- or the settings page's "Conversation list" row, switches it live, and
 -- WowCompanionAgentDB.convLook keeps it; the looks not picked then go, with
 -- this switch. Each row is a button the pad's cursor stops on (its name, its
@@ -43,6 +43,10 @@ function WC.Companion.ConvList(frame, well)
 		t:SetTexCoord(0, 1, 0, 1)
 		if d.stone then
 			S.Stone(t, d.stone, d.shade)
+		elseif d.grad then
+			t:SetColorTexture(1, 1, 1, 1)
+			local c = d.light and 1 or 0
+			t:SetGradient(d.grad, CreateColor(c, c, c, d.from), CreateColor(c, c, c, d.to))
 		else
 			t:SetTexture(d.tex, "CLAMP", "CLAMP")
 			t:SetHorizTile(false)
@@ -51,7 +55,7 @@ function WC.Companion.ConvList(frame, well)
 			t:SetTexCoord(C.Coords(d))
 		end
 		t:SetDrawLayer(d.layer, d.sub)
-		t:SetBlendMode(d.add and "ADD" or "BLEND")
+		t:SetBlendMode((d.add or d.light) and "ADD" or "BLEND")
 		t:SetAlpha(d.alpha or 1)
 		t:ClearAllPoints()
 		t:SetPoint("TOPLEFT", well, "TOPLEFT", d.x, -d.y)
@@ -76,6 +80,7 @@ function WC.Companion.ConvList(frame, well)
 
 	local function paintRow(b)
 		local word = b.word ~= "" and b.word or nil
+		b.name:SetFontObject(b.open and b.cell.openFont or b.cell.font)
 		b.name:SetTextColor(unpack(b.open and S.NAME_LIT or b.hover and S.NAME_HL or S.NAME))
 		b.state:SetText(word or "")
 		b.chord:SetText(chordText(b.key))
@@ -86,9 +91,7 @@ function WC.Companion.ConvList(frame, well)
 	local function layout()
 		local H = well:GetHeight() or 0
 		if H <= 0 then return end
-		local counts = {}
-		for _, key in ipairs(WC.Conversations.list) do counts[key] = #chord(key) end
-		local lay = C.LOOKS[picked()].lay(H, offered, open or false, counts)
+		local lay = C.Lay(picked(), H, offered, open or false)
 		for i, d in ipairs(lay.pieces) do draw(i, d) end
 		for i = #lay.pieces + 1, #pool do pool[i]:Hide() end
 		for key, b in pairs(buttons) do

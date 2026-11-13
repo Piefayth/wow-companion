@@ -7,9 +7,10 @@ ConvLooks.lua itself lays each look out (run here under LuaJIT, as the game
 runs it), and every texture is the addon's own file, turned and cut by the
 same texcoords the game is given. What the game draws itself comes from the
 screenshots: the stone, the names and state words (the round 2 shot, rows on
-bare stone) and the pad's glyphs (the round 4 shot, glyphs in sockets).
+bare stone, scaled for a look's larger fonts) and the pad's glyphs (the round 4
+shot, glyphs in sockets).
 
-    python tools/mock_convlist.py     writes target/tmp/convlist5/<look>.png and all.png
+    python tools/mock_convlist.py     writes target/tmp/convlist6/<look>.png and all.png
 """
 import os
 import re
@@ -21,7 +22,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-TMP = os.path.join(ROOT, "target", "tmp", "convlist5")
+TMP = os.path.join(ROOT, "target", "tmp", "convlist6")
 SHOTS = os.path.join(os.environ.get("LOCALAPPDATA", ""), "wow-companion", "shots")
 SHOT = os.path.join(SHOTS, "convlist5-full.png")  # 3840 x 2160, the window open on Chat, round 4's brass rows
 WORDS = os.path.join(SHOTS, "convlist4-full.png")  # the same window, round 2's rows: names on bare stone
@@ -39,6 +40,7 @@ STATES = {"l1": "new", "r1": "95s", "r2": "495s"}
 NAME, NAME_HL, NAME_LIT = (199, 176, 135), (232, 214, 171), (250, 235, 199)
 GOOD, GREY = (127, 208, 127), (176, 176, 176)
 IDLE_GLYPH = 0.6
+FONT = {"GameFontNormalLarge": 1.0, "GameFontNormalLarge2": 18 / 16, "GameFontNormalHuge": 20 / 16}  # the shot's are Large
 
 
 # --- the Lua --------------------------------------------------------------------
@@ -46,32 +48,30 @@ IDLE_GLYPH = 0.6
 def looks():
     lua = luajit21.LuaRuntime(unpack_returned_tuples=True)
     style = open(os.path.join(ROOT, "addon", "WowCompanion", "Style.lua"), encoding="utf-8").read()
-    bar = open(os.path.join(ROOT, "addon", "WowCompanion", "ScrollBar.lua"), encoding="utf-8").read()
     vine = re.search(r"local VINE_VERSION = (\d+)", style).group(1)
     control = re.search(r"local CONTROL_VERSION = (\d+)", style).group(1)
-    scroll = re.search(r"local VERSION = (\d+)", bar).group(1)
     core = r"Interface\\AddOns\\WowCompanion\\Art\\"
-    lua.execute("""WC = { Style = {}, ScrollBar = {} }
+    lua.execute("""WC = { Style = {} }
         function WC.Style.Vine(p) return "%sVine-" .. p .. "-%s" end
-        function WC.Style.Control(p) return "%sControl-" .. p .. "-%s" end
-        function WC.ScrollBar.Art(p) return "%sScroll-" .. p .. "-%s" end""" % (core, vine, core, control, core, scroll))
+        function WC.Style.Control(p) return "%sControl-" .. p .. "-%s" end""" % (core, vine, core, control))
     lua.execute(open(os.path.join(ROOT, "addon", "WowCompanion_Agent", "ConvLooks.lua"), encoding="utf-8").read())
     return lua, lua.globals().WC.ConvLooks
 
 
 def lay(lua, C, key, H, offered):
-    out = C.LOOKS[key].lay(H, offered, OPEN, lua.table_from({"quick": 2}))
+    out = C.Lay(key, H, offered, OPEN)
     pieces = []
     for i in range(1, len(out.pieces) + 1):
         d = out.pieces[i]
-        p = {k: d[k] for k in ("tex", "stone", "shade", "x", "y", "w", "h", "layer", "sub", "add", "alpha", "shadow")}
-        p["coords"] = None if d.stone else C.Coords(d)
+        p = {k: d[k] for k in ("tex", "stone", "shade", "grad", "from", "to", "light", "x", "y", "w", "h", "layer", "sub",
+                                 "add", "alpha", "shadow")}
+        p["coords"] = None if d.stone or d.grad else C.Coords(d)
         p["i"] = i
         pieces.append(p)
     rows = {}
     for key_ in ("", "l1", "l2", "r1", "r2", "quick"):
         r = out.rows[key_]
-        rows[key_] = dict(x=r.x, y=r.y, w=r.w, h=r.h, name=r.name, chord=r.chord)
+        rows[key_] = dict(x=r.x, y=r.y, w=r.w, h=r.h, name=r.name, chord=r.chord, font=r.font, openFont=r.openFont)
     offer = [out.offer[i] for i in range(1, 5)] if out.offer else None
     return pieces, rows, offer
 
@@ -97,12 +97,11 @@ def resample(img, size):
                      for c in range(4)], -1)
 
 
-def drawn(p):
+def drawn(p, ow, oh):
     """The piece as the game draws it: the art at the size it is shown, turned
-    and cut by its texcoords, out to its rectangle in px."""
+    and cut by its texcoords, out to its rectangle, ow x oh px."""
     src = texture(p["tex"])
     ulx, uly, llx, lly, urx, ury, lrx, lry = p["coords"]
-    ow, oh = p["w"] * PX, p["h"] * PX
     # the whole art's size on screen, so it is filtered once at that scale
     span_s = np.hypot(urx - ulx, ury - uly)  # texcoord length along the drawn width
     span_t = np.hypot(llx - ulx, lly - uly)
@@ -113,7 +112,7 @@ def drawn(p):
     art = resample(src, (sw, sh))
     H_, W_ = art.shape[:2]
     quad = (ulx * W_, uly * H_, llx * W_, lly * H_, lrx * W_, lry * H_, urx * W_, ury * H_)
-    size = (max(1, int(round(ow))), max(1, int(round(oh))))
+    size = (max(1, ow), max(1, oh))
     chans = [np.asarray(Image.fromarray(art[..., c].astype(np.float32), "F").transform(size, Image.QUAD, quad,
                                                                                          Image.BILINEAR))
              for c in range(4)]
@@ -181,7 +180,8 @@ def glyphs():
         reg = shot[y0:y1, x0:x1]
         edge = np.concatenate([reg[0], reg[-1], reg[:, 0], reg[:, -1]])
         bg = np.median(edge, 0)
-        m = np.abs(reg - bg).max(-1) > (7 if a0 < 1 else 40)  # a lit socket's floor varies more
+        # a lit socket's floor varies more; the talk key is a light pill on the socket's dark floor
+        m = reg.max(-1) > 70 if name == "talk" else np.abs(reg - bg).max(-1) > (7 if a0 < 1 else 40)
         m = ndimage.binary_fill_holes(ndimage.binary_closing(m, iterations=2))
         m = ndimage.binary_opening(m, iterations=1)
         lab, n = ndimage.label(m)
@@ -281,11 +281,21 @@ def mock(lua, C, key, base, sample, words, gl, ptr, offered=False):
     ratio = light_ratio()
     pieces.sort(key=lambda p: (LAYERS[p["layer"]], p["sub"], p["i"]))
     for p in pieces:
-        x, y = X(p["x"]), Y(p["y"])
-        w, h = int(round(p["w"] * PX)), int(round(p["h"] * PX))
+        # each edge rounded to the pixel, so pieces that meet leave no gap
+        x, y = round(X(p["x"])), round(Y(p["y"]))
+        w, h = round(X(p["x"] + p["w"])) - x, round(Y(p["y"] + p["h"])) - y
+        if w <= 0 or h <= 0:
+            continue
         if p["stone"]:
             st = stone_like(sample, h, w) * (ratio if p["stone"] == "claude" else 1) * (p["shade"] or 1)
-            composite(img, np.concatenate([st, np.full((h, w, 1), 255.0)], -1), x, y, clip=clip)
+            composite(img, np.concatenate([st, np.full((h, w, 1), 255.0)], -1), x, y, p["alpha"] or 1, bool(p["add"]),
+                      clip=clip)
+        elif p["grad"]:  # a colour ramp: from at the bottom (VERTICAL) or the left (HORIZONTAL)
+            n = h if p["grad"] == "VERTICAL" else w
+            a = np.linspace(p["to"], p["from"], n) if p["grad"] == "VERTICAL" else np.linspace(p["from"], p["to"], n)
+            a = a[:, None, None] * np.ones((1, w, 1)) if p["grad"] == "VERTICAL" else a[None, :, None] * np.ones((h, 1, 1))
+            c = 255.0 if p["light"] else 0.0
+            composite(img, np.concatenate([np.full((h, w, 3), c) * a, a * 255], -1), x, y, 1, bool(p["light"]), clip=clip)
         elif p["shadow"]:  # Blizzard's ShadowOverlay (not in our files): a soft fall-off
             n = h if p["shadow"] == "Top" else w
             t = np.linspace(0, 1, n)
@@ -293,12 +303,16 @@ def mock(lua, C, key, base, sample, words, gl, ptr, offered=False):
             a = (1 - t) ** 2 * 255
             composite(img, np.concatenate([np.zeros((h, w, 3)), a], -1), x, y, p["alpha"] or 1, clip=clip)
         else:
-            composite(img, drawn(p), x, y, p["alpha"] or 1, bool(p["add"]), clip=clip)
+            composite(img, drawn(p, w, h), x, y, p["alpha"] or 1, bool(p["add"]), clip=clip)
     for k, r in rows.items():
         cy = Y(r["y"] + r["h"] / 2)
         lit = k == OPEN
         colour = NAME_LIT if lit else NAME_HL if k == POINTER else NAME
-        put_mask(img, words["name:" + k], colour, X(r["x"] + r["name"]), cy)
+        mask, scale = words["name:" + k], FONT[r["openFont"] if lit else r["font"]]
+        if scale != 1:
+            mask = np.asarray(Image.fromarray(mask.astype(np.float32), "F").resize(
+                (round(mask.shape[1] * scale), round(mask.shape[0] * scale)), Image.LANCZOS)).clip(0, 1)
+        put_mask(img, mask, colour, X(r["x"] + r["name"]), cy)
         state = STATES.get(k)
         if state:
             put_mask(img, words["state:" + state], GOOD if state == "new" else GREY, X(r["x"] + r["chord"]), cy, "centre")
@@ -325,7 +339,7 @@ def main():
     base, sample = well_floor(shot)
     words, gl, ptr = word_masks(), glyphs(), pointer()
     order = [C.ORDER[i] for i in range(1, len(C.ORDER) + 1)]
-    tiles = [("now", Image.fromarray(shot[CROP[1]:CROP[3], CROP[0]:CROP[2]].astype(np.uint8)))]
+    tiles = []
     for key in order:
         im = mock(lua, C, key, base, sample, words, gl, ptr)
         im.save(os.path.join(TMP, key + ".png"))

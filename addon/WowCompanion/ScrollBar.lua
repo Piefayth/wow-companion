@@ -21,8 +21,6 @@ local INSET = 20.4
 WC.ScrollBar = {}
 -- the text keeps clear of the bar: the column and its border's art beside it
 WC.ScrollBar.ROOM = WIDTH + 6
--- a piece's path ("Mid", "Joint", "Thumb-Top"...), for a drawing of the bar elsewhere (ConvLooks.lua)
-WC.ScrollBar.Art = art
 
 -- A divider between turns, spanning the turn's full width: the vine's left end,
 -- its middle stretched, and the Joint taking it into the bar's left border. A
