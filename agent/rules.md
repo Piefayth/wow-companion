@@ -67,7 +67,7 @@ Other things of ours agent code can call (all globals):
   place={map,x,y,f}, item=, done={...} }` returns id or nil and why; it refuses an
   errand without a `done` condition the game reports: have={item,count},
   visit={npc,kind=merchant|trainer|gossip|bank|any}, reach={zone=} or {map,x,y,r},
-  quest={id,state=accepted|complete|turnedin}, level=n, skill={name,rank}. If you
+  quest={id,state=accepted|complete|turnedin}, level=n, skill={name,rank} (rank 1: learn a profession not known yet). If you
   cannot name one, say so and make none. Print the why when refused. Also
   `.Remove(idOrText)`, `.Edit(idOrText, {text,note,place})`, `.List()`; the export's
   `== errands ==` lists them. Pins go through `WC.Use('pins').set(layer, points)`.

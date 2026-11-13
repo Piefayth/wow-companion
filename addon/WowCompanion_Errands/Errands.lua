@@ -17,7 +17,7 @@
 --   reach = { zone = "name" } | { map, x, y, r = yards }  zone, subzone, or within r of a point
 --   quest = { id = n, state = "accepted"|"complete"|"turnedin" }
 --   level = n                                  character level reached
---   skill = { name = "Skinning", rank = n }    profession or secondary skill rank reached
+--   skill = { name = "Skinning", rank = n }    profession or secondary skill rank reached (1: learned)
 -- Display only, nothing secure, nothing pressed: a tracker in a fixed place
 -- under the board, and the Errands tab in the Companion window.
 WC.Errands = WC.Errands or {}
@@ -49,6 +49,17 @@ local function skillRank(name)
 			local pname, _, rank = GetProfessionInfo(index)
 			if pname and pname:lower() == want then return rank end
 		end
+	end
+end
+-- every profession's skill line, named by the game: a skill errand may name
+-- one not learned yet ("learn Leatherworking" is rank 1)
+local PROFESSION_LINES = { 129, 164, 165, 171, 182, 185, 186, 197, 202, 333, 356, 393 }
+local function isProfession(name)
+	if skillRank(name) then return true end
+	local want = name:lower()
+	for _, line in ipairs(PROFESSION_LINES) do
+		local ok, shown = pcall(C_TradeSkillUI.GetTradeSkillDisplayName, line)
+		if ok and type(shown) == "string" and shown:lower() == want then return true end
 	end
 end
 local function questState(id)
@@ -140,7 +151,7 @@ local function checkDone(done)
 			if not (num(c) and c >= 2 and c <= 80) then return "level must be a number" end
 		elseif kind == "skill" then
 			if type(c) ~= "table" or type(c.name) ~= "string" or not num(c.rank) then return "skill needs { name, rank }" end
-			if not skillRank(c.name) then return "skill: " .. c.name .. " is not one of this character's professions" end
+			if not isProfession(c.name) then return "skill: " .. c.name .. " is not a profession" end
 		end
 	end
 	if allHold(done) then return "already done now: it would vanish at once" end
