@@ -188,8 +188,8 @@ end
 -- runs), kept through a reload; none until it has answered once
 local function contextSet()
 	if type(WowCompanionAgentDB) ~= "table" then return {} end
-	WowCompanionAgentDB.context = WowCompanionAgentDB.context or {}
-	return WowCompanionAgentDB.context
+	WowCompanionAgentDB.contextSize = WowCompanionAgentDB.contextSize or {}
+	return WowCompanionAgentDB.contextSize
 end
 local function paintConversations()
 	local frame = logWindow
