@@ -38,15 +38,16 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
         let [a, b] = bells(&addons);
         let mut on_a = true;
         let mut saved = None;
-        // the UI session, mic state and settings the game was last told
-        // (`status`; the settings count up as the voice loop takes a change). A
-        // session is the channel's: the last save and when Wow.exe started, so a
-        // fresh launch, which saves nothing, is a new one too; told while the game
-        // was closed, it is told again once the game runs
-        let mut told: Option<(Option<String>, bool, usize)> = None;
-        // the session is looked up at each beat: finding a game that is not
-        // running walks every process
+        // the UI session, mic state, settings and mics listed the game was last
+        // told (`status`; the settings count up as the voice loop takes a
+        // change). A session is the channel's: the last save and when Wow.exe
+        // started, so a fresh launch, which saves nothing, is a new one too; told
+        // while the game was closed, it is told again once the game runs
+        let mut told: Option<(Option<String>, bool, usize, Vec<String>)> = None;
+        // the session and the mics are looked up at each beat: finding a game
+        // that is not running walks every process
         let mut stamp = None;
+        let mut mics = Vec::new();
         let mut beat_at = Instant::now();
         while BEATING.load(Ordering::SeqCst) {
             // nothing until this copy has taken over (the ledger, the channel)
@@ -58,10 +59,11 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
             let beat = Instant::now() >= beat_at;
             if beat {
                 stamp = crate::saved_variables_stamp(&addons);
+                mics = crate::voice::input_names();
             }
-            let now = (stamp.clone(), crate::voice::MIC.load(Ordering::Relaxed), crate::voice::APPLIED.load(Ordering::SeqCst));
+            let now = (stamp.clone(), crate::voice::MIC.load(Ordering::Relaxed), crate::voice::APPLIED.load(Ordering::SeqCst), mics.clone());
             if told.as_ref() != Some(&now) {
-                if crate::send(&addons, &crate::settings_page::status(now.1)).is_ok() {
+                if crate::send(&addons, &crate::settings_page::status(now.1, &now.3)).is_ok() {
                     told = Some(now);
                 }
             }

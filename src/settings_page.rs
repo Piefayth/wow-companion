@@ -1,15 +1,14 @@
 //! The game's settings page, the companion's half
 //! (docs/proposals/settings-in-game.md). The companion is the one truth for its
-//! settings: `status` shows the page what this companion runs with, and the
-//! page's `bind`, `set` and `mics` commands, read off the strip
+//! settings: `status` shows the page what this companion runs with and the mics
+//! there are, and the page's `bind` and `set` commands, read off the strip
 //! (requests.rs `watch_commands`), change them. A change is written to
 //! settings.toml and handed to the voice loop, which takes it between presses
 //! (`voice::change`): no restart, so a request in flight never holds one up.
 
 use std::{
-    io,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
+    sync::OnceLock,
     time::Instant,
 };
 
@@ -66,21 +65,24 @@ fn now() -> Running {
 }
 
 /// `{ kind = "status", mic = ..., settings = {...}, binding = "<key>" }`: whether
-/// the mic is open, the settings this companion runs with, and the key being
-/// set while the page waits for its press.
-pub(crate) fn status(mic: bool) -> Msg {
+/// the mic is open, the settings this companion runs with (each key's buttons
+/// as WoW names joined with `+`) with the mics Windows lists (`mics`), and the
+/// key being set while the page waits for its press. Sent again when the mics
+/// listed change (heartbeat.rs).
+pub(crate) fn status(mic: bool, mics: &[String]) -> Msg {
     let mut msg = Msg::new("status").flag("mic", mic);
     let running = now();
     if !running.keys.is_empty() || !running.engines.is_empty() {
         let mut settings = Msg::table();
         for (key, bound) in &running.keys {
-            settings = settings.text(key, &bound.name);
+            settings = settings.text(key, &bound.name());
         }
         settings = settings.text("feedback", &running.feedback).text("speech", &running.speech);
         if let Some(mic) = &running.mic {
             settings = settings.text("mic", mic);
         }
-        msg = msg.msg("settings", settings.texts("engines", running.engines.clone()));
+        settings = settings.texts("engines", running.engines.clone()).texts("mics", mics.to_vec());
+        msg = msg.msg("settings", settings);
     }
     if let Some(binding) = voice::BINDING.lock().unwrap().as_ref() {
         msg = msg.text("binding", &binding.key);
@@ -94,24 +96,28 @@ fn send(addons: &Path, msg: Msg) {
     }
 }
 
+/// `status` as it stands now.
+fn current() -> Msg {
+    status(voice::MIC.load(std::sync::atomic::Ordering::Relaxed), &voice::input_names())
+}
+
 /// `status` with what went wrong in the row of `key`: `bind` or `set`.
 fn refuse(addons: &Path, field: &'static str, key: &str, why: &str) {
     println!("  settings page: {field} {key} refused: {why}");
-    let mic = voice::MIC.load(std::sync::atomic::Ordering::Relaxed);
-    send(addons, status(mic).msg(field, Msg::table().text("key", key).text("error", why)));
+    send(addons, current().msg(field, Msg::table().text("key", key).text("error", why)));
 }
 
-/// `bind <key> start|cancel|<PADNAME>`: a key set by pressing it on the page.
+/// `bind <key> start|cancel|<PADNAME>+...`: a key set by pressing its buttons
+/// on the page, every button that went down named.
 pub(crate) fn bind(addons: &Path, key: &str, what: &str) {
     let Some(key) = pad::KEYS.iter().find(|each| **each == key).copied() else {
         return refuse(addons, "bind", key, "The companion has no such button.");
     };
-    let mic = voice::MIC.load(std::sync::atomic::Ordering::Relaxed);
     match what {
         "start" => {
             *voice::BINDING.lock().unwrap() = Some(voice::Binding { key: key.to_string(), since: Instant::now(), pressed: Vec::new() });
             println!("  settings page: waiting for the {key} press");
-            send(addons, status(mic));
+            send(addons, current());
         }
         "cancel" => {
             let mut binding = voice::BINDING.lock().unwrap();
@@ -119,7 +125,7 @@ pub(crate) fn bind(addons: &Path, key: &str, what: &str) {
                 *binding = None;
             }
         }
-        name => {
+        names => {
             let pressed = {
                 let mut binding = voice::BINDING.lock().unwrap();
                 match binding.take() {
@@ -130,32 +136,49 @@ pub(crate) fn bind(addons: &Path, key: &str, what: &str) {
                     }
                 }
             };
-            let mut distinct: Vec<pad::Press> = Vec::new();
+            let mut presses: Vec<pad::Press> = Vec::new();
             for press in pressed {
-                if !distinct.contains(&press) {
-                    distinct.push(press);
+                if !presses.contains(&press) {
+                    presses.push(press);
                 }
             }
-            let result = match distinct.as_slice() {
-                [press] => bound(key, pad::Bound { press: *press, name: name.to_string() }),
-                [] => Err("No press of a button reached the companion. Press it again.".to_string()),
-                _ => Err("Several buttons went down. Press only the one you want.".to_string()),
+            let names: Vec<String> = names.split('+').map(str::to_string).collect();
+            let result = if presses.is_empty() {
+                Err("No press of a button reached the companion. Press it again.".to_string())
+            } else if presses.len() != names.len() {
+                Err(format!("The companion saw {} buttons go down and the game {}. Press it again.", presses.len(), names.len()))
+            } else {
+                bound(key, pad::Bound { presses, names })
             };
             match result {
-                Ok(()) => send(addons, status(mic)),
+                Ok(()) => send(addons, current()),
                 Err(why) => refuse(addons, "bind", key, &why),
             }
         }
     }
 }
 
+/// The talk button is one button, in no chord; a chord is no other key's.
 fn bound(key: &'static str, bound: pad::Bound) -> Result<(), String> {
-    if !bound.name.starts_with("PAD") || !bound.name.chars().all(|c| c.is_ascii_alphanumeric()) {
-        return Err(format!("{:?} is not a WoW button name.", bound.name));
+    if let Some(name) = bound.names.iter().find(|name| !name.starts_with("PAD") || !name.chars().all(|c| c.is_ascii_alphanumeric())) {
+        return Err(format!("{name:?} is not a WoW button name."));
     }
     let running = now();
-    if let Some((other, _)) = running.keys.iter().find(|(each, held)| *each != key && held.press == bound.press) {
-        return Err(format!("That button is already the {other} button."));
+    let talk = running.keys.iter().find(|(each, _)| *each == "talk").map(|(_, talk)| talk);
+    if key == "talk" {
+        if bound.presses.len() > 1 {
+            return Err("The talk button is one button. Press only the one you want.".to_string());
+        }
+        if let Some((other, _)) = running.keys.iter().find(|(each, chord)| *each != "talk" && chord.presses.contains(&bound.presses[0])) {
+            return Err(format!("That button is in the {other} chord."));
+        }
+    } else {
+        if talk.is_some_and(|talk| bound.presses.contains(&talk.presses[0])) {
+            return Err("That holds the talk button.".to_string());
+        }
+        if let Some((other, _)) = running.keys.iter().find(|(each, chord)| *each != key && chord.same_buttons(&bound)) {
+            return Err(format!("That is already the {other} chord."));
+        }
     }
     let now = running.keys.iter().find(|(each, _)| *each == key).map(|(_, held)| held.spec());
     apply(key, &bound.spec(), now.as_deref())
@@ -195,22 +218,5 @@ fn apply(key: &str, value: &str, running: Option<&str>) -> Result<(), String> {
     }
     println!("  settings page: {key} = {value}");
     voice::change(key, value);
-    Ok(())
-}
-
-/// The mic list last sent, and the UI session it went to: the game keeps the
-/// list it has, so the same one is not sent again in that session.
-static SENT_MICS: Mutex<Option<(Option<String>, Vec<String>)>> = Mutex::new(None);
-
-/// `mics`: the inputs Windows lists now, for the page's mic row, unless this UI
-/// session already has that list (the page asks each time it is shown).
-pub(crate) fn mics(addons: &Path) -> io::Result<()> {
-    let now = (crate::saved_variables_stamp(addons), voice::input_names());
-    let mut sent = SENT_MICS.lock().unwrap();
-    if sent.as_ref() == Some(&now) {
-        return Ok(());
-    }
-    crate::send(addons, &Msg::new("mics").texts("mics", now.1.clone()))?;
-    *sent = Some(now);
     Ok(())
 }

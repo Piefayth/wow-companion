@@ -8,8 +8,9 @@
 //! Keys: `addons` (the game's Interface\AddOns folder), `model` (the Whisper
 //! model file), `engine` (`cpu` to use the CPU build a release ships beside the
 //! GPU one), and the run options: `pad` (vid:pid), `talk`, `l1`, `l2`, `r1`,
-//! `r2` (the talk button and the conversation triggers, `byte:mask PADNAME`, set
-//! on the game's settings page), `feedback`, `chat`, `mic`, `cue`, `volume`,
+//! `r2`, `quick`, `say` (the talk button and the conversations' chords,
+//! `byte:mask+... PADNAME+...`, set on the game's settings page), `feedback`,
+//! `chat`, `mic`, `cue`, `volume`,
 //! `agent`, `speech` (`whisper` or `streaming`) and `stream_model` (the
 //! streaming model's folder).
 

@@ -44,9 +44,12 @@ extras a player may use, never required (the player, 2026-11-11).
   fixed layout (the Edge's Fn and back buttons too; Bluetooth's report 0x31 turned
   into it), the XInput word, else the pad's HID report descriptor
   (`descriptor.rs`). Buttons have no names on the PC: the companion's keys (`talk`,
-  `l1` `l2` `r1` `r2`) are set by pressing them on our settings page in the game
-  and stored as the bit plus WoW's name (`talk = "9:0x10 PADSOCIAL"`); the two
-  layouts we know default to minus (Guide on Xbox) and the shoulders.
+  and each conversation's chord `l1` `l2` `r1` `r2` `quick` `say`) are set by
+  pressing them on our settings page in the game and stored as the bits plus
+  WoW's names (`talk = "9:0x10 PADSOCIAL"`, `quick = "9:0x04+9:0x08
+  PADLTRIGGER+PADRTRIGGER"`); the two layouts we know default to minus (Guide on
+  Xbox), the shoulders, L2+R2 Quick and L1+R1 dictation. The held chord with the
+  most buttons picks the conversation (`Keys::pick`, and Pad.lua in game).
   **Xbox pads go through XInput** (`pad=xinput`, `crates/pad/src/xinput.rs`): their
   state becomes a 4-byte report; Guide via `XInputGetStateEx`; rumble works.
 - `crates/voice`: mic (`cpal`) and speech, its own crate
@@ -72,8 +75,8 @@ extras a player may use, never required (the player, 2026-11-11).
   `context.rs` (the export, profile and integrations the agent gets),
   `session.rs` (the game's UI session, on trial beside the channel), `runs.rs` (an
   agent's run on disk, any copy follows it), `settings_page.rs`
-  (the settings page's half here: `status` with the settings, its `bind`/`set`/`mics`
-  commands; a change is written to settings.toml and the voice loop takes it between
+  (the settings page's half here: `status` with the settings and the mics
+  Windows lists, its `bind`/`set` commands; a change is written to settings.toml and the voice loop takes it between
   presses, `voice::change`, never a restart), `restart.rs`, `install.rs`, `agent.rs` (the agent; its
   rules are `agent/rules.md`), `bells.rs`, `heartbeat.rs`, `doctor.rs`, `modules.rs`; its life:
   `lifecycle.rs` (one companion at a time, clean exits, pause, two clients),
@@ -163,10 +166,11 @@ Tests: `cargo test --workspace`.
 
 - `wow-companion run` (options from `settings.toml`, written by the setup window;
   `run <AddOns> <model> mic=<name>` overrides them)
-  (one talk button, everything said to the agent; L1+R1 is dictation into chat)
-  **Conversation slots**: a trigger (L1, L2, R1, R2) held with minus sends the
-  request to that slot's own conversation (`thread-l2.txt`…), shown as "[L2] …";
-  slots run side by side. **L2+R2 together is Quick** (`agent::QUICK_SLOT`): Sonnet at low effort (Haiku was too weak, the player, 2026-11-10), 12 turns, a trimmed export, for chat, links and buttons. Asked to start over, the agent sets `fresh` and the
+  (one talk button, everything said to the agent; L1+R1 by default is dictation
+  into chat)
+  **Conversation slots**: a chord (L1, L2, R1, R2 by default) held with the talk
+  button sends the request to that slot's own conversation (`thread-l2.txt`…),
+  shown as "[L2] …"; slots run side by side. **L2+R2 by default is Quick** (`agent::QUICK_SLOT`): Sonnet at low effort (Haiku was too weak, the player, 2026-11-10), 12 turns, a trimmed export, for chat, links and buttons. Asked to start over, the agent sets `fresh` and the
   conversation begins anew after its answer. Home is free. Only the main conversation can `look`.
   starts the companion. It runs from a copy (with its DLLs) in its own folder under
   `%LOCALAPPDATA%\wow-companion\bin`, so `cargo build` works while it runs.

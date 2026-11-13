@@ -106,7 +106,7 @@ pub struct Binding {
 pub static BINDING: Mutex<Option<Binding>> = Mutex::new(None);
 pub const BIND_WAIT: Duration = Duration::from_secs(30);
 
-/// Settings changed on the game's settings page (`talk`, `l1`..`r2`, `feedback`,
+/// Settings changed on the game's settings page (`pad::KEYS`, `feedback`,
 /// `mic`, `speech`), for the loop to take between presses; no restart, so a
 /// request in flight never holds one up.
 static CHANGES: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
@@ -132,22 +132,40 @@ fn publish(options: &[String]) {
     APPLIED.fetch_add(1, Ordering::SeqCst);
 }
 
-/// The talk button and the conversation triggers the options name.
+/// The talk button and each conversation's chord, as the options name them.
 struct Keys {
     talk: Option<pad::Bound>,
-    triggers: Vec<(Slot, pad::Press)>,
+    /// in `Slot::CHORDS` order, which is the order a tie goes to
+    chords: Vec<(Slot, pad::Bound)>,
 }
 
 impl Keys {
     fn read(options: &[String], vid: u16, pid: u16) -> io::Result<Keys> {
         let bound = |key: &str| pad::bound(key, option(options, key), vid, pid);
-        let mut triggers = Vec::new();
-        for (slot, key) in [(Slot::L1, "l1"), (Slot::L2, "l2"), (Slot::R1, "r1"), (Slot::R2, "r2")] {
-            if let Some(each) = bound(key)? {
-                triggers.push((slot, each.press));
+        let mut chords = Vec::new();
+        for slot in Slot::CHORDS {
+            if let Some(each) = bound(slot.key())? {
+                chords.push((slot, each));
             }
         }
-        Ok(Keys { talk: bound("talk")?, triggers })
+        Ok(Keys { talk: bound("talk")?, chords })
+    }
+
+    /// The conversation the buttons held pick (the game's Pad.lua holds the same
+    /// rule): of the chords fully held, and holding `pressed` when a button was
+    /// just pressed, the one with the most buttons; a tie goes to the first.
+    fn pick(&self, held: impl Fn(&pad::Press) -> bool, pressed: Option<&pad::Press>) -> Option<Slot> {
+        let mut best: Option<&(Slot, pad::Bound)> = None;
+        for each in &self.chords {
+            let (_, chord) = each;
+            if chord.presses.iter().all(&held)
+                && pressed.is_none_or(|press| chord.presses.contains(press))
+                && best.is_none_or(|(_, most)| chord.presses.len() > most.presses.len())
+            {
+                best = Some(each);
+            }
+        }
+        best.map(|(slot, _)| *slot)
     }
 }
 
@@ -240,24 +258,26 @@ impl Engine {
     }
 }
 
-/// Which conversation a clip is for: the triggers held with the talk button.
+/// Which conversation a clip is for: the chord held with the talk button.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Slot {
-    /// no trigger
+    /// no chord
     Main,
     L1,
     L2,
     R1,
     R2,
-    /// L2 and R2 together: the fast agent
+    /// the fast agent (L2+R2 by default)
     Quick,
-    /// L1 and R1 together: the words go straight to the chat box, no agent
+    /// the words go straight to the chat box, no agent (L1+R1 by default)
     Dictation,
 }
 
 impl Slot {
     /// The conversations a request can be typed into (`tell`): all but dictation.
     pub const CONVERSATIONS: [Slot; 6] = [Slot::Main, Slot::L1, Slot::L2, Slot::R1, Slot::R2, Slot::Quick];
+    /// The ones picked by a chord, each set as the option its `key` names.
+    const CHORDS: [Slot; 6] = [Slot::L1, Slot::L2, Slot::R1, Slot::R2, Slot::Quick, Slot::Dictation];
 
     /// The conversation's name everywhere else ("" is the main one).
     pub const fn key(self) -> &'static str {
@@ -304,11 +324,11 @@ impl Event<'_> {
 
 /// Hold the talk button, speak, release; `heard` is told each clip's events.
 ///
-/// The talk button and the conversation triggers are the `talk`, `l1`, `l2`,
-/// `r1`, `r2` options, set by pressing them on the game's settings page
-/// (`BINDING`); on the two layouts we know they default to minus (Guide on an
-/// Xbox pad), which WoW ignores, and the shoulders. We cannot consume the input,
-/// so anything the game binds on the talk button fires too.
+/// The talk button and the conversations' chords are the options `pad::KEYS`
+/// names, set by pressing them on the game's settings page (`BINDING`); on the
+/// two layouts we know they default to minus (Guide on an Xbox pad), which WoW
+/// ignores, the shoulders, L2+R2 Quick and L1+R1 dictation. We cannot consume
+/// the input, so anything the game binds on the talk button fires too.
 ///
 /// `vocabulary` is asked afresh for every clip, so names learned at the last reload
 /// are in the prompt without restarting.
@@ -361,7 +381,7 @@ pub fn listen(
     let mut loading: Option<(std::sync::mpsc::Receiver<io::Result<(Engine, std::sync::mpsc::Receiver<Done>)>>, Vec<String>)> = None;
 
     match &keys.talk {
-        Some(talk) => println!("ready: hold {} ({}) to talk", talk.name, talk.press),
+        Some(talk) => println!("ready: hold {} to talk", talk.spec()),
         None => println!("ready, with no talk button yet: set it on the game's settings page"),
     }
     // Started by a restart: the mic is already open (above), so the headset's
@@ -385,14 +405,10 @@ pub fn listen(
     // its own handle and thread, so a pulse keeps time while this loop transcribes
     let rumbler = pad::Rumbler::new(vid, pid);
     let mut holding = false;
-    // Conversation slots: a trigger held with the talk button picks one; none is
-    // the main conversation.
     // the buttons held at the last read, to see one going down
     let mut was_down: Vec<pad::Press> = Vec::new();
-    // None until a trigger is pulled during the press; then the last one pulled
+    // the conversation the press is for (`Keys::pick`); None is the main one
     let mut slot: Option<Slot> = None;
-    // each trigger as last read, to see one being pulled
-    let mut was_held = [false; 4];
     let mut pressed_at = Instant::now();
     // the opening pulse waits until a press has outlasted a tap: a tap (which
     // the game handles itself, opening the window) stays silent, and feeling
@@ -475,7 +491,7 @@ pub fn listen(
                 next.push(format!("{key}={value}"));
                 println!("setting {key} = {value}");
                 match key.as_str() {
-                    "talk" | "l1" | "l2" | "r1" | "r2" => match Keys::read(&next, vid, pid) {
+                    key if pad::KEYS.contains(&key) => match Keys::read(&next, vid, pid) {
                         Ok(read) => keys = read,
                         Err(err) => {
                             eprintln!("  not taken: {err}");
@@ -586,17 +602,18 @@ pub fn listen(
             continue;
         }
         let down = pad.down();
+        let pressed: Vec<pad::Press> = down.iter().filter(|press| !was_down.contains(press)).copied().collect();
+        was_down = down;
         let binding = {
             let mut setting = BINDING.lock().unwrap();
             if setting.as_ref().is_some_and(|each| each.since.elapsed() > BIND_WAIT) {
                 *setting = None;
             }
             if let Some(each) = setting.as_mut() {
-                each.pressed.extend(down.iter().filter(|press| !was_down.contains(press)));
+                each.pressed.extend(&pressed);
             }
             setting.is_some()
         };
-        was_down = down;
         if DEAF.load(Ordering::SeqCst) || PAUSED.load(Ordering::SeqCst) {
             if std::mem::take(&mut holding) {
                 if let Some(mic) = &microphone {
@@ -611,37 +628,11 @@ pub fn listen(
         if ALERT.swap(false, Ordering::SeqCst) && rumbles {
             rumbler.play(&[(0, PULSE, PULSE), (60, 0, 0), (120, PULSE, PULSE), (180, 0, 0), (240, PULSE, PULSE), (300, 0, 0)]);
         }
-        let held = keys.talk.as_ref().is_some_and(|talk| pad.held(&talk.press)) && !binding;
-        let triggers = &keys.triggers;
-        let pulling = |slot: Slot| triggers.iter().any(|(each, press)| *each == slot && pad.held(press));
-        // L2 and R2 together are the quick conversation: a fast agent for chat,
-        // links and buttons. L1 and R1 together are dictation: the words go
-        // straight to the chat box on the channel picked on the chat wheel, with
-        // no agent in the way
-        let modifier = if pulling(Slot::L2) && pulling(Slot::R2) {
-            Some(Slot::Quick)
-        } else if pulling(Slot::L1) && pulling(Slot::R1) {
-            Some(Slot::Dictation)
-        } else {
-            triggers.iter().find(|(_, press)| pad.held(press)).map(|(slot, _)| *slot)
-        };
-        // the trigger pulled since the last read, as the conversation it picks:
-        // with its partner already held, the pair's (L2+R2 Quick, L1+R1 dictation)
-        let mut pulled = None;
-        for (index, (each, press)) in triggers.iter().enumerate() {
-            let now = pad.held(press);
-            if now && !was_held[index] {
-                let (partner, pair) = match each {
-                    Slot::L1 => (Slot::R1, Slot::Dictation),
-                    Slot::R1 => (Slot::L1, Slot::Dictation),
-                    Slot::L2 => (Slot::R2, Slot::Quick),
-                    Slot::R2 => (Slot::L2, Slot::Quick),
-                    _ => continue,
-                };
-                pulled = Some(if pulling(partner) { pair } else { *each });
-            }
-            was_held[index] = now;
-        }
+        let held = keys.talk.as_ref().is_some_and(|talk| pad.holds(talk)) && !binding;
+        // the pick at the press, and the one a button pressed since the last
+        // read makes during the hold
+        let picked = keys.pick(|press| pad.held(press), None);
+        let pulled = pressed.iter().filter_map(|press| keys.pick(|each| pad.held(each), Some(press))).last();
         let Some(mic) = &microphone else {
             if held && !holding {
                 println!("no microphone yet; still waiting for it");
@@ -655,7 +646,7 @@ pub fn listen(
         match (held, holding) {
             (true, false) => {
                 pressed_at = Instant::now();
-                slot = modifier;
+                slot = picked;
                 mic.start();
                 if let Engine::Streaming(feed) = &engine {
                     let _ = feed.send(stream::Feed::Start { hotwords: stream::hotwords(&vocabulary()), rate: mic.rate });
@@ -724,9 +715,8 @@ pub fn listen(
                 }
             }
             (true, true) => {
-                // the last trigger pulled during the hold picks the conversation,
-                // and letting it go keeps it: a wrong pick is corrected by
-                // pulling another
+                // a button pressed during the hold picks again, and letting it go
+                // keeps the pick: a wrong pick is corrected by pressing another
                 if pulled.is_some() {
                     slot = pulled;
                 }
@@ -752,7 +742,7 @@ pub fn listen(
 /// is cut and what is left is the clip; empty means there was nothing else.
 #[cfg(test)]
 mod slot_tests {
-    use super::{Event, Slot};
+    use super::{pad, Event, Keys, Slot};
 
     #[test]
     fn every_slot_has_its_own_name_and_dictation_is_no_conversation() {
@@ -769,6 +759,29 @@ mod slot_tests {
     fn an_event_moves_to_another_slot_whole() {
         assert_eq!(Event::Words(Slot::L2, "hi").for_slot(Slot::Dictation), Event::Words(Slot::Dictation, "hi"));
         assert_eq!(Event::Notice("n").for_slot(Slot::Dictation), Event::Notice("n"));
+    }
+
+    #[test]
+    fn the_biggest_chord_held_picks_and_a_tie_goes_to_the_first() {
+        // a DualSense's defaults: the shoulders, L2+R2 Quick, L1+R1 dictation
+        let keys = Keys::read(&[], 0x054c, 0x0ce6).unwrap();
+        let button = |name: &str| keys.chords.iter().find(|(slot, _)| slot.key() == name).unwrap().1.presses[0];
+        let (l1, l2, r1, r2) = (button("l1"), button("l2"), button("r1"), button("r2"));
+        let pick = |held: &[pad::Press], pressed: Option<pad::Press>| keys.pick(|press| held.contains(press), pressed.as_ref());
+        assert_eq!(pick(&[], None), None);
+        assert_eq!(pick(&[r1], None), Some(Slot::R1));
+        assert_eq!(pick(&[l2, r2], None), Some(Slot::Quick));
+        assert_eq!(pick(&[l1, r1], None), Some(Slot::Dictation));
+        assert_eq!(pick(&[l1, r2], None), Some(Slot::L1));
+        assert_eq!(pick(&[l1, l2, r1, r2], None), Some(Slot::Quick));
+        // during a hold: the chord the button just pressed completes
+        assert_eq!(pick(&[l2, r2], Some(r2)), Some(Slot::Quick));
+        assert_eq!(pick(&[l2, r2, l1], Some(l1)), Some(Slot::L1));
+        // a chord set on the page is read the same way
+        let options = ["say=10:0x20 PADPADDLE2".to_string()];
+        let keys = Keys::read(&options, 0x054c, 0x0df2).unwrap();
+        let paddle = pad::Press { byte: 10, mask: 0x20 };
+        assert_eq!(keys.pick(|press| *press == paddle, None), Some(Slot::Dictation));
     }
 }
 

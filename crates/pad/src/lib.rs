@@ -11,8 +11,8 @@
 //! layout (the USB report 0x01; the Bluetooth report 0x31 is turned into it), the
 //! XInput button word (xinput.rs), and for any other pad its own HID report
 //! descriptor (descriptor.rs). Buttons have no names here: the companion's keys
-//! are set by pressing them in the game, which names them, and stored as the bit
-//! plus WoW's name (`Bound`; docs/proposals/settings-in-game.md).
+//! are set by pressing them in the game, which names them, and stored as the bits
+//! plus WoW's names (`Bound`; docs/proposals/settings-in-game.md).
 
 use std::{
     fmt, io, thread,
@@ -62,32 +62,52 @@ impl fmt::Display for Press {
     }
 }
 
-/// The companion's keys: the talk button and the four conversation triggers
-/// (L2+R2 is Quick, L1+R1 dictation).
-pub const KEYS: [&str; 5] = ["talk", "l1", "l2", "r1", "r2"];
+/// The companion's keys: the talk button, then each conversation's chord (the
+/// voice loop's `Slot` names them).
+pub const KEYS: [&str; 7] = ["talk", "l1", "l2", "r1", "r2", "quick", "say"];
 
-/// A key's button: its bit here and its name in WoW, captured from one press
-/// on the game's settings page. Written `9:0x10 PADSOCIAL`.
+/// A key's buttons, held together (one for most keys): their bits here and
+/// their names in WoW, captured from one press on the game's settings page.
+/// Written `9:0x04+9:0x08 PADLTRIGGER+PADRTRIGGER`. The two lists are the same
+/// buttons but not paired one to one (two pressed at once cannot be told
+/// apart): the companion reads the bits and the game the names.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bound {
-    pub press: Press,
-    pub name: String,
+    pub presses: Vec<Press>,
+    pub names: Vec<String>,
 }
 
 impl Bound {
     pub fn spec(&self) -> String {
-        format!("{} {}", self.press.spec(), self.name)
+        let presses: Vec<String> = self.presses.iter().map(Press::spec).collect();
+        format!("{} {}", presses.join("+"), self.name())
     }
 
     pub fn parse(text: &str) -> io::Result<Bound> {
-        let (press, name) = text.trim().split_once(' ').ok_or_else(|| io::Error::other(format!("{text:?} isn't \"byte:mask NAME\"")))?;
-        Ok(Bound { press: Press::parse(press)?, name: name.trim().to_string() })
+        let (presses, names) =
+            text.trim().split_once(' ').ok_or_else(|| io::Error::other(format!("{text:?} isn't \"byte:mask+... NAME+...\"")))?;
+        let presses = presses.split('+').map(Press::parse).collect::<io::Result<Vec<_>>>()?;
+        let names: Vec<String> = names.split('+').map(|name| name.trim().to_string()).collect();
+        if presses.len() != names.len() {
+            return Err(io::Error::other(format!("{text:?} has {} buttons and {} names", presses.len(), names.len())));
+        }
+        Ok(Bound { presses, names })
+    }
+
+    /// The buttons' names in WoW, as the game is told them: `PADLTRIGGER+PADRTRIGGER`.
+    pub fn name(&self) -> String {
+        self.names.join("+")
+    }
+
+    /// The same buttons, in any order.
+    pub fn same_buttons(&self, other: &Bound) -> bool {
+        self.presses.len() == other.presses.len() && self.presses.iter().all(|press| other.presses.contains(press))
     }
 }
 
-/// `key`'s button on the pad `vid:pid`: as set (`set`, the settings file's
-/// value), else where the two layouts we know put it; None on another pad
-/// until it is pressed in the game.
+/// `key`'s buttons on the pad `vid:pid`: as set (`set`, the settings file's
+/// value), else where the two layouts we know put them; None on another pad
+/// until they are pressed in the game.
 pub fn bound(key: &str, set: Option<&str>, vid: u16, pid: u16) -> io::Result<Option<Bound>> {
     if let Some(text) = set {
         return Bound::parse(text).map(Some);
@@ -97,8 +117,14 @@ pub fn bound(key: &str, set: Option<&str>, vid: u16, pid: u16) -> io::Result<Opt
         (SONY, _) => SONY_KEYS,
         _ => &[],
     };
-    Ok(defaults.iter().find(|(each, ..)| *each == key).map(|(_, press, name)| Bound { press: *press, name: name.to_string() }))
+    Ok(defaults.iter().find(|(each, _)| *each == key).map(|(_, buttons)| Bound {
+        presses: buttons.iter().map(|(press, _)| *press).collect(),
+        names: buttons.iter().map(|(_, name)| name.to_string()).collect(),
+    }))
 }
+
+/// A layout's default keys: each key's buttons, as their bit and WoW name.
+type Defaults = &'static [(&'static str, &'static [(Press, &'static str)])];
 
 /// Sony's buttons in the USB report 0x01: square, cross, circle, triangle (byte
 /// 8's high half), L1 R1 L2 R2 Create Options L3 R3 (byte 9), PS, touchpad, mute
@@ -125,14 +151,23 @@ const SONY_BUTTONS: [Press; 19] = [
     Press { byte: 10, mask: 0x80 },
 ];
 
-/// The keys on a Sony pad: minus (Create; WoW ignores it) and the shoulders.
-const SONY_KEYS: &[(&str, Press, &str)] = &[
-    ("talk", Press { byte: 9, mask: 0x10 }, "PADSOCIAL"),
-    ("l1", Press { byte: 9, mask: 0x01 }, "PADLSHOULDER"),
-    ("r1", Press { byte: 9, mask: 0x02 }, "PADRSHOULDER"),
-    ("l2", Press { byte: 9, mask: 0x04 }, "PADLTRIGGER"),
-    ("r2", Press { byte: 9, mask: 0x08 }, "PADRTRIGGER"),
-];
+/// The keys on a Sony pad: minus (Create; WoW ignores it) and the shoulders,
+/// L2+R2 Quick and L1+R1 dictation.
+const SONY_KEYS: Defaults = {
+    const L1: (Press, &str) = (Press { byte: 9, mask: 0x01 }, "PADLSHOULDER");
+    const R1: (Press, &str) = (Press { byte: 9, mask: 0x02 }, "PADRSHOULDER");
+    const L2: (Press, &str) = (Press { byte: 9, mask: 0x04 }, "PADLTRIGGER");
+    const R2: (Press, &str) = (Press { byte: 9, mask: 0x08 }, "PADRTRIGGER");
+    &[
+        ("talk", &[(Press { byte: 9, mask: 0x10 }, "PADSOCIAL")]),
+        ("l1", &[L1]),
+        ("l2", &[L2]),
+        ("r1", &[R1]),
+        ("r2", &[R2]),
+        ("quick", &[L2, R2]),
+        ("say", &[L1, R1]),
+    ]
+};
 
 pub struct Pad {
     device: Device,
@@ -191,6 +226,11 @@ impl Pad {
 
     pub fn held(&self, press: &Press) -> bool {
         self.latest.get(press.byte).is_some_and(|byte| byte & press.mask != 0)
+    }
+
+    /// Every button of the key held.
+    pub fn holds(&self, key: &Bound) -> bool {
+        key.presses.iter().all(|press| self.held(press))
     }
 
     /// The buttons held now.
@@ -405,13 +445,22 @@ mod tests {
     #[test]
     fn a_key_is_its_setting_or_the_layouts_default() {
         let set = bound("talk", Some("10:0x20 PADPADDLE2"), 0x054c, EDGE).unwrap().unwrap();
-        assert_eq!(set, Bound { press: Press { byte: 10, mask: 0x20 }, name: "PADPADDLE2".into() });
+        assert_eq!(set, Bound { presses: vec![Press { byte: 10, mask: 0x20 }], names: vec!["PADPADDLE2".into()] });
         assert_eq!(Bound::parse(&set.spec()).unwrap(), set);
+        let chord = bound("say", Some("10:0x20+9:0x01 PADPADDLE2+PADLSHOULDER"), 0x054c, EDGE).unwrap().unwrap();
+        assert_eq!(chord.presses, [Press { byte: 10, mask: 0x20 }, Press { byte: 9, mask: 0x01 }]);
+        assert_eq!(chord.name(), "PADPADDLE2+PADLSHOULDER");
+        assert_eq!(Bound::parse(&chord.spec()).unwrap(), chord);
+        assert!(Bound::parse("10:0x20+9:0x01 PADPADDLE2").is_err());
         let minus = bound("talk", None, 0x054c, 0x0ce6).unwrap().unwrap();
         assert_eq!(minus.spec(), "9:0x10 PADSOCIAL");
+        let quick = bound("quick", None, 0x054c, 0x0ce6).unwrap().unwrap();
+        assert_eq!(quick.spec(), "9:0x04+9:0x08 PADLTRIGGER+PADRTRIGGER");
+        assert!(quick.same_buttons(&Bound::parse("9:0x08+9:0x04 PADRTRIGGER+PADLTRIGGER").unwrap()));
         let (vid, pid) = XINPUT;
         assert_eq!(bound("talk", None, vid, pid).unwrap().unwrap().spec(), "1:0x04 PADSYSTEM");
         assert_eq!(bound("r2", None, vid, pid).unwrap().unwrap().spec(), "3:0x01 PADRTRIGGER");
+        assert_eq!(bound("say", None, vid, pid).unwrap().unwrap().spec(), "1:0x01+1:0x02 PADLSHOULDER+PADRSHOULDER");
         // another pad has none until they are pressed in the game
         assert_eq!(bound("talk", None, 0x2dc8, 0x3106).unwrap(), None);
         assert_eq!(split("xinput").unwrap(), XINPUT);
@@ -419,12 +468,12 @@ mod tests {
     }
 
     #[test]
-    fn every_default_is_a_button_of_its_layout() {
-        for (_, press, _) in SONY_KEYS {
-            assert!(SONY_BUTTONS.contains(press));
-        }
-        for (_, press, _) in xinput::KEYS {
-            assert!(xinput::BUTTONS.contains(press));
+    fn every_default_is_a_button_of_its_layout_and_every_key_has_one() {
+        for (defaults, buttons) in [(SONY_KEYS, &SONY_BUTTONS[..]), (xinput::KEYS, &xinput::BUTTONS[..])] {
+            for (_, chord) in defaults {
+                assert!(chord.iter().all(|(press, _)| buttons.contains(press)));
+            }
+            assert!(KEYS.iter().all(|key| defaults.iter().any(|(each, _)| each == key)));
         }
     }
 }

@@ -161,11 +161,20 @@ pub const BUTTONS: [Press; 17] = [
     Press { byte: 3, mask: 0x01 },
 ];
 
-/// The keys on an Xbox pad: Guide (WoW ignores it) and the shoulders.
-pub const KEYS: &[(&str, Press, &str)] = &[
-    ("talk", Press { byte: 1, mask: 0x04 }, "PADSYSTEM"),
-    ("l1", Press { byte: 1, mask: 0x01 }, "PADLSHOULDER"),
-    ("r1", Press { byte: 1, mask: 0x02 }, "PADRSHOULDER"),
-    ("l2", Press { byte: 2, mask: 0x01 }, "PADLTRIGGER"),
-    ("r2", Press { byte: 3, mask: 0x01 }, "PADRTRIGGER"),
-];
+/// The keys on an Xbox pad: Guide (WoW ignores it) and the shoulders, LT+RT
+/// Quick and LB+RB dictation.
+pub const KEYS: super::Defaults = {
+    const L1: (Press, &str) = (Press { byte: 1, mask: 0x01 }, "PADLSHOULDER");
+    const R1: (Press, &str) = (Press { byte: 1, mask: 0x02 }, "PADRSHOULDER");
+    const L2: (Press, &str) = (Press { byte: 2, mask: 0x01 }, "PADLTRIGGER");
+    const R2: (Press, &str) = (Press { byte: 3, mask: 0x01 }, "PADRTRIGGER");
+    &[
+        ("talk", &[(Press { byte: 1, mask: 0x04 }, "PADSYSTEM")]),
+        ("l1", &[L1]),
+        ("l2", &[L2]),
+        ("r1", &[R1]),
+        ("r2", &[R2]),
+        ("quick", &[L2, R2]),
+        ("say", &[L1, R1]),
+    ]
+};

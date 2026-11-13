@@ -46,10 +46,12 @@ anyway (the DualSense, whose Bluetooth report 0x31 is undescribed, and XInput).
 That is also the pad-learn fix (no baseline diff, so byte 31's counter is never
 taken for a button). No database of names anywhere.
 
-Keys: `talk`, and the conversation chords `l1`, `l2`, `r1`, `r2` (Quick is L2+R2,
-dictation L1+R1, from the same keys). Defaults come from the two layouts we
-know: minus (Guide on XInput) and the shoulders and triggers, each with its WoW
-name. Another pad starts with them unset: Main works by our page and the
+Keys: `talk`, and the conversation chords `l1`, `l2`, `r1`, `r2`, `quick` and
+`say` (dictation), each one button or several held together. Defaults come from
+the two layouts we know: minus (Guide on XInput), the shoulders and triggers,
+L2+R2 Quick and L1+R1 dictation, each button with its WoW name. A chord is
+stored as its bits and its names, unpaired (two buttons pressed at once cannot
+be told apart): the companion reads the bits, the game the names. Another pad starts with them unset: Main works by our page and the
 minimap mark until talk is pressed in its row.
 
 ## WoW's binding is a copy
@@ -95,13 +97,11 @@ a toggle.
 ## The talking indicator
 
 The game draws its own preview of the conversation while the talk button is
-held, by the same rule as the companion (last trigger pulled; L2+R2 Quick; L1+R1
-dictation) on the chord keys' WoW names from `status`. Two readers of one pad
-can differ only when triggers change within a frame of each other; the clip's
-`heard` names the conversation it went to when it is let go. The rule is written
-once in Lua: today it is in Agent.lua (last pulled) and again in Pad.lua's
-`WowCompanion_PadSlot` (a fixed order, used by Offer.lua and ChatWheel.lua),
-which can disagree with each other and with the companion.
+held, by the companion's rule (under Protocol) on the chord keys' WoW names from
+`status`. Two readers of one pad can differ only when buttons change within a
+frame of each other; the clip's `heard` names the conversation it went to when
+it is let go. The rule is written once on each side: Pad.lua
+(`WowCompanion_PadSlot`, `WC.Pad.Latch`) and crates/voice (`Keys::pick`).
 
 ## Protocol
 
@@ -111,7 +111,7 @@ cancel are drawn; a new nonce for every draw).
 | strip | meaning | the companion answers |
 |---|---|---|
 | `bind <key> start` | the row is waiting for a press; `key` is `talk`, `l1`, `l2`, `r1`, `r2`, `quick` or `say` (dictation) | collects every button that goes down from now, ignores the talk button meanwhile, and sends `status` with `binding = "<key>"`; only then does the row say "press a button". Ends by itself after 30 s. |
-| `bind <key> <NAMES>` | the press the row caught, by WoW's names joined with `+`: for `talk` the first button pressed; for a conversation every button that went down from the first press until all were let go (a chord) | exactly one button went down since `start`: writes `<key> = "<byte>:<mask> <PADNAME>"` and the voice loop takes it; `status` carries it. Otherwise `status` with `bind = { key = "<key>", error = "<why>" }`. |
+| `bind <key> <NAMES>` | the press the row caught, by WoW's names joined with `+`: for `talk` the first button pressed; for a conversation every button that went down from the first press until all were let go (a chord) | as many buttons went down since `start` as there are names: writes `<key> = "<byte>:<mask>+... <PADNAME>+..."` and the voice loop takes it; `status` carries it. Refused, with `status` carrying `bind = { key = "<key>", error = "<why>" }`: a count that differs, several buttons for `talk`, the talk button in a chord, a chord another key already has. |
 | `bind <key> cancel` | the row left without a press | stops collecting |
 | `set <key> <value>` | `feedback` (`rumble`, `beep`, `both`), `speech` (`whisper`, `streaming`), `mic` (a device name, the rest of the line) | writes it if it differs and the voice loop takes it; a value it refuses gets `status` with `set = { key = "<key>", error = "<why>" }` |
 
@@ -148,11 +148,11 @@ takes to load.
 
 ## Work
 
-- Rust: the `bind`, `set` and `mics` verbs in `requests.rs` `watch_commands`;
+- Rust: the `bind` and `set` verbs in `requests.rs` `watch_commands`;
   crates/pad gives the bits that are buttons (the descriptor; the DualSense's
   report 0x31 turned into its 0x01 layout; the Edge's Fn and back buttons; the
   XInput word) and the defaults for the two layouts; `talk` and the chord keys
-  stored as bit plus name; `status` carrying the settings; the setup window's
+  stored as bits plus names; `status` carrying the settings; the setup window's
   button learning and talk row removed, and `learn` with them.
 - Lua: the rows (`WC.SettingsPage.Add`), the bind and set strips, writing WoW's
   tap binding from `status` (a `SetBindingClick` on a button of ours, both edges,

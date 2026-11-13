@@ -366,7 +366,7 @@ impl Setup {
                     self.refresh_devices();
                 }
             });
-            if pad::split(&self.pad).ok() == Some(pad::XINPUT) && talk.is_some_and(|talk| talk.name == "PADSYSTEM") {
+            if pad::split(&self.pad).ok() == Some(pad::XINPUT) && talk.is_some_and(|talk| talk.name() == "PADSYSTEM") {
                 ui.label(
                     RichText::new(
                         "Windows opens Xbox Game Bar on the Guide button. Turn that off: Settings > Gaming > Xbox Game Bar > \"Open Xbox Game Bar using this button on a controller\".",
@@ -912,7 +912,7 @@ impl Setup {
                 let (vid, pid) = pad::split(&id).unwrap_or((0, 0));
                 let down = match (&mut open, pad::bound("talk", talk.as_deref(), vid, pid)) {
                     (Some((_, device)), Ok(Some(talk))) => match device.refresh() {
-                        Ok(()) => device.held(&talk.press),
+                        Ok(()) => device.holds(&talk),
                         Err(_) => {
                             open = None;
                             false
