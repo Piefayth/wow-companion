@@ -6,18 +6,21 @@ has picked one.
     python tools/make_drawer_trials.py   writes addon/WowCompanion_Agent/Art/DrawerTrial-Cell-<n>-<v>.tga
                                          and target/drawer-trials.png (all of them, text mocked)
 
-Round 7 (rounds 1-6: d5d8e49, 4c49c05, beb6100, 5ed179c, 4cdd7e2, fd928d7).
-Drafted, not sculpted: every member is a centreline with a radius (the
-window's rim, the drawer's rims, the legend's rule, each scroll), its metal
-the signed depth inside it (r - distance to the centreline). Members join by
-max, a crisp crossing, except at named joints, where a smooth union of a
-stated radius forges them into one with fillets. The height is a round bar's
-over that one field, so every bar has one centred ridge of light and a joint
-carries it on unbroken: no second profile blended in (round 6's smeared
-highlight and the split bars came from mixing the frame's beaded rim with a
-second ridge), no blur, no point left sticking out. The drawer's rim ends
-in the window's rim; joints differ by how they forge (fillet radius, the
-sweep) and by the scrollwork rooted in them.
+Round 8 (rounds 1-7: d5d8e49, 4c49c05, beb6100, 5ed179c, 4cdd7e2, fd928d7, ab6ad52).
+The window's rim is not a bar with a middle: it is a profile by depth inside
+the window's outline (make_frame_art.py frame(): a dark line, a bead on its
+outer half, a lower inner half, a dark lip), and its corners are where two
+depths meet. So the drawer is drawn by the same rule, its rim the window's
+exact profile:
+  - one outline (1-3): window and drawer one shape, the rim run round it by
+    depth from that outline; the joint is an inside corner of it, sharp or
+    rounded, worked out as the window's own corners are;
+  - rim between (4-6): the window's rim whole, the drawer's own rim (depth
+    inside the drawer's outline) running over the window rim's outer shoulder
+    and under its bead, as the title rule meets the rim in the window today.
+The legend's rule is the title rule's make, meeting the rims the same way.
+Ornament is wire (round rods, no taper), a bracket in the corner outside the
+joint, its ends run into both rims.
 
 Drawn at 2.7 screen pixels a unit (the window's scale at 4K), a texel a pixel;
 each cell one picture. The stones are the window's own (Style.lua's Slate and
@@ -28,17 +31,16 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
-from scipy.spatial import cKDTree
 
 import artout
-from make_frame_art import grid, rim_metal, Layers, fit, brushed, streaks, BRONZE, LINE, BAND
-from make_scrollbar_art import write_tga, Wire
+from make_frame_art import grid, bar, bead, rim_metal, Layers, fit, brushed, streaks, BRONZE, LINE, BAND, CHAMFER, RULE
+from make_scrollbar_art import write_tga
 
-VERSION = 7  # DrawerTrials.lua's
+VERSION = 8  # DrawerTrials.lua's
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 STONE = os.path.join(ROOT, "addon", "WowCompanion", "Art", "%s-6.tga")
-K = 10  # samples a unit
+K = 16  # samples a unit
 PX = 2.7  # screen px a unit
 
 # a cell, in units (DrawerTrials.lua's): the window's outer right edge at X0,
@@ -46,22 +48,20 @@ PX = 2.7  # screen px a unit
 # ROWS, ROW tall; the legend's panel LEG
 CW, CH = 172.0, 180.0
 RIM = 6.0
-R = RIM / 2  # a rim's radius
 X0 = 16.0
 XR = 170.0
 DT = 46.0
 ROWS, ROW = DT + 12.0, 24.0
 LEG = (DT + 62.0, DT + 87.0)
 DB = LEG[1] + RIM
-RULE_R = 1.3  # the legend rule's radius
+RULE_W = RULE[1] - RULE[0]  # the title rule's width
 FADE = 8.0  # the slice's cut edges fade over this
 TEX = 512
+PAD = 24.0  # the window and drawer go on past the cell's cut edges
 
 xx, yy = grid(CW, CH, K)
 xx, yy = xx.astype(np.float32), yy.astype(np.float32)
 W_PX, H_PX = int(round(CW * PX)), int(round(CH * PX))
-WX = X0 - R  # the window rim's centreline
-CROSS = [(WX, DT + R), (WX, DB - R)]  # where the drawer's rims meet it
 
 
 def smoothstep(t):
@@ -79,151 +79,199 @@ def down(field):
     return np.asarray(Image.fromarray(np.asarray(field, np.float32), "F").resize((W_PX, H_PX), Image.BOX))
 
 
-# --- members: a field of signed depth inside each (r - distance) ---------------
-
-def segment(x0, y0, x1, y1, r):
-    """A straight bar from (x0, y0) to (x1, y1), radius r, round ends."""
-    px, py = xx - x0, yy - y0
-    dx, dy = x1 - x0, y1 - y0
-    t = np.clip((px * dx + py * dy) / max(dx * dx + dy * dy, 1e-9), 0, 1)
-    return r - np.hypot(px - t * dx, py - t * dy), np.full(xx.shape, r, np.float32)
+def rect(x0, y0, x1, y1):
+    return (xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)
 
 
-def rods(spec):
-    """Round rods along centrelines, a radius at every point."""
-    pts = np.concatenate([p for p, _ in spec])
-    rad = np.concatenate([r for _, r in spec])
-    tree = cKDTree(pts)
-    dist, idx = tree.query(np.stack([xx.ravel(), yy.ravel()], 1), k=6, distance_upper_bound=float(rad.max()) + 6)
-    ok = np.isfinite(dist)
-    idx = np.where(ok, idx, 0)
-    depth = np.where(ok, rad[idx] - dist, -1e3)
-    best = depth.argmax(1)
-    rows = np.arange(len(best))
-    return depth[rows, best].reshape(xx.shape), rad[idx][rows, best].reshape(xx.shape)
+# --- outlines and depth -----------------------------------------------------------
+
+P = int(PAD * K)
 
 
-def union(a, b, k):
-    """Two fields joined: the deeper wins (a crisp joint) where k is 0; a
-    smooth union of radius k (a fillet) where k is positive."""
-    (fa, ra), (fb, rb) = a, b
-    k = np.maximum(k, 1e-4)
-    h = np.clip(0.5 + 0.5 * (fa - fb) / k, 0, 1)
-    f = fa * h + fb * (1 - h) + k * h * (1 - h)
-    return f, np.where(fa >= fb, ra, rb)
+def padded(mask_fn):
+    """A shape's mask over the cell and PAD past it on every side."""
+    gy, gx = np.mgrid[-P:xx.shape[0] + P, -P:xx.shape[1] + P]
+    return mask_fn((gx + 0.5) / K, (gy + 0.5) / K)
 
 
-def near(points, reach, soft=3.0):
-    """1 within reach of any point, 0 past reach + soft."""
-    w = np.zeros(xx.shape, np.float32)
-    for x, y in points:
-        w = np.maximum(w, smoothstep((reach + soft - np.hypot(xx - x, yy - y)) / soft))
-    return w
+def depth(mask):
+    """How far inside the shape each point is, in units (0 outside): the
+    window's corners are made this way, two edges' depths meeting."""
+    return (ndimage.distance_transform_edt(mask) / K)[P:-P, P:-P].astype(np.float32)
 
 
-def frame(fillet, sweep=0.0):
-    """The window's rim and the drawer's, forged at the two crossings with
-    fillets of `fillet` (and `sweep`, a long fillet reaching out along the
-    drawer's rim), the drawer's corners rounded, the legend's rule T'd in."""
-    win = segment(WX, -20, WX, CH + 20, R)
-    # the drawer's rims end in the window's (their round end at its middle),
-    # so nothing of theirs shows past it and its outer edge stays straight
-    top = segment(WX + R, DT + R, XR - R, DT + R, R)
-    bottom = segment(WX + R, DB - R, XR - R, DB - R, R)
-    right = segment(XR - R, DT + R, XR - R, DB - R, R)
-    rule = segment(X0, LEG[0] + RULE_R, XR - R, LEG[0] + RULE_R, RULE_R)
-    corners = near([(XR - R, DT + R), (XR - R, DB - R)], 0.5) * 2.0
-    rule_ends = near([(X0, LEG[0] + RULE_R), (XR - R, LEG[0] + RULE_R)], 1.0) * 1.2
-    f = union(top, right, corners)
-    f = union(f, bottom, corners)
-    f = union(f, rule, rule_ends)
-    k = near(CROSS, R + fillet + 1.0) * fillet  # out past the T's inner corners
-    if sweep:
-        # a long fillet on the drawer's side only, easing out along its rim
-        for cx, cy in CROSS:
-            along = np.clip((xx - cx) / (sweep * 2), 0, 1)
-            k = np.maximum(k, (1 - smoothstep(along)) * sweep * (xx > cx) * (np.abs(yy - cy) < sweep * 1.5))
-    return union(f, win, k)
+def window(x, y):
+    return x < X0
 
 
-# --- the scrollwork: Wire's centrelines, as rods -----------------------------
-
-def wires(*ws):
-    """(wire, root radius, tip radius) as rods; a tip no heavier than its
-    volute's last turn leaves room for, so every eye stays open."""
-    out = []
-    for w, w0, w1 in ws:
-        w1 = min(w1, (getattr(w, "pitch", 99) - 1.0) / 2)
-        p = np.array(w.pts)
-        s = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(p, axis=0), axis=1))])
-        t = s / max(s[-1], 1e-9)
-        out.append((p, w0 + (w1 - w0) * t + 0.15 * w0 * np.sin(np.pi * np.clip(t / 0.66, 0, 1)) * (1 - t)))
-    return out
+def drawer(x, y, left=X0 - 30):
+    """The drawer's box, its outer corners cut as the window's are."""
+    inside = (x >= left) & (x < XR) & (y >= DT) & (y < DB)
+    return inside & (XR - x + y - DT >= CHAMFER) & (XR - x + DB - y >= CHAMFER)
 
 
-def both(spec):
-    """The top joint's rods and their mirror about the drawer's middle."""
-    return list(spec) + [(np.stack([p[:, 0], DT + DB - p[:, 1]], 1), r) for p, r in spec]
+def round_inside(mask, rho):
+    """The shape with its inside corners rounded to radius rho (a closing)."""
+    if rho <= 0:
+        return mask
+    out = ndimage.distance_transform_edt(~mask) / K <= rho
+    return ndimage.distance_transform_edt(out) / K > rho
 
 
-CX, CY = CROSS[0]
+# --- the rim's profile, make_frame_art.py frame()'s --------------------------------
+
+def rim_height(s):
+    return np.where((s >= 0.45) & (s < 5.35), bar(s - 0.45, 4.9) * 0.75 + 0.6 * bead(np.clip((s - 2.0) / 1.25, -1, 1)), 0)
 
 
-def sprig():
-    stem = Wire((CX, CY), -45).volute((X0 + 20, 22), 9.0, 180, 1, 2.0, eye=2.2, out=0.5, inn=0.45)
-    return wires((stem, 1.6, 0.9))
+def rim_dark(s):
+    return np.clip(1 - s / 0.5, 0, 1) + np.clip((s - 5.35) / 0.5, 0, 1)
 
 
-def cascade():
-    stem = Wire((CX, CY), -45).volute((X0 + 24, 20), 9.0, 180, 1, 2.0, eye=2.2, out=0.45, inn=0.4)
-    a = stem.fork(0.16, 35).volute((X0 + 17, 35), 5.6, 0, -1, 1.0, eye=1.9, out=0.5, inn=0.5)
-    b = stem.fork(0.30, -55).volute((X0 + 7, 13), 5.6, 0, -1, 1.0, eye=1.9, out=0.5, inn=0.5)
-    return wires((stem, 1.6, 0.9), (a, 1.4, 0.9), (b, 1.4, 0.9))
+class Metal:
+    """Members by height: where two overlap the higher shows, its own grain
+    and dark lines with it (the window's rule meets its rim so)."""
+
+    def __init__(self):
+        self.h = np.zeros(xx.shape, np.float32)
+        self.dark = np.zeros(xx.shape, np.float32)
+        self.grain = np.zeros(xx.shape, np.float32)
+        self.m = np.zeros(xx.shape, bool)
+
+    def add(self, mask, h, dark, grain):
+        win = mask & (~self.m | (h > self.h))
+        self.h = np.where(win, h, self.h)
+        self.dark = np.where(win, dark, self.dark)
+        self.grain = np.where(win, grain, self.grain)
+        self.m |= mask
+
+    def rim(self, s, where=True):
+        self.add((s > 0) & (s < RIM) & where, rim_height(s), rim_dark(s), brushed(s))
+
+    def rule(self, u, where):
+        """A bar of the title rule's make across u (0..RULE_W)."""
+        ok = (u >= 0) & (u < RULE_W) & where
+        h = bar(np.clip(u, 0, RULE_W), RULE_W) * 0.85
+        self.add(ok, h,
+                 np.clip(1 - np.minimum(u, RULE_W - u) / 0.4, 0, 1), brushed(u * 9, 5))
+
+    def rods(self, pts, r):
+        """Wire: round rods of radius r along the centrelines, no taper."""
+        from scipy.spatial import cKDTree
+        tree = cKDTree(np.concatenate(pts))
+        dist, _ = tree.query(np.stack([xx.ravel(), yy.ravel()], 1), distance_upper_bound=r + 1)
+        d = np.where(np.isfinite(dist), r - dist, -1).reshape(xx.shape)
+        dd = np.clip(d, 0, r)
+        h = np.sqrt(np.clip(dd * (2 * r - dd), 0, None)) / r * 1.05 + 0.25
+        self.add(d > 0, h, np.clip(1 - d / 0.45, 0, 1), brushed(np.clip(d * 6, 0, 59), 9))
+
+    def paint(self):
+        hgt = ndimage.gaussian_filter(self.h, K * 0.1)
+        col = rim_metal(hgt, BRONZE, K) * (1 + 0.09 * self.grain)[..., None]
+        col = col + (LINE - col) * np.clip(self.dark, 0, 0.9)[..., None]
+        cast = ndimage.gaussian_filter(ndimage.shift(self.m.astype(np.float32), (0.8 * K, 0.6 * K), order=0), K * 0.7)
+        lay = Layers(xx.shape)
+        lay.over(np.zeros(3), np.clip(cast, 0, 1) * 0.6 * ~self.m)
+        lay.over(col, self.m.astype(float))
+        return fit(lay.pre(), (W_PX, H_PX))
 
 
-def fork():
-    up = Wire((CX, CY), -55).volute((X0 + 13, 12), 7.0, 180, 1, 1.5, eye=2.0, out=0.5, inn=0.45)
-    along = Wire((CX, CY), -32).volute((X0 + 30, 26), 7.5, 90, -1, 1.0, eye=2.4, out=0.5, inn=0.45)
-    return wires((up, 1.6, 0.9), (along, 1.6, 0.9))
+# --- the scroll bracket ---------------------------------------------------------
+
+def arc(cx, cy, r, a0, a1, n=400):
+    a = np.radians(np.linspace(a0, a1, n))
+    return np.stack([cx + r * np.cos(a), cy + r * np.sin(a)], 1)
 
 
-def with_rods(f, spec, weld=1.2):
-    """Rods joined to the frame: welded (a fillet of radius weld) only at each
-    rod's root, crisp elsewhere."""
-    rf = rods(spec)
-    k = near([tuple(p[0]) for p, _ in spec], 2.5) * weld
-    return union(f, rf, k)
+def volute(cx, cy, r0, a0, turns, shrink, sense=1, n=500):
+    """A spiral from radius r0 at angle a0, closing in by shrink a turn."""
+    t = np.linspace(0, turns, n)
+    a = np.radians(a0) + sense * 2 * np.pi * t
+    r = r0 - shrink * t
+    return np.stack([cx + r * np.cos(a), cy + r * np.sin(a)], 1)
+
+
+B = 19.0  # the bracket's reach along each rim
+
+
+def bracket(top=True):
+    """A brace across the outside corner, its ends run into the window's rim
+    and the drawer's, a volute curling off its middle into the open corner."""
+    s = 1 if top else -1
+    jy = DT if top else DB
+    # the brace: an arc meeting the window's rim at (X0, jy - Bs) and the
+    # drawer's at (X0 + B, jy), bowed out from the corner
+    cx, cy = X0 + 1.4 * B, jy - 1.4 * B * s
+    r = np.hypot(1.4 * B, 0.4 * B)  # through both
+    a_win = np.degrees(np.arctan2((jy - B * s) - cy, X0 - cx))
+    a_dr = np.degrees(np.arctan2(jy - cy, X0 + B - cx))
+    brace = arc(cx, cy, r, a_win, a_dr)
+    # the brace's ends run 1.5 on into each rim, under its bead
+    brace = np.concatenate([np.linspace((X0 - 1.5, jy - (B + 0.5) * s), brace[0], 12), brace,
+                            np.linspace(brace[-1], (X0 + B + 0.5, jy + 1.5 * s), 12)])
+    mid = len(brace) // 2
+    mx, my = brace[mid]
+    # the volute rolls off the brace's middle, away from the corner
+    ux, uy = (cx - mx), (cy - my)
+    ul = np.hypot(ux, uy)
+    vr = 0.45 * B
+    vcx, vcy = mx + ux / ul * vr, my + uy / ul * vr
+    a0 = np.degrees(np.arctan2(my - vcy, mx - vcx))
+    curl = volute(vcx, vcy, vr, a0, 1.25, 0.22 * B, sense=-s)
+    return [brace, curl]
+
+
+# --- the designs -------------------------------------------------------------------
+
+def legend_rule(met, left, s):
+    """The legend's rule, the title rule's make: across the drawer from
+    `left`, into the rims as far as their beads (s, the depth it lies in)."""
+    met.rule(yy - LEG[0], (xx >= left) & (s > 2.5))
+
+
+def one_outline(rho, ornament=False):
+    """1-3: window and drawer one shape, the rim run round both."""
+    shape = round_inside(padded(window) | padded(drawer), rho)
+    s = depth(shape)
+    met = Metal()
+    met.rim(s)
+    # the rule closes the legend's cell: across, and down into the bottom rim
+    # at the window's line, where the window's rim would be
+    legend_rule(met, X0 - RULE_W, s)
+    met.rule(xx - (X0 - RULE_W), (yy >= LEG[0]) & (s > 2.5))
+    if ornament:
+        met.rods(bracket(True) + bracket(False), 1.4)
+    body = (s >= RIM) | (xx < X0 - RIM)
+    return met, body
+
+
+def rim_between(ornament=False):
+    """4-6: the window's rim whole; the drawer's own rim on its three sides,
+    running over the window rim's outer shoulder and under its bead."""
+    sw = depth(padded(window))
+    sd = depth(padded(drawer))
+    met = Metal()
+    met.rim(sw)
+    met.rim(sd, xx > X0 - 2.5)
+    legend_rule(met, X0, sd)
+    if ornament:
+        met.rods(bracket(True) + bracket(False), 1.4)
+    body = ((sd >= RIM) & (xx >= X0)) | (sw >= RIM)
+    return met, body
 
 
 def designs():
     return [
-        (1, "Forged T: the rims one metal, small fillets", frame(3.0)),
-        (2, "Sweep: deep fillets running out along the drawer", frame(2.0, sweep=5.0)),
-        (3, "Crisp: the rims meet square, no fillet", frame(0.0)),
-        (4, "Sprig: a rod from the joint into a big volute", with_rods(frame(2.4), both(sprig()))),
-        (5, "Cascade: a big volute, two scrolls budding off", with_rods(frame(2.4), both(cascade()))),
-        (6, "Fork: one rod up the rim, one out over the drawer", with_rods(frame(2.4), both(fork()))),
+        (1, "One outline, sharp inside corner", one_outline(0)),
+        (2, "One outline, rounded inside corner", one_outline(5)),
+        (3, "One outline, scroll bracket", one_outline(0, True)),
+        (4, "Rim between: meets as the title rule does", rim_between()),
+        (5, "Rim between, scroll bracket", rim_between(True)),
+        (6, "One outline, rounded, scroll bracket", one_outline(5, True)),
     ]
 
 
 # --- painting -------------------------------------------------------------------
-
-def metal(field):
-    """The metal from the one field: a round bar's height over its depth (one
-    centred ridge, carried unbroken through every joint), lit from the top
-    left in the rim's bronze, a dark line at its edge, its cast shadow."""
-    f, r = field
-    m = f > 0
-    d = np.clip(f, 0, r)
-    hgt = np.where(m, np.sqrt(np.clip(d * (2 * r - d), 0, None)) / r, 0) * 1.25
-    col = rim_metal(hgt, BRONZE, K) * (1 + 0.06 * brushed(np.clip(f * 4, 0, 59)))[..., None]
-    col = col + (LINE - col) * (np.clip(1 - f / 0.45, 0, 1) * 0.9)[..., None]
-    cast = ndimage.gaussian_filter(ndimage.shift(m.astype(np.float32), (0.8 * K, 0.6 * K), order=0), K * 0.7)
-    lay = Layers(xx.shape)
-    lay.over(np.zeros(3), np.clip(cast, 0, 1) * 0.6 * ~m)
-    lay.over(col, m.astype(float))
-    return fit(lay.pre(), (W_PX, H_PX))
-
 
 def fade():
     fx, fy = (np.arange(W_PX) + 0.5) / PX, (np.arange(H_PX) + 0.5) / PX
@@ -231,13 +279,9 @@ def fade():
     return 1 - down(xx < X0) * (1 - f)
 
 
-def rect(x0, y0, x1, y1):
-    return (xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)
-
-
-def cell(field):
+def cell(met, body):
     """The window's slice and the drawer: their stones, the legend's band (the
-    title band's dark leather under the rule), the lit row, the metal."""
+    title band's dark slate under the rule), the lit row, the metal."""
     rgb, a = np.zeros((H_PX, W_PX, 3)), np.zeros((H_PX, W_PX))
 
     def stone(mask, stem, k):
@@ -245,16 +289,14 @@ def cell(field):
         cov = down(mask)[..., None]
         rgb = rgb * (1 - cov) + tile(stem, k) * cov
         a = a * (1 - cov[..., 0]) + cov[..., 0]
-    stone(xx < X0, "Slate", 0.72)
-    body = rect(X0 - 1, DT + R, XR - R, DB - R)
-    stone(body, "Slate", 0.72)
-    stone(rect(X0, ROWS, XR - R, ROWS + ROW), "SlateLight", 1.0)
-    band = rect(X0, LEG[0] + RULE_R, XR - R, DB - R)
+    stone(body | met.m, "Slate", 0.72)
+    stone(rect(X0, ROWS, XR - RIM, ROWS + ROW), "SlateLight", 1.0)
+    band = rect(X0, LEG[0] + RULE_W, XR - RIM, DB - RIM)
     lay = Layers(xx.shape)
     col = BAND * (1 + 0.06 * streaks(yy))[..., None]
-    occl = np.exp(-(yy - (LEG[0] + 2 * RULE_R)) / 1.4) * 0.45
+    occl = np.exp(-(yy - (LEG[0] + RULE_W)) / 0.6) * 0.45
     lay.over(col * (1 - np.clip(occl, 0, 0.8))[..., None], band.astype(float))
-    for layer in (fit(lay.pre(), (W_PX, H_PX)), metal(field)):
+    for layer in (fit(lay.pre(), (W_PX, H_PX)), met.paint()):
         ta = layer[..., 3:] / 255
         rgb = layer[..., :3] * ta + rgb * (1 - ta)
         a = ta[..., 0] + a * (1 - ta[..., 0])
@@ -272,7 +314,7 @@ def mock(img):
     for i, (t, lit) in enumerate((("Clear chat", True), ("Start over", False))):
         d.text(((X0 + 16) * PX, (ROWS + ROW * i + ROW / 2) * PX), t, font=font, anchor="lm",
                fill=(250, 235, 199) if lit else (199, 176, 135))
-    d.text(((XR - RIM - 8) * PX, ((LEG[0] + LEG[1]) / 2 + 1) * PX), "X Select    O Back", font=font, anchor="rm",
+    d.text(((XR - RIM - 8) * PX, ((LEG[0] + RULE_W + DB - RIM) / 2) * PX), "X Select    O Back", font=font, anchor="rm",
            fill=(230, 230, 230))
     return back
 
@@ -281,8 +323,8 @@ def main():
     # earlier rounds go (committed); this round's files are rewritten in place
     artout.clear(OUT, *("DrawerTrial-*-%d.tga" % v for v in range(1, VERSION)))
     cells = []
-    for n, title, field in designs():
-        img = cell(field)
+    for n, title, (met, body) in designs():
+        img = cell(met, body)
         tex = np.zeros((TEX, TEX, 4))
         tex[:img.shape[0], :img.shape[1]] = img
         write_tga(os.path.join(OUT, "DrawerTrial-Cell-%d-%d.tga" % (n, VERSION)), tex)

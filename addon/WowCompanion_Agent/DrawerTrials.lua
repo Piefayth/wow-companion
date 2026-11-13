@@ -1,24 +1,24 @@
 -- Drawer trials, temporary: ways the conversation menu's drawer
 -- (ConvMenu.lua) could hook into the window's rim, side by side at true
--- size, each cell one picture (tools/make_drawer_trials.py; round 7: every bar
--- one centreline field, joints forged by a smooth union) and its words drawn
+-- size, each cell one picture (tools/make_drawer_trials.py; round 8: the window's
+-- rim profile run round the drawer by depth from its outline) and its words drawn
 -- here. Shown only: nothing here is a stop. Goes when one is chosen.
 local S = WC.Style
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\DrawerTrial-%s-7]] -- the generator's VERSION
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\DrawerTrial-%s-8]] -- the generator's VERSION
 -- the generator's cell and joint boxes, in units, at 2.7 texels a unit
 local TEXEL = 2.7
 local CW, CH, BASE_TEX = 172, 180, 512
 local JW = 60 -- the label's left
 local X0, RIM, XR, DT = 16, 6, 170, 46
 local ROWS, ROW = DT + 12, 24
-local LEGEND_Y = DT + 74.5 -- the middle of the legend's panel
+local LEGEND_Y = DT + 76 -- the middle of the legend's panel
 local OPTIONS = {
-	"Forged T: the rims one metal, small fillets",
-	"Sweep: deep fillets running out along the drawer",
-	"Crisp: the rims meet square, no fillet",
-	"Sprig: a rod from the joint into a big volute",
-	"Cascade: a big volute, two scrolls budding off",
-	"Fork: one rod up the rim, one out over the drawer",
+	"One outline, sharp inside corner",
+	"One outline, rounded inside corner",
+	"One outline, scroll bracket",
+	"Rim between: meets as the title rule does",
+	"Rim between, scroll bracket",
+	"One outline, rounded, scroll bracket",
 }
 
 local function picture(f, file, x, y, w, h, tex, layer)
