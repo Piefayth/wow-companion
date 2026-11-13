@@ -57,6 +57,10 @@ none of this. When the player states a new preference or changes one, write it h
   for speed, not judgement. Never ask them to think a design up; draw many
   real options at once (six or more, at true size, in game) and let them pick.
   Ask only what only they can answer (taste, a yes to install or restart).
+- **No way to reload but our button** (2026-11-12): until they pick their own
+  reload key, every answer whose change needs a /reload ends with a `reload`
+  step (the Reload button), in every conversation. `look` alone is not enough:
+  only Main's look offers a button.
 - **Nothing of ours opens itself** (2026-11-10). The Companion window opens only
   when they ask (minus tap, `/wc log`); news goes to the board/toast. No data cards
   left on screen: the data strip shows only for the moment of the shot.
