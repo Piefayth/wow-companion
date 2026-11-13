@@ -244,6 +244,24 @@ local VINE_VERSION = 9 -- the generator's VINE_VERSION
 function WowCompanion_Style.Vine(piece)
 	return ART .. "Vine-" .. piece .. "-" .. VINE_VERSION
 end
+-- A piece of a line drawn in several textures (a vine's ends, its run, a
+-- joint), placed where its anchors say, never snapped to the pixel grid: the
+-- game snaps each texture's edges on its own, so a 16-unit vine's end and its
+-- run landed a pixel apart and every joint showed as a step (measured on the
+-- Status spine, 2026-11-12). Blizzard does the same for its nine-slices
+-- (NineSliceUtil.DisableSharpening).
+function WowCompanion_Style.Unsnapped(t)
+	t:SetTexelSnappingBias(0)
+	t:SetSnapToPixelGrid(false)
+	return t
+end
+-- the same for a button's state textures (a line's arrow cap)
+function WowCompanion_Style.UnsnappedButton(b)
+	for _, t in ipairs({ b:GetNormalTexture(), b:GetPushedTexture(), b:GetHighlightTexture(), b:GetDisabledTexture() }) do
+		WowCompanion_Style.Unsnapped(t)
+	end
+	return b
+end
 -- A run: the middle of a vine, a groove or a slot between its two ends, a
 -- texture of `owner`'s to anchor as any other. Never stretched: its art repeats
 -- along its length at the ends' own density (`units`, the art's length in UI
@@ -252,7 +270,7 @@ end
 -- joint showed as a step in the line's shading (the player, 2026-11-12). An
 -- empty frame on the texture follows its size.
 function WowCompanion_Style.Run(owner, path, vertical, units, layer)
-	local t = owner:CreateTexture(nil, layer or "ARTWORK")
+	local t = WowCompanion_Style.Unsnapped(owner:CreateTexture(nil, layer or "ARTWORK"))
 	if vertical then t:SetTexture(path, "CLAMP", "REPEAT") else t:SetTexture(path, "REPEAT", "CLAMP") end
 	local size = CreateFrame("Frame", nil, owner)
 	size:SetAllPoints(t)
@@ -269,7 +287,7 @@ function WowCompanion_Style.VineLine(owner, weight, vertical, capStart, capEnd)
 	weight = weight or ""
 	local made = {}
 	local function piece(name, w, h)
-		local t = owner:CreateTexture(nil, "ARTWORK")
+		local t = WowCompanion_Style.Unsnapped(owner:CreateTexture(nil, "ARTWORK"))
 		-- clamped: a wrapped edge samples the far edge, and a cap's far edge is
 		-- the vine, a grey nub past its round end
 		t:SetTexture(WowCompanion_Style.Vine(weight .. name), "CLAMP", "CLAMP")
@@ -307,7 +325,7 @@ end
 -- ornamental, and plain (…Plain) where there is no room for scrollwork
 local JOIN_SIZE = { TRightBig = 112, TRightBigPlain = 112, TRightFromMedium = 80, TRightFromMediumPlain = 80 }
 function WowCompanion_Style.VineJoin(owner, weight, kind, point)
-	local t = owner:CreateTexture(nil, "OVERLAY")
+	local t = WowCompanion_Style.Unsnapped(owner:CreateTexture(nil, "OVERLAY"))
 	t:SetTexture(WowCompanion_Style.Vine(weight .. kind), "CLAMP", "CLAMP")
 	t:SetSize(JOIN_SIZE[kind], JOIN_SIZE[kind])
 	t:SetPoint("CENTER", owner, point)
@@ -571,7 +589,8 @@ local function curledVine(row, edge)
 	f:SetPoint("LEFT", row, edge .. "LEFT")
 	f:SetPoint("RIGHT", row, edge .. "RIGHT")
 	local side = edge == "TOP" and "T" or "B"
-	local l, r = f:CreateTexture(nil, "ARTWORK"), f:CreateTexture(nil, "ARTWORK")
+	local l = WowCompanion_Style.Unsnapped(f:CreateTexture(nil, "ARTWORK"))
+	local r = WowCompanion_Style.Unsnapped(f:CreateTexture(nil, "ARTWORK"))
 	l:SetTexture(listArt("Curl-" .. side .. "L"), "CLAMP", "CLAMP")
 	r:SetTexture(listArt("Curl-" .. side .. "R"), "CLAMP", "CLAMP")
 	l:SetSize(32, 32)
@@ -648,7 +667,7 @@ local LOOKS = {
 			local stem = CreateFrame("Frame", nil, row.vines)
 			stem:SetWidth(16)
 			local function piece(name)
-				local t = stem:CreateTexture(nil, "ARTWORK")
+				local t = WowCompanion_Style.Unsnapped(stem:CreateTexture(nil, "ARTWORK"))
 				t:SetTexture(WowCompanion_Style.Vine(name), "CLAMP", "CLAMP")
 				return t
 			end
@@ -660,7 +679,7 @@ local LOOKS = {
 			bottom:SetPoint("BOTTOM")
 			mid:SetWidth(16)
 			local function joint(name)
-				local t = row.vines:CreateTexture(nil, "OVERLAY")
+				local t = WowCompanion_Style.Unsnapped(row.vines:CreateTexture(nil, "OVERLAY"))
 				t:SetTexture(listArt(name), "CLAMP", "CLAMP")
 				t:SetSize(32, 32)
 				return t
