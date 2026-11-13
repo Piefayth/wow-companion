@@ -8,3 +8,5 @@ addon/WowCompanion_Agent/Modules.lua
 addon/WowCompanion_Mailbox/Mail.lua
 crates/setup/target/
 dist/
+
+addon/WowCompanion_Agent/Shots/

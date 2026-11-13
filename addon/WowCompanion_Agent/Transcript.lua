@@ -10,7 +10,9 @@ local LOG_KEEP = WC.Companion.LOG_KEEP
 -- dark band, "> " lines a quote beside a thin vine, "---" a vine divider,
 -- `code` and **bold** inline colour, ![name](icon:spell:8921) a game icon in
 -- the line and [Moonfire](spell:8921) a game link (spell, item, quest) the
--- cursor can stop on. A ScrollingMessageFrame
+-- cursor can stop on; a line that is only ![caption](shot:name:WxH) a picture
+-- across the text's width (a screenshot an agent cropped: tools/chatshot.py
+-- writes Shots/<name>.tga, padded to powers of two; shown after a reload). A ScrollingMessageFrame
 -- cannot do any of that (one font, no hanging indent), so this is a scroll
 -- frame of font strings, one per line, stacked top to bottom.
 local TURN_GAP, PARA_GAP, LINE_SPACING = 14, 7, 2
@@ -86,7 +88,7 @@ local function release(t, row)
 	releaseFlow(t, row)
 	for _, part in ipairs({ { row.fs, pool.text }, { row.marker, pool.text }, { row.band, pool.band },
 		{ row.turn, pool.turn }, { row.divider, pool.divider }, { row.quoteBar, pool.quote },
-		{ row.rule, pool.rule } }) do
+		{ row.rule, pool.rule }, { row.pic, pool.pic } }) do
 		if part[1] then give(part[2], part[1]) end
 	end
 end
@@ -239,7 +241,7 @@ local function newTranscript(parent)
 	content:SetSize(1, 1)
 	scroll:SetScrollChild(content)
 	local t = setmetatable({ scroll = scroll, content = content, rows = {}, height = PAD_TOP,
-		pool = { text = {}, band = {}, turn = {}, divider = {}, link = {}, quote = {}, rule = {} } }, Transcript)
+		pool = { text = {}, band = {}, turn = {}, divider = {}, link = {}, quote = {}, rule = {}, pic = {} } }, Transcript)
 	scroll:EnableMouseWheel(true)
 	scroll:SetScript("OnMouseWheel", function(self, delta)
 		local range = self:GetVerticalScrollRange()
@@ -294,6 +296,13 @@ function Transcript:Place(row, y, width)
 		row.rule:SetPoint("LEFT", self.content, "TOPLEFT", PAD_L, -y - 8)
 		row.rule:SetPoint("RIGHT", self.content, "TOPLEFT", width - PAD_R, -y - 8)
 		height = 16
+	end
+	if row.pic then
+		local w = math.min(width - PAD_L - PAD_R, row.picW)
+		height = w * row.picH / row.picW
+		row.pic:ClearAllPoints()
+		row.pic:SetPoint("TOPLEFT", self.content, "TOPLEFT", PAD_L, -y)
+		row.pic:SetSize(w, height)
 	end
 	if row.quoteBar then
 		-- a quote's first line: its vine starts here and grows with the quote
@@ -427,6 +436,10 @@ function Transcript:Row(font, text, indent, gap, r, g, b, owner, flow)
 	local row = { fs = fs, indent = indent or 0, gap = self.gap or gap or 0,
 		header = owner and true or nil, words = flow, parts = flow and {}, links = flow and {}, font = font }
 	if owner then row.turn, row.divider = turnParts(self, owner) end
+	if self.nextPic then
+		row.pic, row.picW, row.picH = unpack(self.nextPic)
+		self.nextPic = nil
+	end
 	self.gap = nil
 	-- Confirmed lines are only ever appended, so the conversation never jumps. What is still to come is shown
 	-- below, as the waiting lines (Jobs.lua), and replaced there in place.
@@ -480,6 +493,21 @@ function Transcript:Markdown(line, r, g, b)
 			return f
 		end)
 		self.gap, self.quoting = PARA_GAP, nil
+		return
+	end
+	-- a picture: a screenshot an agent cropped, at most its own pixels wide
+	local name, pw, ph = line:match("^%s*!%[[^%]]*%]%(shot:([%w_%-]+):(%d+)x(%d+)%)%s*$")
+	if name then
+		pw, ph = tonumber(pw), tonumber(ph)
+		local function pow2(n) local p = 1 while p < n do p = p * 2 end return p end
+		local pic = take(self.pool.pic, function() return self.content:CreateTexture(nil, "ARTWORK") end)
+		pic:SetTexture([[Interface\AddOns\WowCompanion_Agent\Shots\]] .. name, "CLAMP", "CLAMP")
+		pic:SetTexCoord(0, pw / pow2(pw), 0, ph / pow2(ph))
+		local _, screenH = GetPhysicalScreenSize()
+		local w = pw * 768 / ((screenH or 768) * self.content:GetEffectiveScale())
+		self.nextPic = { pic, w, w * ph / pw }
+		self:Row(BODY_FONT, "", 0, PARA_GAP)
+		self.gap = PARA_GAP
 		return
 	end
 	-- a quote: its lines indented beside one thin vine, a little dimmed

@@ -11,7 +11,11 @@ divider between parts of a long answer. Game links the cursor can stop on, with
 their tooltip: [Moonfire](spell:8921), [Hearthstone](item:6948),
 [Naga at the Zoram Strand](quest:6442), by their real ids; a game icon in the
 line: ![Moonfire](icon:spell:8921), ![](icon:item:6948). No tables or web
-links. Lead with the answer; never one thick paragraph. It is the only
+links. A picture (a screenshot you took and cropped, to show what you
+checked): `python tools/chatshot.py <png> <name> [x0 y0 x1 y1] [--max W]`
+prints the line to put alone in `say`, ![caption](shot:name:WxH); the game
+draws a new picture only after a reload, so offer the Reload with it. Lead
+with the answer; never one thick paragraph. It is the only
 thing the player sees, so make it the answer, not a preamble.
 
 `steps` is what to do, in order: as many as the request needs, none when it was
