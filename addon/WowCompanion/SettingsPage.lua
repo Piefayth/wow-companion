@@ -60,13 +60,13 @@ local function well(which, left, top, right, bottom, shade, raised, sunk)
 end
 -- names: the left edge to the seam; settings: the seam to the right edge,
 -- down to the note's seam; the note: under the settings
--- The dark wells raised, on trial (the player, 2026-11-12; Style.lua's
--- Well): the settings well lies lower, between them, and takes the names
--- well's shadow down its left edge in place of its own
+-- The dark wells raised (Style.lua's Well): the settings well lies lower,
+-- between them, and takes the names well's shadow down its left edge in
+-- place of its own
 local names = well("you", { page, "TOPLEFT", -BX }, BY, { page, "BOTTOMLEFT", SPINE - 2 - SEAM }, -BY, WC.Style.DEEPER, true)
 local settings = well("claude", { page, "TOPLEFT", SPINE - 2 }, BY, { band, "TOPRIGHT", BX }, SEAM, nil, false, { "Top" })
 well("you", { band, "TOPLEFT", -2 }, 0, { band, "BOTTOMRIGHT", BX }, -BY, WC.Style.DEEPER, true)
--- a setting's name and the note's title in LABEL; the section names stay white
+-- a setting's name and the note's title in LABEL; the section names in HEAD (WC.Style.Heading)
 local LABEL = WC.Style.LABEL
 local bandName = band:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 bandName:SetPoint("TOPLEFT", 14, -10)
@@ -156,75 +156,20 @@ WC.Style.VineJoin(across, "Thick", "TRightBigPlain", "LEFT")
 -- the section joints' frame: each joint carries its own stretch of the spine,
 -- which near the page's top or foot reached past the spine's end, up through
 -- the floor to the title rule (seen on screen, 2026-11-13); cut to the spine,
--- short of its ends (the trial's cut: how far each end's art reaches down)
+-- short of the spine's covers (WC.Style.SpineCovers)
 local joins = CreateFrame("Frame", nil, seams)
 joins:SetClipsChildren(true)
 joins:SetPoint("LEFT", page, -BX, 0)
 joins:SetPoint("RIGHT", page, BX, 0)
--- the names well's shadow on the settings, over their rows and dividers, under
--- the vines (or over the joints, as the trial's meeting says)
+-- the names well's shadow on the settings, over their rows, dividers and
+-- joints, under the spine
 local cast = CreateFrame("Frame", nil, seams)
 cast:SetAllPoints()
 WC.Style.CastOn(cast, settings, "LEFT")
 
--- Trial, temporary (the player, 2026-11-13): the spine's ends where it meets
--- the raised panel's edges, round 11 (tools/make_cover_trial.py): a thin sheet
--- over the panel's corner and the spine's round end, in looks that differ in
--- how it stands up; and how the dividers, lying lower, meet the spine on the
--- panel's edge. Kept in WowCompanionDB.spineEnd and .dividerMeet; what is not
--- picked goes with this switch. cut: how far each end's art reaches down.
-local ENDS = {
-	{ key = "Round", name = "Round, no cover", cut = 3 },
-	{ key = "CoverD", name = "Cover D, round 10's", cut = 17, cover = "D" },
-	{ key = "CoverD2", name = "D2, pressed harder", cut = 17, cover = "D2" },
-	{ key = "CoverD3", name = "D3, hardest", cut = 17, cover = "D3" },
-	{ key = "CoverD4", name = "D4, tight round the vine", cut = 17, cover = "D4" },
-	{ key = "CoverD5", name = "D5, a broad swell", cut = 17, cover = "D5" },
-	{ key = "CoverD6", name = "D6, a full round ridge", cut = 17, cover = "D6" },
-	{ key = "CoverD7", name = "D7, thinner edges", cut = 17, cover = "D7" },
-	{ key = "CoverD8", name = "D8, deeper shadow", cut = 17, cover = "D8" },
-	{ key = "CoverF5", name = "F5, two thin bands", cut = 17, cover = "F5" },
-	{ key = "CoverG1", name = "G1, a collar against the end", cut = 17, cover = "G1" },
-	{ key = "CoverG2", name = "G2, a collar and a band", cut = 17, cover = "G2" },
-	{ key = "CoverG3", name = "G3, a sleeve under the end", cut = 17, cover = "G3" },
-	{ key = "CoverG4", name = "G4, a clip round the vine", cut = 17, cover = "G4" },
-	{ key = "CoverG5", name = "G5, a clamp across the strap", cut = 17, cover = "G5" },
-}
-local MEETS = {
-	{ key = "joined", name = "Joined, as now" },
-	{ key = "shadow", name = "Joined, in the shadow" },
-	{ key = "under", name = "Under the spine" },
-	{ key = "apart", name = "Apart, short of it" },
-}
-local function trialPick(list, field)
-	local want = WowCompanionDB and WowCompanionDB[field]
-	for _, t in ipairs(list) do if t.key == want then return t end end
-	return list[1]
-end
-local function endLook() return trialPick(ENDS, "spineEnd") end
-local function meet() return trialPick(MEETS, "dividerMeet").key end
--- the covers' own frame, over the joints and the footer's T (each draws its
--- own stretch of the spine, which covered the bottom cover's top, 2026-11-13)
-local capped = CreateFrame("Frame", nil, seams)
-capped:SetAllPoints(down)
-local function paintEnds()
-	local e = endLook()
-	capped.covers = capped.covers or {}
-	for i, which in ipairs({ "Top", "Bottom" }) do
-		local c = capped.covers[i] or WC.Style.Unsnapped(capped:CreateTexture(nil, "OVERLAY"))
-		capped.covers[i] = c
-		c:SetSize(48, 16)
-		c:SetPoint(which:upper(), capped, which:upper())
-		if e.cover then
-			c:SetTexture(([[Interface\AddOns\WowCompanion\Art\Vine-CornerCover%s%s-T11]]):format(e.cover, which), "CLAMP", "CLAMP")
-		end
-		c:SetShown(e.cover ~= nil)
-	end
-	joins:SetPoint("TOP", down, 0, -e.cut)
-	joins:SetPoint("BOTTOM", down, 0, e.cut)
-end
-paintEnds()
-page:HookScript("OnShow", paintEnds) -- the saved pick arrives after this file runs
+local capped = WC.Style.SpineCovers(seams, down)
+joins:SetPoint("TOP", down, 0, -WC.Style.COVER_CUT)
+joins:SetPoint("BOTTOM", down, 0, WC.Style.COVER_CUT)
 
 -- One setting: a row from the names well to the right edge, its name at the left
 -- and its control at the edge; the row is the one stop, the cursor just left
@@ -497,10 +442,6 @@ local function header(name)
 	h.divider = CreateFrame("Frame", nil, content)
 	h.divider:SetHeight(16)
 	WC.Style.VineLine(h.divider, "", false, false, true)
-	-- the trial's "apart": the divider from clear of the panel's shadow, a round end
-	h.apart = CreateFrame("Frame", nil, content)
-	h.apart:SetHeight(16)
-	WC.Style.VineLine(h.apart, "", false, true, true)
 	h.join = CreateFrame("Frame", nil, joins)
 	h.join:SetSize(1, 1)
 	h.join:SetPoint("CENTER", h.divider, "LEFT")
@@ -521,14 +462,11 @@ local function orderOf(e) return e.row.order or 50 end
 local LIFT = 25
 local function lift()
 	local base = page:GetFrameLevel() + LIFT
-	-- joined, the joints over the spine (each draws its stretch of the
-	-- spine) and the shadow under both; else the shadow over the joints, and
-	-- the spine over them
-	local joined = meet() == "joined"
+	-- the joints, the shadow over them, the spine over both
 	seams:SetFrameLevel(base)
-	cast:SetFrameLevel(joined and base or base + 1)
-	down:SetFrameLevel(joined and base + 1 or base + 2)
-	joins:SetFrameLevel(joined and base + 2 or base)
+	joins:SetFrameLevel(base)
+	cast:SetFrameLevel(base + 1)
+	down:SetFrameLevel(base + 2)
 	for _, h in pairs(headers) do h.join:SetFrameLevel(joins:GetFrameLevel()) end
 	across:SetFrameLevel(base + 3)
 	capped:SetFrameLevel(base + 4)
@@ -541,7 +479,7 @@ local function joints()
 	local top, bottom = scroll:GetTop(), scroll:GetBottom()
 	for _, h in pairs(headers) do
 		local y = h.divider:IsShown() and top and select(2, h.divider:GetCenter())
-		h.join:SetShown(y and y <= top and y >= bottom and (meet() == "joined" or meet() == "shadow") or false)
+		h.join:SetShown(y and y <= top and y >= bottom or false)
 	end
 end
 scroll:HookScript("OnVerticalScroll", joints)
@@ -585,14 +523,10 @@ local function layout()
 				count = count + 1
 				h.top = section and (y - GAP / 2) or -7
 				open = h
-				h.divider:SetShown(section ~= nil and meet() ~= "apart")
+				h.divider:SetShown(section ~= nil)
 				h.divider:ClearAllPoints()
 				h.divider:SetPoint("LEFT", content, "TOPLEFT", BX + SPINE - 2 - SEAM / 2, -y + GAP / 2)
 				h.divider:SetPoint("RIGHT", content, "TOPRIGHT", 0, -y + GAP / 2)
-				h.apart:SetShown(section ~= nil and meet() == "apart")
-				h.apart:ClearAllPoints()
-				h.apart:SetPoint("LEFT", content, "TOPLEFT", BX + SPINE - 2 + 10, -y + GAP / 2)
-				h.apart:SetPoint("RIGHT", content, "TOPRIGHT", 0, -y + GAP / 2)
 				section = s
 				h:SetPoint("TOPRIGHT", content, "TOPLEFT", BX + SPINE - 18, -y - 10)
 			end
@@ -691,27 +625,3 @@ login:SetScript("OnEvent", function()
 	end)
 end)
 
-Page.Add({ kind = "dropdown", section = "Trial", order = 2, label = "Spine ends",
-	text = "On trial: the thick vine's ends where it meets the dark panel's top and bottom.",
-	options = function()
-		local names = {}
-		for i, e in ipairs(ENDS) do names[i] = e.name end
-		return names
-	end,
-	get = function() return endLook().name end,
-	set = function(name)
-		for _, e in ipairs(ENDS) do if e.name == name then WowCompanionDB.spineEnd = e.key end end
-		paintEnds()
-	end })
-Page.Add({ kind = "dropdown", section = "Trial", order = 3, label = "Dividers meet",
-	text = "On trial: how the dividers, lying lower, meet the thick vine on the dark panel's edge.",
-	options = function()
-		local names = {}
-		for i, m in ipairs(MEETS) do names[i] = m.name end
-		return names
-	end,
-	get = function() return trialPick(MEETS, "dividerMeet").name end,
-	set = function(name)
-		for _, m in ipairs(MEETS) do if m.name == name then WowCompanionDB.dividerMeet = m.key end end
-		layout()
-	end })

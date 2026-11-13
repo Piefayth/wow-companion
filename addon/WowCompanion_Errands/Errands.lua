@@ -615,18 +615,25 @@ local function rowFor(i)
 end
 local function build(p)
 	local BX, BY, SEAM = S.BLEED_X, S.BLEED_Y, S.SEAM
-	-- the wells, to the page well's floor, and the thick vine down their seam
+	-- the wells, to the page well's floor, and the thick vine down their seam:
+	-- the list's dark well raised, as Settings' is (S.Well), the details' lower,
+	-- taking its shadow down their left edge, under the spine
 	S.PageRock(p)
-	local dark = S.Well(p, "you", S.DEEPER)
+	local dark = S.Well(p, "you", S.DEEPER, true)
 	dark:SetPoint("TOPLEFT", -BX, BY)
 	dark:SetPoint("BOTTOMRIGHT", p, "BOTTOMLEFT", LIST, -BY)
-	local light = S.Well(p, "claude")
+	local light = S.Well(p, "claude", nil, false, { "Top" })
 	light:SetPoint("TOPLEFT", LIST + SEAM, BY)
 	light:SetPoint("BOTTOMRIGHT", BX, -BY)
+	p.raised = dark
+	local cast = CreateFrame("Frame", nil, p)
+	cast:SetAllPoints()
+	cast:SetFrameLevel(p:GetFrameLevel() + 4)
+	S.CastOn(cast, light, "LEFT")
 	local seam = CreateFrame("Frame", nil, p)
 	seam:SetAllPoints()
 	seam:SetFrameLevel(p:GetFrameLevel() + 5)
-	S.Spine(seam, p, LIST + SEAM / 2)
+	S.SpineCovers(seam, S.Spine(seam, p, LIST + SEAM / 2)):SetFrameLevel(p:GetFrameLevel() + 6)
 
 	-- the list: its heading, then the rows and what is done, scrolling under it
 	list = CreateFrame("Frame", nil, p)

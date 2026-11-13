@@ -349,6 +349,7 @@ WowCompanion_Style.NAME = { 0.78, 0.69, 0.53 }
 WowCompanion_Style.NAME_HL = { 0.91, 0.84, 0.67 }
 WowCompanion_Style.NAME_LIT = { 0.98, 0.92, 0.78 }
 WowCompanion_Style.LABEL = { 0.86, 0.76, 0.56 }
+WowCompanion_Style.HEAD = { 0.93, 0.85, 0.68 } -- a heading: pale bronze, lighter than LABEL, short of white
 WowCompanion_Style.BRONZE = { 0.78, 0.66, 0.45 }
 WowCompanion_Style.BRONZE_LIT = { 0.95, 0.80, 0.53 } -- bronze brightened, never toward white (a button under the cursor)
 WowCompanion_Style.DIM = { 0.5, 0.5, 0.5 }
@@ -461,10 +462,29 @@ function WowCompanion_Style.Spine(owner, page, x)
 	WowCompanion_Style.VineLine(spine, "Thick", true, true, true)
 	return spine
 end
+-- The covers over a spine's ends where it meets a raised well's top and
+-- bottom (tools/make_cover_art.py), in a frame of owner's over the spine;
+-- returns it, for the caller to set its level. What else draws a stretch of
+-- the spine (a section's joint) stays COVER_CUT short of its ends.
+WowCompanion_Style.COVER_CUT = 17
+function WowCompanion_Style.SpineCovers(owner, spine)
+	local f = CreateFrame("Frame", nil, owner)
+	f:SetAllPoints(spine)
+	for _, which in ipairs({ "Top", "Bottom" }) do
+		local c = WowCompanion_Style.Unsnapped(f:CreateTexture(nil, "OVERLAY"))
+		c:SetSize(48, 16)
+		c:SetPoint(which:upper(), f, which:upper())
+		c:SetTexture(ART .. "Vine-CornerCover" .. which, "CLAMP", "CLAMP")
+	end
+	return f
+end
 
--- A heading over what follows it, as the Settings page names its sections
+-- A heading over what follows it, as the Settings page names its sections:
+-- in HEAD on the raised dark stone
 function WowCompanion_Style.Heading(parent)
-	return parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
+	local h = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
+	h:SetTextColor(unpack(WowCompanion_Style.HEAD))
+	return h
 end
 
 -- A row of a list of choices, as the conversation picker's: its name in NAME

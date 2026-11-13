@@ -139,43 +139,28 @@ local function buildTabs(frame, messages)
 	local BX, BY = WC.Style.BLEED_X, WC.Style.BLEED_Y
 	local status = pages[3]
 	WC.Style.PageRock(status)
-	local function statusWell(which, tl, br)
-		local t = WC.Style.Well(status, which)
-		t:SetPoint("TOPLEFT", status, "TOPLEFT", tl, BY)
-		t:SetPoint("BOTTOMRIGHT", status, br[1], br[2], -BY)
-		return t
-	end
-	local names = statusWell("you", -BX, { "BOTTOMLEFT", SPINE - 2 - SEAM })
-	statusWell("claude", SPINE - 2, { "BOTTOMRIGHT", BX })
-	-- The names well's stone, on trial (the player, 2026-11-12: a stone
-	-- darker than the rows' dark, or another texture, for the raised side):
-	-- picked live with WC.Companion.StatusNames(key), kept in
-	-- WowCompanionAgentDB.statusNames
-	local NAMES = {
-		dark = { WC.Style.STONE.you, 1, 1, 1 },
-		deeper = { WC.Style.STONE.you, WC.Style.DEEPER, WC.Style.DEEPER, WC.Style.DEEPER },
-		navy = { WC.Style.STONE.you, 0.42, 0.48, 0.62 },
-		rock = { [[Interface\FrameGeneral\UI-Background-Rock]], 0.8, 0.8, 0.8 },
-		marble = { [[Interface\FrameGeneral\UI-Background-Marble]], 0.7, 0.7, 0.7 },
-	}
-	local function dressNames()
-		local look = NAMES[WowCompanionAgentDB.statusNames or "deeper"] or NAMES.deeper
-		names:SetTexture(look[1], "REPEAT", "REPEAT")
-		names:SetHorizTile(true)
-		names:SetVertTile(true)
-		names:SetVertexColor(look[2], look[3], look[4])
-	end
-	dressNames()
-	WC.Companion.StatusNames = function(key)
-		if not NAMES[key] then return false end
-		WowCompanionAgentDB.statusNames = key
-		dressNames()
-		return true
-	end
+	-- the names' dark well raised, as Settings' is (WC.Style.Well): the values'
+	-- well lies lower and takes its shadow down its left edge, over the rows'
+	-- dividers and joints, under the spine
+	local names = WC.Style.Well(status, "you", WC.Style.DEEPER, true)
+	names:SetPoint("TOPLEFT", status, "TOPLEFT", -BX, BY)
+	names:SetPoint("BOTTOMRIGHT", status, "BOTTOMLEFT", SPINE - 2 - SEAM, -BY)
+	local values = WC.Style.Well(status, "claude", nil, false, { "Top" })
+	values:SetPoint("TOPLEFT", status, "TOPLEFT", SPINE - 2, BY)
+	values:SetPoint("BOTTOMRIGHT", status, "BOTTOMRIGHT", BX, -BY)
+	status.raised = names
+	local rules = CreateFrame("Frame", nil, status)
+	rules:SetAllPoints()
+	rules:SetFrameLevel(status:GetFrameLevel() + 3)
+	local cast = CreateFrame("Frame", nil, status)
+	cast:SetAllPoints()
+	cast:SetFrameLevel(status:GetFrameLevel() + 4)
+	WC.Style.CastOn(cast, values, "LEFT")
 	local vines = CreateFrame("Frame", nil, status)
 	vines:SetAllPoints()
 	vines:SetFrameLevel(status:GetFrameLevel() + 5)
-	WC.Style.Spine(vines, status, SPINE - 2 - SEAM / 2)
+	local spine = WC.Style.Spine(vines, status, SPINE - 2 - SEAM / 2)
+	WC.Style.SpineCovers(vines, spine):SetFrameLevel(status:GetFrameLevel() + 6)
 	local ROW = 30
 	local rows = {}
 	local function row(i)
@@ -190,15 +175,14 @@ local function buildTabs(frame, messages)
 		r.band:SetPoint("TOPLEFT", r, "TOPLEFT", SPINE - 2, 0)
 		r.band:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", BX, 0)
 		if i > 1 then
-			r.divider = CreateFrame("Frame", nil, vines)
+			r.divider = CreateFrame("Frame", nil, rules)
 			r.divider:SetHeight(16)
-			r.divider:SetFrameLevel(vines:GetFrameLevel() + 1)
 			r.divider:SetPoint("LEFT", r, "TOPLEFT", SPINE - 2 - SEAM / 2, 0)
 			r.divider:SetPoint("RIGHT", r, "TOPRIGHT", BX, 0)
 			WC.Style.VineLine(r.divider, "", false, false, true)
 			WC.Style.VineJoin(r.divider, "Thick", "TRightFromMediumPlain", "LEFT")
 		end
-		r.label = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
+		r.label = WC.Style.Heading(r)
 		r.label:SetPoint("RIGHT", r, "LEFT", SPINE - 18, 0)
 		r.label:SetWidth(NAME_W)
 		r.label:SetJustifyH("RIGHT")
