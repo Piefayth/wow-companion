@@ -348,40 +348,124 @@ function WowCompanion_Style.PageRock(page)
 end
 -- A well of stone on page, sunk by a soft shadow inside its top and left
 -- edges, light falling from the top left, no rim. Raised, it stands up out of
--- the page instead, pillowed: hard lit lines along its top and left edges and
--- a soft light under the top, a broad shade rolling off toward the bottom with
--- a hard dark line at it, a hard dark line down the right; and the window's
--- top shadow stops short of it (a page names its raised stone page.raised,
--- Window.lua). Returns its stone, for the caller to anchor; what lies on the
--- stone under the shading goes at sublevel 0.
--- each band: the edge it lies along, its depth, + light (added) or - shade
--- at the edge, and inward (the same: a hard line; 0: fading)
-local RAISED = {
-	{ "TOP", 2, 0.08, 0.08 }, { "TOP", 24, 0.05, 0 }, { "LEFT", 2, 0.08, 0.08 },
-	{ "BOTTOM", 56, -0.5, 0 }, { "BOTTOM", 2, -0.6, -0.6 }, { "RIGHT", 2, -0.55, -0.55 },
+-- the page instead, and the window's top shadow stops short of it (a page
+-- names its raised stone page.raised, Window.lua). Returns its stone, for the
+-- caller to anchor; what lies on the stone under the shading goes at sublevel 0.
+--
+-- Trial, temporary (the player, 2026-11-12): how a raised well is drawn is one
+-- of RAISE_LOOKS, picked live on the Settings page (WowCompanionDB.raisedLook);
+-- the looks not picked go when one is chosen. A look: the stone's shade, and
+-- bands, each { edge, depth, alpha at the edge, alpha inward, inset from the
+-- edge, out = cast outside the edge onto the neighbour (WC.Style.CastOn) };
+-- alpha + is light (added), - shade.
+local RAISE_LOOKS = {
+	{ name = "Bevel", bands = {
+		{ "TOP", 3, 0.14, 0.14 }, { "LEFT", 3, 0.14, 0.14 },
+		{ "BOTTOM", 3, -0.7, -0.7 }, { "RIGHT", 3, -0.7, -0.7 },
+		{ "RIGHT", 12, -0.55, 0, out = true } } },
+	{ name = "Chamfer", bands = {
+		{ "TOP", 5, 0.22, 0.04 }, { "LEFT", 5, 0.22, 0.04 },
+		{ "BOTTOM", 5, -0.75, -0.25 }, { "RIGHT", 5, -0.75, -0.25 },
+		{ "RIGHT", 12, -0.5, 0, out = true } } },
+	{ name = "Lip", bands = {
+		{ "TOP", 1, -0.8, -0.8 }, { "LEFT", 1, -0.8, -0.8 }, { "BOTTOM", 1, -0.8, -0.8 }, { "RIGHT", 1, -0.8, -0.8 },
+		{ "TOP", 1, 0.2, 0.2, 1 }, { "LEFT", 1, 0.2, 0.2, 1 },
+		{ "BOTTOM", 2, -0.5, -0.5, 1 }, { "RIGHT", 2, -0.5, -0.5, 1 },
+		{ "RIGHT", 10, -0.5, 0, out = true } } },
+	{ name = "Lifted stone", shade = 0.85, bands = {
+		{ "TOP", 2, 0.12, 0.12 }, { "LEFT", 2, 0.12, 0.12 },
+		{ "BOTTOM", 2, -0.7, -0.7 }, { "RIGHT", 2, -0.7, -0.7 },
+		{ "RIGHT", 16, -0.6, 0, out = true } } },
+	{ name = "Cast shadow only", shade = 0.75, bands = {
+		{ "RIGHT", 18, -0.7, 0, out = true } } },
+	{ name = "Chamfer, lifted stone", shade = 0.85, bands = {
+		{ "TOP", 5, 0.22, 0.04 }, { "LEFT", 5, 0.22, 0.04 },
+		{ "BOTTOM", 5, -0.75, -0.25 }, { "RIGHT", 5, -0.75, -0.25 },
+		{ "RIGHT", 14, -0.55, 0, out = true } } },
 }
--- an edge's two corners, and which gradient end (min, max) lies on it
+WowCompanion_Style.RAISE_LOOKS = RAISE_LOOKS
+-- an edge's two corners, which gradient end (min, max) lies on the edge, and
+-- the inward direction
 local EDGES = {
-	TOP = { "TOPLEFT", "TOPRIGHT", "VERTICAL", false }, BOTTOM = { "BOTTOMLEFT", "BOTTOMRIGHT", "VERTICAL", true },
-	LEFT = { "TOPLEFT", "BOTTOMLEFT", "HORIZONTAL", true }, RIGHT = { "TOPRIGHT", "BOTTOMRIGHT", "HORIZONTAL", false },
+	TOP = { "TOPLEFT", "TOPRIGHT", "VERTICAL", false, 0, -1 },
+	BOTTOM = { "BOTTOMLEFT", "BOTTOMRIGHT", "VERTICAL", true, 0, 1 },
+	LEFT = { "TOPLEFT", "BOTTOMLEFT", "HORIZONTAL", true, 1, 0 },
+	RIGHT = { "TOPRIGHT", "BOTTOMRIGHT", "HORIZONTAL", false, -1, 0 },
 }
+local raisedWells = {}
+local function bandTexture(pool, i, owner)
+	pool[i] = pool[i] or owner:CreateTexture(nil, "BACKGROUND", nil, 2)
+	return pool[i]
+end
+local function paintRaised(w, look)
+	for _, x in ipairs(w.inside) do x:Hide() end
+	for _, x in ipairs(w.cast) do x:Hide() end
+	local shade = look.shade or w.shade
+	w.stone:SetVertexColor(shade, shade, shade)
+	local ni, nc = 0, 0
+	for _, band in ipairs(look.bands) do
+		local e = EDGES[band[1]]
+		local s
+		if band.out then
+			if w.over then
+				nc = nc + 1
+				s = bandTexture(w.cast, nc, w.over)
+			end
+		else
+			ni = ni + 1
+			s = bandTexture(w.inside, ni, w.page)
+		end
+		if s then
+			local light = band[3] > 0
+			local c = light and 1 or 0
+			s:SetColorTexture(1, 1, 1, 1)
+			s:SetBlendMode(light and "ADD" or "BLEND")
+			local edge, inner = CreateColor(c, c, c, math.abs(band[3])), CreateColor(c, c, c, math.abs(band[4]))
+			-- cast outward, the gradient runs the other way
+			local onMin = e[4]
+			if band.out then onMin = not onMin end
+			if onMin then s:SetGradient(e[3], edge, inner) else s:SetGradient(e[3], inner, edge) end
+			s:ClearAllPoints()
+			if band.out then
+				local gap = WowCompanion_Style.SEAM
+				-- past the seam, along the edge (RIGHT or BOTTOM)
+				s:SetPoint("TOPLEFT", w.stone, e[1], -e[5] * gap, -e[6] * gap)
+				s:SetPoint(band[1] == "RIGHT" and "BOTTOMLEFT" or "TOPRIGHT", w.stone, e[2], -e[5] * gap, -e[6] * gap)
+			else
+				local k = band[5] or 0
+				s:SetPoint(e[1], w.stone, e[1], e[5] * k, e[6] * k)
+				s:SetPoint(e[2], w.stone, e[2], e[5] * k, e[6] * k)
+			end
+			if e[3] == "VERTICAL" then s:SetHeight(band[2]) else s:SetWidth(band[2]) end
+			s:Show()
+		end
+	end
+end
+-- the look in use, by name (the first when none is saved)
+function WowCompanion_Style.RaisedLook()
+	local want = WowCompanionDB and WowCompanionDB.raisedLook
+	for _, look in ipairs(RAISE_LOOKS) do
+		if look.name == want then return look end
+	end
+	return RAISE_LOOKS[1]
+end
+function WowCompanion_Style.PaintRaised(name)
+	if name and WowCompanionDB then WowCompanionDB.raisedLook = name end
+	local look = WowCompanion_Style.RaisedLook()
+	for _, w in ipairs(raisedWells) do paintRaised(w, look) end
+end
+-- a raised well's shadow cast on its neighbour, drawn in frame over (above
+-- what scrolls over the neighbour's stone)
+function WowCompanion_Style.CastOn(stone, over)
+	for _, w in ipairs(raisedWells) do
+		if w.stone == stone then w.over = over end
+	end
+end
 function WowCompanion_Style.Well(page, which, shade, raised)
 	local t = page:CreateTexture(nil, "BACKGROUND", nil, -1)
 	WowCompanion_Style.Stone(t, which, shade)
 	if raised then
-		for _, band in ipairs(RAISED) do
-			local e = EDGES[band[1]]
-			local s = page:CreateTexture(nil, "BACKGROUND", nil, 2)
-			local light = band[3] > 0
-			local c = light and 1 or 0
-			s:SetColorTexture(1, 1, 1, 1)
-			local edge, inner = CreateColor(c, c, c, math.abs(band[3])), CreateColor(c, c, c, math.abs(band[4]))
-			if e[4] then s:SetGradient(e[3], edge, inner) else s:SetGradient(e[3], inner, edge) end
-			if light then s:SetBlendMode("ADD") end
-			s:SetPoint(e[1], t)
-			s:SetPoint(e[2], t)
-			if e[3] == "VERTICAL" then s:SetHeight(band[2]) else s:SetWidth(band[2]) end
-		end
+		raisedWells[#raisedWells + 1] = { stone = t, page = page, shade = shade or 1, inside = {}, cast = {} }
 		return t
 	end
 	for _, side in ipairs({ "Top", "Left" }) do

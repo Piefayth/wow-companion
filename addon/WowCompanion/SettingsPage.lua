@@ -142,6 +142,9 @@ across:SetPoint("LEFT", band, "TOPLEFT", -2 - SEAM / 2, SEAM / 2)
 across:SetPoint("RIGHT", band, "TOPRIGHT", BX, SEAM / 2)
 WC.Style.VineLine(across, "Thick", false, false, true)
 WC.Style.VineJoin(across, "Thick", "TRightBig", "LEFT")
+-- the raised names well's shadow falls on the settings, over their rows
+WC.Style.CastOn(raised, seams)
+page:HookScript("OnShow", function() WC.Style.PaintRaised() end)
 
 -- One setting: a row from the names well to the right edge, its name at the left
 -- and its control at the edge; the row is the one stop, the cursor just left
@@ -593,3 +596,14 @@ login:SetScript("OnEvent", function()
 		Settings.RegisterAddOnCategory(Settings.RegisterCanvasLayoutCategory(canvas, "WoW Companion"))
 	end)
 end)
+
+-- Trial, temporary: the raised wells' look, picked live (Style.lua's RAISE_LOOKS)
+Page.Add({ kind = "dropdown", section = "Trial", order = 1, label = "Raised panels",
+	text = "On trial: how the dark panels stand out of the page. Left and right switch it live.",
+	options = function()
+		local names = {}
+		for i, look in ipairs(WC.Style.RAISE_LOOKS) do names[i] = look.name end
+		return names
+	end,
+	get = function() return WC.Style.RaisedLook().name end,
+	set = function(name) WC.Style.PaintRaised(name) end })
