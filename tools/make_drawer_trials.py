@@ -6,7 +6,7 @@ has picked one.
     python tools/make_drawer_trials.py   writes addon/WowCompanion_Agent/Art/DrawerTrial-Cell-<n>-<v>.tga
                                          and target/drawer-trials.png (all of them, text mocked)
 
-Round 8 (rounds 1-7: d5d8e49, 4c49c05, beb6100, 5ed179c, 4cdd7e2, fd928d7, ab6ad52).
+Round 9 (rounds 1-8: d5d8e49, 4c49c05, beb6100, 5ed179c, 4cdd7e2, fd928d7, ab6ad52, aef9e9f).
 The window's rim is not a bar with a middle: it is a profile by depth inside
 the window's outline (make_frame_art.py frame(): a dark line, a bead on its
 outer half, a lower inner half, a dark lip), and its corners are where two
@@ -36,7 +36,7 @@ import artout
 from make_frame_art import grid, bar, bead, rim_metal, Layers, fit, brushed, streaks, BRONZE, LINE, BAND, CHAMFER, RULE
 from make_scrollbar_art import write_tga
 
-VERSION = 8  # DrawerTrials.lua's
+VERSION = 9  # DrawerTrials.lua's
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 STONE = os.path.join(ROOT, "addon", "WowCompanion", "Art", "%s-6.tga")
@@ -137,6 +137,7 @@ class Metal:
         self.dark = np.zeros(xx.shape, np.float32)
         self.grain = np.zeros(xx.shape, np.float32)
         self.m = np.zeros(xx.shape, bool)
+        self.shadow = 1.0
 
     def add(self, mask, h, dark, grain):
         win = mask & (~self.m | (h > self.h))
@@ -169,6 +170,7 @@ class Metal:
         hgt = ndimage.gaussian_filter(self.h, K * 0.1)
         col = rim_metal(hgt, BRONZE, K) * (1 + 0.09 * self.grain)[..., None]
         col = col + (LINE - col) * np.clip(self.dark, 0, 0.9)[..., None]
+        col = col * np.asarray(self.shadow)[..., None] if np.ndim(self.shadow) else col
         cast = ndimage.gaussian_filter(ndimage.shift(self.m.astype(np.float32), (0.8 * K, 0.6 * K), order=0), K * 0.7)
         lay = Layers(xx.shape)
         lay.over(np.zeros(3), np.clip(cast, 0, 1) * 0.6 * ~self.m)
@@ -176,49 +178,50 @@ class Metal:
         return fit(lay.pre(), (W_PX, H_PX))
 
 
-# --- the scroll bracket ---------------------------------------------------------
+# --- the scrolls -------------------------------------------------------------------
 
-def arc(cx, cy, r, a0, a1, n=400):
-    a = np.radians(np.linspace(a0, a1, n))
-    return np.stack([cx + r * np.cos(a), cy + r * np.sin(a)], 1)
+WIRE = 1.4  # the scrolls' wire, its radius
+BITE = 0.5  # how far a scroll's wire lies into the rim it bears on
 
 
-def volute(cx, cy, r0, a0, turns, shrink, sense=1, n=500):
-    """A spiral from radius r0 at angle a0, closing in by shrink a turn."""
+def volute(cx, cy, r0, a0, hug, turns, shrink, sense=1, n=700):
+    """A spiral from angle a0 at radius r0: r0 held for `hug` of a turn (where
+    it bears on the rims), then closing in by shrink a turn."""
     t = np.linspace(0, turns, n)
     a = np.radians(a0) + sense * 2 * np.pi * t
-    r = r0 - shrink * t
+    r = r0 - shrink * np.clip(t - hug, 0, None)
     return np.stack([cx + r * np.cos(a), cy + r * np.sin(a)], 1)
 
 
-B = 19.0  # the bracket's reach along each rim
-
-
-def bracket(top=True):
-    """A brace across the outside corner, its ends run into the window's rim
-    and the drawer's, a volute curling off its middle into the open corner."""
+def nest(rad, top, cx=None, cy=None, turns=1.6):
+    """A volute in the outside corner bearing on both rims: its outer turn
+    lies into the drawer's rim, runs round against the window's, and rolls
+    in. (cx, cy) its centre (default:
+    touching both straight rims)."""
     s = 1 if top else -1
     jy = DT if top else DB
-    # the brace: an arc meeting the window's rim at (X0, jy - Bs) and the
-    # drawer's at (X0 + B, jy), bowed out from the corner
-    cx, cy = X0 + 1.4 * B, jy - 1.4 * B * s
-    r = np.hypot(1.4 * B, 0.4 * B)  # through both
-    a_win = np.degrees(np.arctan2((jy - B * s) - cy, X0 - cx))
-    a_dr = np.degrees(np.arctan2(jy - cy, X0 + B - cx))
-    brace = arc(cx, cy, r, a_win, a_dr)
-    # the brace's ends run 1.5 on into each rim, under its bead
-    brace = np.concatenate([np.linspace((X0 - 1.5, jy - (B + 0.5) * s), brace[0], 12), brace,
-                            np.linspace(brace[-1], (X0 + B + 0.5, jy + 1.5 * s), 12)])
-    mid = len(brace) // 2
-    mx, my = brace[mid]
-    # the volute rolls off the brace's middle, away from the corner
-    ux, uy = (cx - mx), (cy - my)
-    ul = np.hypot(ux, uy)
-    vr = 0.45 * B
-    vcx, vcy = mx + ux / ul * vr, my + uy / ul * vr
-    a0 = np.degrees(np.arctan2(my - vcy, mx - vcx))
-    curl = volute(vcx, vcy, vr, a0, 1.25, 0.22 * B, sense=-s)
-    return [brace, curl]
+    if cx is None:
+        cx = X0 + rad + WIRE - BITE
+        cy = jy - s * (rad + WIRE - BITE)
+    a0 = 90 if top else 270
+    curl = volute(cx, cy, rad, a0, 0.3, turns, (rad - 1.6) / (turns - 0.3) * 0.75, sense=s)
+    return [curl]
+
+
+def pair(rad, top):
+    """A big volute on the drawer's rim and a smaller one above it on the
+    window's, stacked, each bearing on its rim and the other."""
+    s = 1 if top else -1
+    jy = DT if top else DB
+    big = nest(rad, top)
+    cx = X0 + rad + WIRE - BITE
+    cy = jy - s * (rad + WIRE - BITE)
+    small = rad * 0.62
+    sx = X0 + small + WIRE - BITE
+    sy = cy - s * np.sqrt(max((rad + small + 2 * WIRE - 0.8) ** 2 - (sx - cx) ** 2, 0))
+    # the small one sits on the big one, its outer turn against the window's
+    curl = volute(sx, sy, small, 90 if top else 270, 0.3, 1.5, (small - 1.4) / 1.2 * 0.75, sense=s)
+    return big + [curl]
 
 
 # --- the designs -------------------------------------------------------------------
@@ -229,45 +232,41 @@ def legend_rule(met, left, s):
     met.rule(yy - LEG[0], (xx >= left) & (s > 2.5))
 
 
-def one_outline(rho, ornament=False):
-    """1-3: window and drawer one shape, the rim run round both."""
-    shape = round_inside(padded(window) | padded(drawer), rho)
-    s = depth(shape)
-    met = Metal()
-    met.rim(s)
-    # the rule closes the legend's cell: across, and down into the bottom rim
-    # at the window's line, where the window's rim would be
-    legend_rule(met, X0 - RULE_W, s)
-    met.rule(xx - (X0 - RULE_W), (yy >= LEG[0]) & (s > 2.5))
-    if ornament:
-        met.rods(bracket(True) + bracket(False), 1.4)
-    body = (s >= RIM) | (xx < X0 - RIM)
-    return met, body
-
-
-def rim_between(ornament=False):
-    """4-6: the window's rim whole; the drawer's own rim on its three sides,
-    running over the window rim's outer shoulder and under its bead."""
+def rim_between(rho=0.0, butt=False, scrolls=None):
+    """The window's rim whole; the drawer's own rim on its three sides.
+    rho: its rims bend into the window's (an elbow, radius rho), else they
+    run over the window rim's outer shoulder and under its bead (round 8's
+    4); butt: they stop at the window's edge, the window's rim over them with
+    its shadow; scrolls: wire bearing on both rims in the outside corners."""
     sw = depth(padded(window))
-    sd = depth(padded(drawer))
+    if rho:
+        sd = depth(round_inside(padded(window) | padded(drawer), rho))
+        inside = sw <= 0
+    else:
+        sd = depth(padded(drawer))
+        inside = xx > (X0 if butt else X0 - 2.5)
     met = Metal()
     met.rim(sw)
-    met.rim(sd, xx > X0 - 2.5)
+    met.rim(sd, inside & (sd < RIM) & (sw < (0 if butt else 2.5)) if rho else inside)
+    if butt:
+        # the window's rim lies over the drawer's ends: its shadow on them
+        met.shadow = 1 - 0.75 * np.clip(1 - (xx - X0) / 3.0, 0, 1) ** 1.5 * (xx >= X0)
     legend_rule(met, X0, sd)
-    if ornament:
-        met.rods(bracket(True) + bracket(False), 1.4)
+    if scrolls:
+        met.rods(scrolls(True) + scrolls(False), WIRE)
     body = ((sd >= RIM) & (xx >= X0)) | (sw >= RIM)
     return met, body
 
 
 def designs():
     return [
-        (1, "One outline, sharp inside corner", one_outline(0)),
-        (2, "One outline, rounded inside corner", one_outline(5)),
-        (3, "One outline, scroll bracket", one_outline(0, True)),
-        (4, "Rim between: meets as the title rule does", rim_between()),
-        (5, "Rim between, scroll bracket", rim_between(True)),
-        (6, "One outline, rounded, scroll bracket", one_outline(5, True)),
+        (1, "Elbow: the rims bend into the window's", rim_between(rho=5)),
+        (2, "Wide elbow", rim_between(rho=11)),
+        (3, "Butt: the window's rim lies over, its shadow", rim_between(butt=True)),
+        (4, "Bearing scroll: a volute against both rims", rim_between(scrolls=lambda t: nest(7.0, t))),
+        (5, "Stacked scrolls: big on the drawer, small on the window", rim_between(scrolls=lambda t: pair(7.0, t))),
+        (6, "Wide elbow, a volute hugging it", rim_between(rho=11, scrolls=lambda t: nest(
+            11 - WIRE - 0.4, t, X0 + 11, (DT - 11) if t else (DB + 11), turns=1.7))),
     ]
 
 

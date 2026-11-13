@@ -1,10 +1,10 @@
 -- Drawer trials, temporary: ways the conversation menu's drawer
 -- (ConvMenu.lua) could hook into the window's rim, side by side at true
--- size, each cell one picture (tools/make_drawer_trials.py; round 8: the window's
--- rim profile run round the drawer by depth from its outline) and its words drawn
+-- size, each cell one picture (tools/make_drawer_trials.py; round 9: the drawer's
+-- own rim meeting the window's, elbows and bearing scrolls) and its words drawn
 -- here. Shown only: nothing here is a stop. Goes when one is chosen.
 local S = WC.Style
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\DrawerTrial-%s-8]] -- the generator's VERSION
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\DrawerTrial-%s-9]] -- the generator's VERSION
 -- the generator's cell and joint boxes, in units, at 2.7 texels a unit
 local TEXEL = 2.7
 local CW, CH, BASE_TEX = 172, 180, 512
@@ -13,12 +13,12 @@ local X0, RIM, XR, DT = 16, 6, 170, 46
 local ROWS, ROW = DT + 12, 24
 local LEGEND_Y = DT + 76 -- the middle of the legend's panel
 local OPTIONS = {
-	"One outline, sharp inside corner",
-	"One outline, rounded inside corner",
-	"One outline, scroll bracket",
-	"Rim between: meets as the title rule does",
-	"Rim between, scroll bracket",
-	"One outline, rounded, scroll bracket",
+	"Elbow: the rims bend into the window's",
+	"Wide elbow",
+	"Butt: the window's rim lies over, its shadow",
+	"Bearing scroll: a volute against both rims",
+	"Stacked scrolls: big on the drawer, small on the window",
+	"Wide elbow, a volute hugging it",
 }
 
 local function picture(f, file, x, y, w, h, tex, layer)
