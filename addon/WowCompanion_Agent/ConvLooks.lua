@@ -97,11 +97,11 @@ local function hvine(t, y, x0, x1, weight, lit)
 			layer = "BORDER", sub = 2 })
 	end
 end
--- the crest, the same at both ends (the player, 2026-11-13): the foot's art
--- hanging under its rule, turned over for the head to stand on its rule;
--- never lit: the open row lights only its own parts (the player, 2026-11-12)
+-- the crest, the same at both ends (tools/make_crest_art.py): standing on
+-- the head's rule, hung under the foot's; never lit: the open row lights only
+-- its own parts (the player, 2026-11-12)
 local function crest(t, rule, head)
-	put(t, { tex = AGENT .. "Crest-Foot", x = 0, w = W, h = CREST_H, vflip = head,
+	put(t, { tex = AGENT .. (head and "Crest-Head-3" or "Crest-Foot-3"), x = 0, w = W, h = CREST_H,
 		y = head and rule - CREST_H + CREST_RULE or rule - CREST_RULE, layer = "ARTWORK", sub = 0 })
 end
 
