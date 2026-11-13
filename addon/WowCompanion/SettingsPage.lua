@@ -170,8 +170,8 @@ local ENDS = {
 	{ key = "Heavier", name = "Square, a little heavier", wide = 48, cut = 9 },
 	{ key = "Deeper", name = "Square, further inside", wide = 48, cut = 11 },
 	{ key = "Brace", name = "Square, braced", wide = 48, cut = 13 },
-	-- round 4 (tools/cover_trial/make.py): a thin sheet folded over the panel's corner, the vine under it
-	{ key = "Cover", name = "Folded corner cover", wide = 48, high = 24, cut = 22, off = 0, round = 4 },
+	-- round 5 (tools/make_cover_trial.py): a thin sheet over the panel's corner and the spine's round end
+	{ key = "Cover", name = "Folded corner cover", wide = 16, cut = 22, cover = true },
 }
 local END_OFF = 2 -- the fittings' art starts this far past the panel's edge (make_spine_trials.py's OFF)
 local MEETS = {
@@ -191,13 +191,20 @@ local function paintEnds()
 	local e = endLook()
 	for i, t in ipairs(down.ends) do
 		local which = i == 1 and "Top" or "Bottom"
-		local round = e.key == "Round"
+		local round = e.key == "Round" or e.cover
 		t:SetTexture(round and WC.Style.Vine("Thick" .. which)
-			or ([[Interface\AddOns\WowCompanion\Art\Vine-ThickEnd%s%s-T%d]]):format(e.key, which, e.round or 3), "CLAMP", "CLAMP")
+			or ([[Interface\AddOns\WowCompanion\Art\Vine-ThickEnd%s%s-T3]]):format(e.key, which), "CLAMP", "CLAMP")
 		t:SetWidth(e.wide)
-		t:SetHeight(e.high or 32)
 		t:ClearAllPoints()
-		t:SetPoint(which:upper(), down, which:upper(), 0, (round and 0 or e.off or END_OFF) * (i == 1 and 1 or -1))
+		t:SetPoint(which:upper(), down, which:upper(), 0, (round and 0 or END_OFF) * (i == 1 and 1 or -1))
+		down.covers = down.covers or {}
+		local c = down.covers[i] or WC.Style.Unsnapped(down:CreateTexture(nil, "OVERLAY"))
+		down.covers[i] = c
+		c:SetTexture(([[Interface\AddOns\WowCompanion\Art\Vine-CornerCover%s-T5]]):format(which), "CLAMP", "CLAMP")
+		c:SetSize(48, 24)
+		c:ClearAllPoints()
+		c:SetPoint(which:upper(), down, which:upper())
+		c:SetShown(e.cover == true)
 	end
 	joins:SetPoint("TOP", down, 0, -e.cut)
 	joins:SetPoint("BOTTOM", down, 0, e.cut)
