@@ -330,7 +330,10 @@ local function buildTabs(frame, messages)
 	-- cell lit: the light stone, its two vines lit. Too short a well drops the
 	-- crests for the thick vine alone. An offered button takes a cell of its
 	-- own above the foot (Offer.lua, frame.ConvLayout).
-	local CONV = [[Interface\AddOns\WowCompanion_Agent\Art\Conv-%s-1]]
+	-- the crests the player chose to keep, and the lit vines: kept apart from
+	-- tools/make_convlist_art.py, which rewrites every Conv-*.tga it makes
+	local CONV = [[Interface\AddOns\WowCompanion_Agent\Art\ConvVine-%s]]
+	local CREST = [[Interface\AddOns\WowCompanion_Agent\Art\Crest-%s]]
 	local order = WC.Conversations.list
 	local N = #order
 	local ORNATE, OFFER = 248, 36
@@ -341,7 +344,7 @@ local function buildTabs(frame, messages)
 	if well.NineSlice then well.NineSlice:SetFrameLevel(layer:GetFrameLevel() + 3) end
 	local function art(name, w, h)
 		local t = layer:CreateTexture(nil, "ARTWORK")
-		t:SetTexture(CONV:format(name), "CLAMP", "CLAMP")
+		t:SetTexture(CREST:format(name), "CLAMP", "CLAMP")
 		t:SetSize(w, h)
 		return t
 	end
