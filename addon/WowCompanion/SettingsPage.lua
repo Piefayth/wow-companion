@@ -207,7 +207,7 @@ end
 -- bar, values in washed bronze. Each draws over the Blizzard control it
 -- stands in for, which stays (invisible) for its logic and its menu.
 local CONTROL_ART = [[Interface\AddOns\WowCompanion\Art\Control-]]
-local CONTROL_VERSION = 1 -- make_control_art.py's VERSION
+local CONTROL_VERSION = 2 -- make_control_art.py's VERSION
 local function controlArt(piece) return CONTROL_ART .. piece .. "-" .. CONTROL_VERSION end
 local BRONZE = { 0.78, 0.66, 0.45 }
 local FILL = 7.8 / 5.25 -- the thumb widened to the groove's floor, as the chat's

@@ -14,12 +14,12 @@ Pieces (UI units, U texture px each, as the scroll bar's):
                                     value's line, as the slider's to its groove
   Choice-<Left|Right>-Closed 16x32  the slot's plain round ends (a key row)
   Choice-Mid 8x32                   that slot, stretched between them
-  Button-<state> 128x28             a thick slate slab standing out of the stone
-                                    in a bark border
+  Button-<state> 128x28             a slab of the window's slate standing out of
+                                    the stone in a bark border
 
 Turned pieces are transposed, never rotated: a transpose keeps the light
 from the top left. The game keeps a texture for the session under its path,
-so a change bumps VERSION (and Style.lua's CONTROL_VERSION); older files are
+so a change bumps VERSION (and SettingsPage.lua's CONTROL_VERSION); older files are
 deleted.
 """
 import glob
@@ -31,10 +31,10 @@ from scipy import ndimage
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import make_scrollbar_art as sb  # noqa: E402
+import make_tab_art as tab  # noqa: E402
 
-VERSION = 1
+VERSION = 2
 OUT = sb.CORE_OUT
-SLATE = ((5, 6, 8), (17, 18, 22), (46, 47, 54))  # the button's raised slate: as dark as the stone, its lit edge a step lighter
 
 
 def greyed_fleur(normal, bare):
@@ -63,6 +63,35 @@ def ring(pen, outer, inner):
     return np.clip(pen.mask([outer]) - pen.mask([inner]), 0, 1)
 
 
+def raised_face(c, m):
+    """A slab of the window's own slate standing out of the stone, as a key
+    would: the lighter slate, lifted further, its face swelling toward the
+    light, a bright lip along the top, the bottom falling into shade, its
+    shadow cast down and right."""
+    sb.shadow(c, m, 0.85)
+    tab.stone(c, m, True)
+    k = sb.U * c.s
+    d = ndimage.distance_transform_edt(m > 0.5) / k
+    t = np.clip(d / LIP, 0, 1)
+    hgt = ndimage.gaussian_filter(np.sqrt(1 - (1 - t) ** 2) * LIP, k * 0.25)
+    gy, gx = np.gradient(hgt * k)
+    n = np.stack([-gx, -gy, np.ones_like(gx)], -1)
+    n /= np.linalg.norm(n, axis=-1, keepdims=True)
+    light = np.clip(n @ sb.LIGHT, 0, 1) / sb.LIGHT[2]  # 1 on the flat face
+    ys = np.clip((np.arange(c.H)[:, None] / c.s - c.pad) / c.h, 0, 1)
+    rgb = c.rgb * (LIFT * light * (1.22 - 0.45 * ys))[..., None]
+    spec = np.clip(n @ sb.HALF, 0, 1) ** 12 * (d < LIP)
+    rgb += spec[..., None] * np.array(LIP_GLINT)
+    a = c.a.copy()
+    c.over(np.clip(rgb, 0, 255), m)
+    c.a = a
+
+
+LIP = 2.4  # the face's rounded edge, in units
+LIFT = 1.1  # the face over the lighter slate: barely above the stone (lighter read as a hover); the swell makes it stand
+LIP_GLINT = (70, 66, 64)  # the lit lip's glint, cool as the slate
+
+
 def plate(w, h, face):
     """A slot w x h units in a bark border: face "carved" (a value shown),
     "raised" (a button's slate) or None (the border alone, for its glow)."""
@@ -72,11 +101,7 @@ def plate(w, h, face):
     cy = h / 2
     inner = stadium(2.2 + r, w - 2.2 - r, cy, r)
     if face == "raised":
-        # a thick slab standing out of the stone: a broad bevel, lit along its
-        # top edge, its shadow cast down and right
-        m = pen.mask([inner])
-        sb.shadow(c, m, 0.8)
-        c.metal(m, SLATE, bevel=3.2 * sb.U, outline=0, shadow=False, sheen=True, paint=True, grain=False, gloss=0.3)
+        raised_face(c, pen.mask([inner]))
     elif face == "carved":
         sb.carve(c, pen.mask([inner]))
     hw = sb.BORDER_HW
