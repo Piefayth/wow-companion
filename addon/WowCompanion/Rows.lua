@@ -46,14 +46,14 @@ local function bind(row)
 	end
 end
 
--- the cursor's row, else the one the mouse is over
-local lit
+-- the cursor's row, else the one the mouse entered: entered, never where the
+-- pointer happens to be (hidden on the pad, it rests over some row, which then
+-- lit when the cursor left the page)
+local lit, entered
 local function under()
 	local row = focused()
 	if row then return row end
-	for _, r in ipairs(rows) do
-		if r:IsVisible() and r:IsMouseOver() then return r end
-	end
+	if entered and entered:IsVisible() then return entered end
 end
 local function light(row)
 	if row == lit then return end
@@ -77,6 +77,8 @@ keys:SetScript("OnEvent", function() bind(nil) end)
 function WC.RowStop(button, step, prompt)
 	button.rowStep, button.rowPrompt = step, prompt
 	rows[#rows + 1] = button
+	button:HookScript("OnEnter", function(self) entered = self end)
+	button:HookScript("OnLeave", function(self) if entered == self then entered = nil end end)
 	WC.MarkFocusable(button)
 	return button
 end
