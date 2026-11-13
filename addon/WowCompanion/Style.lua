@@ -232,7 +232,7 @@ WowCompanion_Style.STONE = {
 }
 -- The vine dividers, every window's (tools/make_scrollbar_art.py, rule_pieces):
 -- three weights, "Thin", "" (medium, the chat's) and "Thick"; pieces Left,
--- Mid (stretched), Right, 32 x 16 (Mid 64); Top, VMid (stretched), Bottom,
+-- Mid (repeated, WC.Style.Run), Right, 32 x 16 (Mid 64); Top, VMid (repeated), Bottom,
 -- 16 x 32. The line runs down each piece's middle; a round end sits 1.2 + its
 -- half-width in from a cap's outer edge. Where the thick vine is met at a
 -- right angle, a junction (make_scrollbar_art.py, junction) forged as one
@@ -243,6 +243,24 @@ WowCompanion_Style.STONE = {
 local VINE_VERSION = 9 -- the generator's VINE_VERSION
 function WowCompanion_Style.Vine(piece)
 	return ART .. "Vine-" .. piece .. "-" .. VINE_VERSION
+end
+-- A run: the middle of a vine, a groove or a slot between its two ends, a
+-- texture of `owner`'s to anchor as any other. Never stretched: its art repeats
+-- along its length at the ends' own density (`units`, the art's length in UI
+-- units), so the game samples every piece of a line alike. A stretched middle
+-- was sampled finer than its ends (the long axis barely minified), and each
+-- joint showed as a step in the line's shading (the player, 2026-11-12). An
+-- empty frame on the texture follows its size.
+function WowCompanion_Style.Run(owner, path, vertical, units, layer)
+	local t = owner:CreateTexture(nil, layer or "ARTWORK")
+	if vertical then t:SetTexture(path, "CLAMP", "REPEAT") else t:SetTexture(path, "REPEAT", "CLAMP") end
+	local size = CreateFrame("Frame", nil, owner)
+	size:SetAllPoints(t)
+	size:SetScript("OnSizeChanged", function(_, w, h)
+		local n = (vertical and h or w) / units
+		if vertical then t:SetTexCoord(0, 1, 0, n) else t:SetTexCoord(0, n, 0, 1) end
+	end)
+	return t
 end
 -- A vine run through `owner`: across its middle (vertical false, owner 16
 -- tall) or down it (owner 16 wide), with a round end at its start and end when
@@ -264,7 +282,9 @@ function WowCompanion_Style.VineLine(owner, weight, vertical, capStart, capEnd)
 	if vertical then
 		first = capStart and piece("Top", 16, 32)
 		last = capEnd and piece("Bottom", 16, 32)
-		mid = piece("VMid", 16)
+		mid = WowCompanion_Style.Run(owner, WowCompanion_Style.Vine(weight .. "VMid"), true, 64)
+		mid:SetWidth(16)
+		made[#made + 1] = mid
 		if first then first:SetPoint("TOP") end
 		if last then last:SetPoint("BOTTOM") end
 		mid:SetPoint("TOP", first or owner, first and "BOTTOM" or "TOP")
@@ -272,7 +292,9 @@ function WowCompanion_Style.VineLine(owner, weight, vertical, capStart, capEnd)
 	else
 		first = capStart and piece("Left", 32, 16)
 		last = capEnd and piece("Right", 32, 16)
-		mid = piece("Mid", nil, 16)
+		mid = WowCompanion_Style.Run(owner, WowCompanion_Style.Vine(weight .. "Mid"), false, 64)
+		mid:SetHeight(16)
+		made[#made + 1] = mid
 		if first then first:SetPoint("LEFT") end
 		if last then last:SetPoint("RIGHT") end
 		mid:SetPoint("LEFT", first or owner, first and "RIGHT" or "LEFT")
@@ -465,8 +487,7 @@ local function curledVine(row, edge)
 	r:SetSize(32, 32)
 	l:SetPoint("LEFT")
 	r:SetPoint("RIGHT")
-	local mid = f:CreateTexture(nil, "ARTWORK")
-	mid:SetTexture(WowCompanion_Style.Vine("Mid"), "CLAMP", "CLAMP")
+	local mid = WowCompanion_Style.Run(f, WowCompanion_Style.Vine("Mid"), false, 64)
 	mid:SetHeight(16)
 	mid:SetPoint("LEFT", l, "RIGHT")
 	mid:SetPoint("RIGHT", r, "LEFT")
@@ -540,7 +561,8 @@ local LOOKS = {
 				t:SetTexture(WowCompanion_Style.Vine(name), "CLAMP", "CLAMP")
 				return t
 			end
-			local top, mid, bottom = piece("Top"), piece("VMid"), piece("Bottom")
+			local top, bottom = piece("Top"), piece("Bottom")
+			local mid = WowCompanion_Style.Run(stem, WowCompanion_Style.Vine("VMid"), true, 64)
 			top:SetSize(16, 32)
 			bottom:SetSize(16, 32)
 			top:SetPoint("TOP")

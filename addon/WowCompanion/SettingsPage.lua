@@ -195,10 +195,9 @@ local function lightCaps(r, less, more)
 		end
 	end
 end
--- the stretch between two caps
+-- the run between two caps (WC.Style.Run: its art, 8 units long, repeated)
 local function between(parent, piece, left, right)
-	local t = parent:CreateTexture(nil, "ARTWORK")
-	t:SetTexture(controlArt(piece))
+	local t = WC.Style.Run(parent, controlArt(piece), false, 8)
 	t:SetHeight(32)
 	t:SetPoint("LEFT", left, "RIGHT")
 	t:SetPoint("RIGHT", right, "LEFT")
