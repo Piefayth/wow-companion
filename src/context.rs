@@ -78,11 +78,7 @@ pub(crate) fn agent_context_for(addons: &Path, slot: &str) -> Option<String> {
     }
     out.push("== lua errors ==".to_string());
     out.push(lua_errors(addons));
-    out.push("== player profile ==".to_string());
-    out.push(
-        fs::read_to_string(profile())
-            .unwrap_or_else(|_| "(none yet: player/profile.md does not exist)".to_string()),
-    );
+    // the profile is in the agent's system prompt (agent.rs appended_prompt)
     out.push("== integrations ==".to_string());
     out.push(integrations(addons));
     Some(out.join("

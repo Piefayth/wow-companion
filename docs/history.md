@@ -625,3 +625,18 @@ slot 1. The two readings had been compared on every send since 2026-11-11
 which the trial's audit lines showed. Session took over the channel: the cursor,
 the set and the slot count come from one reading of Link's save, so they cannot
 come apart, and a save that does not parse yet is read again.
+
+## The conversations filled with old copies of the character (2026-11-12)
+
+The player noticed the agents getting worse. Measured from their transcripts:
+L1 at 940k tokens of a 1M window, R2 545k, R1 495k, Main 490k, L2 360k. Each
+request after a reload carried the whole export, profile and integrations
+(28k characters): the companion skipped it only when unchanged, and a reload
+always changes it (its time, the press counters and log), and the agents ask for
+reloads all the time. L1 had been sent 235 copies. Claude Code compacted only
+near the 1M window. The character became a file the agent reads (the message
+says it changed and where each section is), the profile moved into the appended
+system prompt, and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=20` makes a conversation
+compact at about 200k: measured honoured by `--print` on a resumed session (2%
+compacted 27.8k to 5.8k in 12 s), while `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone
+was not. A fresh agent reading the file answered from it at 57k tokens.

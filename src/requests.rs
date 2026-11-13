@@ -493,6 +493,10 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, group: u64, ru
         };
         drop(tell);
         let _ = courier.join();
+        // how full the conversation is, for its row in game
+        if let Some((tokens, window)) = session.context {
+            let _ = send(addons, &Msg::new("context").text("slot", &slot).int("tokens", tokens).int("window", window));
+        }
         match answer {
             Ok(answer) => answer,
             Err(err) => return failed(addons, &slot, group, err),
@@ -567,6 +571,9 @@ pub(crate) fn think(addons: &Path, spoken: &str) -> io::Result<()> {
     let answer = answer?.ok_or_else(|| io::Error::other("the run was left"))?;
     println!("({:.1}s) say: {}", started.elapsed().as_secs_f32(), answer.say);
     println!("would send: {}", answer.inbox.as_ref().map(Msg::lua).unwrap_or_else(|| "nothing".into()));
+    if let Some((tokens, window)) = session.context {
+        println!("context: {tokens} of {window} tokens");
+    }
     Ok(())
 }
 

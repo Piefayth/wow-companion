@@ -72,7 +72,7 @@ extras a player may use, never required (the player, 2026-11-11).
   values), `requests.rs` (asking the agent, progress, auto-continue, cancels, `tell`),
   `jobs.rs` (each request's one state, forward only; cancels and replies race
   there; a clip's job is named to the game by `heard` when it is let go),
-  `context.rs` (the export, profile and integrations the agent gets),
+  `context.rs` (the export, Lua errors and integrations the agent reads),
   `session.rs` (the game's UI session, read once from Link's save: the cursor, the bell set and the slot count all come from it), `runs.rs` (an
   agent's run on disk, any copy follows it), `settings_page.rs`
   (the settings page's half here: `status` with the settings and the mics
@@ -265,7 +265,14 @@ is a sign the change should not have shipped, not a fix.
 
 `claude -p`, Claude Code at full strength (`--dangerously-skip-permissions`, every
 tool, repo root as working directory), **Opus**, by the player's choice. The prompt
-goes on stdin (the export overflows a Windows command line). Its answer is `say`
+goes on stdin. **The character is a file the agent reads, never the prompt**
+(`character.txt`, `character-<slot>.txt` in the companion's folder): a request
+after a reload says only that it changed and where each section is; a copy in
+every such request filled the conversations to 940k tokens (2026-11-12). The
+profile and that file's path are appended to the system prompt
+(`agent-prompt*.md`, written each run). A conversation compacts at 20% of its
+window (`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`), and its size after each answer goes to
+the game (`context`, tokens of the window). Its answer is `say`
 plus `steps`, the shapes the addon dispatches (chat, macro, press, reload, bar,
 lua, module…), sent as one batch; at most one button per answer. Output is
 streamed and shown as a progress line, one every 15 s at most (16 a request). Requests run off

@@ -98,17 +98,23 @@ pub struct Spoken {
 /// has no idea what "it" was. The CLI hands back a `session_id`; replaying it with
 /// `--resume` keeps the thread, and the rules are sent afresh with every request.
 ///
-/// The character's state is sent when it differs from what this thread last saw,
-/// which is once per reload rather than once per utterance.
+/// The character's state is a file the agent reads (`character_file`), never the
+/// message: a copy in every request after a reload filled the conversations
+/// (2026-11-12: 940k tokens in L1, most of it old exports). A message says only
+/// that it changed and where each section is, when it differs from what this
+/// thread last saw.
 #[derive(Default)]
 pub struct Session {
     /// the `--model` to ask for; empty means DEFAULT_MODEL
     pub model: String,
     thread: Option<String>,
-    /// the context this thread has already been given
+    /// the context this thread has already been told of
     seen: Option<String>,
     /// the context in the request now in flight, adopted once it succeeds
     offered: Option<String>,
+    /// how full the conversation is after its last answer: tokens, of the
+    /// model's window
+    pub context: Option<(u64, u64)>,
     /// told once, at the start of the thread: where the game and this project are
     pub setup: String,
     /// which conversation this is: "" for the main one, else the trigger held
@@ -116,13 +122,74 @@ pub struct Session {
     pub slot: String,
 }
 
-/// Where the conversation's ID is kept, so a restart of the companion resumes
-/// the same conversation instead of starting a stranger.
-fn thread_file(slot: &str) -> Option<std::path::PathBuf> {
+/// `<name>.<ext>` for the main conversation, `<name>-<slot>.<ext>` for another,
+/// in the companion's folder.
+fn slot_file(slot: &str, name: &str, ext: &str) -> Option<std::path::PathBuf> {
     let base = std::env::var_os("LOCALAPPDATA")?;
     let dir = std::path::PathBuf::from(base).join("wow-companion");
     std::fs::create_dir_all(&dir).ok()?;
-    Some(dir.join(if slot.is_empty() { "thread.txt".to_string() } else { format!("thread-{slot}.txt") }))
+    Some(dir.join(if slot.is_empty() { format!("{name}.{ext}") } else { format!("{name}-{slot}.{ext}") }))
+}
+
+/// Where the conversation's ID is kept, so a restart of the companion resumes
+/// the same conversation instead of starting a stranger.
+fn thread_file(slot: &str) -> Option<std::path::PathBuf> {
+    slot_file(slot, "thread", "txt")
+}
+
+/// The character as the conversation's agent reads it: the export, Lua errors
+/// and integrations (context.rs), its own file so a conversation's line numbers
+/// are the ones it was told.
+fn character_file(slot: &str) -> io::Result<std::path::PathBuf> {
+    slot_file(slot, "character", "txt").ok_or_else(|| io::Error::other("no LOCALAPPDATA for the character file"))
+}
+
+/// What the message says of a changed character: the export's stamp and where
+/// each section starts and ends in the file, so the agent reads only what the
+/// request needs.
+fn character_note(context: &str) -> String {
+    let mut sections: Vec<(String, usize, usize)> = Vec::new();
+    let lines: Vec<&str> = context.lines().collect();
+    for (at, line) in lines.iter().enumerate() {
+        if let Some(name) = line.strip_prefix("== ").and_then(|rest| rest.strip_suffix(" ==")) {
+            if let Some(last) = sections.last_mut() {
+                last.2 = at;
+            }
+            sections.push((name.to_string(), at + 1, lines.len()));
+        }
+    }
+    let index: Vec<String> = sections.iter().map(|(name, from, to)| format!("{name} {from}-{to}")).collect();
+    format!(
+        "Changed since your last message: {}\nSections by line: {}",
+        lines.first().unwrap_or(&"").trim_start_matches("-- "),
+        index.join(", ")
+    )
+}
+
+/// The system prompt's second half, written for each run: Quick's own rules,
+/// the player's profile, and where their character is. The CLI takes one file
+/// to append.
+fn appended_prompt(slot: &str, quick: Option<&std::path::Path>) -> io::Result<std::path::PathBuf> {
+    let mut text = String::new();
+    if let Some(quick) = quick {
+        text.push_str(&std::fs::read_to_string(quick)?);
+        text.push_str("\n\n");
+    }
+    text.push_str("# The player's profile (player/profile.md)\n\n");
+    text.push_str(
+        &std::fs::read_to_string(crate::context::profile())
+            .unwrap_or_else(|_| "(none yet: player/profile.md does not exist)".to_string()),
+    );
+    text.push_str(&format!(
+        "\n\n# Their character\n\nThe game's export as of the player's last UI reload, with the Lua errors \
+         since the game launched and the integrations installed, is in {}. A message that opens with \
+         <character> means it changed since your last one and says where each section is: read the \
+         sections the request needs.\n",
+        character_file(slot)?.display()
+    ));
+    let file = slot_file(slot, "agent-prompt", "md").ok_or_else(|| io::Error::other("no LOCALAPPDATA for the agent's prompt"))?;
+    std::fs::write(&file, text)?;
+    Ok(file)
 }
 
 fn save_thread(slot: &str, thread: &str) {
@@ -165,13 +232,10 @@ impl Session {
     pub fn start(&mut self, job: u64, round: u32, transcript: &str, context: Option<String>) -> io::Result<crate::runs::Run> {
         let fresh = context.filter(|context| self.seen.as_ref() != Some(context));
         let message = match &fresh {
-            Some(context) => format!(
-                "<character>
-{context}
-</character>
-
-The player said: {transcript}"
-            ),
+            Some(context) => {
+                std::fs::write(character_file(&self.slot)?, context)?;
+                format!("<character>\n{}\n</character>\n\nThe player said: {transcript}", character_note(context))
+            }
             None => format!("The player said: {transcript}"),
         };
         let message = if self.thread.is_none() && !self.setup.is_empty() {
@@ -190,23 +254,27 @@ The player said: {transcript}"
         }
         // its conversation, for the strip asks it makes (src/strip.rs ask)
         claude.env(crate::strip::SLOT_ENV, &self.slot);
-        // the message goes on stdin (a file, src/runs.rs): with the character
-        // export in it, it is past Windows' 32,767-character limit for a whole
-        // command line
+        // a conversation compacts at a fifth of the window (about 200k tokens of
+        // 1M) rather than near its end, where an agent works worse and every step
+        // rereads it all (measured: honoured by --print on a resumed session)
+        claude.env("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "20");
+        // the message goes on stdin (a file, src/runs.rs)
         claude.arg("--print");
         if let Some(thread) = &self.thread {
             claude.args(["--resume", thread]);
         }
-        // The rules (agent/rules.md, and agent/quick.md on top for Quick) go out on
-        // every request, read by the CLI from the file, unrecorded: an edit applies
-        // at the next request, with no build. With the default snapshot a resumed
-        // conversation keeps the rules it began with and silently ignores new ones
-        // (measured).
+        // The rules (agent/rules.md; Quick's agent/quick.md, the profile and where
+        // the character is appended) go out on every request, read by the CLI from
+        // the files, unrecorded: an edit applies at the next request, with no
+        // build. With the default snapshot a resumed conversation keeps the rules
+        // it began with and silently ignores new ones (measured).
         let rules = crate::home().join("agent");
         claude.arg("--system-prompt-file").arg(rules.join("rules.md")).args(["--system-prompt-snapshot", "off"]);
         let quick = self.slot == QUICK_SLOT;
+        let quick_rules = rules.join("quick.md");
+        claude.arg("--append-system-prompt-file").arg(appended_prompt(&self.slot, quick.then_some(quick_rules.as_path()))?);
         if quick {
-            claude.arg("--append-system-prompt-file").arg(rules.join("quick.md")).args(["--effort", "low"]);
+            claude.args(["--effort", "low"]);
         }
         // the repository root: docs, this code, the addon, and its CLAUDE.md
         claude.current_dir(crate::home());
@@ -237,6 +305,9 @@ The player said: {transcript}"
         if let Some(context) = self.offered.take() {
             self.seen = Some(context);
         }
+        if answer.context.is_some() {
+            self.context = answer.context;
+        }
         Ok(Some(answer.spoken))
     }
 }
@@ -244,6 +315,8 @@ The player said: {transcript}"
 struct Answer {
     spoken: Spoken,
     thread: Option<String>,
+    /// the conversation's size at the turn's last call, and the model's window
+    context: Option<(u64, u64)>,
 }
 
 /// One line for the player about a tool call: what, not how. None for a call
@@ -276,10 +349,19 @@ fn answers(result: &Value) -> bool {
 
 fn read(run: &crate::runs::Run, mut progress: impl FnMut(&str), leave: impl Fn() -> bool) -> io::Result<Option<Answer>> {
     let mut envelope: Option<Value> = None;
+    // the conversation's size at each call, and the model the turn runs on
+    let (mut size, mut model): (Option<u64>, Option<String>) = (None, None);
     let followed = crate::runs::follow(run, leave, |line| {
         let Ok(event) = serde_json::from_str::<Value>(line) else { return };
         match event.get("type").and_then(Value::as_str) {
+            Some("system") if event.get("subtype").and_then(Value::as_str) == Some("init") => {
+                model = event.get("model").and_then(Value::as_str).map(str::to_string);
+            }
             Some("assistant") => {
+                if let Some(usage) = event.pointer("/message/usage") {
+                    let count = |key: &str| usage.get(key).and_then(Value::as_u64).unwrap_or(0);
+                    size = Some(count("input_tokens") + count("cache_read_input_tokens") + count("cache_creation_input_tokens"));
+                }
                 let content = event.pointer("/message/content").and_then(Value::as_array);
                 for part in content.into_iter().flatten() {
                     match part.get("type").and_then(Value::as_str) {
@@ -320,11 +402,14 @@ fn read(run: &crate::runs::Run, mut progress: impl FnMut(&str), leave: impl Fn()
     }
     let envelope = envelope.ok_or_else(|| io::Error::other(format!("claude gave no result: {}", crate::runs::complaints(run).trim())))?;
     let thread = envelope.get("session_id").and_then(Value::as_str).map(str::to_string);
+    // the window is the turn's own model's (its helpers' models are listed too)
+    let window = model.and_then(|model| envelope.pointer(&format!("/modelUsage/{model}/contextWindow"))?.as_u64());
+    let context = size.zip(window);
     // the step limit is not a fault: the work so far stands and the conversation
     // can carry on (the companion does, a few times). The result names it.
     if envelope.get("subtype").and_then(Value::as_str) == Some("error_max_turns") {
         let spoken = Spoken { say: String::new(), inbox: None, look: false, fresh: false, modules: Vec::new(), out_of_steps: true };
-        return Ok(Some(Answer { spoken, thread }));
+        return Ok(Some(Answer { spoken, thread, context }));
     }
     if envelope.get("is_error").and_then(Value::as_bool) == Some(true) {
         return Err(io::Error::other(format!("claude reported an error: {envelope}")));
@@ -378,7 +463,7 @@ fn read(run: &crate::runs::Run, mut progress: impl FnMut(&str), leave: impl Fn()
         1 => built.pop(),
         _ => Some(Msg::new("batch").list("steps", built)),
     };
-    Ok(Some(Answer { spoken: Spoken { say, inbox, look, fresh, modules, out_of_steps: false }, thread }))
+    Ok(Some(Answer { spoken: Spoken { say, inbox, look, fresh, modules, out_of_steps: false }, thread, context }))
 }
 
 /// One step as the message the addon's dispatch accepts.
@@ -430,4 +515,20 @@ fn field<'a>(command: &'a Value, name: &str) -> io::Result<&'a str> {
         .get(name)
         .and_then(Value::as_str)
         .ok_or_else(|| io::Error::other(format!("no {name} in {command}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::character_note;
+
+    #[test]
+    fn a_changed_character_is_named_by_its_stamp_and_where_each_section_is() {
+        let context = "-- WowCompanion context, 2026-11-12 23:26:41\n== character ==\nDruid 22\n== bags ==\na\nb\n== lua errors ==\nnone";
+        let note = character_note(context);
+        assert_eq!(
+            note,
+            "Changed since your last message: WowCompanion context, 2026-11-12 23:26:41\n\
+             Sections by line: character 2-3, bags 4-6, lua errors 7-8"
+        );
+    }
 }
