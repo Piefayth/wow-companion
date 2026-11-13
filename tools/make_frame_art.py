@@ -143,9 +143,20 @@ def brushed(u, seed=7):
     return np.interp(u, np.linspace(0, N, 600), v)
 
 
-def frame(band_on=True):
-    """The window's frame; band_on False: the rim alone all round, no title
-    band or rule (a drawer of the window, Drawer-*)."""
+def rim_height(s):
+    """The rim's height by depth s into it from its outer edge: one broad bar,
+    a raised bead along its outer half (the lit ridge the game's rim has),
+    its inner half lower and darker. The window's and the drawer's."""
+    return np.where((s >= 0.45) & (s < 5.35), bar(s - 0.45, 4.9) * 0.75 + 0.6 * bead(np.clip((s - 2.0) / 1.25, -1, 1)), 0)
+
+
+def rim_dark(s):
+    """The dark line outside the rim and the lip inside it, by depth."""
+    return np.clip(1 - s / 0.5, 0, 1) + np.clip((s - 5.35) / 0.5, 0, 1)
+
+
+def frame():
+    """The window's frame."""
     xx, yy = grid(N, N)
     s = octagon_depth(xx, yy, 0, 0, N, N, CHAMFER)  # into the rim from its outer edge
     lay = Layers(xx.shape)
@@ -154,11 +165,9 @@ def frame(band_on=True):
     # narrower bar of the same make, meeting the rim in a T. The metal is
     # brushed along its length: its grain a function of the depth alone, so
     # the edges stretch and the corners turn without a seam.
-    # the rim's bar carries a raised bead along its outer half, the lit
-    # ridge the game's rim has, its inner half lower and darker
-    hr = np.where((s >= 0.45) & (s < 5.35), bar(s - 0.45, 4.9) * 0.75 + 0.6 * bead(np.clip((s - 2.0) / 1.25, -1, 1)), 0)
+    hr = rim_height(s)
     rc, rh = (RULE[0] + RULE[1]) / 2, (RULE[1] - RULE[0]) / 2
-    hrule = np.where((np.abs(yy - rc) < rh) & (s > 2.5) & band_on, bar(yy - RULE[0], RULE[1] - RULE[0]) * 0.85, 0)
+    hrule = np.where((np.abs(yy - rc) < rh) & (s > 2.5), bar(yy - RULE[0], RULE[1] - RULE[0]) * 0.85, 0)
     hrule = np.where(hrule > hr, hrule, 0)  # the rim's bar runs over the rule's end
     hgt = ndimage.gaussian_filter(np.maximum(hr, hrule), K * 0.1)
     metal = (s >= 0) & (s < RIM) | (hrule > 0)
@@ -168,16 +177,16 @@ def frame(band_on=True):
     col = np.where(rule[..., None], col * (1 + 0.07 * brushed(yy, 5))[..., None], col)
     # the dark line outside, the lip inside, and the rule's edges, deepened
     edge_r = np.minimum(np.abs(yy - RULE[0]), np.abs(yy - RULE[1]))
-    dark = np.where(rule, np.clip(1 - edge_r / 0.4, 0, 1), np.clip(1 - s / 0.5, 0, 1) + np.clip((s - 5.35) / 0.5, 0, 1))
+    dark = np.where(rule, np.clip(1 - edge_r / 0.4, 0, 1), rim_dark(s))
     col = col + (LINE - col) * np.clip(dark, 0, 0.9)[..., None]
     # the title band: dark wood, shadowed under the rim and over the rule
-    band = (s >= RIM) & (yy < RULE[0]) & band_on
+    band = (s >= RIM) & (yy < RULE[0])
     bcol = BAND * (1 + 0.06 * streaks(yy))[..., None]
     occl = np.maximum(np.exp(-(s - RIM) / 0.9) * 0.75, np.exp(-(RULE[0] - yy) / 0.6) * 0.45)
     bcol = bcol * (1 - np.clip(occl, 0, 0.8))[..., None]
     lay.over(np.where(band[..., None], bcol, col), (metal | band).astype(float))
     # the panel under the rule: only the rule's shadow
-    panel = (s >= RIM) & (yy >= RULE[1]) & band_on
+    panel = (s >= RIM) & (yy >= RULE[1])
     under = np.clip(1 - (yy - RULE[1]) / (TOP_H - RULE[1]), 0, 1) ** 2 * 0.7
     lay.over(np.zeros(3), np.where(panel & ~metal, under, 0))
     return lay.pre()
@@ -202,21 +211,72 @@ def frame_pieces():
     }
 
 
+DRAWER_VERSION = 22  # ConvMenu.lua's
+DW, DH = 60.0, 60.0  # the drawn drawer, from the window's outer edge
+DRULE = DH - RIM - 24.0  # the legend's rule (ConvMenu.lua's FOOT under it)
+
+
+def drawer():
+    """The conversation menu's drawer (ConvMenu.lua), out of the window's
+    right side: its own rim on three sides, the window's profile by depth
+    inside the drawer's outline, its top and bottom rims running over the
+    window rim's outer shoulder and under its bead, as the title rule meets
+    the rim; the legend's rule, the title rule's make, across it. Drawn with
+    the window's rim at x 0..RIM (its outer edge at RIM), so the joints' pieces
+    hold the window's own rim beside them."""
+    k = K
+    w = RIM + DW
+    xx, yy = grid(w, DH, k)
+    sw = RIM - xx  # into the window's rim from its outer edge
+    sd = octagon_depth(xx, yy, -40, 0, w, DH, CHAMFER)  # the drawer, open to the left
+    sd = np.minimum(sd, np.minimum.reduce([yy, DH - yy, w - xx]))
+    hw = np.where(sw > 0, rim_height(np.clip(sw, 0, None)), 0)
+    hd = np.where((sw < 2.5) & (sd > 0), rim_height(np.clip(sd, 0, None)), 0)
+    mw, md = (sw > 0) & (sw < RIM), (sw < 2.5) & (sd > 0) & (sd < RIM)
+    top = md & (~mw | (hd > hw))  # the drawer's rim where it lies over the window's
+    s = np.where(top, sd, sw)
+    hr = np.where(top, hd, np.where(mw, hw, 0))
+    rule = (yy >= DRULE) & (yy < DRULE + 3.0) & (xx >= RIM) & (sd > 2.5)
+    hrule = np.where(rule, bar(yy - DRULE, 3.0) * 0.85, 0)
+    rule &= hrule > hr
+    hgt = ndimage.gaussian_filter(np.where(rule, hrule, hr), K * 0.1)
+    metal = mw | md | rule
+    col = rim_metal(hgt) * (1 + 0.09 * brushed(np.clip(s, 0, N - 1)))[..., None]
+    col = np.where(rule[..., None], rim_metal(hgt) * (1 + 0.07 * brushed(yy, 5))[..., None], col)
+    edge_r = np.minimum(np.abs(yy - DRULE), np.abs(yy - DRULE - 3.0))
+    dark = np.where(rule, np.clip(1 - edge_r / 0.4, 0, 1), rim_dark(np.clip(s, 0, None)))
+    col = col + (LINE - col) * np.clip(dark, 0, 0.9)[..., None]
+    # the legend's band: the title band's dark slate, shadowed under the rule
+    # and over the bottom rim
+    band = (yy >= DRULE + 3.0) & (sd >= RIM) & (xx >= RIM)
+    bcol = BAND * (1 + 0.06 * streaks(yy))[..., None]
+    occl = np.maximum(np.exp(-(DH - RIM - yy) / 0.9) * 0.75, np.exp(-(yy - DRULE - 3.0) / 0.6) * 0.45)
+    bcol = bcol * (1 - np.clip(occl, 0, 0.8))[..., None]
+    lay = Layers(xx.shape)
+    lay.over(np.where(band[..., None], bcol, col), (metal | band).astype(float))
+    return lay.pre()
+
+
 def drawer_pieces():
-    """A drawer sliding out of the window's right side (ConvMenu.lua): the
-    rim alone on its three outer sides, its left edge under the window's."""
-    pre = frame(band_on=False)
+    """The drawer's pieces: each joint holds the window's rim beside it (put
+    over the window's own), the rest as the frame's are."""
+    pre = drawer()
     k = K
 
     def cut(x0, y0, x1, y1):
         return pre[int(round(y0 * k)):int(round(y1 * k)), int(round(x0 * k)):int(round(x1 * k))]
-    c, mid = RIM, N / 2
+    c, w, mid = RIM, RIM + DW, RIM + DW / 2
     return {
-        "Drawer-TopRightCorner": fit(cut(N - c, 0, N, c), (64, 64)),
-        "Drawer-BottomRightCorner": fit(cut(N - c, N - c, N, N), (64, 64)),
+        "Drawer-TopJoin": fit(cut(0, 0, 2 * c, c), (128, 64)),
+        "Drawer-BottomJoin": fit(cut(0, DH - c, 2 * c, DH), (128, 64)),
         "Drawer-TopEdge": fit(cut(mid - 1, 0, mid + 1, c), (16, 64)),
-        "Drawer-BottomEdge": fit(cut(mid - 1, N - c, mid + 1, N), (16, 64)),
-        "Drawer-RightEdge": fit(cut(N - c, mid - 1, N, mid + 1), (64, 16)),
+        "Drawer-BottomEdge": fit(cut(mid - 1, DH - c, mid + 1, DH), (16, 64)),
+        "Drawer-TopRightCorner": fit(cut(w - c, 0, w, c), (64, 64)),
+        "Drawer-BottomRightCorner": fit(cut(w - c, DH - c, w, DH), (64, 64)),
+        "Drawer-RightEdge": fit(cut(w - c, c + 4, w, c + 6), (64, 16)),
+        "Drawer-RightRule": fit(cut(w - c, DRULE, w, DRULE + 3.0), (64, 32)),
+        "Drawer-Rule": fit(cut(mid - 1, DRULE, mid + 1, DRULE + 3.0), (16, 32)),
+        "Drawer-Band": fit(cut(mid - 1, DRULE + 3.0, mid + 1, DH - c), (16, 256)),
     }
 
 
@@ -545,7 +605,8 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     artout.clear(OUT, "Frame-*.tga", "Drawer-*.tga", "Inset-*.tga", "Close-*.tga")
     for stem, img in art.items():
-        write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, VERSION)), img)
+        v = DRAWER_VERSION if stem.startswith("Drawer-") else VERSION
+        write_tga(os.path.join(OUT, "%s-%d.tga" % (stem, v)), img)
     print(len(art), "textures;", sheet(art))
 
 

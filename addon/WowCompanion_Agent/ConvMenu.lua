@@ -8,43 +8,63 @@
 -- Jobs.lua binds triangle to WCConvMore while the cursor is on a row and
 -- leaves the pad to the menu while it is open (WC.ConvMenu.Open()).
 
--- A drawer of the window (the player, 2026-11-12): it slides out of the
--- window's right side, level with its row, its left edge under the window's
--- rim, and the window's own bronze rim round its three outer sides
--- (tools/make_frame_art.py, Drawer-*). Inside, the window's body slate, the
--- options as compact rows of the list's names (no dividers; the one under
--- the cursor on the replies' slate, its name lit), and a foot strip of its
--- own for what cross and circle do, in the window legend's style.
+-- A drawer of the window (the player, 2026-11-12/13): it slides out of the
+-- window's right side, level with its row, and has its own rim on its three
+-- outer sides, the window rim's own profile (tools/make_frame_art.py,
+-- drawer(), Drawer-*): its top and bottom rims run over the window rim's
+-- outer shoulder and under its bead, as the title rule meets the rim, so the
+-- joints' pieces hold the window's rim beside them and lie over it. Inside,
+-- the window's body slate, the options as compact rows of the list's names
+-- (no dividers; the one under the cursor on the replies' slate, its name
+-- lit), and under a rule of the title rule's make, a band of its own for
+-- what cross and circle do.
 local W, ROW, FOOT, PAD = 160, 24, 24, 6
-local RIM = 6 -- the window's rim (Window.lua)
-local DRAWER = [[Interface\AddOns\WowCompanion_Agent\Art\Drawer-%s-21]]
+local RIM, RULE = 6, 3 -- the window's rim (Window.lua), the rule's width
+local DRAWER = [[Interface\AddOns\WowCompanion_Agent\Art\Drawer-%s-22]] -- make_frame_art.py's DRAWER_VERSION
 local menu = CreateFrame("Frame", "WCConvMenu", UIParent)
 menu:Hide()
-local function piece(name, layer)
-	local t = menu:CreateTexture(nil, layer or "BORDER")
+local function piece(name, layer, sub)
+	local t = menu:CreateTexture(nil, layer or "BORDER", nil, sub)
 	t:SetTexture(DRAWER:format(name), "CLAMP", "CLAMP")
 	return t
 end
+local tj, bj = piece("TopJoin"), piece("BottomJoin")
+tj:SetSize(2 * RIM, RIM)
+tj:SetPoint("TOPLEFT")
+bj:SetSize(2 * RIM, RIM)
+bj:SetPoint("BOTTOMLEFT")
 local tr, br = piece("TopRightCorner"), piece("BottomRightCorner")
 tr:SetSize(RIM, RIM)
 tr:SetPoint("TOPRIGHT")
 br:SetSize(RIM, RIM)
 br:SetPoint("BOTTOMRIGHT")
-local top, bottom, right = piece("TopEdge"), piece("BottomEdge"), piece("RightEdge")
-top:SetPoint("TOPLEFT")
+local top, bottom = piece("TopEdge"), piece("BottomEdge")
+top:SetPoint("TOPLEFT", tj, "TOPRIGHT")
 top:SetPoint("BOTTOMRIGHT", tr, "BOTTOMLEFT")
-bottom:SetPoint("BOTTOMLEFT")
+bottom:SetPoint("BOTTOMLEFT", bj, "BOTTOMRIGHT")
 bottom:SetPoint("TOPRIGHT", br, "TOPLEFT")
+-- the right rim, the rule's end tucked under it, the right rim again
+local ruleRight = piece("RightRule")
+ruleRight:SetSize(RIM, RULE)
+ruleRight:SetPoint("BOTTOMRIGHT", 0, RIM + FOOT - RULE)
+local right, rightLow = piece("RightEdge"), piece("RightEdge")
 right:SetPoint("TOPLEFT", tr, "BOTTOMLEFT")
-right:SetPoint("BOTTOMRIGHT", br, "TOPRIGHT")
+right:SetPoint("BOTTOMRIGHT", ruleRight, "TOPRIGHT")
+rightLow:SetPoint("TOPLEFT", ruleRight, "BOTTOMLEFT")
+rightLow:SetPoint("BOTTOMRIGHT", br, "TOPRIGHT")
+local rule, band = piece("Rule"), piece("Band", "BACKGROUND", 1)
+rule:SetPoint("BOTTOMLEFT", RIM, RIM + FOOT - RULE)
+rule:SetPoint("TOPRIGHT", ruleRight, "TOPLEFT")
+band:SetPoint("TOPLEFT", rule, "BOTTOMLEFT")
+band:SetPoint("BOTTOMRIGHT", -RIM, RIM)
 local body = menu:CreateTexture(nil, "BACKGROUND")
 WC.Style.Stone(body, "you", 0.72)
-body:SetPoint("TOPLEFT", 0, -RIM)
-body:SetPoint("BOTTOMRIGHT", -RIM, RIM)
+body:SetPoint("TOPLEFT", RIM, -RIM)
+body:SetPoint("BOTTOMRIGHT", rule, "TOPRIGHT")
 local lit = menu:CreateTexture(nil, "BACKGROUND", nil, 2)
 WC.Style.Stone(lit, "claude")
 local legend = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-legend:SetPoint("RIGHT", menu, "BOTTOMRIGHT", -RIM - PAD - 2, RIM + FOOT / 2)
+legend:SetPoint("RIGHT", menu, "BOTTOMRIGHT", -RIM - PAD - 2, RIM + (FOOT - RULE) / 2)
 legend:SetText(WowCompanion_Glyph("PAD1") .. " Select    " .. WowCompanion_Glyph("PAD2") .. " Back")
 menu.rows = {}
 local keys = CreateFrame("Frame", "WCConvMenuKeys", UIParent)
@@ -108,9 +128,9 @@ local function show(list, row)
 	local wide = legend:GetStringWidth() + 2 * (RIM + PAD) + 16
 	menu:SetSize(math.max(W, wide), RIM + PAD + #menu.list * ROW + PAD + FOOT + RIM)
 	menu:SetScale(window:GetEffectiveScale() / UIParent:GetEffectiveScale())
-	-- under the window, so its left edge tucks beneath the window's rim
+	-- over the window: its joints lie over the window's rim
 	menu:SetFrameStrata(window:GetFrameStrata())
-	menu:SetFrameLevel(math.max(1, window:GetFrameLevel() - 1))
+	menu:SetFrameLevel(window:GetFrameLevel() + 30)
 	menu:ClearAllPoints()
 	menu:SetPoint("LEFT", window, "RIGHT", -RIM, 0)
 	menu:SetPoint("TOP", row, "TOP", 0, RIM + PAD)
