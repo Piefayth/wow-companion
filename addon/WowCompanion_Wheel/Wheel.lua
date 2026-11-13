@@ -159,7 +159,7 @@ local LOAD_PICK = [[
 ]]
 
 -- Right stick directions (as keys): move the sticky pick, and use it when the
--- last key is let go. A key going down always moves the pick. A key going up
+-- stick is let go. A key going down always moves the pick. A key going up
 -- moves it only while the stick is still pushed out to the rim (the stick
 -- turning, up-right to right); a stick on its way back to the centre lets its
 -- keys go one at a time, and the first of them must not turn a diagonal into
@@ -174,15 +174,21 @@ SecureHandlerWrapScript(aim, "OnClick", aim, [[
     if not ring:IsShown() then return false end
     ring:SetAttribute("wc-held-" .. button, down or nil)
     local pick = ring:RunAttribute("wc-pick")
-    if pick then
-        if down or (ring:RunAttribute("wc-push") or 0) >= 0.85 then
-            ring:SetAttribute("wc-sticky", pick)
-            ring:SetAttribute("wc-aimed", true)
-        end
+    local push = ring:RunAttribute("wc-push") or 0
+    if down then
+        ring:SetAttribute("wc-sticky", pick)
+        ring:SetAttribute("wc-aimed", true)
         return false
     end
-    -- no key held: the stick is let go
-    if down or not ring:GetAttribute("wc-aimed") then return false end
+    -- An up edge with keys still held and the stick still out is a turn. A key
+    -- whose up edge never reached us must not hold the wheel open, so a stick
+    -- back near the centre is a release whatever the keys say.
+    if pick and push >= 0.5 then
+        if push >= 0.85 then ring:SetAttribute("wc-sticky", pick) end
+        return false
+    end
+    ring:RunAttribute("wc-forget")
+    if not ring:GetAttribute("wc-aimed") then return false end
     pick = ring:GetAttribute("wc-sticky")
     if not pick then return false end
     local key = ring:GetAttribute("wc-active")
