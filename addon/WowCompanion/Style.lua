@@ -347,92 +347,10 @@ function WowCompanion_Style.PageRock(page)
 	return rock
 end
 -- A well of stone on page, sunk by a soft shadow inside its top and left
--- edges, light falling from the top left, no rim. Raised, it stands up out of
--- the page instead, and the window's top shadow stops short of it (a page
--- names its raised stone page.raised, Window.lua). Returns its stone, for the
--- caller to anchor; what lies on the stone under the shading goes at sublevel 0.
---
--- Trial, temporary (the player, 2026-11-12): a raised well is its stone seen
--- from straight above, high in the middle and sloping down to its edges, drawn
--- by tools/make_slab_art.py (its slopes the stone lit, a channel at its edge
--- for the vine beside it; the vines are their own art, unchanged), one of RAISE_LOOKS
--- picked live on the Settings page (WowCompanionDB.raisedLook); the looks not
--- picked go when one is chosen. Each: its name, then make_slab_art.py's
--- VARIANTS: the whole edge's width (channel and slope) and the stone's shade. The slab fills the well;
--- the art reaches SLAB_MARGIN past it, where a faint shadow falls.
-local SLAB_ROUND, SLAB_MARGIN = 4, 3 -- make_slab_art.py's ROUND, MARGIN
-local RAISE_LOOKS = {
-	{ name = "Channel, chamfer", edge = 13, shade = 0.8 },
-	{ name = "Channel, cushion", edge = 17, shade = 0.8 },
-	{ name = "Channel and bead", edge = 15, shade = 0.8 },
-	{ name = "Narrow deep channel", edge = 9, shade = 0.8 },
-	{ name = "Wide shallow channel", edge = 15, shade = 0.8 },
-	{ name = "Cove", edge = 14, shade = 0.8 },
-}
-WowCompanion_Style.RAISE_LOOKS = RAISE_LOOKS
-local raisedWells = {}
--- the nine pieces: anchor corner, texture, texcoords (corners' quarters)
-local SLAB_CORNERS = { { "TOPLEFT", 0, 0.5, 0, 0.5 }, { "TOPRIGHT", 0.5, 1, 0, 0.5 },
-	{ "BOTTOMLEFT", 0, 0.5, 0.5, 1 }, { "BOTTOMRIGHT", 0.5, 1, 0.5, 1 } }
-local function paintRaised(w, v)
-	local look = RAISE_LOOKS[v]
-	local m = SLAB_MARGIN
-	local C = m + look.edge + 2
-	local art = ART .. "Slab-" .. v .. "-%s-" .. SLAB_ROUND
-	local t, f = w.floor, w.slab
-	f:ClearAllPoints()
-	f:SetPoint("TOPLEFT", t, "TOPLEFT")
-	f:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT")
-	f:SetVertexColor(look.shade, look.shade, look.shade)
-	for i, c in ipairs(SLAB_CORNERS) do
-		local x = w.pieces[i]
-		x:SetTexture(art:format("Corners"))
-		x:SetTexCoord(c[2], c[3], c[4], c[5])
-		x:ClearAllPoints()
-		x:SetSize(C, C)
-		x:SetPoint(c[1], t, c[1], c[1]:find("LEFT") and -m or m, c[1]:find("TOP") and m or -m)
-	end
-	local edges = {
-		{ "Top", "TOPLEFT", "TOPRIGHT", C - m, m, m - C, m, true },
-		{ "Bottom", "BOTTOMLEFT", "BOTTOMRIGHT", C - m, -m, m - C, -m, true },
-		{ "Left", "TOPLEFT", "BOTTOMLEFT", -m, m - C, -m, C - m, false },
-		{ "Right", "TOPRIGHT", "BOTTOMRIGHT", m, m - C, m, C - m, false },
-	}
-	for i, e in ipairs(edges) do
-		local x = w.pieces[4 + i]
-		x:SetTexture(art:format(e[1]))
-		x:SetTexCoord(0, 1, 0, 1)
-		x:ClearAllPoints()
-		x:SetPoint(e[2], t, e[2], e[4], e[5])
-		x:SetPoint(e[3], t, e[3], e[6], e[7])
-		if e[8] then x:SetHeight(C) else x:SetWidth(C) end
-	end
-end
--- the look in use (the first when none is saved)
-function WowCompanion_Style.RaisedLook()
-	local want = WowCompanionDB and WowCompanionDB.raisedLook
-	for i, look in ipairs(RAISE_LOOKS) do
-		if look.name == want then return look, i end
-	end
-	return RAISE_LOOKS[1], 1
-end
-function WowCompanion_Style.PaintRaised(name)
-	if name and WowCompanionDB then WowCompanionDB.raisedLook = name end
-	local _, v = WowCompanion_Style.RaisedLook()
-	for _, w in ipairs(raisedWells) do paintRaised(w, v) end
-end
-function WowCompanion_Style.Well(page, which, shade, raised)
+-- edges, light falling from the top left, no rim. Returns its stone, for the
+-- caller to anchor; what lies on the stone under the shadow goes at sublevel 0.
+function WowCompanion_Style.Well(page, which, shade)
 	local t = page:CreateTexture(nil, "BACKGROUND", nil, -1)
-	if raised then
-		-- the well is the floor, the light stone; the slab stands on it
-		WowCompanion_Style.Stone(t, "claude")
-		local slab = page:CreateTexture(nil, "BACKGROUND", nil, 0)
-		WowCompanion_Style.Stone(slab, which, shade)
-		local pieces = {}
-		for i = 1, 8 do pieces[i] = page:CreateTexture(nil, "BACKGROUND", nil, 1) end
-		raisedWells[#raisedWells + 1] = { floor = t, slab = slab, pieces = pieces }
-		return t
-	end
 	WowCompanion_Style.Stone(t, which, shade)
 	for _, side in ipairs({ "Top", "Left" }) do
 		local s = page:CreateTexture(nil, "BACKGROUND", nil, 2)

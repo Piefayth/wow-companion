@@ -450,17 +450,6 @@ local function buildTabs(frame, messages)
 		for _, part in ipairs(frame.chatParts or {}) do part:SetShown(chat) end
 		pageWell:SetShown(not chat)
 		for i, p in pairs(pages) do p:SetShown(i == id) end
-		-- the top shadow falls on the page's sunk wells only, short of a
-		-- raised one (p.raised, its stone, set as the page is shown)
-		local raised = pages[id] and pages[id].raised
-		pageLip:ClearAllPoints()
-		pageLip:SetPoint("TOPRIGHT", -INSET, -INSET)
-		if raised then
-			pageLip:SetPoint("TOPLEFT", raised, "TOPRIGHT", 0, FLOOR - INSET)
-		else
-			pageLip:SetPoint("TOPLEFT", INSET, -INSET)
-		end
-		pageLip:SetHeight(24)
 	end
 	frame.SelectTab(1)
 	-- Tabs are picked with the controller cursor; L1 and R1 are talk-button

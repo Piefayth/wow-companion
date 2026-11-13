@@ -47,6 +47,10 @@ none of this. When the player states a new preference or changes one, write it h
   new world. Six looks in wood, leather, brass, enamel, iron and lacquer
   were rejected as foreign to the window. Rows in a list are compact, not
   full-height cells sharing the well.
+  Raised wells rejected after four rounds (2026-11-12): bevels, slopes and
+  shadows laid over a well read as "2001 amateur web designer" overlapping
+  rectangles. Depth must be designed with the page's structure (the dividers,
+  the joints, the border), never added to a panel on its own.
   Tabs never open into the chat (2026-11-12): its stone is shaded to sit back
   and scrolls, so no tab can join it; tabs stand apart, on its border.
 - **Options, built and side by side** (2026-11-12): they hand us the legwork
