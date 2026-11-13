@@ -1,28 +1,24 @@
 -- Drawer trials, temporary: ways the conversation menu's drawer
 -- (ConvMenu.lua) could hook into the window's rim, side by side at true
--- size. Round 6: each cell is drawn as the drawer would be, a base picture
--- (a slice of the window's right side and the drawer butted against its rim,
--- the legend's panel) with a joint piece over each place the drawer's rims
--- meet the window's: the crossing is the settings joint's, a four-filleted
--- star of one metal, its ornament springing from the star
--- (tools/make_drawer_trials.py). Its words drawn here. Shown only: nothing
--- here is a stop. Goes when one is chosen.
+-- size, each cell one picture (tools/make_drawer_trials.py; round 7: every bar
+-- one centreline field, joints forged by a smooth union) and its words drawn
+-- here. Shown only: nothing here is a stop. Goes when one is chosen.
 local S = WC.Style
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\DrawerTrial-%s-6]] -- the generator's VERSION
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\DrawerTrial-%s-7]] -- the generator's VERSION
 -- the generator's cell and joint boxes, in units, at 2.7 texels a unit
 local TEXEL = 2.7
 local CW, CH, BASE_TEX = 172, 180, 512
-local JW, JH, JOINT_TEX = 60, 70, 256
+local JW = 60 -- the label's left
 local X0, RIM, XR, DT = 16, 6, 170, 46
 local ROWS, ROW = DT + 12, 24
-local LEGEND_Y = DT + 75.5 -- the middle of the legend's panel
+local LEGEND_Y = DT + 74.5 -- the middle of the legend's panel
 local OPTIONS = {
-	{ "Band", "The star alone: the crossing forged, no ornament" },
-	{ "Band", "Sprig: one stem from the star into a big volute" },
-	{ "Band", "Cascade from the star, two satellites" },
-	{ "Band", "Fork: up the rim and along the drawer" },
-	{ "Band", "Lyre: a volute and a long S over the drawer" },
-	{ "Band", "Pair: a stem into a volute, a second budding off" },
+	"Forged T: the rims one metal, small fillets",
+	"Sweep: deep fillets running out along the drawer",
+	"Crisp: the rims meet square, no fillet",
+	"Sprig: a rod from the joint into a big volute",
+	"Cascade: a big volute, two scrolls budding off",
+	"Fork: one rod up the rim, one out over the drawer",
 }
 
 local function picture(f, file, x, y, w, h, tex, layer)
@@ -34,13 +30,11 @@ local function picture(f, file, x, y, w, h, tex, layer)
 end
 
 local function cell(box, i, x, y)
-	local legend, title = OPTIONS[i][1], OPTIONS[i][2]
+	local title = OPTIONS[i]
 	local f = CreateFrame("Frame", nil, box)
 	f:SetSize(CW, CH)
 	f:SetPoint("TOPLEFT", x, y)
-	picture(f, legend, 0, 0, CW, CH, BASE_TEX, 0)
-	picture(f, ("Joint-%d-Top"):format(i), 0, 0, JW, JH, JOINT_TEX, 1)
-	picture(f, ("Joint-%d-Bottom"):format(i), 0, CH - JH, JW, JH, JOINT_TEX, 1)
+	picture(f, ("Cell-%d"):format(i), 0, 0, CW, CH, BASE_TEX, 0)
 	local top = CreateFrame("Frame", nil, f)
 	top:SetAllPoints()
 	top:SetFrameLevel(f:GetFrameLevel() + 4)
