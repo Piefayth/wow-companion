@@ -165,7 +165,7 @@ function WC.Companion.ConvList(frame, well)
 		function selected:Show() self:SetShown(true) end
 		b.selected = selected
 		-- Main is the one in view after a reload, so its news is being read; the
-		-- words (news, context) are Agent.lua's to paint
+		-- news is Agent.lua's to paint
 		local kept = type(WowCompanionAgentDB) == "table" and WowCompanionAgentDB.unread
 		if kept and key == "" then kept[""] = nil end
 		b.Paint(WC.Conversations.Label(key))

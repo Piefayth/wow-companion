@@ -196,9 +196,8 @@ local function paintConversations()
 	for key, button in pairs(frame.convButtons) do
 		-- each conversation shows its own progress in its chord's place: the
 		-- mic while it is talked to, the seconds while its agent works, "new"
-		-- once it answered, else how full its context is
+		-- once it answered
 		local heard, running = work(key)
-		local context = contextSet()[key]
 		local word
 		if talking.on and talking.slot == key then
 			-- the Companion key is held with this conversation's chord: the
@@ -211,12 +210,21 @@ local function paintConversations()
 			word = "|cffb0b0b0" .. WC.Jobs.Age(running.since) .. "s|r"
 		elseif unreadSet()[key] then
 			word = WC.Style.GOOD .. "new|r"
-		elseif context then
-			word = ("|cffb0b0b0%d%%|r"):format(math.floor(context.tokens / context.window * 100 + 0.5))
 		end
 		button.Paint(slotLabel(key), word)
 		if button.selected then button.selected:SetShown(key == viewSlot) end
 	end
+	-- the open conversation's context, in the strip under the chat at the
+	-- left, opposite the legend (Jobs.lua); a Chat tab part (Window.lua)
+	if not frame.contextText then
+		frame.contextText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		frame.contextText:SetPoint("LEFT", frame, "BOTTOMLEFT", 26, WC.Window.FOOT_MID)
+		frame.contextText:SetShown((frame.currentTab or 1) == 1)
+		table.insert(frame.chatParts, frame.contextText)
+	end
+	local context = contextSet()[viewSlot]
+	frame.contextText:SetText(context and ("|cffb0b0b0Context %d%%|r"):format(
+		math.floor(context.tokens / context.window * 100 + 0.5)) or "")
 	-- each message's panel, with its Cancel and Send now (Jobs.lua)
 	if WC.Jobs then WC.Jobs.Refresh() end
 end
@@ -422,7 +430,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- mailbox's lines come at PLAYER_ENTERING_WORLD, WowCompanion_Link)
 		logFrame()
 		replayLog()
-		-- the list's words as the reload left them: news, and each context
+		-- the list's news and the open conversation's context, as the reload left them
 		paintConversations()
 		WC.Send("UNREAD", unreadSet())
 		-- the last reply per conversation, as it stood when the reload saved
