@@ -369,6 +369,30 @@ local function buildTabs(frame, messages)
 		mid:SetPoint("RIGHT", right, "LEFT")
 		return { left, mid, right }
 	end
+	-- The rows not in view, on trial (the player, 2026-11-12: flat beside the
+	-- chosen plate): a look per key, picked live with WC.Companion.ConvStyle,
+	-- kept in WowCompanionAgentDB.convStyle. "" is bare text.
+	local CONV_STYLES = { [""] = true, rule = true, slot = true, bands = true, plaque = true }
+	local restyle -- set below, once every row is made
+	-- a vine run of `weight` along an edge of owner, in a frame of its own
+	local function run(owner, weight, edge)
+		local f = CreateFrame("Frame", nil, owner)
+		f:SetHeight(16)
+		f:SetPoint("LEFT", owner, edge .. "LEFT", 6, 0)
+		f:SetPoint("RIGHT", owner, edge .. "RIGHT", -6, 0)
+		WC.Style.VineLine(f, weight, false, true, true)
+		return f
+	end
+	local function stone(owner, which, inset, shade)
+		local t = owner:CreateTexture(nil, "BACKGROUND")
+		t:SetTexture(WC.Style.STONE[which], "REPEAT", "REPEAT")
+		t:SetHorizTile(true)
+		t:SetVertTile(true)
+		t:SetPoint("TOPLEFT", inset, -inset)
+		t:SetPoint("BOTTOMRIGHT", -inset, inset)
+		t:SetVertexColor(shade, shade, shade)
+		return t
+	end
 	frame.convButtons = {}
 	for i, key in ipairs(WC.Conversations.list) do
 		local b = CreateFrame("Button", nil, well)
@@ -393,10 +417,35 @@ local function buildTabs(frame, messages)
 		for _, edge in ipairs({ "TOP", "BOTTOM" }) do
 			for _, t in ipairs(vine(b, edge)) do parts[#parts + 1] = t end
 		end
+		-- each trial look's pieces for this row, shown while it is not in view
+		local idle = { rule = {}, slot = {}, bands = {}, plaque = {} }
+		if i < #WC.Conversations.list then idle.rule[1] = run(b, "Thin", "BOTTOM") end
+		local slot = stone(b, "you", 2, 0.55)
+		local lip = b:CreateTexture(nil, "BORDER")
+		lip:SetTexture([[Interface\Common\ShadowOverlay-Top]])
+		lip:SetPoint("TOPLEFT", slot)
+		lip:SetPoint("TOPRIGHT", slot)
+		lip:SetHeight(8)
+		lip:SetAlpha(0.8)
+		idle.slot = { slot, lip }
+		if i % 2 == 0 then
+			local band = stone(b, "claude", 0, 1)
+			band:SetAlpha(0.3)
+			idle.bands[1] = band
+		end
+		idle.plaque = { stone(b, "claude", 0, 0.5) }
+		for _, edge in ipairs({ "TOP", "BOTTOM" }) do
+			local f = run(b, "Thin", edge)
+			f:SetAlpha(0.7)
+			idle.plaque[#idle.plaque + 1] = f
+		end
+		b.idle = idle
 		local selected = {}
 		function selected:SetShown(on)
 			for _, t in ipairs(parts) do t:SetShown(on) end
 			text:SetTextColor(unpack(on and NAME_LIT or NAME))
+			b.inView = on
+			if restyle then restyle() end
 		end
 		function selected:Show() self:SetShown(true) end
 		selected:SetShown(false)
@@ -413,6 +462,26 @@ local function buildTabs(frame, messages)
 		b:SetScript("OnClick", function() WowCompanion_SetConversation(key) end)
 		WC.MarkFocusable(b)
 		frame.convButtons[key] = b
+	end
+	function restyle()
+		local pick = WowCompanionAgentDB and WowCompanionAgentDB.convStyle or ""
+		if not CONV_STYLES[pick] then pick = "" end
+		local order = WC.Conversations.list
+		for i, key in ipairs(order) do
+			local b = frame.convButtons[key]
+			local nextIn = order[i + 1] and frame.convButtons[order[i + 1]].inView
+			for look, pieces in pairs(b.idle) do
+				-- a rule under a row that meets the plate's own vine is left out
+				local on = look == pick and not b.inView and not (look == "rule" and nextIn)
+				for _, t in ipairs(pieces) do t:SetShown(on) end
+			end
+		end
+	end
+	WC.Companion.ConvStyle = function(pick)
+		if not CONV_STYLES[pick or ""] then return false end
+		WowCompanionAgentDB.convStyle = pick or ""
+		restyle()
+		return true
 	end
 	frame.convButtons[""].selected:Show()
 
