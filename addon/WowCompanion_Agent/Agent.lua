@@ -223,13 +223,10 @@ local function paintConversations()
 		frame.contextText:SetShown((frame.currentTab or 1) == 1)
 		table.insert(frame.chatParts, frame.contextText)
 	end
+	-- (a compaction running shows in the chat's waiting line, Jobs.lua)
 	local context = contextSet()[viewSlot]
-	local parts = {}
-	if context and context.tokens and context.window then
-		parts[1] = ("Context %d%%"):format(math.floor(context.tokens / context.window * 100 + 0.5))
-	end
-	if context and context.compacting then parts[#parts + 1] = "compacting..." end
-	frame.contextText:SetText(#parts > 0 and ("|cffb0b0b0%s|r"):format(table.concat(parts, "  ")) or "")
+	frame.contextText:SetText(context and context.tokens and ("|cffb0b0b0Context %d%%|r"):format(
+		math.floor(context.tokens / context.window * 100 + 0.5)) or "")
 	-- each message's panel, with its Cancel and Send now (Jobs.lua)
 	if WC.Jobs then WC.Jobs.Refresh() end
 end
