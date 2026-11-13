@@ -361,9 +361,6 @@ local function key(row)
 	refreshers[#refreshers + 1] = fill
 	b:SetScript("OnClick", row.onClick)
 	r:SetScript("OnClick", row.onClick)
-	-- the row holds the cursor for the button, so the row lights it
-	r:HookScript("OnEnter", function() b:SetLit(true) end)
-	r:HookScript("OnLeave", function() b:SetLit(false) end)
 	WC.MarkIgnored(b)
 	return r
 end
