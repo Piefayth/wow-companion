@@ -1,5 +1,5 @@
-"""A trial (the player, 2026-11-13): spine ends round 5, the folded corner
-cover laid over the real spine. Round 4 (a33d974) drew its own vine and a
+"""A trial (the player, 2026-11-13): spine ends round 6, the folded corner
+cover laid over the real spine, smaller (round 5, 2ecc90e, drew the eye). Round 4 (a33d974) drew its own vine and a
 mock panel's side face the game does not have, so its vine missed the spine's
 and the bottom was not the top's. Here the spine is the game's own, whole, its
 round end under the cover; the cover is only a thin sheet: a gusset over the
@@ -9,7 +9,7 @@ in place for each end, the light from the top left on both:
 
     python tools/make_cover_trial.py   writes addon/WowCompanion/Art/Vine-CornerCover<Top|Bottom>-T5.tga
 
-48 x 24 units, 4 texels each; the spine's middle at x 24, the panel's edge
+48 x 16 units, 4 texels each; the spine's middle at x 24, the panel's edge
 at x 22.5 and at the texture's top (bottom). Removed with the trial once one
 is picked (docs/looks.md).
 """
@@ -20,11 +20,11 @@ from scipy import ndimage as nd
 import make_scrollbar_art as sb
 
 U, SS = sb.U, 4
-TW, TH = 48, 24
+TW, TH = 48, 16
 MID, EDGE_X = 24.0, 22.5  # the spine's middle, the panel's edge
 VINE = sb.WEIGHTS["Thick"][0]  # the spine's half-width
 STRAP = MID + VINE + 0.5  # the strap's right edge, past the vine
-TIP = 20.0  # where the cover's arm ends down the panel's edge
+TIP = 12.0  # where the cover's arm ends down the panel's edge
 FACE = np.array((116, 99, 77.)); LIGHT = np.array((206, 188, 152.)); DARK = np.array((44, 33, 22.))
 L = np.array((-1., -1.)) / math.sqrt(2)
 
@@ -41,8 +41,8 @@ def down(a): return np.asarray(Image.fromarray(a).resize((TW * U, TH * U), Image
 
 
 def gusset():
-    sweep = sb.bez((EDGE_X - 4.6, TIP), (EDGE_X - 5.0, TIP * 0.5), (EDGE_X - 8.6, 3), (EDGE_X - 16, 0))
-    return [(EDGE_X - 16, 0), (STRAP, 0), (STRAP, TIP)] + [tuple(p) for p in sweep]
+    sweep = sb.bez((EDGE_X - 3.0, TIP), (EDGE_X - 3.2, TIP * 0.5), (EDGE_X - 5.6, 2), (EDGE_X - 10, 0))
+    return [(EDGE_X - 10, 0), (STRAP, 0), (STRAP, TIP)] + [tuple(p) for p in sweep]
 
 
 def outward(m):
@@ -86,7 +86,7 @@ def draw(flip):
     sh = end * np.clip(1 - np.abs(yy - Y(TIP)) / 0.9, 0, 1) * 0.55
     rgb = lay(rgb, sh, np.zeros(3)); a = sh + a * (1 - sh)
     # a flush pin
-    pm = mask([], [(EDGE_X - 13, Y(4.2), 0.6)])
+    pm = mask([], [(EDGE_X - 7.5, Y(2.6), 0.55)])
     pr = np.clip(pm - nd.grey_erosion(pm, size=SS + 1), 0, 1); pd = outward(pm)
     rgb = lay(rgb, pm, FACE * 0.9)
     rgb = lay(rgb, pr * np.clip(-pd, 0, 1) * 0.8, DARK); rgb = lay(rgb, pr * np.clip(pd, 0, 1) * 0.6, LIGHT)
@@ -100,7 +100,7 @@ def draw(flip):
 
 def main():
     for flip, end in ((False, "Top"), (True, "Bottom")):
-        sb.write_tga(os.path.join(sb.CORE_OUT, "Vine-CornerCover%s-T5.tga" % end), draw(flip))
+        sb.write_tga(os.path.join(sb.CORE_OUT, "Vine-CornerCover%s-T6.tga" % end), draw(flip))
     print("2 textures")
 
 
