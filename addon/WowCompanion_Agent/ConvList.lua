@@ -2,8 +2,9 @@
 -- trial (ConvLooks.lua lays each out and says its style): WC.Companion.ConvLook(key),
 -- or the settings page's "Conversation list" row, switches it live, and
 -- WowCompanionAgentDB.convLook keeps it; the looks not picked then go, with
--- this switch. Each row is a button the pad's cursor stops on (its name, its
--- chord in the game's own glyphs, its state), the open one the same row lit
+-- this switch. Each row is a button the pad's cursor stops on (its name in the
+-- normal font, its chord in the game's own glyphs, its state), the open one
+-- the same row lit
 -- (Agent.lua: b.Paint, b.selected:SetShown), with a cell for an offered button
 -- (Offer.lua: frame.ConvLayout, frame.convOfferSlot).
 local C = WC.ConvLooks
@@ -80,7 +81,6 @@ function WC.Companion.ConvList(frame, well)
 
 	local function paintRow(b)
 		local word = b.word ~= "" and b.word or nil
-		b.name:SetFontObject(b.open and b.cell.openFont or b.cell.font)
 		b.name:SetTextColor(unpack(b.open and S.NAME_LIT or b.hover and S.NAME_HL or S.NAME))
 		b.state:SetText(word or "")
 		b.chord:SetText(chordText(b.key))
@@ -134,7 +134,7 @@ function WC.Companion.ConvList(frame, well)
 		local b = CreateFrame("Button", nil, well)
 		b.key, b.word = key, ""
 		b:SetFrameLevel(layer:GetFrameLevel() + 2)
-		b.name = b:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+		b.name = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 		b.name:SetJustifyH("LEFT")
 		b.chord = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 		b.state = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -147,7 +147,7 @@ function WC.Companion.ConvList(frame, well)
 		-- the controller's pointer locks the highlight of the row it is on
 		hooksecurefunc(b, "LockHighlight", function() hover(true) end)
 		hooksecurefunc(b, "UnlockHighlight", function() hover(false) end)
-		-- Agent.lua: the name, and the state word ("12s", "new")
+		-- Agent.lua: the name, and the state ("12s", "new", the mic)
 		function b.Paint(label, word)
 			b.name:SetText(label)
 			b.word = word or ""

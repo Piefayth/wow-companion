@@ -7,10 +7,11 @@ ConvLooks.lua itself lays each look out (run here under LuaJIT, as the game
 runs it), and every texture is the addon's own file, turned and cut by the
 same texcoords the game is given. What the game draws itself comes from the
 screenshots: the stone, the names and state words (the round 2 shot, rows on
-bare stone, scaled for a look's larger fonts) and the pad's glyphs (the round 4
-shot, glyphs in sockets).
+bare stone, the names scaled to the normal font) and the pad's glyphs (the
+round 4 shot, glyphs in sockets). Blizzard's voice chat mic (not in our files)
+is drawn here in its shape.
 
-    python tools/mock_convlist.py     writes target/tmp/convlist6/<look>.png and all.png
+    python tools/mock_convlist.py     writes target/tmp/convlist7/<look>.png and all.png
 """
 import os
 import re
@@ -22,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-TMP = os.path.join(ROOT, "target", "tmp", "convlist6")
+TMP = os.path.join(ROOT, "target", "tmp", "convlist7")
 SHOTS = os.path.join(os.environ.get("LOCALAPPDATA", ""), "wow-companion", "shots")
 SHOT = os.path.join(SHOTS, "convlist5-full.png")  # 3840 x 2160, the window open on Chat, round 4's brass rows
 WORDS = os.path.join(SHOTS, "convlist4-full.png")  # the same window, round 2's rows: names on bare stone
@@ -36,11 +37,11 @@ FLOOR = 3
 LAYERS = {"BACKGROUND": 0, "BORDER": 1, "ARTWORK": 2, "OVERLAY": 3}
 
 OPEN, POINTER = "l2", "r1"  # the row in view; the row the pad's cursor is on
-STATES = {"l1": "new", "r1": "95s", "r2": "495s"}
+STATES = {"l1": "new", "r1": "95s", "r2": "mic"}
 NAME, NAME_HL, NAME_LIT = (199, 176, 135), (232, 214, 171), (250, 235, 199)
 GOOD, GREY = (127, 208, 127), (176, 176, 176)
 IDLE_GLYPH = 0.6
-FONT = {"GameFontNormalLarge": 1.0, "GameFontNormalLarge2": 18 / 16, "GameFontNormalHuge": 20 / 16}  # the shot's are Large
+NAME_SCALE = 12 / 16  # the names: GameFontNormal; the shot's are GameFontNormalLarge
 
 
 # --- the Lua --------------------------------------------------------------------
@@ -71,7 +72,7 @@ def lay(lua, C, key, H, offered):
     rows = {}
     for key_ in ("", "l1", "l2", "r1", "r2", "quick"):
         r = out.rows[key_]
-        rows[key_] = dict(x=r.x, y=r.y, w=r.w, h=r.h, name=r.name, chord=r.chord, font=r.font, openFont=r.openFont)
+        rows[key_] = dict(x=r.x, y=r.y, w=r.w, h=r.h, name=r.name, chord=r.chord)
     offer = [out.offer[i] for i in range(1, 5)] if out.offer else None
     return pieces, rows, offer
 
@@ -213,6 +214,22 @@ def glyphs():
     return out
 
 
+def mic():
+    """Blizzard's voice chat mic (|A:voicechat-icon-mic:16:16|a) in its shape:
+    a capsule in a cradle on a stem and foot, 16 units tall."""
+    s = 8
+    side = round(16 * PX * s)
+    im = Image.new("L", (side, side), 0)
+    d = ImageDraw.Draw(im)
+    u = side / 16
+    d.rounded_rectangle((5.2 * u, 0.6 * u, 10.8 * u, 10 * u), radius=2.6 * u, fill=255)
+    d.arc((3.2 * u, 3.4 * u, 12.8 * u, 12.6 * u), 0, 180, fill=255, width=round(1.3 * u))
+    d.rectangle((7.35 * u, 12.4 * u, 8.65 * u, 14.6 * u), fill=255)
+    d.rounded_rectangle((4.8 * u, 14.2 * u, 11.2 * u, 15.6 * u), radius=0.6 * u, fill=255)
+    small = im.resize((side // s, side // s), Image.LANCZOS)
+    return np.asarray(small, float) / 255
+
+
 CHORDS = {"": ["talk"], "l1": ["L1"], "l2": ["L2"], "r1": ["R1"], "r2": ["R2"], "quick": ["L2", "R2"]}
 
 
@@ -308,13 +325,14 @@ def mock(lua, C, key, base, sample, words, gl, ptr, offered=False):
         cy = Y(r["y"] + r["h"] / 2)
         lit = k == OPEN
         colour = NAME_LIT if lit else NAME_HL if k == POINTER else NAME
-        mask, scale = words["name:" + k], FONT[r["openFont"] if lit else r["font"]]
-        if scale != 1:
-            mask = np.asarray(Image.fromarray(mask.astype(np.float32), "F").resize(
-                (round(mask.shape[1] * scale), round(mask.shape[0] * scale)), Image.LANCZOS)).clip(0, 1)
+        mask = words["name:" + k]
+        mask = np.asarray(Image.fromarray(mask.astype(np.float32), "F").resize(
+            (round(mask.shape[1] * NAME_SCALE), round(mask.shape[0] * NAME_SCALE)), Image.LANCZOS)).clip(0, 1)
         put_mask(img, mask, colour, X(r["x"] + r["name"]), cy)
         state = STATES.get(k)
-        if state:
+        if state == "mic":
+            put_mask(img, mic(), (226, 226, 226), X(r["x"] + r["chord"]), cy, "centre")
+        elif state:
             put_mask(img, words["state:" + state], GOOD if state == "new" else GREY, X(r["x"] + r["chord"]), cy, "centre")
         else:
             keys = CHORDS[k]

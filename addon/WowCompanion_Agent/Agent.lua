@@ -187,13 +187,15 @@ local function paintConversations()
 	local frame = logWindow
 	if not (frame and frame.convButtons) then return end
 	for key, button in pairs(frame.convButtons) do
-		-- each conversation shows its own progress at its cell's right: the
-		-- seconds while its agent works, "new" once it answered
+		-- each conversation shows its own progress in its chord's place: the
+		-- mic while it is talked to, the seconds while its agent works, "new"
+		-- once it answered
 		local heard, running = work(key)
 		local word
 		if talking.on and talking.slot == key then
-			-- the Companion key is held with this conversation's chord
-			word = WC.Style.BAD .. "talking|r"
+			-- the Companion key is held with this conversation's chord: the
+			-- board's mark for talking (Board.lua), Blizzard's voice chat mic
+			word = "|A:voicechat-icon-mic:16:16|a"
 		elseif heard then
 			-- Whisper still has this conversation's clip
 			word = "|cff9ad5ff" .. WC.Jobs.Age(heard.since) .. "s|r"
