@@ -236,6 +236,9 @@ local function dropdown(row)
 	local value = bronze(face)
 	value:SetPoint("LEFT", less, "RIGHT", 2, 0)
 	value:SetPoint("RIGHT", more, "LEFT", -2, 0)
+	-- one line, cut with "..." when a value (a long mic name) is wider than the box
+	value:SetWordWrap(false)
+	value:SetMaxLines(1)
 	-- the value and the arrows from the row itself: an arrow greys at its end
 	local function paint()
 		local names, at = row.options(), 0
