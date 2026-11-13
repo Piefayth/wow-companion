@@ -64,7 +64,7 @@ local function SecureButton(name)
 end
 
 -- The pick is the right stick's direction keys held (PADRSTICKUP and the rest,
--- each a click on WCWheelAim): their sum points at the nearest slot, so up and
+-- each a click on its own WCWheelAim<key>): their sum points at the nearest slot, so up and
 -- right held together is the up-right slot. The game's own key thresholds draw
 -- the borders, and every key edge is seen, so the highlight (wc-sticky, which
 -- the look shows) is always what a release uses. Returns the slot, or nil
@@ -83,14 +83,6 @@ ring:SetAttribute("wc-pick", [[
         if not bestDot or dot > bestDot then best, bestDot = index, dot end
     end
     return best
-]])
--- The stick's push now (0 centre, 1 the rim), or nil with no reading.
-ring:SetAttribute("wc-push", [[
-    local state = GetGamePadState()
-    local sticks = state and state.sticks
-    local stick = sticks and sticks[self:GetAttribute("wc-stick") or 2]
-    if not (stick and stick.x and stick.y) then return nil end
-    return (stick.x * stick.x + stick.y * stick.y) ^ 0.5
 ]])
 -- forget the keys held (the ring opening or closing)
 ring:SetAttribute("wc-forget", [[
@@ -111,7 +103,6 @@ local OPEN_SNIPPET = [[
     end
     if (ring:GetAttribute(key .. "-count") or 0) < 1 then return false end
     ring:SetAttribute("wc-sticky", nil)
-    ring:SetAttribute("wc-aimed", nil)
     ring:RunAttribute("wc-forget")
     ring:SetAttribute("wc-active", key)
     ring:Show()
@@ -142,36 +133,36 @@ local LOAD_PICK = [[
 -- Right stick directions (as keys): move the sticky pick, and use it when the
 -- stick is let go. Only a key going down moves the pick: a diagonal let go
 -- loses its keys one at a time, and the first must not turn it into its
--- neighbour. The action runs on the up edge, hence useOnKeyDown false.
--- A release is an up edge with no key held, or of the key pressed last (the
--- game can drop the other key's up edge when a diagonal is let go; Easy
--- Controller Forever measured it), or with the stick back near the centre.
-local aim = SecureButton("WCWheelAim")
-aim:RegisterForClicks("AnyDown", "AnyUp")
-aim:SetAttribute("useOnKeyDown", false)
-SecureHandlerWrapScript(aim, "OnClick", aim, [[
+-- neighbour. Each direction has its own button, because the game gives a
+-- button one up edge however many keys hold it: on one shared button a
+-- diagonal's second key never came up, and the wheel waited on it with the
+-- spell unused (measured 2026-11-13). So a release is simply the last key up.
+-- The action runs on the up edge, hence useOnKeyDown false.
+local STICK_KEYS = { "PADRSTICKUP", "PADRSTICKDOWN", "PADRSTICKLEFT", "PADRSTICKRIGHT" }
+local AIM = [[
     self:SetAttribute("type", nil)
     local ring = self:GetFrameRef("ring")
     if not ring:IsShown() then return false end
     ring:SetAttribute("wc-held-" .. button, down or nil)
     local pick = ring:RunAttribute("wc-pick")
-    local push = ring:RunAttribute("wc-push") or 0
     if down then
         ring:SetAttribute("wc-sticky", pick)
-        ring:SetAttribute("wc-aimed", true)
-        ring:SetAttribute("wc-last", button)
         return false
     end
-    -- any other up edge, with a key still held and the stick still out, is the
-    -- stick on its way and the pick stays
-    if pick and ring:GetAttribute("wc-last") ~= button and push >= 0.5 then return false end
-    ring:RunAttribute("wc-forget")
-    if not ring:GetAttribute("wc-aimed") then return false end
+    -- a key still held is the stick on its way
+    if pick then return false end
     pick = ring:GetAttribute("wc-sticky")
     if not pick then return false end
     local key = ring:GetAttribute("wc-active")
-]] .. LOAD_PICK .. [[
-]])
+]] .. LOAD_PICK
+local aims = {}
+for _, key in ipairs(STICK_KEYS) do
+    local aim = SecureButton("WCWheelAim" .. key)
+    aim:RegisterForClicks("AnyDown", "AnyUp")
+    aim:SetAttribute("useOnKeyDown", false)
+    SecureHandlerWrapScript(aim, "OnClick", aim, AIM)
+    aims[#aims + 1] = aim
+end
 
 -- Circle: close.
 local close = SecureButton("WCWheelClose")
@@ -189,7 +180,7 @@ SecureHandlerWrapScript(ring, "OnShow", ring, [[
         -- the d-pad is left alone: it keeps its bar actions, so another
         -- wheel's button opens that wheel from inside this one
         for _, key in ipairs(newtable("PADRSTICKUP", "PADRSTICKDOWN", "PADRSTICKLEFT", "PADRSTICKRIGHT")) do
-            self:SetBindingClick(true, modifier .. key, "WCWheelAim", key)
+            self:SetBindingClick(true, modifier .. key, "WCWheelAim" .. key, key)
         end
         self:SetBinding(true, modifier .. "PADLSTICKUP", "MOVEFORWARD")
         self:SetBinding(true, modifier .. "PADLSTICKDOWN", "MOVEBACKWARD")
@@ -199,8 +190,6 @@ SecureHandlerWrapScript(ring, "OnShow", ring, [[
 ]])
 SecureHandlerWrapScript(ring, "OnHide", ring, [[
     self:ClearBindings()
-    self:SetAttribute("wc-aimed", nil)
-    self:SetAttribute("wc-last", nil)
     self:RunAttribute("wc-forget")
 ]])
 
@@ -337,7 +326,6 @@ function W.Rebuild(quiet)
         return false
     end
     pending = false
-    ring:SetAttribute("wc-stick", 2) -- the right stick (StickConfigNameToIndex is absent here)
     for key in pairs(ringData) do ring:SetAttribute(key .. "-count", 0) end
     wipe(ringData)
     for key, wheel in pairs(WowCompanionWheelDB.wheels) do
@@ -451,13 +439,13 @@ ring:HookScript("OnShow", function()
     Note(("open %s stick=%s axis=%s combat=%s"):format(tostring(ring:GetAttribute("wc-active")), Push(),
         tostring(GetCVarSafe(AXIS_CVAR)), tostring(InCombatLockdown())))
 end)
-aim:HookScript("OnClick", function(self, button, down)
+for _, aim in ipairs(aims) do aim:HookScript("OnClick", function(self, button, down)
     local used = self:GetAttribute("type")
-    Note(("%s %s stick=%s sticky=%s last=%s %s"):format(button, down and "down" or "up", Push(),
-        tostring(ring:GetAttribute("wc-sticky")), tostring(ring:GetAttribute("wc-last")),
+    Note(("%s %s stick=%s sticky=%s %s"):format(button, down and "down" or "up", Push(),
+        tostring(ring:GetAttribute("wc-sticky")),
         used and ("USED " .. tostring(self:GetAttribute("spell") or self:GetAttribute("item")
             or self:GetAttribute("macro") or self:GetAttribute("macrotext"))) or "kept"))
-end)
+end) end
 local after = CreateFrame("Frame")
 after:RegisterEvent("UI_ERROR_MESSAGE")
 after:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
