@@ -73,10 +73,18 @@ local function smallestBag()
 	return n or 0
 end
 
+-- an upgrade as the gear scorer judges it for this character's spec (the
+-- gear capability's upgrade); with none installed, by item level alone
 local function gearVerdict(bag, slot, info, loc)
 	local slots = SLOT[loc]
 	if not slots then return nil end
 	if not wearable(bag, slot) then return "sell", "you cannot wear it" end
+	local gear = WC.Has("gear", "upgrade") and WC.Use("gear")
+	if gear then
+		local up, why = gear.upgrade(info.hyperlink)
+		if up then return "equip", why end
+		if up == false then return "sell", why end
+	end
 	local main = GetInventoryItemLink("player", 16)
 	local twoHand = main and select(9, C_Item.GetItemInfo(main)) == "INVTYPE_2HWEAPON"
 	local mine = ilvl(info.hyperlink)

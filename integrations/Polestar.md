@@ -30,3 +30,11 @@ not from Polestar's SavedVariables (as of the last reload). **Name a guide by it
 `.title`, never its id**: ids are file slugs and can mislead
 (`forever/horde/05-stonetalon-mountains` is titled "Ashenvale & Silverpine Forest";
 calling it Stonetalon was wrong, 2026-11-10). Source: Polestar/Core/Engine.lua.
+
+Gear scoring: `Polestar.Gear` (Polestar/Gear/Gear.lua). `GetSpec()` -> key, label,
+source: the spec from the talent tree with the most points ("talents"), or its
+options' choice ("setting"); Forever's own spec API says only "Druid".
+`CompareToEquipped(link)` ({score, delta, pct, slot, usable, empty, ...}),
+`IsUpgrade(link)`, `FillsEmptySlot(link)`, `WeightsFor(class, key, level)`. Our
+`gear` capability's `upgrade(link)` is it (Providers/Gear.lua); the bag window
+judges upgrades with it.
