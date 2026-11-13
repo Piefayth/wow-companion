@@ -348,31 +348,39 @@ function WowCompanion_Style.PageRock(page)
 end
 -- A well of stone on page, sunk by a soft shadow inside its top and left
 -- edges, light falling from the top left, no rim. Raised, it stands up out of
--- the page instead, hard-edged: a thin lit line along its top and left
--- edges, a thin shaded one along its bottom and right, and the window's top
--- shadow stops short of it (a page names its raised stone page.raised,
+-- the page instead, pillowed: hard lit lines along its top and left edges and
+-- a soft light under the top, a broad shade rolling off toward the bottom with
+-- a hard dark line at it, a hard dark line down the right; and the window's
+-- top shadow stops short of it (a page names its raised stone page.raised,
 -- Window.lua). Returns its stone, for the caller to anchor; what lies on the
 -- stone under the shading goes at sublevel 0.
--- each edge: its two corners, and + light (added) or - shade
+-- each band: the edge it lies along, its depth, + light (added) or - shade
+-- at the edge, and inward (the same: a hard line; 0: fading)
 local RAISED = {
-	{ "TOPLEFT", "TOPRIGHT", 0.08 }, { "TOPLEFT", "BOTTOMLEFT", 0.08 },
-	{ "BOTTOMLEFT", "BOTTOMRIGHT", -0.55 }, { "TOPRIGHT", "BOTTOMRIGHT", -0.55 },
+	{ "TOP", 2, 0.08, 0.08 }, { "TOP", 24, 0.05, 0 }, { "LEFT", 2, 0.08, 0.08 },
+	{ "BOTTOM", 56, -0.5, 0 }, { "BOTTOM", 2, -0.6, -0.6 }, { "RIGHT", 2, -0.55, -0.55 },
 }
-local BEVEL = 2
+-- an edge's two corners, and which gradient end (min, max) lies on it
+local EDGES = {
+	TOP = { "TOPLEFT", "TOPRIGHT", "VERTICAL", false }, BOTTOM = { "BOTTOMLEFT", "BOTTOMRIGHT", "VERTICAL", true },
+	LEFT = { "TOPLEFT", "BOTTOMLEFT", "HORIZONTAL", true }, RIGHT = { "TOPRIGHT", "BOTTOMRIGHT", "HORIZONTAL", false },
+}
 function WowCompanion_Style.Well(page, which, shade, raised)
 	local t = page:CreateTexture(nil, "BACKGROUND", nil, -1)
 	WowCompanion_Style.Stone(t, which, shade)
 	if raised then
-		for _, edge in ipairs(RAISED) do
+		for _, band in ipairs(RAISED) do
+			local e = EDGES[band[1]]
 			local s = page:CreateTexture(nil, "BACKGROUND", nil, 2)
-			local v = edge[3]
-			local c = v > 0 and 1 or 0
-			s:SetColorTexture(c, c, c, math.abs(v))
-			if v > 0 then s:SetBlendMode("ADD") end
-			s:SetPoint(edge[1], t)
-			s:SetPoint(edge[2], t)
-			-- across (top, bottom) when both corners share their first word
-			if edge[1]:sub(1, 3) == edge[2]:sub(1, 3) then s:SetHeight(BEVEL) else s:SetWidth(BEVEL) end
+			local light = band[3] > 0
+			local c = light and 1 or 0
+			s:SetColorTexture(1, 1, 1, 1)
+			local edge, inner = CreateColor(c, c, c, math.abs(band[3])), CreateColor(c, c, c, math.abs(band[4]))
+			if e[4] then s:SetGradient(e[3], edge, inner) else s:SetGradient(e[3], inner, edge) end
+			if light then s:SetBlendMode("ADD") end
+			s:SetPoint(e[1], t)
+			s:SetPoint(e[2], t)
+			if e[3] == "VERTICAL" then s:SetHeight(band[2]) else s:SetWidth(band[2]) end
 		end
 		return t
 	end
