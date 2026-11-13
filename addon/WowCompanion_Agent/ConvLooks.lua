@@ -160,9 +160,10 @@ local function seam(t, x, top, foot)
 	end
 	vvine(t, "Thick", x, top, foot)
 end
--- the kept crests, each on its rule's y
-local function crest(t, part, rule, lit)
-	put(t, { tex = AGENT .. "Crest-" .. part .. (lit and "-Lit" or ""), x = 0, w = W,
+-- the kept crests, each on its rule's y, never lit: the open row lights
+-- only its own parts (the player, 2026-11-12)
+local function crest(t, part, rule)
+	put(t, { tex = AGENT .. "Crest-" .. part, x = 0, w = W,
 		h = part == "Head" and HEAD_H or FOOT_H, y = rule - (part == "Head" and HEAD_RULE or FOOT_RULE),
 		layer = "ARTWORK", sub = 0 })
 end
@@ -226,15 +227,14 @@ local function stack(H, offered)
 	end
 	return { ornate = ornate, top = top, rows = rows, offer = offered and { y = y, h = OFFER } or nil, foot = y + extra }
 end
--- the crests (or the thick vines in their place), lit beside the open row
--- when the look's rows meet their rules
-local function ends(t, L, headLit, footLit)
+-- the crests (or the thick vines in their place)
+local function ends(t, L)
 	if L.ornate then
-		crest(t, "Head", L.top, headLit)
-		crest(t, "Foot", L.foot, footLit)
+		crest(t, "Head", L.top)
+		crest(t, "Foot", L.foot)
 	else
-		hvine(t, "Thick", L.top, 0, W, headLit)
-		hvine(t, "Thick", L.foot, 0, W, footLit)
+		hvine(t, "Thick", L.top, 0, W)
+		hvine(t, "Thick", L.foot, 0, W)
 	end
 end
 -- whether row i is the open one (none past either end)
@@ -246,11 +246,12 @@ C.ORDER = { "ledger", "bands", "slots", "strung", "engraved", "slabs" }
 
 looks.ledger = { label = "Ledger", draw = function(t, L, open)
 	local n = #L.rows
-	ends(t, L, openAt(L, 1, open), openAt(L, n, open) and not L.offer)
+	ends(t, L)
 	for i, r in ipairs(L.rows) do
 		local lit = r.key == open
-		if i > 1 then
-			local litNow = lit or openAt(L, i - 1, open)
+		local litNow = lit or openAt(L, i - 1, open)
+		-- the first row's upper vine is the head crest's rule, lit over it alone
+		if i > 1 or lit then
 			hvine(t, litNow and "Thick" or "Thin", r.y, 0, W, litNow)
 		end
 		if lit then
@@ -258,7 +259,9 @@ looks.ledger = { label = "Ledger", draw = function(t, L, open)
 			raise(t, 0, r.y, W, r.h)
 		end
 	end
-	if L.offer then hvine(t, openAt(L, n, open) and "Thick" or "Thin", L.offer.y, 0, W, openAt(L, n, open)) end
+	local last = openAt(L, n, open)
+	if L.offer then hvine(t, last and "Thick" or "Thin", L.offer.y, 0, W, last)
+	elseif last then hvine(t, "Thick", L.foot, 0, W, true) end
 end }
 
 looks.bands = { label = "Bands", draw = function(t, L, open)
