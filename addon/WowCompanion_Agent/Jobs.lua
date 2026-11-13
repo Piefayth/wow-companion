@@ -523,7 +523,13 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		-- click come back when the window lets go. The button is secure and the
 		-- press is theirs
 		local chat = want and want:match("^offer") or want and want:match("^jobs")
-		if want and want ~= "menu" then SetOverrideBindingClick(keyOwner, true, "PADRSTICK", WC.Offer.PICK) end
+		-- under every modifier: a shoulder or trigger the game emulates as Shift,
+		-- Ctrl or Alt turns R3 into SHIFT-PADRSTICK, and a chord is held with it
+		if want and want ~= "menu" then
+			for _, mod in ipairs({ "", "SHIFT-", "CTRL-", "ALT-", "CTRL-SHIFT-", "ALT-SHIFT-", "CTRL-ALT-", "CTRL-ALT-SHIFT-" }) do
+				SetOverrideBindingClick(keyOwner, true, mod .. "PADRSTICK", WC.Offer.PICK)
+			end
+		end
 		if chat then
 			SetOverrideBindingClick(keyOwner, true, "PAD3", "WCJobsCancelKey")
 			SetOverrideBindingClick(keyOwner, true, "PAD4", want:match("%+row$") and WC.ConvMenu.BUTTON or "WCJobsNowKey")
