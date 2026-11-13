@@ -7,39 +7,43 @@
 -- Jobs.lua binds triangle to WCConvMore while the cursor is on a row and
 -- leaves the pad to the menu while it is open (WC.ConvMenu.Open()).
 
--- Built as the window is, small (the player, 2026-11-12): a body of the
--- frame's dimmed slate inside the wells' border; the options in a well of
--- their own, compact rows (the list's names, no dividers), the one under the
--- cursor on the replies' slate with its name lit; and below the well, in the
--- body's own foot strip as the window keeps its legend, what cross and circle
--- do. It opens beside its row, a little clear of the window.
-local W, ROW, FOOT, PAD = 150, 22, 22, 6
-local function inset(f)
-	local made, frame = pcall(CreateFrame, "Frame", nil, f, "InsetFrameTemplate")
-	if not made or not frame then frame = CreateFrame("Frame", nil, f) end
-	WC.Window.Inset(frame)
-	return frame
-end
+-- A drawer of the window (the player, 2026-11-12): it slides out of the
+-- window's right side, level with its row, its left edge under the window's
+-- rim, and the window's own bronze rim round its three outer sides
+-- (tools/make_frame_art.py, Drawer-*). Inside, the window's body slate, the
+-- options as compact rows of the list's names (no dividers; the one under
+-- the cursor on the replies' slate, its name lit), and a foot strip of its
+-- own for what cross and circle do, in the window legend's style.
+local W, ROW, FOOT, PAD = 160, 24, 24, 6
+local RIM = 6 -- the window's rim (Window.lua)
+local DRAWER = [[Interface\AddOns\WowCompanion_Agent\Art\Drawer-%s-21]]
 local menu = CreateFrame("Frame", "WCConvMenu", UIParent)
-menu:SetFrameStrata("FULLSCREEN_DIALOG")
 menu:Hide()
-local body = inset(menu)
-body:SetAllPoints()
-local bodyStone = body:CreateTexture(nil, "BACKGROUND", nil, 1)
-WC.Style.Stone(bodyStone, "you", 0.72)
-bodyStone:SetPoint("TOPLEFT", WC.Style.FLOOR, -WC.Style.FLOOR)
-bodyStone:SetPoint("BOTTOMRIGHT", -WC.Style.FLOOR, WC.Style.FLOOR)
-local well = inset(menu)
-well:SetPoint("TOPLEFT", PAD, -PAD)
-well:SetPoint("BOTTOMRIGHT", -PAD, PAD + FOOT)
-local floor = well:CreateTexture(nil, "BACKGROUND", nil, 1)
-WC.Style.Stone(floor, "you")
-floor:SetPoint("TOPLEFT", WC.Style.FLOOR, -WC.Style.FLOOR)
-floor:SetPoint("BOTTOMRIGHT", -WC.Style.FLOOR, WC.Style.FLOOR)
-local lit = well:CreateTexture(nil, "BACKGROUND", nil, 2)
+local function piece(name, layer)
+	local t = menu:CreateTexture(nil, layer or "BORDER")
+	t:SetTexture(DRAWER:format(name), "CLAMP", "CLAMP")
+	return t
+end
+local tr, br = piece("TopRightCorner"), piece("BottomRightCorner")
+tr:SetSize(RIM, RIM)
+tr:SetPoint("TOPRIGHT")
+br:SetSize(RIM, RIM)
+br:SetPoint("BOTTOMRIGHT")
+local top, bottom, right = piece("TopEdge"), piece("BottomEdge"), piece("RightEdge")
+top:SetPoint("TOPLEFT")
+top:SetPoint("BOTTOMRIGHT", tr, "BOTTOMLEFT")
+bottom:SetPoint("BOTTOMLEFT")
+bottom:SetPoint("TOPRIGHT", br, "TOPLEFT")
+right:SetPoint("TOPLEFT", tr, "BOTTOMLEFT")
+right:SetPoint("BOTTOMRIGHT", br, "TOPRIGHT")
+local body = menu:CreateTexture(nil, "BACKGROUND")
+WC.Style.Stone(body, "you", 0.72)
+body:SetPoint("TOPLEFT", 0, -RIM)
+body:SetPoint("BOTTOMRIGHT", -RIM, RIM)
+local lit = menu:CreateTexture(nil, "BACKGROUND", nil, 2)
 WC.Style.Stone(lit, "claude")
 local legend = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-legend:SetPoint("RIGHT", menu, "BOTTOMRIGHT", -PAD - 4, PAD + FOOT / 2)
+legend:SetPoint("RIGHT", menu, "BOTTOMRIGHT", -RIM - PAD - 2, RIM + FOOT / 2)
 legend:SetText(WowCompanion_Glyph("PAD1") .. " Select    " .. WowCompanion_Glyph("PAD2") .. " Back")
 menu.rows = {}
 local keys = CreateFrame("Frame", "WCConvMenuKeys", UIParent)
@@ -67,8 +71,8 @@ local function paint()
 		row:SetTextColor(unpack(i == menu.sel and WC.Style.NAME_LIT or WC.Style.NAME))
 	end
 	lit:ClearAllPoints()
-	lit:SetPoint("TOPLEFT", menu.rows[menu.sel], "TOPLEFT", -10, 0)
-	lit:SetPoint("BOTTOMRIGHT", menu.rows[menu.sel], "BOTTOMRIGHT")
+	lit:SetPoint("TOPLEFT", menu.rows[menu.sel], "TOPLEFT", -10 - PAD, 0)
+	lit:SetPoint("BOTTOMRIGHT", menu.rows[menu.sel], "BOTTOMRIGHT", PAD, 0)
 end
 
 local function plainButton(name, fn)
@@ -102,21 +106,23 @@ plainButton("WCConvMore", function()
 	}
 	menu.sel = 1
 	for i = #menu.rows + 1, #menu.list do
-		local text = well:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		local text = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 		text:SetHeight(ROW)
-		text:SetPoint("TOPLEFT", WC.Style.FLOOR + 10, -WC.Style.FLOOR - (i - 1) * ROW)
-		text:SetPoint("TOPRIGHT", -WC.Style.FLOOR, -WC.Style.FLOOR - (i - 1) * ROW)
+		text:SetPoint("TOPLEFT", RIM + PAD + 10, -RIM - PAD - (i - 1) * ROW)
+		text:SetPoint("TOPRIGHT", -RIM - PAD, -RIM - PAD - (i - 1) * ROW)
 		text:SetJustifyH("LEFT")
 		menu.rows[i] = text
 	end
-	local wide = legend:GetStringWidth() + 2 * PAD + 12
-	menu:SetSize(math.max(W, wide), #menu.list * ROW + 2 * WC.Style.FLOOR + 2 * PAD + FOOT)
-	menu:SetScale(row:GetEffectiveScale() / UIParent:GetEffectiveScale())
-	menu:ClearAllPoints()
-	-- beside its row, clear of the window's rim, the first option level with it
 	local window = WC.Companion.built()
-	menu:SetPoint("LEFT", window, "RIGHT", 8, 0)
-	menu:SetPoint("TOP", row, "TOP", 0, PAD + WC.Style.FLOOR)
+	local wide = legend:GetStringWidth() + 2 * (RIM + PAD) + 16
+	menu:SetSize(math.max(W, wide), RIM + PAD + #menu.list * ROW + PAD + FOOT + RIM)
+	menu:SetScale(window:GetEffectiveScale() / UIParent:GetEffectiveScale())
+	-- under the window, so its left edge tucks beneath the window's rim
+	menu:SetFrameStrata(window:GetFrameStrata())
+	menu:SetFrameLevel(math.max(1, window:GetFrameLevel() - 1))
+	menu:ClearAllPoints()
+	menu:SetPoint("LEFT", window, "RIGHT", -RIM, 0)
+	menu:SetPoint("TOP", row, "TOP", 0, RIM + PAD)
 	paint()
 	menu:Show()
 	SetOverrideBindingClick(keys, true, "PADDUP", "WCConvMenuUp")

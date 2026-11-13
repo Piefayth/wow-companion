@@ -142,7 +142,9 @@ def brushed(u, seed=7):
     return np.interp(u, np.linspace(0, N, 600), v)
 
 
-def frame():
+def frame(band_on=True):
+    """The window's frame; band_on False: the rim alone all round, no title
+    band or rule (a drawer of the window, Drawer-*)."""
     xx, yy = grid(N, N)
     s = octagon_depth(xx, yy, 0, 0, N, N, CHAMFER)  # into the rim from its outer edge
     lay = Layers(xx.shape)
@@ -155,7 +157,7 @@ def frame():
     # ridge the game's rim has, its inner half lower and darker
     hr = np.where((s >= 0.45) & (s < 5.35), bar(s - 0.45, 4.9) * 0.75 + 0.6 * bead(np.clip((s - 2.0) / 1.25, -1, 1)), 0)
     rc, rh = (RULE[0] + RULE[1]) / 2, (RULE[1] - RULE[0]) / 2
-    hrule = np.where((np.abs(yy - rc) < rh) & (s > 2.5), bar(yy - RULE[0], RULE[1] - RULE[0]) * 0.85, 0)
+    hrule = np.where((np.abs(yy - rc) < rh) & (s > 2.5) & band_on, bar(yy - RULE[0], RULE[1] - RULE[0]) * 0.85, 0)
     hrule = np.where(hrule > hr, hrule, 0)  # the rim's bar runs over the rule's end
     hgt = ndimage.gaussian_filter(np.maximum(hr, hrule), K * 0.1)
     metal = (s >= 0) & (s < RIM) | (hrule > 0)
@@ -168,13 +170,13 @@ def frame():
     dark = np.where(rule, np.clip(1 - edge_r / 0.4, 0, 1), np.clip(1 - s / 0.5, 0, 1) + np.clip((s - 5.35) / 0.5, 0, 1))
     col = col + (LINE - col) * np.clip(dark, 0, 0.9)[..., None]
     # the title band: dark wood, shadowed under the rim and over the rule
-    band = (s >= RIM) & (yy < RULE[0])
+    band = (s >= RIM) & (yy < RULE[0]) & band_on
     bcol = BAND * (1 + 0.06 * streaks(yy))[..., None]
     occl = np.maximum(np.exp(-(s - RIM) / 0.9) * 0.75, np.exp(-(RULE[0] - yy) / 0.6) * 0.45)
     bcol = bcol * (1 - np.clip(occl, 0, 0.8))[..., None]
     lay.over(np.where(band[..., None], bcol, col), (metal | band).astype(float))
     # the panel under the rule: only the rule's shadow
-    panel = (s >= RIM) & (yy >= RULE[1])
+    panel = (s >= RIM) & (yy >= RULE[1]) & band_on
     under = np.clip(1 - (yy - RULE[1]) / (TOP_H - RULE[1]), 0, 1) ** 2 * 0.7
     lay.over(np.zeros(3), np.where(panel & ~metal, under, 0))
     return lay.pre()
@@ -196,6 +198,24 @@ def frame_pieces():
         "Frame-BottomEdge": fit(cut(mid - 1, N - c, mid + 1, N), (16, 64)),
         "Frame-LeftEdge": fit(cut(0, mid - 1, c, mid + 1), (64, 16)),
         "Frame-RightEdge": fit(cut(N - c, mid - 1, N, mid + 1), (64, 16)),
+    }
+
+
+def drawer_pieces():
+    """A drawer sliding out of the window's right side (ConvMenu.lua): the
+    rim alone on its three outer sides, its left edge under the window's."""
+    pre = frame(band_on=False)
+    k = K
+
+    def cut(x0, y0, x1, y1):
+        return pre[int(round(y0 * k)):int(round(y1 * k)), int(round(x0 * k)):int(round(x1 * k))]
+    c, mid = RIM, N / 2
+    return {
+        "Drawer-TopRightCorner": fit(cut(N - c, 0, N, c), (64, 64)),
+        "Drawer-BottomRightCorner": fit(cut(N - c, N - c, N, N), (64, 64)),
+        "Drawer-TopEdge": fit(cut(mid - 1, 0, mid + 1, c), (16, 64)),
+        "Drawer-BottomEdge": fit(cut(mid - 1, N - c, mid + 1, N), (16, 64)),
+        "Drawer-RightEdge": fit(cut(N - c, mid - 1, N, mid + 1), (64, 16)),
     }
 
 
@@ -322,6 +342,7 @@ def inset():
 
 def render():
     art = frame_pieces()
+    art.update(drawer_pieces())
     art.update(inset())
     for state in ("Normal", "Pushed", "Highlight", "Disabled"):
         art["Close-" + state] = fit(close(state), (128, 128))
@@ -521,7 +542,7 @@ def stack(rows, path):
 def main():
     art = render()
     os.makedirs(OUT, exist_ok=True)
-    for pat in ("Frame-*.tga", "Inset-*.tga", "Close-*.tga"):
+    for pat in ("Frame-*.tga", "Drawer-*.tga", "Inset-*.tga", "Close-*.tga"):
         for old in glob.glob(os.path.join(OUT, pat)):
             os.remove(old)
     for stem, img in art.items():

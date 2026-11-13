@@ -830,9 +830,5 @@ end
 
 WC.Window = WC.Window or {}
 WC.Window.buildLog = buildLog
--- a frame of ours dressed as the window's wells are: its NineSlice in the
--- wells' border art (the conversation menu, ConvMenu.lua)
-WC.Window.Inset = function(owner) dress(owner, "Inset", INSET, INSET) end
-WC.Window.INSET = INSET
 -- the middle of the strip under the wells, for the legend (Jobs.lua)
 WC.Window.FOOT_MID = RIM + FOOT / 2
