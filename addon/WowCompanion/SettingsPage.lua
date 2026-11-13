@@ -119,6 +119,15 @@ scroll:SetScript("OnMouseWheel", function(self, delta)
 	local most = math.max(0, content:GetHeight() - self:GetHeight())
 	self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW_H)))
 end)
+-- the section names scroll with the rows but down the whole names well, past
+-- the note's seam where the rows stop (the player, 2026-11-13: cut off at the
+-- footer was wrong): their own clip, following the scroll child
+local namesClip = CreateFrame("Frame", nil, page)
+namesClip:SetClipsChildren(true)
+namesClip:SetPoint("TOPLEFT", -BX, 0)
+namesClip:SetPoint("BOTTOMRIGHT", page, "BOTTOMLEFT", SPINE - 2 - SEAM, 0)
+local heads = CreateFrame("Frame", nil, namesClip)
+heads:SetAllPoints(content)
 local column = WC.ScrollBar.Build(barWell, scroll, 3, page:GetFrameLevel())
 WC.MarkIgnored(column)
 -- each of the bar's frames' level over its column's, kept as built: the bar is
@@ -473,7 +482,7 @@ local KINDS = { dropdown = dropdown, slider = slider, button = button, key = key
 -- spine between the wells to the backing's right edge
 local function header(name)
 	if headers[name] then return headers[name] end
-	local h = WC.Style.Heading(content)
+	local h = WC.Style.Heading(heads)
 	h:SetWidth(SPINE - 24)
 	h:SetJustifyH("RIGHT")
 	h:SetText(name)
