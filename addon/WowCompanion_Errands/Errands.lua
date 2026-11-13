@@ -594,87 +594,6 @@ local function rowLine2(e)
 	return ""
 end
 local drawPage
--- Trial, temporary (the player, 2026-11-13): the list's rows in a cut in the
--- raised panel, round 3: round 2's bark rim, the bar beside it (the
--- player's pick), each row closed along its right and bottom (edge, in
--- WC.Style.List) and standing flush with the cut or clear of the rim (clear).
--- Kept in WowCompanionDB.errandList, switched on the Settings page's Trial
--- row; what is not picked goes with the switch, and with it the samples below.
-local BAR = 6 + WC.ScrollBar.ROOM
-local TRIALS = {
-	{ key = "Rim", name = "Round 2's: open at the right", clear = 0 },
-	{ key = "Line", name = "A dark line right and below", edge = "line", clear = 0 },
-	{ key = "Bevel", name = "A shaded band right and below", edge = "bevel", clear = 0 },
-	{ key = "BevelClear", name = "Shaded band, clear of the rim", edge = "bevel", clear = 3 },
-	{ key = "Both", name = "Lit top and left, shaded right and below", edge = "both", clear = 0 },
-	{ key = "BothClear", name = "Lit and shaded, clear of the rim", edge = "both", clear = 3 },
-	{ key = "Deep", name = "A deep shaded band", edge = "deep", clear = 0 },
-	{ key = "DeepClear", name = "Deep band, clear of the rim", edge = "deep", clear = 3 },
-}
--- the cut's sides in from the list's: l, top (y, below the heading), r, b
-local CUT_L, CUT_TOP, CUT_R, CUT_B = 10, -HEAD + 2, BAR - 2, 10
-local cut
--- the cut: a sunk well of the dark stone in the bark rim, the scroll inside
--- it and the bar beside it; returns the trial's how for WC.Style.List
-local function paintInset()
-	if not cut then
-		local stone = S.Well(list, "you", 0.45, false)
-		stone:SetPoint("TOPLEFT", list, "TOPLEFT", CUT_L, CUT_TOP)
-		stone:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", -CUT_R, CUT_B)
-		local over = CreateFrame("Frame", nil, list)
-		over:SetAllPoints()
-		over:SetFrameLevel(list:GetFrameLevel() + 6)
-		-- the ring lies from 4 in the nine-slice's box: set out round the cut
-		S.BarkRim(over, CUT_L - 3, -CUT_TOP - 3, CUT_R - 3, CUT_B - 3)
-		local scroll, bar = list.scroll, list.barWell
-		scroll:ClearAllPoints()
-		scroll:SetPoint("TOPLEFT", CUT_L, CUT_TOP)
-		scroll:SetPoint("BOTTOMRIGHT", -CUT_R, CUT_B)
-		-- the column runs 9 under its frame's top and 12 over its foot
-		bar:ClearAllPoints()
-		bar:SetPoint("TOPRIGHT", -6, CUT_TOP + 7)
-		bar:SetPoint("BOTTOMRIGHT", -6, CUT_B - 10)
-		cut = true
-	end
-	local want = WowCompanionDB and WowCompanionDB.errandList
-	local pick = TRIALS[1]
-	for _, t in ipairs(TRIALS) do if t.key == want then pick = t end end
-	return { gap = 2, left = pick.clear, right = pick.clear, top = pick.clear, edge = pick.edge }
-end
--- samples to see the rows stack, shown while the trial runs, never saved
-local SAMPLES = {
-	{ "Half Pendant of Aquatic Endurance", { level = 61 } },
-	{ "Wrathtail Heads for Lady Sylvanas", { level = 62 } },
-	{ "Train Skinning to 150", { skill = { name = "Skinning", rank = 150 } } },
-	{ "Bristleback Quilboar Tusks", { level = 63 } },
-	{ "Visit the Apothecarium", { level = 64 } },
-	{ "Reach Moonglade", { reach = { zone = "Moonglade" } } },
-	{ "Sell the green bracers", { level = 65 } },
-}
-local function withSamples(open)
-	for i, sample in ipairs(SAMPLES) do
-		open[#open + 1] = { id = "sample" .. i, text = sample[1] .. " (sample)", done = sample[2], added = time() - i * 3600 }
-	end
-	return open
-end
-WC.SettingsPage.Add({ kind = "dropdown", section = "Trial", order = 10, label = "Errands list",
-	text = "Round 3 of the Errands list: how each row closes its right side, with samples to see the rows stack. Open the Errands tab to see it.",
-	options = function()
-		local names = {}
-		for _, t in ipairs(TRIALS) do names[#names + 1] = t.name end
-		return names
-	end,
-	get = function()
-		local want = WowCompanionDB and WowCompanionDB.errandList
-		for _, t in ipairs(TRIALS) do if t.key == want then return t.name end end
-		return TRIALS[1].name
-	end,
-	set = function(name)
-		for _, t in ipairs(TRIALS) do
-			if t.name == name then WowCompanionDB = WowCompanionDB or {} WowCompanionDB.errandList = t.key end
-		end
-		pcall(drawPage)
-	end })
 local function choose(id) if selectedId ~= id then selectedId = id drawPage() end end
 -- one row per errand: its name, whole, over its detail ("19 min away"),
 -- the pin at the detail's end
@@ -720,9 +639,21 @@ local function build(p)
 	list:SetPoint("BOTTOMRIGHT", p, "BOTTOMLEFT", LIST, -BY)
 	list.header = S.Heading(list)
 	list.header:SetPoint("TOP", list, "TOP", 0, -4)
+	-- the rows in a cut in the raised panel: a sunk well of the dark stone in
+	-- the bark rim, the scroll inside it and the bar beside it on the panel
+	local BAR = 6 + WC.ScrollBar.ROOM
+	local L, TOP, R, B = 10, -HEAD + 2, BAR - 2, 10 -- the cut's sides in from the list's
+	local stone = S.Well(list, "you", 0.45, false)
+	stone:SetPoint("TOPLEFT", list, "TOPLEFT", L, TOP)
+	stone:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", -R, B)
+	local rim = CreateFrame("Frame", nil, list)
+	rim:SetAllPoints()
+	rim:SetFrameLevel(list:GetFrameLevel() + 6)
+	-- the ring lies from 4 in the nine-slice's box: set out round the cut
+	S.BarkRim(rim, L - 3, -TOP - 3, R - 3, B - 3)
 	local scroll = CreateFrame("ScrollFrame", nil, list)
-	scroll:SetPoint("TOPLEFT", 0, -HEAD)
-	scroll:SetPoint("BOTTOMRIGHT")
+	scroll:SetPoint("TOPLEFT", L, TOP)
+	scroll:SetPoint("BOTTOMRIGHT", -R, B)
 	content = CreateFrame("Frame", nil, scroll)
 	content:SetSize(1, 1)
 	scroll:SetScrollChild(content)
@@ -734,13 +665,13 @@ local function build(p)
 		local most = math.max(0, content:GetHeight() - self:GetHeight())
 		self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * 30)))
 	end)
-	-- the bar at the list's right, clear of the spine's bark
+	-- the bar beside the cut, clear of the spine's bark; its column runs 9
+	-- under its frame's top and 12 over its foot
 	local barWell = CreateFrame("Frame", nil, list)
-	barWell:SetPoint("TOPRIGHT", -6, -HEAD + 6)
-	barWell:SetPoint("BOTTOMRIGHT", -6, 0)
+	barWell:SetPoint("TOPRIGHT", -6, TOP + 7)
+	barWell:SetPoint("BOTTOMRIGHT", -6, B - 10)
 	barWell:SetWidth(40)
 	WC.MarkIgnored((WC.ScrollBar.Build(barWell, scroll, 0, list:GetFrameLevel())))
-	list.scroll, list.barWell = scroll, barWell
 	list.doneRule = divider(content)
 	list.doneHead = S.Heading(content)
 	list.doneHead:SetText("Done")
@@ -836,12 +767,12 @@ end
 drawPage = function()
 	if not (page and page:IsVisible()) then return end
 	if not list then build(page) end
-	local open = withSamples(E.List())
+	local open = E.List()
 	list.header:SetText(("Errands  %s%d|r"):format(S.GREY, #open))
 	local found = false
 	for _, e in ipairs(open) do if e.id == selectedId then found = true end end
 	if not found then selectedId = open[1] and open[1].id or nil end
-	-- the rows across the well, flush one under the next, clear of the bar
+	-- the rows across the cut, flush with its sides, 2 apart
 	for i, e in ipairs(open) do
 		local b = rowFor(i)
 		b.errand = e
@@ -849,8 +780,7 @@ drawPage = function()
 		b:SetChosen(e.id == selectedId)
 		if b.pinMark then b.pinMark:SetShown(e.place ~= nil and e.pinned ~= false) end
 	end
-	local how = paintInset()
-	local y = items:Lay(#open, -how.top, how) - how.top
+	local y = items:Lay(#open, 0, 2)
 	-- done: up to three, dimmed, under the chat's vine
 	local finished = {}
 	for _, e in ipairs(store().items) do if e.doneAt then finished[#finished + 1] = e end end
@@ -867,12 +797,12 @@ drawPage = function()
 	if anyDone then
 		list.doneRule:ClearAllPoints()
 		list.doneRule:SetPoint("LEFT", content, "TOPLEFT", 6, y - 10)
-		list.doneRule:SetPoint("RIGHT", content, "TOPRIGHT", -(6 + WC.ScrollBar.ROOM), y - 10)
+		list.doneRule:SetPoint("RIGHT", content, "TOPRIGHT", -6, y - 10)
 		list.doneHead:ClearAllPoints()
 		list.doneHead:SetPoint("TOPLEFT", content, "TOPLEFT", 14, y - 22)
 		list.done:ClearAllPoints()
 		list.done:SetPoint("TOPLEFT", list.doneHead, "BOTTOMLEFT", 0, -6)
-		list.done:SetPoint("RIGHT", content, "RIGHT", -(6 + WC.ScrollBar.ROOM), 0)
+		list.done:SetPoint("RIGHT", content, "RIGHT", -6, 0)
 		list.done:SetText(table.concat(lines, NL))
 		y = y - 22 - list.doneHead:GetStringHeight() - 6 - list.done:GetStringHeight()
 	end
