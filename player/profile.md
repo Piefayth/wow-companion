@@ -15,6 +15,9 @@ none of this. When the player states a new preference or changes one, write it h
 - **Never play for them** (also a product rule): casting, targeting, moving, and the
   step that spends or sends are their press.
 - **Ask before restarting the game.**
+- **Never change how the game behaves without their explicit yes** (2026-11-13):
+  settings, CVars, modules that alter play. Explain the option and wait for a
+  yes before any step that changes it. (A combat camera module went in unasked.)
 - **Addon sources:** strong preference for the addon's own GitHub repository with
   maintainer checks; CurseForge and Wago are fine. Install only after a yes.
 - **All UI we build looks like Blizzard's** (2026-11-09): the game's own borders,
