@@ -251,6 +251,8 @@ refresh = function()
 	end
 	if entry then
 		local doing = tostring(entry.text):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+		-- a compaction holds the run up until it ends (Agent.lua's context)
+		if WC.Companion.compacting(view) then doing = "compacting the conversation" end
 		local text = ("%s%s  %ds"):format(doing, dots, WC.Jobs.Age(entry.since))
 		local status = model:WorkStatus(view)
 		if status then text = WORDS[status] end

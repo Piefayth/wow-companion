@@ -184,7 +184,8 @@ local function setUnread(slot, on)
 	WC.Send("UNREAD", unreadSet())
 end
 -- how full each conversation's context is after its last answer (the PC's
--- `context` message), kept through a reload; none until it has answered once
+-- `context` message: tokens of window, or compacting while a compaction
+-- runs), kept through a reload; none until it has answered once
 local function contextSet()
 	if type(WowCompanionAgentDB) ~= "table" then return {} end
 	WowCompanionAgentDB.context = WowCompanionAgentDB.context or {}
@@ -223,8 +224,12 @@ local function paintConversations()
 		table.insert(frame.chatParts, frame.contextText)
 	end
 	local context = contextSet()[viewSlot]
-	frame.contextText:SetText(context and ("|cffb0b0b0Context %d%%|r"):format(
-		math.floor(context.tokens / context.window * 100 + 0.5)) or "")
+	local parts = {}
+	if context and context.tokens and context.window then
+		parts[1] = ("Context %d%%"):format(math.floor(context.tokens / context.window * 100 + 0.5))
+	end
+	if context and context.compacting then parts[#parts + 1] = "compacting..." end
+	frame.contextText:SetText(#parts > 0 and ("|cffb0b0b0%s|r"):format(table.concat(parts, "  ")) or "")
 	-- each message's panel, with its Cancel and Send now (Jobs.lua)
 	if WC.Jobs then WC.Jobs.Refresh() end
 end
@@ -388,11 +393,19 @@ function handlers.progress()
 	return "progress"
 end
 
--- A conversation's context after its answer: tokens of the model's window
+-- A conversation's context: a compaction starting (compacting, no size), or
+-- its size after an answer or a compaction (tokens of window; a missing
+-- window keeps the last one known)
 function handlers.context(inbox)
-	local tokens, window = tonumber(inbox.tokens), tonumber(inbox.window)
-	if not (tokens and window and window > 0) then return "context: no size" end
-	contextSet()[inbox.slot or ""] = { tokens = tokens, window = window }
+	local slot = inbox.slot or ""
+	local was = contextSet()[slot] or {}
+	if inbox.compacting then
+		contextSet()[slot] = { tokens = was.tokens, window = was.window, compacting = true }
+	else
+		local tokens, window = tonumber(inbox.tokens), tonumber(inbox.window) or was.window
+		if not (tokens and window and window > 0) then return "context: no size" end
+		contextSet()[slot] = { tokens = tokens, window = window }
+	end
 	paintConversations()
 	return "context"
 end
@@ -562,4 +575,6 @@ WC.Companion = {
 	seen = function(slot) setUnread(slot or "", false) end,
 	-- a conversation's lines out of the window (nil: the one in view)
 	clear = function(slot) clearConversation(slot) end,
+	-- a compaction is running in the conversation (the `context` message)
+	compacting = function(slot) local c = contextSet()[slot or ""] return c and c.compacting or false end,
 }
