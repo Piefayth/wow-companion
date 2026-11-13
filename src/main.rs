@@ -31,6 +31,7 @@ mod watcher;
 mod backups;
 mod settings_page;
 mod runs;
+mod hook;
 use channel::*;
 use requests::*;
 use context::*;
@@ -148,6 +149,7 @@ fn main() {
         // the data strip: what it shows now, or `--watch <s> <file> [--then <conv>]`,
         // the agents' detached reader (src/strip.rs)
         [command, rest @ ..] if command == "strip" => strip::command(rest),
+        [command, what] if command == "hook" && what == "background" => hook::background(),
         [command] if command == "pads" => pad::list(),
         [command] if command == "buzz" => match Settings::load().get("pad") {
             Some(id) => pad::buzz(id),

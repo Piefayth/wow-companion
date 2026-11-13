@@ -184,6 +184,8 @@ The player said: {transcript}"
         // the companion's own exe, for the strip reader the rules have the agent
         // start: this running copy, so a reader never locks the build itself
         if let Ok(exe) = std::env::current_exe() {
+            // nothing started in the background: it would die with the turn (hook.rs)
+            claude.arg("--settings").arg(crate::hook::settings(&exe));
             claude.env("WOW_COMPANION_EXE", exe);
         }
         // its conversation, for the strip asks it makes (src/strip.rs ask)
@@ -267,6 +269,11 @@ fn describe(tool: &str, input: &Value) -> Option<String> {
     })
 }
 
+/// Whether a result carries the schema'd answer.
+fn answers(result: &Value) -> bool {
+    matches!(result.get("structured_output"), Some(Value::Object(_)))
+}
+
 fn read(run: &crate::runs::Run, mut progress: impl FnMut(&str), leave: impl Fn() -> bool) -> io::Result<Option<Answer>> {
     let mut envelope: Option<Value> = None;
     let followed = crate::runs::follow(run, leave, |line| {
@@ -295,11 +302,12 @@ fn read(run: &crate::runs::Run, mut progress: impl FnMut(&str), leave: impl Fn()
                     }
                 }
             }
-            // The first result is the answer to the player. A turn can wake again
-            // after it: a background command the agent started finishes, and the
-            // reply to that ("No change from my last message...") would replace the
-            // real answer. Later ones are logged.
-            Some("result") if envelope.is_none() => envelope = Some(event),
+            // The answer is the result that carries one (the schema'd reply). A
+            // turn can hold others: a stale notice in a resumed session woke it
+            // first and gave an empty result, and the real answer came second
+            // (R1, 2026-11-12). Until one carries an answer the latest stands, so
+            // a run that ends in an error still reports it; the rest are logged.
+            Some("result") if envelope.as_ref().map_or(true, |kept| !answers(kept)) => envelope = Some(event),
             Some("result") => {
                 let later = event.get("result").and_then(Value::as_str).unwrap_or("");
                 println!("  a later result from the same turn, not delivered: {}", later.chars().take(160).collect::<String>());
