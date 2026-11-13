@@ -168,21 +168,22 @@ cast:SetAllPoints()
 WC.Style.CastOn(cast, settings, "LEFT")
 
 -- Trial, temporary (the player, 2026-11-13): the spine's ends where it meets
--- the raised panel's edges, round 3 corner fittings (tools/make_spine_trials.py), and how the dividers,
--- lying lower, meet the spine on the panel's edge. Kept in WowCompanionDB.spineEnd
--- and .dividerMeet; what is not picked goes with this switch.
+-- the raised panel's edges, round 10 (tools/make_cover_trial.py): a thin sheet
+-- over the panel's corner and the spine's round end, in looks that differ in
+-- how it stands up; and how the dividers, lying lower, meet the spine on the
+-- panel's edge. Kept in WowCompanionDB.spineEnd and .dividerMeet; what is not
+-- picked goes with this switch. cut: how far each end's art reaches down.
 local ENDS = {
-	{ key = "Round", name = "Round, as now", wide = 16, cut = 3 },
-	{ key = "Square", name = "Square corner", wide = 48, cut = 9 },
-	{ key = "Point", name = "Square, pointed arm", wide = 48, cut = 9 },
-	{ key = "Scroll", name = "Square, scroll arm", wide = 48, cut = 9 },
-	{ key = "Heavier", name = "Square, a little heavier", wide = 48, cut = 9 },
-	{ key = "Deeper", name = "Square, further inside", wide = 48, cut = 11 },
-	{ key = "Brace", name = "Square, braced", wide = 48, cut = 13 },
-	-- round 9 (tools/make_cover_trial.py): a thin sheet over the panel's corner and the spine's round end
-	{ key = "Cover", name = "Folded corner cover", wide = 16, cut = 17, cover = true },
+	{ key = "Round", name = "Round, no cover", cut = 3 },
+	{ key = "CoverA", name = "Cover A, round 9", cut = 17, cover = "A" },
+	{ key = "CoverB", name = "Cover B, thin, no shadow", cut = 17, cover = "B" },
+	{ key = "CoverC", name = "Cover C, rounder edges", cut = 17, cover = "C" },
+	{ key = "CoverD", name = "Cover D, pressed harder", cut = 17, cover = "D" },
+	{ key = "CoverE", name = "Cover E, flat over the vine", cut = 17, cover = "E" },
+	{ key = "CoverF", name = "Cover F, deeper shadow", cut = 17, cover = "F" },
+	{ key = "CoverG", name = "Cover G, finer outline", cut = 17, cover = "G" },
+	{ key = "CoverH", name = "Cover H, flush", cut = 17, cover = "H" },
 }
-local END_OFF = 2 -- the fittings' art starts this far past the panel's edge (make_spine_trials.py's OFF)
 local MEETS = {
 	{ key = "joined", name = "Joined, as now" },
 	{ key = "shadow", name = "Joined, in the shadow" },
@@ -202,29 +203,22 @@ local capped = CreateFrame("Frame", nil, seams)
 capped:SetAllPoints(down)
 local function paintEnds()
 	local e = endLook()
-	for i, t in ipairs(down.ends) do
-		local which = i == 1 and "Top" or "Bottom"
-		local round = e.key == "Round" or e.cover
-		t:SetTexture(round and WC.Style.Vine("Thick" .. which)
-			or ([[Interface\AddOns\WowCompanion\Art\Vine-ThickEnd%s%s-T3]]):format(e.key, which), "CLAMP", "CLAMP")
-		t:SetWidth(e.wide)
-		t:ClearAllPoints()
-		t:SetPoint(which:upper(), down, which:upper(), 0, (round and 0 or END_OFF) * (i == 1 and 1 or -1))
-		capped.covers = capped.covers or {}
+	capped.covers = capped.covers or {}
+	for i, which in ipairs({ "Top", "Bottom" }) do
 		local c = capped.covers[i] or WC.Style.Unsnapped(capped:CreateTexture(nil, "OVERLAY"))
 		capped.covers[i] = c
-		c:SetTexture(([[Interface\AddOns\WowCompanion\Art\Vine-CornerCover%s-T9]]):format(which), "CLAMP", "CLAMP")
 		c:SetSize(48, 16)
-		c:ClearAllPoints()
 		c:SetPoint(which:upper(), capped, which:upper())
-		c:SetShown(e.cover == true)
+		if e.cover then
+			c:SetTexture(([[Interface\AddOns\WowCompanion\Art\Vine-CornerCover%s%s-T10]]):format(e.cover, which), "CLAMP", "CLAMP")
+		end
+		c:SetShown(e.cover ~= nil)
 	end
 	joins:SetPoint("TOP", down, 0, -e.cut)
 	joins:SetPoint("BOTTOM", down, 0, e.cut)
 end
 paintEnds()
 page:HookScript("OnShow", paintEnds) -- the saved pick arrives after this file runs
-page:HookScript("OnShow", function() WC.Style.PaintRaised() end)
 
 -- One setting: a row from the names well to the right edge, its name at the left
 -- and its control at the edge; the row is the one stop, the cursor just left
@@ -691,16 +685,6 @@ login:SetScript("OnEvent", function()
 	end)
 end)
 
--- Trial, temporary: the raised wells' look, picked live (Style.lua's RAISE_LOOKS)
-Page.Add({ kind = "dropdown", section = "Trial", order = 1, label = "Raised panels",
-	text = "On trial: how the dark panels stand above the settings. Left and right switch it live.",
-	options = function()
-		local names = {}
-		for i, look in ipairs(WC.Style.RAISE_LOOKS) do names[i] = look.name end
-		return names
-	end,
-	get = function() return WC.Style.RaisedLook().name end,
-	set = function(name) WC.Style.PaintRaised(name) end })
 Page.Add({ kind = "dropdown", section = "Trial", order = 2, label = "Spine ends",
 	text = "On trial: the thick vine's ends where it meets the dark panel's top and bottom.",
 	options = function()

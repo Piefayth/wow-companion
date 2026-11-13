@@ -297,7 +297,8 @@ def raised(pen, pieces, pal, bevel=1.0, cast=0.55, **kw):
     if cast:
         shadow(pen.c, m, cast)
     kw.setdefault("gloss", 0.35)
-    pen.c.metal(m, pal, bevel=bevel * U, outline=1.1, shadow=False, sheen=False, paint=True, **kw)
+    kw.setdefault("outline", 1.1)
+    pen.c.metal(m, pal, bevel=bevel * U, shadow=False, sheen=False, paint=True, **kw)
     return m
 
 
