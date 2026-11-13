@@ -485,6 +485,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	-- the cursor takes triangle for it
 	local menuOpen = WC.ConvMenu and WC.ConvMenu.Open()
 	local row = focused and not menuOpen and WC.ConvMenu and WC.ConvMenu.Row()
+	local link = focused and not menuOpen and not row and WC.Transcript.LinkUnderCursor() and true
 	-- the legend: what square and triangle do right now, shown only while
 	-- they work
 	if window then
@@ -502,7 +503,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		local function glyph(key) return WowCompanion_Glyph(key) end
 		local parts = {}
 		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " Cancel newest" end
-		if row then parts[#parts + 1] = glyph("PAD4") .. " Options"
+		if row or link then parts[#parts + 1] = glyph("PAD4") .. " Options"
 		elseif focused and sendable() then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
 		if focused and offerShown() then parts[#parts + 1] = glyph("PADLSTICK") .. " " .. offerShown() end
 		if anyTab then parts[#parts + 1] = WC.Style.CHORD .. "+" .. glyph("PADRSTICK") .. " Agent" end
@@ -515,7 +516,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	end
 	-- what is bound follows what the legend shows; rebound only on a change
 	local want = menuOpen and "menu" or focused and (offerShown() and "offer" or "jobs") or anyTab and "switch" or nil
-	if want == "offer" or want == "jobs" then want = want .. (row and "+row" or "") end
+	if want == "offer" or want == "jobs" then want = want .. (row and "+row" or link and "+link" or "") end
 	if want ~= bound then
 		ClearOverrideBindings(keyOwner)
 		-- R3 with a conversation's chord picks it (Offer.lua), L3 presses its
@@ -532,7 +533,8 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		end
 		if chat then
 			SetOverrideBindingClick(keyOwner, true, "PAD3", "WCJobsCancelKey")
-			SetOverrideBindingClick(keyOwner, true, "PAD4", want:match("%+row$") and WC.ConvMenu.BUTTON or "WCJobsNowKey")
+			SetOverrideBindingClick(keyOwner, true, "PAD4", want:match("%+row$") and WC.ConvMenu.BUTTON
+				or want:match("%+link$") and "WCLinkMore" or "WCJobsNowKey")
 		end
 		if want and want:match("^offer") then
 			SetOverrideBindingClick(keyOwner, true, "PADLSTICK", WC.Offer.BUTTON, "LeftButton")

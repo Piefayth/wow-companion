@@ -161,9 +161,41 @@ local function openColour(open, word)
 	end
 	return open
 end
+-- the link the controller's cursor is on, and its menu (triangle, bound by
+-- Jobs.lua like the conversation rows'): Blizzard's own context menu
+local linkButtons = {}
+local function linkUnderCursor()
+	for _, b in ipairs(linkButtons) do
+		if b.link and b:IsVisible() and b:IsHighlightLocked() then return b end
+	end
+end
+local function chatLink(b)
+	local kind, id = b.link:match("^(%a+):(%d+)$")
+	id = tonumber(id)
+	if kind == "spell" then return C_Spell.GetSpellLink(id) end
+	if kind == "item" then return select(2, C_Item.GetItemInfo(id)) end
+	if kind == "quest" and GetQuestLink then return GetQuestLink(id) end
+end
+local more = CreateFrame("Button", "WCLinkMore", UIParent)
+more:RegisterForClicks("AnyDown")
+more:SetScript("OnClick", function()
+	local b = linkUnderCursor()
+	if not b then return end
+	MenuUtil.CreateContextMenu(b, function(_, root)
+		root:CreateButton("Link in chat", function()
+			local link = chatLink(b)
+			if link then WC.Chat.Line(link)
+			else WC.Companion.remember("error", "The game has no link for that yet; try again in a moment.") end
+		end)
+		if b.kind == "item" then
+			root:CreateButton("Open in the item viewer", function() WowCompanion_ShowItem(b.link) end)
+		end
+	end)
+end)
 local function linkButton(t)
 	return take(t.pool.link, function()
 		local b = CreateFrame("Button", nil, t.content)
+		linkButtons[#linkButtons + 1] = b
 		b:SetScript("OnEnter", function(self)
 			if not self.link then return end
 			GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
@@ -587,3 +619,4 @@ WC.Transcript.turnBand = turnBand
 WC.Transcript.ownBand = ownBand
 WC.Transcript.TURN_GAP = TURN_GAP
 WC.Transcript.markRow = markRow
+WC.Transcript.LinkUnderCursor = linkUnderCursor
