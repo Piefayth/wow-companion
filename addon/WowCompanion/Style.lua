@@ -543,118 +543,106 @@ function WowCompanion_Style.ChoiceRow(parent)
 end
 
 -- A scrolling list's items, each its name (row.text, up to two lines) over a
--- line of detail (row.detail). A look says how the rows stand:
---   A        each a slab of the dark stone (tools/make_listitem_art.py's
---            Slab-*); chosen, the light stone in a bark rim
---   Raised   each the dark stone raised as a raised well is (RAISED): a faint
---            lit line along its top and left, a shadow cast down onto what
---            it lies on; chosen, the light stone, the same
---   Pressed  Raised without the shadow
+-- line of detail (row.detail), each the dark stone raised as a raised well is
+-- (RAISED): a faint lit line along its top and left, a shadow cast down onto
+-- what it lies on; chosen, the light stone, the same. edge (on trial) closes
+-- its far sides: line, a dark line along its right and bottom; bevel, a
+-- shaded band there; both, that and a lit band along its top and left; deep,
+-- a wider, darker band.
 -- WC.Style.List(content): list:Row(i) the i-th row, made once
 -- (row:SetLines(name, detail), row:SetChosen(on), row.face for the caller's
 -- own marks); list:Lay(n, y, how) stacks rows 1..n from y down content,
--- hides the rest and returns the y under them. how: look (a key above), gap
--- between rows, left and right in from content's sides.
+-- hides the rest and returns the y under them. how: gap between rows, left
+-- and right in from content's sides, edge.
 local LIST_ITEM_VERSION = 1 -- make_listitem_art.py's VERSION
 local function listArt(piece) return ART .. "ListItem-" .. piece .. "-" .. LIST_ITEM_VERSION end
-local PAD, GAP = 8, 2 -- the words' inset top and bottom, between the lines
-WowCompanion_Style.LIST_MARGIN = 8 -- clear above the first row and under the last
-local function listStone(row, which, l, t, r, b, shade)
+local PAD, GAP, INSET = 8, 2, 14 -- the words' inset top and bottom, between the lines, from the left
+local function listStone(row, which)
 	local tex = row:CreateTexture(nil, "BACKGROUND")
-	WowCompanion_Style.Stone(tex, which, shade)
-	tex:SetPoint("TOPLEFT", l, -t)
-	tex:SetPoint("BOTTOMRIGHT", -r, b)
+	WowCompanion_Style.Stone(tex, which)
+	tex:SetAllPoints()
 	return tex
 end
--- a nine-slice of make_listitem_art's (corners 8), set out 4 round the box l, t, r, b in from the row
-local function nine(row, piece, l, t, r, b)
+-- a nine-slice of make_listitem_art's (corners 8), set out 4 round the box l, t, r, b in from frame
+local function nine(frame, piece, l, t, r, b)
 	local made = {}
 	local cut = { 0, 0.25, 0.75, 1 }
 	local xs = { { "LEFT", l - 4 }, { "LEFT", l + 4 }, { "RIGHT", -r - 4 }, { "RIGHT", -r + 4 } }
 	local ys = { { "TOP", -t + 4 }, { "TOP", -t - 4 }, { "BOTTOM", b + 4 }, { "BOTTOM", b - 4 } }
 	for i = 1, 3 do
 		for j = 1, 3 do
-			local tex = row:CreateTexture(nil, "BORDER")
+			local tex = frame:CreateTexture(nil, "BORDER")
 			tex:SetTexture(listArt(piece))
 			tex:SetTexCoord(cut[j], cut[j + 1], cut[i], cut[i + 1])
-			tex:SetPoint("TOPLEFT", row, ys[i][1] .. xs[j][1], xs[j][2], ys[i][2])
-			tex:SetPoint("BOTTOMRIGHT", row, ys[i + 1][1] .. xs[j + 1][1], xs[j + 1][2], ys[i + 1][2])
+			tex:SetPoint("TOPLEFT", frame, ys[i][1] .. xs[j][1], xs[j][2], ys[i][2])
+			tex:SetPoint("BOTTOMRIGHT", frame, ys[i + 1][1] .. xs[j + 1][1], xs[j + 1][2], ys[i + 1][2])
 			made[#made + 1] = tex
 		end
 	end
 	return made
 end
-local function shown(parts, on) for _, p in ipairs(parts) do p:SetShown(on) end end
--- the chosen slab's bark rim round the box l, t, r, b in from frame's sides
+-- the bark rim round the box l, t, r, b in from frame's sides
 function WowCompanion_Style.BarkRim(frame, l, t, r, b) return nine(frame, "Slab-Rim", l, t, r, b) end
--- a raised row: its stones, the lit lines along its top and left, and (cast)
--- its shadow down onto what it lies on (rows stand flush with their
--- container's sides), on the content under every row so the row below lies
--- over it
+local function shown(parts, on) for _, p in ipairs(parts) do p:SetShown(on) end end
 local ROW_CAST = 6
-local function raisedRow(cast)
-	return {
-		inset = 14,
-		make = function(row)
-			local p = { idle = { listStone(row, "you", 0, 0, 0, 0) },
-				chosen = { listStone(row, "claude", 0, 0, 0, 0) }, rim = {}, cast = {} }
-			for i, edge in ipairs({ { "TOPLEFT", "TOPRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" } }) do
-				local line = row:CreateTexture(nil, "BORDER")
-				line:SetBlendMode("ADD")
-				line:SetPoint(edge[1])
-				line:SetPoint(edge[2])
-				if i == 1 then line:SetHeight(1) else line:SetWidth(1) end
-				line:SetColorTexture(1, 1, 1, RAISED.rim)
-				p.rim[i] = line
-			end
-			if cast then
-				local under = row:GetParent()
-				local dark, clear = CreateColor(0, 0, 0, RAISED.alpha), CreateColor(0, 0, 0, 0)
-				local down = under:CreateTexture(nil, "BACKGROUND")
-				down:SetColorTexture(1, 1, 1, 1)
-				down:SetPoint("TOPLEFT", row, "BOTTOMLEFT")
-				down:SetPoint("TOPRIGHT", row, "BOTTOMRIGHT")
-				down:SetHeight(ROW_CAST)
-				down:SetGradient("VERTICAL", clear, dark)
-				p.cast = { down }
-			end
-			return p
-		end,
-		paint = function(row, p)
-			shown(p.idle, not row.chosen)
-			shown(p.chosen, row.chosen)
-			shown(p.rim, true)
-			shown(p.cast, true)
-		end,
-	}
+-- a band along side ("TOP", "LEFT", "BOTTOM", "RIGHT") of row, w wide,
+-- strongest at the edge: dark, or lit (added)
+local function band(row, side, w, alpha, lit)
+	local t = row:CreateTexture(nil, "BORDER")
+	t:SetColorTexture(1, 1, 1, 1)
+	if lit then t:SetBlendMode("ADD") end
+	local across = side == "TOP" or side == "BOTTOM"
+	local first = (side == "TOP" or side == "BOTTOM") and side .. "LEFT" or "TOP" .. side
+	local second = (side == "TOP" or side == "BOTTOM") and side .. "RIGHT" or "BOTTOM" .. side
+	t:SetPoint(first)
+	t:SetPoint(second)
+	if across then t:SetHeight(w) else t:SetWidth(w) end
+	local c = lit and 1 or 0
+	local strong, none = CreateColor(c, c, c, alpha), CreateColor(c, c, c, 0)
+	-- VERTICAL runs bottom to top, HORIZONTAL left to right
+	if side == "TOP" then t:SetGradient("VERTICAL", none, strong)
+	elseif side == "BOTTOM" then t:SetGradient("VERTICAL", strong, none)
+	elseif side == "LEFT" then t:SetGradient("HORIZONTAL", strong, none)
+	else t:SetGradient("HORIZONTAL", none, strong) end
+	return t
 end
--- each look: the words' left inset; make(row) its pieces, once; paint(row, parts) shows them
-local LOOKS = {
-	A = {
-		inset = 14,
-		make = function(row)
-			local idle = { listStone(row, "you", 3, 3, 3, 3) }
-			for _, t in ipairs(nine(row, "Slab-Edge", 3, 3, 3, 3)) do idle[#idle + 1] = t end
-			local chosen = { listStone(row, "claude", 3, 3, 3, 3) }
-			for _, t in ipairs(nine(row, "Slab-Rim", 3, 3, 3, 3)) do chosen[#chosen + 1] = t end
-			return { idle = idle, chosen = chosen }
-		end,
-		paint = function(row, p)
-			shown(p.idle, not row.chosen)
-			shown(p.chosen, row.chosen)
-		end,
-	},
-	Raised = raisedRow(true),
-	Pressed = raisedRow(false),
+local EDGES = {
+	line = function(row) return { band(row, "RIGHT", 1, 0.6), band(row, "BOTTOM", 1, 0.6) } end,
+	bevel = function(row) return { band(row, "RIGHT", 3, 0.5), band(row, "BOTTOM", 3, 0.5) } end,
+	both = function(row)
+		return { band(row, "RIGHT", 3, 0.5), band(row, "BOTTOM", 3, 0.5), band(row, "TOP", 2, 0.12, true), band(row, "LEFT", 2, 0.12, true) }
+	end,
+	deep = function(row) return { band(row, "RIGHT", 5, 0.65), band(row, "BOTTOM", 5, 0.65) } end,
 }
-local function hideParts(parts) for _, p in pairs(parts) do shown(p, false) end end
+local function makeRow(row)
+	local p = { idle = { listStone(row, "you") }, chosen = { listStone(row, "claude") }, rim = {}, edges = {} }
+	for i, edge in ipairs({ { "TOPLEFT", "TOPRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" } }) do
+		local line = row:CreateTexture(nil, "BORDER")
+		line:SetBlendMode("ADD")
+		line:SetPoint(edge[1])
+		line:SetPoint(edge[2])
+		if i == 1 then line:SetHeight(1) else line:SetWidth(1) end
+		line:SetColorTexture(1, 1, 1, RAISED.rim)
+		p.rim[i] = line
+	end
+	-- the shadow on the content under every row, so the row below lies over it
+	local dark, clear = CreateColor(0, 0, 0, RAISED.alpha), CreateColor(0, 0, 0, 0)
+	local down = row:GetParent():CreateTexture(nil, "BACKGROUND")
+	down:SetColorTexture(1, 1, 1, 1)
+	down:SetPoint("TOPLEFT", row, "BOTTOMLEFT")
+	down:SetPoint("TOPRIGHT", row, "BOTTOMRIGHT")
+	down:SetHeight(ROW_CAST)
+	down:SetGradient("VERTICAL", clear, dark)
+	p.cast = { down }
+	return p
+end
 function WowCompanion_Style.List(content)
 	local list = { rows = {} }
 	function list:Row(i)
 		local row = self.rows[i]
 		if row then return row end
 		row = CreateFrame("Button", nil, content)
-		row.looks = {}
+		row.parts = makeRow(row)
 		-- the words over the row's art
 		row.face = CreateFrame("Frame", nil, row)
 		row.face:SetAllPoints()
@@ -662,6 +650,8 @@ function WowCompanion_Style.List(content)
 		row.text = row.face:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 		row.text:SetJustifyH("LEFT")
 		row.text:SetMaxLines(2)
+		row.text:SetPoint("TOPLEFT", INSET, -PAD)
+		row.text:SetPoint("TOPRIGHT", -8, -PAD)
 		row.detail = row.face:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		row.detail:SetJustifyH("LEFT")
 		row.detail:SetWordWrap(false)
@@ -680,23 +670,23 @@ function WowCompanion_Style.List(content)
 		return row
 	end
 	function list:Lay(n, y, how)
-		local look = LOOKS[how.look]
 		for i, row in ipairs(self.rows) do
-			for k, parts in pairs(row.looks) do if i > n or k ~= how.look then hideParts(parts) end end
+			local p = row.parts
 			if i > n then
 				row:Hide()
+				shown(p.cast, false)
 			else
-				row.looks[how.look] = row.looks[how.look] or look.make(row)
 				row:ClearAllPoints()
 				row:SetPoint("TOPLEFT", content, "TOPLEFT", how.left, y)
 				row:SetPoint("TOPRIGHT", content, "TOPRIGHT", -how.right, y)
-				row.text:ClearAllPoints()
-				row.text:SetPoint("TOPLEFT", look.inset, -PAD)
-				row.text:SetPoint("TOPRIGHT", -8, -PAD)
 				local h = 2 * PAD + row.text:GetStringHeight()
 				if (row.detail:GetText() or "") ~= "" then h = h + GAP + row.detail:GetStringHeight() end
 				row:SetHeight(math.floor(h + 0.5))
-				look.paint(row, row.looks[how.look])
+				shown(p.idle, not row.chosen)
+				shown(p.chosen, row.chosen)
+				shown(p.cast, true)
+				for k, parts in pairs(p.edges) do shown(parts, k == how.edge) end
+				if how.edge and not p.edges[how.edge] then p.edges[how.edge] = EDGES[how.edge](row) end
 				row:Show()
 				y = y - row:GetHeight() - (i < n and how.gap or 0)
 			end

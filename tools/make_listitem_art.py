@@ -1,16 +1,12 @@
-"""A scrolling list's slabs (Core's Style.lua, WC.Style.List, look "A"): the
-pieces that are not already the stones or the vines. In the vines' bark,
+"""The bark rim round the Errands list's cut (Core's Style.lua,
+WC.Style.BarkRim). In the vines' bark,
 at U texels a unit, transparent round them.
 
     python tools/make_listitem_art.py    writes addon/WowCompanion/Art/ListItem-*-<VERSION>.tga
 
 Pieces, in units:
-  Slab-Edge 32x32, a nine-slice (corners 8): a slab of stone standing out of
-    the well, its face clear (the stone shows), lit along its top and left,
-    shaded along its bottom and right, a dark edge and a shadow cast down and
-    right; the slab 4 in from each side of the texture
-  Slab-Rim 32x32, the same nine-slice: the chosen slab's bark rim, round
-    cornered, the medium vine's weight
+  Slab-Rim 32x32, a nine-slice (corners 8): a bark rim, round cornered, the
+    medium vine's weight, 4 in from each side of the texture
 
 The game keeps a texture for the session under its path, so a change bumps
 VERSION (and Style.lua's LIST_ITEM_VERSION); older files are deleted.
@@ -24,7 +20,7 @@ from scipy import ndimage
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import make_scrollbar_art as M  # noqa: E402
-from make_scrollbar_art import Pen, U, WEIGHTS, LIGHT, ucanvas, write_tga  # noqa: E402
+from make_scrollbar_art import Pen, U, WEIGHTS, ucanvas, write_tga  # noqa: E402
 
 VERSION = 1
 OUT = M.CORE_OUT
@@ -57,30 +53,6 @@ def cast(c, m, k):
     c.over(np.zeros_like(c.rgb), np.clip(sh, 0, 1) * (1 - m) * k)
 
 
-def slab_edge():
-    n = 32
-    c = ucanvas(n, n)
-    pen = Pen(c, n)
-    m = pen.mask([rounded(4, 4, 28, 28, 3)])
-    cast(c, m, 0.8)
-    s = U * c.s  # canvas pixels a unit
-    edge = ndimage.gaussian_filter(ndimage.maximum_filter(m, size=int(0.9 * 2 * s) | 1), s * 0.25) * (1 - m)
-    c.over(np.broadcast_to(np.array((8, 7, 6), float), c.rgb.shape), edge * 0.85)
-    d = ndimage.distance_transform_edt(m > 0.5) / s
-    bevel = 1.4
-    t = np.clip(d / bevel, 0, 1)
-    hgt = ndimage.gaussian_filter((1 - (1 - t) ** 2) * bevel * s, s * 0.15)
-    gy, gx = np.gradient(hgt)
-    nrm = np.stack([-gx, -gy, np.ones_like(gx)], -1)
-    nrm /= np.linalg.norm(nrm, axis=-1, keepdims=True)
-    k = nrm @ LIGHT - LIGHT[2]
-    lit = np.clip(k * 1.6, 0, 1) * m
-    dark = np.clip(-k * 1.6, 0, 1) * m
-    c.over(np.broadcast_to(np.array((236, 214, 176), float), c.rgb.shape), lit * 0.32)
-    c.over(np.zeros_like(c.rgb), dark * 0.55)
-    return nine(c.final())
-
-
 def slab_rim():
     n = 32
     c = ucanvas(n, n)
@@ -94,7 +66,7 @@ def slab_rim():
 
 
 def render():
-    return {"Slab-Edge": slab_edge(), "Slab-Rim": slab_rim()}
+    return {"Slab-Rim": slab_rim()}
 
 
 def main():

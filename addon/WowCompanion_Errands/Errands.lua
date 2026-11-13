@@ -595,120 +595,51 @@ local function rowLine2(e)
 end
 local drawPage
 -- Trial, temporary (the player, 2026-11-13): the list's rows in a cut in the
--- raised panel, round 2. Kept in WowCompanionDB.errandList, switched on the
--- Settings page's Trial row; what is not picked goes with the switch, and
--- with it the samples below. Each: cut, how the cut's edges are told (lip: a
--- dark line inside its top and left, a lit one inside its bottom and right;
--- round: shadow inside all four sides, deepest top and left; rim: the bark
--- rim round it; vines: the chat's vine along its top and bottom, edge to
--- edge); bar, where the scroll bar stands (outside on the panel; wall: its
--- column the cut's right side; inside the cut); gap between rows, which
--- stand flush with the cut's sides and top.
+-- raised panel, round 3: round 2's bark rim, the bar beside it (the
+-- player's pick), each row closed along its right and bottom (edge, in
+-- WC.Style.List) and standing flush with the cut or clear of the rim (clear).
+-- Kept in WowCompanionDB.errandList, switched on the Settings page's Trial
+-- row; what is not picked goes with the switch, and with it the samples below.
 local BAR = 6 + WC.ScrollBar.ROOM
 local TRIALS = {
-	{ key = "Now", name = "As now: slabs, no cut" },
-	{ key = "LipOut", name = "Lip, bar beside it", cut = "lip", bar = "outside", gap = 2 },
-	{ key = "LipWall", name = "Lip, bar its right wall", cut = "lip", bar = "wall", gap = 2 },
-	{ key = "LipIn", name = "Lip, bar inside", cut = "lip", bar = "inside", gap = 2 },
-	{ key = "RoundWall", name = "Shadowed round, bar its wall", cut = "round", bar = "wall", gap = 2 },
-	{ key = "RoundTouch", name = "Shadowed round, rows touching", cut = "round", bar = "wall", gap = 0 },
-	{ key = "RimOut", name = "Bark rim, bar beside it", cut = "rim", bar = "outside", gap = 2 },
-	{ key = "RimIn", name = "Bark rim round list and bar", cut = "rim", bar = "inside", gap = 2 },
-	{ key = "Vines", name = "Vines above and below, bar inside", cut = "vines", bar = "inside", gap = 2 },
+	{ key = "Rim", name = "Round 2's: open at the right", clear = 0 },
+	{ key = "Line", name = "A dark line right and below", edge = "line", clear = 0 },
+	{ key = "Bevel", name = "A shaded band right and below", edge = "bevel", clear = 0 },
+	{ key = "BevelClear", name = "Shaded band, clear of the rim", edge = "bevel", clear = 3 },
+	{ key = "Both", name = "Lit top and left, shaded right and below", edge = "both", clear = 0 },
+	{ key = "BothClear", name = "Lit and shaded, clear of the rim", edge = "both", clear = 3 },
+	{ key = "Deep", name = "A deep shaded band", edge = "deep", clear = 0 },
+	{ key = "DeepClear", name = "Deep band, clear of the rim", edge = "deep", clear = 3 },
 }
 -- the cut's sides in from the list's: l, top (y, below the heading), r, b
-local TOP = -HEAD + 2
-local function sides(t)
-	if t.cut == "vines" then return 0, TOP - 6, 0, 14 end
-	local m = t.cut == "rim" and 10 or 6
-	local r = ({ outside = BAR - 2, wall = BAR - 8, inside = m })[t.bar]
-	return m, TOP, r, m
-end
-local function line(a, b, w, h, rgba, add)
-	local t = list:CreateTexture(nil, "BACKGROUND", nil, 3)
-	t:SetPoint(a[1], a[2], a[3])
-	t:SetPoint(b[1], b[2], b[3])
-	if w then t:SetWidth(w) else t:SetHeight(h) end
-	if add then t:SetBlendMode("ADD") end
-	t:SetColorTexture(unpack(rgba))
-	return t
-end
-local function makeCut(t)
-	local l, top, r, b = sides(t)
-	local round = t.cut == "round"
-	local stone, shades = S.Well(list, "you", 0.45, false, round and { "Top", "Left", "Bottom", "Right" } or nil)
-	stone:SetPoint("TOPLEFT", list, "TOPLEFT", l, top)
-	stone:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", -r, b)
-	local parts = { stone }
-	for _, sh in ipairs(shades) do parts[#parts + 1] = sh end
-	if round then
-		-- Bottom and Right lighter, each along the side it names
-		local bottom, right = shades[3], shades[4]
-		bottom:ClearAllPoints()
-		bottom:SetPoint("BOTTOMLEFT", stone)
-		bottom:SetPoint("BOTTOMRIGHT", stone)
-		bottom:SetAlpha(0.35)
-		right:ClearAllPoints()
-		right:SetPoint("TOPRIGHT", stone)
-		right:SetPoint("BOTTOMRIGHT", stone)
-		right:SetAlpha(0.35)
-	end
-	if t.cut == "lip" then
-		local dark, lit = { 0, 0, 0, 0.6 }, { 1, 1, 1, 0.14 }
-		parts[#parts + 1] = line({ "TOPLEFT", stone, "TOPLEFT" }, { "TOPRIGHT", stone, "TOPRIGHT" }, nil, 1, dark)
-		parts[#parts + 1] = line({ "TOPLEFT", stone, "TOPLEFT" }, { "BOTTOMLEFT", stone, "BOTTOMLEFT" }, 1, nil, dark)
-		parts[#parts + 1] = line({ "BOTTOMLEFT", stone, "BOTTOMLEFT" }, { "BOTTOMRIGHT", stone, "BOTTOMRIGHT" }, nil, 1, lit, true)
-		parts[#parts + 1] = line({ "TOPRIGHT", stone, "TOPRIGHT" }, { "BOTTOMRIGHT", stone, "BOTTOMRIGHT" }, 1, nil, lit, true)
-	elseif t.cut == "rim" or t.cut == "vines" then
+local CUT_L, CUT_TOP, CUT_R, CUT_B = 10, -HEAD + 2, BAR - 2, 10
+local cut
+-- the cut: a sunk well of the dark stone in the bark rim, the scroll inside
+-- it and the bar beside it; returns the trial's how for WC.Style.List
+local function paintInset()
+	if not cut then
+		local stone = S.Well(list, "you", 0.45, false)
+		stone:SetPoint("TOPLEFT", list, "TOPLEFT", CUT_L, CUT_TOP)
+		stone:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", -CUT_R, CUT_B)
 		local over = CreateFrame("Frame", nil, list)
 		over:SetAllPoints()
 		over:SetFrameLevel(list:GetFrameLevel() + 6)
-		parts[#parts + 1] = over
-		if t.cut == "rim" then
-			-- the ring lies from 4 in the nine-slice's box: set out round the cut
-			S.BarkRim(over, l - 3, -top - 3, r - 3, b - 3)
-		else
-			for _, edge in ipairs({ "TOP", "BOTTOM" }) do
-				local v = CreateFrame("Frame", nil, over)
-				v:SetHeight(16)
-				v:SetPoint("LEFT", stone, edge .. "LEFT")
-				v:SetPoint("RIGHT", stone, edge .. "RIGHT")
-				S.VineLine(v, "", false, true, true)
-			end
-		end
+		-- the ring lies from 4 in the nine-slice's box: set out round the cut
+		S.BarkRim(over, CUT_L - 3, -CUT_TOP - 3, CUT_R - 3, CUT_B - 3)
+		local scroll, bar = list.scroll, list.barWell
+		scroll:ClearAllPoints()
+		scroll:SetPoint("TOPLEFT", CUT_L, CUT_TOP)
+		scroll:SetPoint("BOTTOMRIGHT", -CUT_R, CUT_B)
+		-- the column runs 9 under its frame's top and 12 over its foot
+		bar:ClearAllPoints()
+		bar:SetPoint("TOPRIGHT", -6, CUT_TOP + 7)
+		bar:SetPoint("BOTTOMRIGHT", -6, CUT_B - 10)
+		cut = true
 	end
-	return parts
-end
-local cuts = {}
--- the picked trial's cut shown, the scroll and its bar fitted to it; returns
--- the rows' how for WC.Style.List, with top: the first row's y
-local function paintInset()
 	local want = WowCompanionDB and WowCompanionDB.errandList
 	local pick = TRIALS[1]
 	for _, t in ipairs(TRIALS) do if t.key == want then pick = t end end
-	for _, t in ipairs(TRIALS) do
-		if t == pick and t.cut and not cuts[t.key] then cuts[t.key] = makeCut(t) end
-		for _, part in ipairs(cuts[t.key] or {}) do part:SetShown(t == pick) end
-	end
-	local scroll, bar = list.scroll, list.barWell
-	scroll:ClearAllPoints()
-	bar:ClearAllPoints()
-	if not pick.cut then
-		scroll:SetPoint("TOPLEFT", 0, -HEAD)
-		scroll:SetPoint("BOTTOMRIGHT")
-		bar:SetPoint("TOPRIGHT", -6, -HEAD + 6)
-		bar:SetPoint("BOTTOMRIGHT", -6, 0)
-		return { look = "A", gap = 0, left = 2, right = BAR, top = S.LIST_MARGIN }
-	end
-	local l, top, r, b = sides(pick)
-	if pick.cut == "vines" then top, b = top - 8, b + 8 end -- inside the vines' bark
-	scroll:SetPoint("TOPLEFT", l, top)
-	scroll:SetPoint("BOTTOMRIGHT", -r, b)
-	-- the column runs 9 under its frame's top and 12 over its foot, at its right edge
-	local x = pick.bar == "inside" and -(r + 4) or -6
-	bar:SetPoint("TOPRIGHT", x, top + 7)
-	bar:SetPoint("BOTTOMRIGHT", x, b - 10)
-	return { look = "Raised", gap = pick.gap, left = 0, right = pick.bar == "inside" and WC.ScrollBar.ROOM + 4 or 0, top = 0 }
+	return { gap = 2, left = pick.clear, right = pick.clear, top = pick.clear, edge = pick.edge }
 end
 -- samples to see the rows stack, shown while the trial runs, never saved
 local SAMPLES = {
@@ -727,7 +658,7 @@ local function withSamples(open)
 	return open
 end
 WC.SettingsPage.Add({ kind = "dropdown", section = "Trial", order = 10, label = "Errands list",
-	text = "Round 2 of the Errands list in a cut in its raised panel, with samples to see the rows stack. Open the Errands tab to see it.",
+	text = "Round 3 of the Errands list: how each row closes its right side, with samples to see the rows stack. Open the Errands tab to see it.",
 	options = function()
 		local names = {}
 		for _, t in ipairs(TRIALS) do names[#names + 1] = t.name end
