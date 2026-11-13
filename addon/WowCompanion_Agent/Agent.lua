@@ -202,6 +202,7 @@ local function paintConversations()
 			label = "|cff40ff40" .. label .. "  new|r"
 		end
 		button:SetText(label)
+		if button.Lit then button.Lit(heard or running or unreadSet()[key]) end
 		if button.selected then button.selected:SetShown(key == viewSlot) end
 	end
 	-- each message's panel, with its Cancel and Send now (Jobs.lua)

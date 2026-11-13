@@ -327,63 +327,45 @@ local function buildTabs(frame, messages)
 	for _, part in ipairs({ column, up, down }) do table.insert(frame.chatParts, part) end
 	-- a row's height; each row WC.Style.ChoiceRow, chosen while in view
 	local ROW = 24
-	-- The rows not in view, on trial (the player, 2026-11-12: flat beside the
-	-- chosen plate): a look per key, picked live with WC.Companion.ConvStyle,
-	-- kept in WowCompanionAgentDB.convStyle. "" is bare text.
-	local CONV_STYLES = { [""] = true, rule = true, slot = true, bands = true, plaque = true }
-	local restyle -- set below, once every row is made
-	-- a vine run of `weight` along an edge of owner, in a frame of its own
-	local function run(owner, weight, edge)
-		local f = CreateFrame("Frame", nil, owner)
-		f:SetHeight(16)
-		f:SetPoint("LEFT", owner, edge .. "LEFT", 6, 0)
-		f:SetPoint("RIGHT", owner, edge .. "RIGHT", -6, 0)
-		WC.Style.VineLine(f, weight, false, true, true)
-		return f
-	end
-	local function stone(owner, which, inset, shade)
-		local t = owner:CreateTexture(nil, "BACKGROUND")
-		WC.Style.Stone(t, which, shade)
-		t:SetPoint("TOPLEFT", inset, -inset)
-		t:SetPoint("BOTTOMRIGHT", -inset, inset)
-		return t
-	end
+	-- The list between a crest and a tailpiece of the vine's wire, and a
+	-- lozenge before each name not in view, lit while it works or has news
+	-- (tools/make_list_art.py; the player, 2026-11-12, after Hollow Knight's
+	-- pause menu and The Blood of Dawnwalker's codex)
+	local LIST_ART = [[Interface\AddOns\WowCompanion_Agent\Art\List-%s-1]]
+	local HEAD, MARK = 32, 16
+	local head = well:CreateTexture(nil, "ARTWORK")
+	head:SetTexture(LIST_ART:format("Head"), "CLAMP", "CLAMP")
+	head:SetSize(128, HEAD)
+	head:SetPoint("TOP", well, "TOP", 0, -INSET - 2)
+	local TOP = INSET + 2 + HEAD + 2
 	frame.convButtons = {}
-	for i, key in ipairs(WC.Conversations.list) do
+	local order = WC.Conversations.list
+	for i, key in ipairs(order) do
 		local b = WC.Style.ChoiceRow(well)
 		-- rows edge to edge across the well, flush one under the next
 		b:SetHeight(ROW)
-		b:SetPoint("TOPLEFT", well, "TOPLEFT", INSET, -INSET - 4 - (i - 1) * ROW)
-		b:SetPoint("TOPRIGHT", well, "TOPRIGHT", -INSET, -INSET - 4 - (i - 1) * ROW)
-		-- each trial look's pieces for this row, shown while it is not in view
-		local idle = { rule = {}, slot = {}, bands = {}, plaque = {} }
-		if i < #WC.Conversations.list then idle.rule[1] = run(b, "Thin", "BOTTOM") end
-		local slot = stone(b, "you", 2, 0.55)
-		local lip = b:CreateTexture(nil, "BORDER")
-		lip:SetTexture([[Interface\Common\ShadowOverlay-Top]])
-		lip:SetPoint("TOPLEFT", slot)
-		lip:SetPoint("TOPRIGHT", slot)
-		lip:SetHeight(8)
-		lip:SetAlpha(0.8)
-		idle.slot = { slot, lip }
-		if i % 2 == 0 then
-			local band = stone(b, "claude", 0, 1)
-			band:SetAlpha(0.3)
-			idle.bands[1] = band
+		b:SetPoint("TOPLEFT", well, "TOPLEFT", INSET, -TOP - (i - 1) * ROW)
+		b:SetPoint("TOPRIGHT", well, "TOPRIGHT", -INSET, -TOP - (i - 1) * ROW)
+		local mark = b.face:CreateTexture(nil, "ARTWORK")
+		mark:SetSize(MARK, MARK)
+		mark:SetPoint("CENTER", b, "LEFT", 14, 0)
+		b.text:SetPoint("LEFT", 26, 0)
+		local lit = false
+		local function dressMark()
+			mark:SetTexture(LIST_ART:format(lit and "Mark-Lit" or "Mark-Idle"), "CLAMP", "CLAMP")
+			mark:SetShown(not b.chosen)
 		end
-		idle.plaque = { stone(b, "claude", 0, 0.5) }
-		for _, edge in ipairs({ "TOP", "BOTTOM" }) do
-			local f = run(b, "Thin", edge)
-			f:SetAlpha(0.7)
-			idle.plaque[#idle.plaque + 1] = f
+		-- Agent.lua: lit while the conversation works or has news
+		function b.Lit(on)
+			lit = on and true or false
+			dressMark()
 		end
-		b.idle = idle
-		-- the one in view is the chosen row (Agent.lua shows it with SetShown)
+		-- the one in view is the chosen row (Agent.lua shows it with SetShown);
+		-- the pointer stands where its lozenge was
 		local selected = {}
 		function selected:SetShown(on)
 			b:SetChosen(on)
-			b.inView = on
-			if restyle then restyle() end
+			dressMark()
 		end
 		function selected:Show() self:SetShown(true) end
 		selected:SetShown(false)
@@ -394,6 +376,7 @@ local function buildTabs(frame, messages)
 		if kept and key == "" then kept[""] = nil end
 		if kept and kept[key] then
 			b:SetText("|cff40ff40" .. WC.Conversations.Label(key) .. "  new|r")
+			b.Lit(true)
 		else
 			b:SetText(WC.Conversations.Label(key))
 		end
@@ -401,26 +384,10 @@ local function buildTabs(frame, messages)
 		WC.MarkFocusable(b)
 		frame.convButtons[key] = b
 	end
-	function restyle()
-		local pick = WowCompanionAgentDB and WowCompanionAgentDB.convStyle or ""
-		if not CONV_STYLES[pick] then pick = "" end
-		local order = WC.Conversations.list
-		for i, key in ipairs(order) do
-			local b = frame.convButtons[key]
-			local nextIn = order[i + 1] and frame.convButtons[order[i + 1]].inView
-			for look, pieces in pairs(b.idle) do
-				-- a rule under a row that meets the plate's own vine is left out
-				local on = look == pick and not b.inView and not (look == "rule" and nextIn)
-				for _, t in ipairs(pieces) do t:SetShown(on) end
-			end
-		end
-	end
-	WC.Companion.ConvStyle = function(pick)
-		if not CONV_STYLES[pick or ""] then return false end
-		WowCompanionAgentDB.convStyle = pick or ""
-		restyle()
-		return true
-	end
+	local tail = well:CreateTexture(nil, "ARTWORK")
+	tail:SetTexture(LIST_ART:format("Tail"), "CLAMP", "CLAMP")
+	tail:SetSize(128, 16)
+	tail:SetPoint("TOP", frame.convButtons[order[#order]], "BOTTOM", 0, -2)
 	frame.convButtons[""].selected:Show()
 
 	-- each message's own panel (Jobs.lua) docks at the bottom of the chat well
