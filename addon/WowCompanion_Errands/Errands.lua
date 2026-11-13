@@ -54,14 +54,14 @@ end
 -- every profession's skill line, named by the game: a skill errand may name
 -- one not learned yet ("learn Leatherworking" is rank 1)
 local PROFESSION_LINES = { 129, 164, 165, 171, 182, 185, 186, 197, 202, 333, 356, 393 }
-local function isProfession(name)
-	if skillRank(name) then return true end
+local function professionLine(name)
 	local want = name:lower()
 	for _, line in ipairs(PROFESSION_LINES) do
 		local ok, shown = pcall(C_TradeSkillUI.GetTradeSkillDisplayName, line)
-		if ok and type(shown) == "string" and shown:lower() == want then return true end
+		if ok and type(shown) == "string" and shown:lower() == want then return line end
 	end
 end
+local function isProfession(name) return skillRank(name) ~= nil or professionLine(name) ~= nil end
 local function questState(id)
 	if C_QuestLog.IsQuestFlaggedCompleted(id) then return "turnedin" end
 	if C_QuestLog.GetLogIndexForQuestID(id) then
@@ -938,6 +938,17 @@ function E.Add(e)
 	if type(e) ~= "table" or type(e.text) ~= "string" or e.text == "" then return nil, "an errand needs text" end
 	local why = checkPlace(e.place) or checkDone(e.done)
 	if why then return nil, why end
+	-- a profession not learned yet is learned at its trainer: the nearest one
+	-- is the errand's place unless it was given one
+	local skill = e.done.skill
+	if not e.place and skill and not skillRank(skill.name) then
+		local nav, line = WC.Use("nav"), professionLine(skill.name)
+		local trainer = nav and nav.nearest and line and nav.nearest("trainer", line)
+		if trainer then
+			e.place = { map = trainer.map, x = trainer.x, y = trainer.y }
+			e.note = e.note or (trainer.name and (trainer.name .. " teaches it."))
+		end
+	end
 	local s = store()
 	local item = { id = s.next, added = time(), text = e.text, note = e.note, place = e.place,
 		item = e.item or (e.done.have and e.done.have.item), done = e.done }
