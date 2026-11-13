@@ -359,7 +359,7 @@ end
 -- the looks not picked go when one is chosen. Each: its name, then
 -- make_slab_art.py's VARIANTS numbers: bevel, thickness, margin, the stone's
 -- shade. The art covers the well; the slab stands its margin inside it.
-local SLAB_ROUND = 1 -- make_slab_art.py's ROUND
+local SLAB_ROUND = 2 -- make_slab_art.py's ROUND
 local RAISE_LOOKS = {
 	{ name = "Chamfer, dark", bevel = 3, thick = 2, margin = 8, shade = 0.6 },
 	{ name = "Chamfer, lifted", bevel = 3, thick = 3, margin = 8, shade = 0.8 },

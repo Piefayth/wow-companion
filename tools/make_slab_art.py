@@ -13,7 +13,8 @@ round it. Nine pieces per variant, laid round a well by Style.lua (RAISED):
 C = margin + thickness + bevel + 2: the art covers the well's whole rectangle,
 the slab inset from it by the margin (and its thickness at the bottom and
 right). The slab's flat face is left clear: the game tiles the slate there.
-2 texture pixels per unit.
+4 texture pixels per unit, each piece resampled to power-of-two sides (odd
+sizes drew wrong in the game, 2026-11-12).
 """
 import os
 import sys
@@ -26,8 +27,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import artout  # noqa: E402
 import make_scrollbar_art as sb  # noqa: E402
 
-ROUND = 1
-PX = 2  # texture pixels per unit
+ROUND = 2
+PX = 4  # texture pixels per unit, as the controls' art
 L = 384  # an edge strip's length, units
 OUT = sb.CORE_OUT
 SLATE = os.path.join(OUT, "Slate-6.tga")  # Style.lua's STONE.you
@@ -88,6 +89,16 @@ def render(bevel, rounded, thick, margin, shade):
     return C, out
 
 
+def pow2(rgba):
+    """The piece resampled to the nearest power of two on each side."""
+    h, w = rgba.shape[:2]
+    p = lambda n: 1 << max(2, round(np.log2(n)))
+    if (p(h), p(w)) == (h, w):
+        return rgba
+    im = Image.fromarray(np.clip(rgba, 0, 255).astype(np.uint8), "RGBA")
+    return np.asarray(im.resize((p(w), p(h)), Image.LANCZOS), float)
+
+
 def main():
     artout.clear(OUT, "Slab-*.tga")
     for v, (name, bevel, rounded, thick, margin, shade) in enumerate(VARIANTS, 1):
@@ -100,6 +111,7 @@ def main():
             "Left": img[c:n - c, :c], "Right": img[c:n - c, -c:],
         }
         for piece, rgba in pieces.items():
+            rgba = pow2(rgba)
             sb.write_tga(os.path.join(OUT, "Slab-%d-%s-%d.tga" % (v, piece, ROUND)), np.clip(rgba, 0, 255))
         print(v, name, "corner", C)
 
