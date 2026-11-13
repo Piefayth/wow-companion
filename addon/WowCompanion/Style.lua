@@ -389,7 +389,8 @@ function WowCompanion_Style.PageRock(page)
 end
 -- A well of stone on page, sunk by a soft shadow inside its top and left
 -- edges (sunk: the sides that have one, by default both), light falling from
--- the top left, no rim. Returns its stone, for the caller to anchor; what lies
+-- the top left, no rim. Returns its stone, for the caller to anchor, and its
+-- shadows; what lies
 -- on the stone under the shadow goes at sublevel 0.
 --
 -- Raised, it stands up out of the page instead. Nothing is painted on it: its
@@ -442,6 +443,7 @@ function WowCompanion_Style.Well(page, which, shade, raised, sunk)
 		end
 		return t
 	end
+	local shades = {}
 	for _, side in ipairs(sunk or { "Top", "Left" }) do
 		local s = page:CreateTexture(nil, "BACKGROUND", nil, 2)
 		s:SetTexture([[Interface\Common\ShadowOverlay-]] .. side)
@@ -449,8 +451,9 @@ function WowCompanion_Style.Well(page, which, shade, raised, sunk)
 		s:SetPoint("TOPLEFT", t)
 		s:SetPoint(side == "Top" and "TOPRIGHT" or "BOTTOMLEFT", t)
 		if side == "Top" then s:SetHeight(SHADE) else s:SetWidth(SHADE) end
+		shades[#shades + 1] = s
 	end
-	return t
+	return t, shades
 end
 -- The thick vine down page's whole height, centred x from its left, in a frame
 -- of owner's (which decides what it is drawn over)
@@ -540,60 +543,28 @@ function WowCompanion_Style.ChoiceRow(parent)
 end
 
 -- A scrolling list's items, each its name (row.text, up to two lines) over a
--- line of detail (row.detail), in the look on trial (the player's pick,
--- 2026-11-12): a letter in WowCompanionDB.listItem, switched live by
--- WC.Style.ListItemStyle. The pieces are tools/make_listitem_art.py's
--- (ListItem-*), the stones' and the vines'.
---   A Slab   each item a raised slab of the dark stone; chosen, the light stone in a bark rim
---   B Inlay  thin vines between items; chosen, sunk light stone between vines ending in scrolls
---   C Branch a vine down the list, a tendril for each item; chosen, a plate grown from it on T joints
---   D Bands  the stones in turn, as Status's rows, thin vines between; chosen, medium vines round it
--- WC.Style.List(content, relayout, left, right): rows from left to right in
--- from content's sides. list:Row(i) the i-th row, made once
+-- line of detail (row.detail). A look says how the rows stand:
+--   A        each a slab of the dark stone (tools/make_listitem_art.py's
+--            Slab-*); chosen, the light stone in a bark rim
+--   Raised   each the dark stone raised as a raised well is (RAISED): a faint
+--            lit line along its top and left, a shadow cast down and right
+--            onto what it lies on; chosen, the light stone, the same
+--   Pressed  Raised without the shadow
+-- WC.Style.List(content): list:Row(i) the i-th row, made once
 -- (row:SetLines(name, detail), row:SetChosen(on), row.face for the caller's
--- own marks); list:Lay(n, y) stacks rows 1..n flush from y down content,
--- hides the rest and returns the y under them. relayout() is called when
--- the look changes, as the rows' heights may.
+-- own marks); list:Lay(n, y, how) stacks rows 1..n from y down content,
+-- hides the rest and returns the y under them. how: look (a key above), gap
+-- between rows, left and right in from content's sides.
 local LIST_ITEM_VERSION = 1 -- make_listitem_art.py's VERSION
 local function listArt(piece) return ART .. "ListItem-" .. piece .. "-" .. LIST_ITEM_VERSION end
-local PAD, GAP, STEM = 8, 2, 10 -- the words' inset top and bottom, between the lines; Branch's stem
-WowCompanion_Style.LIST_MARGIN = 8 -- clear above the first row and under the last (Branch's stem runs on past them)
-local function listStone(row, which, l, t, r, b)
+local PAD, GAP = 8, 2 -- the words' inset top and bottom, between the lines
+WowCompanion_Style.LIST_MARGIN = 8 -- clear above the first row and under the last
+local function listStone(row, which, l, t, r, b, shade)
 	local tex = row:CreateTexture(nil, "BACKGROUND")
-	WowCompanion_Style.Stone(tex, which)
+	WowCompanion_Style.Stone(tex, which, shade)
 	tex:SetPoint("TOPLEFT", l, -t)
 	tex:SetPoint("BOTTOMRIGHT", -r, b)
 	return tex
-end
--- a vine along the row's top or bottom edge, from l in to r in
-local function edgeVine(row, edge, weight, l, r, capStart, capEnd)
-	local f = CreateFrame("Frame", nil, row.vines)
-	f:SetHeight(16)
-	f:SetPoint("LEFT", row, edge .. "LEFT", l, 0)
-	f:SetPoint("RIGHT", row, edge .. "RIGHT", -r, 0)
-	WowCompanion_Style.VineLine(f, weight, false, capStart, capEnd)
-	return f
-end
--- a medium vine along an edge whose ends curl into the row
-local function curledVine(row, edge)
-	local f = CreateFrame("Frame", nil, row.vines)
-	f:SetHeight(16)
-	f:SetPoint("LEFT", row, edge .. "LEFT")
-	f:SetPoint("RIGHT", row, edge .. "RIGHT")
-	local side = edge == "TOP" and "T" or "B"
-	local l = WowCompanion_Style.Unsnapped(f:CreateTexture(nil, "ARTWORK"))
-	local r = WowCompanion_Style.Unsnapped(f:CreateTexture(nil, "ARTWORK"))
-	l:SetTexture(listArt("Curl-" .. side .. "L"), "CLAMP", "CLAMP")
-	r:SetTexture(listArt("Curl-" .. side .. "R"), "CLAMP", "CLAMP")
-	l:SetSize(32, 32)
-	r:SetSize(32, 32)
-	l:SetPoint("LEFT")
-	r:SetPoint("RIGHT")
-	local mid = WowCompanion_Style.Run(f, WowCompanion_Style.Vine("Mid"), false, 64)
-	mid:SetHeight(16)
-	mid:SetPoint("LEFT", l, "RIGHT")
-	mid:SetPoint("RIGHT", r, "LEFT")
-	return f
 end
 -- a nine-slice of make_listitem_art's (corners 8), set out 4 round the box l, t, r, b in from the row
 local function nine(row, piece, l, t, r, b)
@@ -614,8 +585,53 @@ local function nine(row, piece, l, t, r, b)
 	return made
 end
 local function shown(parts, on) for _, p in ipairs(parts) do p:SetShown(on) end end
--- each look: the words' left inset; make(row) its pieces, once; paint(row,
--- parts, i, n, after) shows them for the row's place (after: the row above is chosen)
+-- a raised row: its stones, the lit lines along its top and left, and (cast)
+-- its shadow down and right, on the content under every row so the row
+-- below lies over it
+local ROW_CAST = 6
+local function raisedRow(cast)
+	return {
+		inset = 14,
+		make = function(row)
+			local p = { idle = { listStone(row, "you", 0, 0, 0, 0) },
+				chosen = { listStone(row, "claude", 0, 0, 0, 0) }, rim = {}, cast = {} }
+			for i, edge in ipairs({ { "TOPLEFT", "TOPRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" } }) do
+				local line = row:CreateTexture(nil, "BORDER")
+				line:SetBlendMode("ADD")
+				line:SetPoint(edge[1])
+				line:SetPoint(edge[2])
+				if i == 1 then line:SetHeight(1) else line:SetWidth(1) end
+				line:SetColorTexture(1, 1, 1, RAISED.rim)
+				p.rim[i] = line
+			end
+			if cast then
+				local under = row:GetParent()
+				local dark, clear = CreateColor(0, 0, 0, RAISED.alpha), CreateColor(0, 0, 0, 0)
+				local down = under:CreateTexture(nil, "BACKGROUND")
+				down:SetColorTexture(1, 1, 1, 1)
+				down:SetPoint("TOPLEFT", row, "BOTTOMLEFT", 2, 0)
+				down:SetPoint("TOPRIGHT", row, "BOTTOMRIGHT", ROW_CAST, 0)
+				down:SetHeight(ROW_CAST)
+				down:SetGradient("VERTICAL", clear, dark)
+				local right = under:CreateTexture(nil, "BACKGROUND")
+				right:SetColorTexture(1, 1, 1, 1)
+				right:SetPoint("TOPLEFT", row, "TOPRIGHT", 0, -2)
+				right:SetPoint("BOTTOMLEFT", row, "BOTTOMRIGHT", 0, 0)
+				right:SetWidth(ROW_CAST)
+				right:SetGradient("HORIZONTAL", dark, clear)
+				p.cast = { down, right }
+			end
+			return p
+		end,
+		paint = function(row, p)
+			shown(p.idle, not row.chosen)
+			shown(p.chosen, row.chosen)
+			shown(p.rim, true)
+			shown(p.cast, true)
+		end,
+	}
+end
+-- each look: the words' left inset; make(row) its pieces, once; paint(row, parts) shows them
 local LOOKS = {
 	A = {
 		inset = 14,
@@ -631,116 +647,18 @@ local LOOKS = {
 			shown(p.chosen, row.chosen)
 		end,
 	},
-	B = {
-		inset = 14,
-		make = function(row)
-			local chosen = { listStone(row, "claude", 0, 0, 0, 0) }
-			for _, side in ipairs({ "Top", "Left" }) do
-				local s = row:CreateTexture(nil, "BORDER")
-				s:SetTexture([[Interface\Common\ShadowOverlay-]] .. side)
-				s:SetAlpha(0.7)
-				s:SetPoint("TOPLEFT")
-				s:SetPoint(side == "Top" and "TOPRIGHT" or "BOTTOMLEFT")
-				if side == "Top" then s:SetHeight(SHADE) else s:SetWidth(SHADE) end
-				chosen[#chosen + 1] = s
-			end
-			chosen[#chosen + 1] = curledVine(row, "TOP")
-			chosen[#chosen + 1] = curledVine(row, "BOTTOM")
-			return { rule = edgeVine(row, "TOP", "Thin", 6, 6, true, true), chosen = chosen }
-		end,
-		paint = function(row, p, i, _, after)
-			shown(p.chosen, row.chosen)
-			p.rule:SetShown(i > 1 and not row.chosen and not after)
-		end,
-	},
-	C = {
-		inset = 26,
-		make = function(row)
-			local stem = CreateFrame("Frame", nil, row.vines)
-			stem:SetWidth(16)
-			local function piece(name)
-				local t = WowCompanion_Style.Unsnapped(stem:CreateTexture(nil, "ARTWORK"))
-				t:SetTexture(WowCompanion_Style.Vine(name), "CLAMP", "CLAMP")
-				return t
-			end
-			local top, bottom = piece("Top"), piece("Bottom")
-			local mid = WowCompanion_Style.Run(stem, WowCompanion_Style.Vine("VMid"), true, 64)
-			top:SetSize(16, 32)
-			bottom:SetSize(16, 32)
-			top:SetPoint("TOP")
-			bottom:SetPoint("BOTTOM")
-			mid:SetWidth(16)
-			local function joint(name)
-				local t = WowCompanion_Style.Unsnapped(row.vines:CreateTexture(nil, "OVERLAY"))
-				t:SetTexture(listArt(name), "CLAMP", "CLAMP")
-				t:SetSize(32, 32)
-				return t
-			end
-			local tendril = joint("Stem-Tendril")
-			tendril:SetPoint("CENTER", row, "TOPLEFT", STEM, -(PAD + 7))
-			local chosen = { listStone(row, "claude", STEM, 0, 0, 0) }
-			for _, edge in ipairs({ "TOP", "BOTTOM" }) do
-				chosen[#chosen + 1] = edgeVine(row, edge, "", STEM, 0, false, true)
-				local t = joint("Stem-T")
-				t:SetPoint("CENTER", row, edge .. "LEFT", STEM, 0)
-				chosen[#chosen + 1] = t
-			end
-			return { stem = stem, top = top, mid = mid, bottom = bottom, tendril = tendril, chosen = chosen }
-		end,
-		paint = function(row, p, i, n)
-			local M = WowCompanion_Style.LIST_MARGIN
-			p.stem:Show()
-			p.stem:ClearAllPoints()
-			p.stem:SetPoint("TOP", row, "TOPLEFT", STEM, i == 1 and M - 2 or 0)
-			p.stem:SetPoint("BOTTOM", row, "BOTTOMLEFT", STEM, i == n and 2 - M or 0)
-			p.top:SetShown(i == 1)
-			p.bottom:SetShown(i == n)
-			p.mid:SetShown(not (i == 1 and i == n)) -- one row: its two caps meet
-			p.mid:ClearAllPoints()
-			p.mid:SetPoint("TOP", i == 1 and p.top or p.stem, i == 1 and "BOTTOM" or "TOP")
-			p.mid:SetPoint("BOTTOM", i == n and p.bottom or p.stem, i == n and "TOP" or "BOTTOM")
-			p.tendril:SetShown(not row.chosen)
-			shown(p.chosen, row.chosen)
-		end,
-	},
-	D = {
-		inset = 14,
-		make = function(row)
-			return { light = listStone(row, "claude", 0, 0, 0, 0), dark = listStone(row, "you", 0, 0, 0, 0),
-				rule = edgeVine(row, "TOP", "Thin", 6, 6, true, true),
-				chosen = { edgeVine(row, "TOP", "", 0, 0, true, true), edgeVine(row, "BOTTOM", "", 0, 0, true, true) } }
-		end,
-		paint = function(row, p, i, _, after)
-			local light = row.chosen or i % 2 == 1
-			p.light:SetShown(light)
-			p.dark:SetShown(not light)
-			p.rule:SetShown(i > 1 and not row.chosen and not after)
-			shown(p.chosen, row.chosen)
-		end,
-	},
+	Raised = raisedRow(true),
+	Pressed = raisedRow(false),
 }
-local function pickedLook()
-	local pick = type(WowCompanionDB) == "table" and WowCompanionDB.listItem
-	return LOOKS[pick] and pick or "A"
-end
-local lists = {}
-local function hideParts(parts)
-	for _, p in pairs(parts) do
-		if type(p) == "table" and p.SetShown then p:Hide() elseif type(p) == "table" then shown(p, false) end
-	end
-end
-function WowCompanion_Style.List(content, relayout, left, right)
-	local list = { rows = {}, relayout = relayout }
-	lists[#lists + 1] = list
+local function hideParts(parts) for _, p in pairs(parts) do shown(p, false) end end
+function WowCompanion_Style.List(content)
+	local list = { rows = {} }
 	function list:Row(i)
 		local row = self.rows[i]
 		if row then return row end
 		row = CreateFrame("Button", nil, content)
 		row.looks = {}
-		row.vines = CreateFrame("Frame", nil, row)
-		row.vines:SetAllPoints()
-		row.vines:SetFrameLevel(row:GetFrameLevel() + 1)
-		-- the words over the vines, which reach 8 into the row
+		-- the words over the row's art
 		row.face = CreateFrame("Frame", nil, row)
 		row.face:SetAllPoints()
 		row.face:SetFrameLevel(row:GetFrameLevel() + 3)
@@ -764,40 +682,31 @@ function WowCompanion_Style.List(content, relayout, left, right)
 		self.rows[i] = row
 		return row
 	end
-	function list:Lay(n, y)
-		local key = pickedLook()
-		local look = LOOKS[key]
+	function list:Lay(n, y, how)
+		local look = LOOKS[how.look]
 		for i, row in ipairs(self.rows) do
+			for k, parts in pairs(row.looks) do if i > n or k ~= how.look then hideParts(parts) end end
 			if i > n then
 				row:Hide()
 			else
-				for k, parts in pairs(row.looks) do if k ~= key then hideParts(parts) end end
-				row.looks[key] = row.looks[key] or look.make(row)
+				row.looks[how.look] = row.looks[how.look] or look.make(row)
 				row:ClearAllPoints()
-				row:SetPoint("TOPLEFT", content, "TOPLEFT", left or 0, y)
-				row:SetPoint("TOPRIGHT", content, "TOPRIGHT", -(right or 0), y)
+				row:SetPoint("TOPLEFT", content, "TOPLEFT", how.left, y)
+				row:SetPoint("TOPRIGHT", content, "TOPRIGHT", -how.right, y)
 				row.text:ClearAllPoints()
 				row.text:SetPoint("TOPLEFT", look.inset, -PAD)
 				row.text:SetPoint("TOPRIGHT", -8, -PAD)
 				local h = 2 * PAD + row.text:GetStringHeight()
 				if (row.detail:GetText() or "") ~= "" then h = h + GAP + row.detail:GetStringHeight() end
 				row:SetHeight(math.floor(h + 0.5))
-				look.paint(row, row.looks[key], i, n, i > 1 and self.rows[i - 1].chosen)
+				look.paint(row, row.looks[how.look])
 				row:Show()
-				y = y - row:GetHeight()
+				y = y - row:GetHeight() - (i < n and how.gap or 0)
 			end
 		end
 		return y
 	end
 	return list
-end
--- "A".."D": every list's rows change at once
-function WowCompanion_Style.ListItemStyle(pick)
-	if not LOOKS[pick] then return false end
-	WowCompanionDB = WowCompanionDB or {}
-	WowCompanionDB.listItem = pick
-	for _, list in ipairs(lists) do pcall(list.relayout) end
-	return true
 end
 
 -- The controls' art (tools/make_control_art.py): the scroll bar's fleur

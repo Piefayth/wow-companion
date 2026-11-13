@@ -594,6 +594,72 @@ local function rowLine2(e)
 	return ""
 end
 local drawPage
+-- Trial, temporary (the player, 2026-11-13): the list's rows in an inset of
+-- the raised panel, round 1. Kept in WowCompanionDB.errandList, switched on
+-- the Settings page's Trial row; what is not picked goes with the switch.
+-- inset: a sunk well of stone (which, shade) l, r, b in from the list's
+-- sides under its heading; ruled, the chat's vine along its top. rows:
+-- WC.Style.List's how, in from the scroll content's sides.
+local BAR = 6 + WC.ScrollBar.ROOM
+local WELL = { which = "you", shade = 0.45, l = 8, r = BAR - 2, b = 8 }
+local SHELF = { which = "you", shade = 0.45, l = 0, r = 0, b = 0 }
+local TRIALS = {
+	{ key = "Now", name = "As now: slabs, no inset", rows = { look = "A", gap = 0, left = 2, right = BAR } },
+	{ key = "Well", name = "A well, raised rows apart", inset = WELL, rows = { look = "Raised", gap = 4, left = 12, right = BAR + 2 } },
+	{ key = "Tight", name = "A well, raised rows close", inset = { which = "you", shade = 0.45, l = 5, r = BAR - 2, b = 5 }, rows = { look = "Raised", gap = 2, left = 8, right = BAR + 1 } },
+	{ key = "Stacked", name = "A well, raised rows touching", inset = WELL, rows = { look = "Raised", gap = 0, left = 12, right = BAR + 2 } },
+	{ key = "Pressed", name = "A well, rows lit, no shadow", inset = WELL, rows = { look = "Pressed", gap = 3, left = 12, right = BAR + 2 } },
+	{ key = "Light", name = "A well of light stone", inset = { which = "claude", shade = 0.6, l = 8, r = BAR - 2, b = 8 }, rows = { look = "Raised", gap = 4, left = 12, right = BAR + 2 } },
+	{ key = "Shelf", name = "A shelf, edge to edge", inset = SHELF, rows = { look = "Raised", gap = 4, left = 8, right = BAR } },
+	{ key = "Ruled", name = "A shelf under a vine", inset = SHELF, ruled = true, rows = { look = "Raised", gap = 4, left = 8, right = BAR } },
+}
+local insets = {}
+-- the picked trial's inset shown, the others hidden; returns the trial
+local function paintInset()
+	local want = WowCompanionDB and WowCompanionDB.errandList
+	local pick = TRIALS[1]
+	for _, t in ipairs(TRIALS) do if t.key == want then pick = t end end
+	for _, t in ipairs(TRIALS) do
+		local parts = insets[t.key]
+		if not parts and t == pick and t.inset then
+			local i = t.inset
+			local stone, shades = S.Well(list, i.which, i.shade, false)
+			stone:SetPoint("TOPLEFT", list, "TOPLEFT", i.l, -HEAD + 2)
+			stone:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", -i.r, i.b)
+			parts = { stone, unpack(shades) }
+			if t.ruled then
+				local rule = CreateFrame("Frame", nil, list)
+				rule:SetHeight(16)
+				rule:SetFrameLevel(list:GetFrameLevel() + 6)
+				rule:SetPoint("LEFT", stone, "TOPLEFT", 0, 0)
+				rule:SetPoint("RIGHT", stone, "TOPRIGHT", 0, 0)
+				S.VineLine(rule, "", false, true, true)
+				parts[#parts + 1] = rule
+			end
+			insets[t.key] = parts
+		end
+		for _, part in ipairs(parts or {}) do part:SetShown(t == pick) end
+	end
+	return pick
+end
+WC.SettingsPage.Add({ kind = "dropdown", section = "Trial", order = 10, label = "Errands list",
+	text = "Round 1 of the Errands list in an inset of its raised panel. Open the Errands tab to see it.",
+	options = function()
+		local names = {}
+		for _, t in ipairs(TRIALS) do names[#names + 1] = t.name end
+		return names
+	end,
+	get = function()
+		local want = WowCompanionDB and WowCompanionDB.errandList
+		for _, t in ipairs(TRIALS) do if t.key == want then return t.name end end
+		return TRIALS[1].name
+	end,
+	set = function(name)
+		for _, t in ipairs(TRIALS) do
+			if t.name == name then WowCompanionDB = WowCompanionDB or {} WowCompanionDB.errandList = t.key end
+		end
+		pcall(drawPage)
+	end })
 local function choose(id) if selectedId ~= id then selectedId = id drawPage() end end
 -- one row per errand: its name, whole, over its detail ("19 min away"),
 -- the pin at the detail's end
@@ -647,7 +713,7 @@ local function build(p)
 	scroll:SetScrollChild(content)
 	-- the rows' heights follow their words' wrapping, so the width first
 	scroll:SetScript("OnSizeChanged", function(_, w) content:SetWidth(w) drawPage() end)
-	items = S.List(content, drawPage, 2, 6 + WC.ScrollBar.ROOM)
+	items = S.List(content)
 	scroll:EnableMouseWheel(true)
 	scroll:SetScript("OnMouseWheel", function(self, delta)
 		local most = math.max(0, content:GetHeight() - self:GetHeight())
@@ -768,7 +834,8 @@ drawPage = function()
 		b:SetChosen(e.id == selectedId)
 		if b.pinMark then b.pinMark:SetShown(e.place ~= nil and e.pinned ~= false) end
 	end
-	local y = items:Lay(#open, -S.LIST_MARGIN) - S.LIST_MARGIN
+	local trial = paintInset()
+	local y = items:Lay(#open, -S.LIST_MARGIN, trial.rows) - S.LIST_MARGIN
 	-- done: up to three, dimmed, under the chat's vine
 	local finished = {}
 	for _, e in ipairs(store().items) do if e.doneAt then finished[#finished + 1] = e end end
