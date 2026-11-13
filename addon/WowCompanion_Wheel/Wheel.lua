@@ -426,3 +426,48 @@ events:SetScript("OnEvent", function(_, event, name)
         W.Rebuild(true)
     end
 end)
+
+-- The release trace (2026-11-13: a release sometimes used nothing): every stick
+-- edge on an open wheel, what the secure code then held, and what the game did
+-- after a use. Only watches; WowCompanionWheelDB.trace, the newest 300 lines,
+-- read after a reload.
+local function Note(text)
+    local db = WowCompanionWheelDB
+    if not db then return end
+    local log = db.trace or {}
+    db.trace = log
+    log[#log + 1] = ("%.2f %s"):format(GetTime(), text)
+    while #log > 300 do table.remove(log, 1) end
+end
+local function Push()
+    local ok, state = pcall(C_GamePad.GetDeviceMappedState, C_GamePad.GetActiveDeviceID())
+    local stick = ok and state and state.sticks and state.sticks[2]
+    if not (stick and stick.x) then return "?" end
+    return ("%.2f,%.2f"):format(stick.x, stick.y)
+end
+local watching = false
+ring:HookScript("OnShow", function()
+    watching = true
+    Note(("open %s stick=%s axis=%s combat=%s"):format(tostring(ring:GetAttribute("wc-active")), Push(),
+        tostring(GetCVarSafe(AXIS_CVAR)), tostring(InCombatLockdown())))
+end)
+aim:HookScript("OnClick", function(self, button, down)
+    local used = self:GetAttribute("type")
+    Note(("%s %s stick=%s sticky=%s last=%s %s"):format(button, down and "down" or "up", Push(),
+        tostring(ring:GetAttribute("wc-sticky")), tostring(ring:GetAttribute("wc-last")),
+        used and ("USED " .. tostring(self:GetAttribute("spell") or self:GetAttribute("item")
+            or self:GetAttribute("macro") or self:GetAttribute("macrotext"))) or "kept"))
+end)
+local after = CreateFrame("Frame")
+after:RegisterEvent("UI_ERROR_MESSAGE")
+after:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
+after:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+after:SetScript("OnEvent", function(_, event, a, b, c)
+    if not watching then return end
+    if event == "UI_ERROR_MESSAGE" then Note("error " .. tostring(b)) else Note(event:lower() .. " " .. tostring(c)) end
+end)
+-- a use's result arrives after the ring closes: watched a second more
+ring:HookScript("OnHide", function()
+    Note("closed")
+    C_Timer.After(1, function() if not ring:IsShown() then watching = false end end)
+end)
