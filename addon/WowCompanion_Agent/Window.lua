@@ -42,7 +42,7 @@ local TABS_X, STEP = 18, 80
 -- as leaves PanelTemplates_AnchorTabs' 3 between two a STEP apart
 local TAB_W, TAB_H = STEP - 3, PLAQUE_UP - IDLE_HEAD
 -- the names: washed bronze, brighter under the cursor, lit when chosen
-local NAME, NAME_HL, NAME_LIT = { 0.78, 0.69, 0.53 }, { 0.91, 0.84, 0.67 }, { 0.98, 0.92, 0.78 }
+local NAME, NAME_HL, NAME_LIT = WC.Style.NAME, WC.Style.NAME_HL, WC.Style.NAME_LIT
 local function nameFont(name, colour)
 	local f = CreateFont(name)
 	f:CopyFontObject(GameFontNormal)
@@ -53,10 +53,10 @@ local TAB_FONT = nameFont("WowCompanionTabFont", NAME)
 local TAB_FONT_HL = nameFont("WowCompanionTabFontHighlight", NAME_HL)
 local TAB_FONT_LIT = nameFont("WowCompanionTabFontChosen", NAME_LIT)
 local INSET = 4 -- the wells' border, as wide as its art
--- every well's floor (its stone) starts this far in, under the border's inner
--- edge, which fades out over it; started at INSET, the fade lay on the dark
--- panel and drew a dark line along the wells' inner edge (measured, 2026-11-12)
-local FLOOR = 3
+-- every well's floor (its stone) starts WC.Style.FLOOR in; started at INSET,
+-- the border's fade lay on the dark panel and drew a dark line along the
+-- wells' inner edge (measured, 2026-11-12)
+local FLOOR = WC.Style.FLOOR
 local CLOSE, CLOSE_PAD = 14, 3 -- the close button, inside the title band, CLOSE_PAD from the rim
 
 -- Our own frame art (tools/make_frame_art.py) on an owner's NineSlice pieces,
@@ -133,45 +133,30 @@ local function buildTabs(frame, messages)
 		end })
 
 	-- Status: what is running, read fresh while the tab is looked at. Laid out
-	-- as the Settings page is: the facts' names right-aligned in a well of dark
-	-- stone down the left, their values on the light stone beside it, the thick
-	-- vine down the seam and the chat's vine between rows, each grown out of the
-	-- spine through a joint of the vine's own. A short, colour-blind-safe word
-	-- for good or bad (green ok, red problem) and grey detail.
-	local SPINE, SEAM, SHADE, NAME_W = 170, 3, 12, 150
+	-- as the Settings page is (WC.Style's wells): the facts' names right-aligned
+	-- in a well of dark stone down the left, their values on the light stone
+	-- beside it, the thick vine down the seam and the chat's vine between rows,
+	-- each grown out of the spine through a joint of the vine's own. A short,
+	-- colour-blind-safe word for good or bad and grey detail (WC.Style.GOOD...).
+	local SPINE, SEAM, NAME_W = 170, WC.Style.SEAM, 150
+	local BX, BY = WC.Style.BLEED_X, WC.Style.BLEED_Y
 	local status = pages[3]
-	local rock = status:CreateTexture(nil, "BACKGROUND", nil, -2)
-	rock:SetTexture([[Interface\FrameGeneral\UI-Background-Rock]], "REPEAT", "REPEAT")
-	rock:SetHorizTile(true)
-	rock:SetVertTile(true)
-	rock:SetPoint("TOPLEFT", -9, 7)
-	rock:SetPoint("BOTTOMRIGHT", 9, -7)
+	WC.Style.PageRock(status)
 	local function statusWell(which, tl, br)
-		local t = status:CreateTexture(nil, "BACKGROUND", nil, -1)
-		t:SetTexture(WC.Style.STONE[which], "REPEAT", "REPEAT")
-		t:SetHorizTile(true)
-		t:SetVertTile(true)
-		t:SetPoint("TOPLEFT", status, "TOPLEFT", tl, 7)
-		t:SetPoint("BOTTOMRIGHT", status, br[1], br[2], -7)
-		for _, side in ipairs({ "Top", "Left" }) do
-			local shade = status:CreateTexture(nil, "BACKGROUND", nil, 2)
-			shade:SetTexture([[Interface\Common\ShadowOverlay-]] .. side)
-			shade:SetAlpha(0.7)
-			shade:SetPoint("TOPLEFT", t)
-			shade:SetPoint(side == "Top" and "TOPRIGHT" or "BOTTOMLEFT", t)
-			if side == "Top" then shade:SetHeight(SHADE) else shade:SetWidth(SHADE) end
-		end
+		local t = WC.Style.Well(status, which)
+		t:SetPoint("TOPLEFT", status, "TOPLEFT", tl, BY)
+		t:SetPoint("BOTTOMRIGHT", status, br[1], br[2], -BY)
 		return t
 	end
-	local names = statusWell("you", -9, { "BOTTOMLEFT", SPINE - 2 - SEAM })
-	statusWell("claude", SPINE - 2, { "BOTTOMRIGHT", 9 })
+	local names = statusWell("you", -BX, { "BOTTOMLEFT", SPINE - 2 - SEAM })
+	statusWell("claude", SPINE - 2, { "BOTTOMRIGHT", BX })
 	-- The names well's stone, on trial (the player, 2026-11-12: a stone
 	-- darker than the rows' dark, or another texture, for the raised side):
 	-- picked live with WC.Companion.StatusNames(key), kept in
 	-- WowCompanionAgentDB.statusNames
 	local NAMES = {
 		dark = { WC.Style.STONE.you, 1, 1, 1 },
-		deeper = { WC.Style.STONE.you, 0.6, 0.6, 0.6 },
+		deeper = { WC.Style.STONE.you, WC.Style.DEEPER, WC.Style.DEEPER, WC.Style.DEEPER },
 		navy = { WC.Style.STONE.you, 0.42, 0.48, 0.62 },
 		rock = { [[Interface\FrameGeneral\UI-Background-Rock]], 0.8, 0.8, 0.8 },
 		marble = { [[Interface\FrameGeneral\UI-Background-Marble]], 0.7, 0.7, 0.7 },
@@ -193,11 +178,7 @@ local function buildTabs(frame, messages)
 	local vines = CreateFrame("Frame", nil, status)
 	vines:SetAllPoints()
 	vines:SetFrameLevel(status:GetFrameLevel() + 5)
-	local spine = CreateFrame("Frame", nil, vines)
-	spine:SetWidth(16)
-	spine:SetPoint("TOP", status, "TOPLEFT", SPINE - 2 - SEAM / 2, 7)
-	spine:SetPoint("BOTTOM", status, "BOTTOMLEFT", SPINE - 2 - SEAM / 2, -7)
-	WC.Style.VineLine(spine, "Thick", true, true, true)
+	WC.Style.Spine(vines, status, SPINE - 2 - SEAM / 2)
 	local ROW = 30
 	local rows = {}
 	local function row(i)
@@ -208,17 +189,15 @@ local function buildTabs(frame, messages)
 		-- the row's band on the values' side, dark on every other row as the
 		-- chat's replies alternate; under the well's shading
 		r.band = status:CreateTexture(nil, "BACKGROUND", nil, 0)
-		r.band:SetTexture(WC.Style.STONE[i % 2 == 0 and "you" or "claude"], "REPEAT", "REPEAT")
-		r.band:SetHorizTile(true)
-		r.band:SetVertTile(true)
+		WC.Style.Stone(r.band, i % 2 == 0 and "you" or "claude")
 		r.band:SetPoint("TOPLEFT", r, "TOPLEFT", SPINE - 2, 0)
-		r.band:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 9, 0)
+		r.band:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", BX, 0)
 		if i > 1 then
 			r.divider = CreateFrame("Frame", nil, vines)
 			r.divider:SetHeight(16)
 			r.divider:SetFrameLevel(vines:GetFrameLevel() + 1)
 			r.divider:SetPoint("LEFT", r, "TOPLEFT", SPINE - 2 - SEAM / 2, 0)
-			r.divider:SetPoint("RIGHT", r, "TOPRIGHT", 9, 0)
+			r.divider:SetPoint("RIGHT", r, "TOPRIGHT", BX, 0)
 			WC.Style.VineLine(r.divider, "", false, false, true)
 			WC.Style.VineJoin(r.divider, "Thick", "TRightFromMediumPlain", "LEFT")
 		end
@@ -235,7 +214,7 @@ local function buildTabs(frame, messages)
 		return r
 	end
 	local function refreshStatus()
-		local grey, good, bad = "|cff8c8c8c", "|cff7fd07f", "|cffe0786a"
+		local grey, good, bad = WC.Style.GREY, WC.Style.GOOD, WC.Style.BAD
 		local n = 0
 		local function add(label, value)
 			n = n + 1
@@ -312,9 +291,7 @@ local function buildTabs(frame, messages)
 	well:SetPoint("BOTTOMRIGHT", -(RIM + GAP), RIM + FOOT)
 	well:SetWidth(WELL)
 	local back = well:CreateTexture(nil, "BACKGROUND", nil, 1)
-	back:SetTexture(WC.Style.STONE.you, "REPEAT", "REPEAT")
-	back:SetHorizTile(true)
-	back:SetVertTile(true)
+	WC.Style.Stone(back, "you")
 	back:SetPoint("TOPLEFT", FLOOR, -FLOOR)
 	back:SetPoint("BOTTOMRIGHT", -FLOOR, FLOOR)
 	frame.chatParts = frame.chatParts or {}
@@ -338,9 +315,7 @@ local function buildTabs(frame, messages)
 	-- the floor under the wall's foot, where the turns' stone (from EDGE) does
 	-- not reach: the darker slate, as the player's turns are
 	local floor = chatWell:CreateTexture(nil, "BACKGROUND", nil, 1)
-	floor:SetTexture(WC.Style.STONE.you, "REPEAT", "REPEAT")
-	floor:SetHorizTile(true)
-	floor:SetVertTile(true)
+	WC.Style.Stone(floor, "you")
 	floor:SetPoint("TOPLEFT", FLOOR, -FLOOR)
 	floor:SetPoint("BOTTOMRIGHT", -FLOOR, FLOOR)
 	messages.scroll:ClearAllPoints()
@@ -350,25 +325,8 @@ local function buildTabs(frame, messages)
 	messages.content:SetFrameLevel(level + 2)
 	local column, up, down = WC.ScrollBar.Build(chatWell, messages.scroll, EDGE, level)
 	for _, part in ipairs({ column, up, down }) do table.insert(frame.chatParts, part) end
-	-- a row's height; its name in NAME, NAME_LIT when in view
+	-- a row's height; each row WC.Style.ChoiceRow, chosen while in view
 	local ROW = 24
-	-- the chat's vine (WC.Style.Vine) along a plate's edge, rounded at both ends
-	local function vine(owner, edge)
-		local left = owner:CreateTexture(nil, "ARTWORK")
-		left:SetTexture(WC.Style.Vine("Left"))
-		left:SetSize(32, 16)
-		left:SetPoint("LEFT", owner, edge .. "LEFT", 0, 0)
-		local right = owner:CreateTexture(nil, "ARTWORK")
-		right:SetTexture(WC.Style.Vine("Right"))
-		right:SetSize(32, 16)
-		right:SetPoint("RIGHT", owner, edge .. "RIGHT", 0, 0)
-		local mid = owner:CreateTexture(nil, "ARTWORK")
-		mid:SetTexture(WC.Style.Vine("Mid"))
-		mid:SetHeight(16)
-		mid:SetPoint("LEFT", left, "RIGHT")
-		mid:SetPoint("RIGHT", right, "LEFT")
-		return { left, mid, right }
-	end
 	-- The rows not in view, on trial (the player, 2026-11-12: flat beside the
 	-- chosen plate): a look per key, picked live with WC.Companion.ConvStyle,
 	-- kept in WowCompanionAgentDB.convStyle. "" is bare text.
@@ -385,38 +343,18 @@ local function buildTabs(frame, messages)
 	end
 	local function stone(owner, which, inset, shade)
 		local t = owner:CreateTexture(nil, "BACKGROUND")
-		t:SetTexture(WC.Style.STONE[which], "REPEAT", "REPEAT")
-		t:SetHorizTile(true)
-		t:SetVertTile(true)
+		WC.Style.Stone(t, which, shade)
 		t:SetPoint("TOPLEFT", inset, -inset)
 		t:SetPoint("BOTTOMRIGHT", -inset, inset)
-		t:SetVertexColor(shade, shade, shade)
 		return t
 	end
 	frame.convButtons = {}
 	for i, key in ipairs(WC.Conversations.list) do
-		local b = CreateFrame("Button", nil, well)
+		local b = WC.Style.ChoiceRow(well)
 		-- rows edge to edge across the well, flush one under the next
 		b:SetHeight(ROW)
 		b:SetPoint("TOPLEFT", well, "TOPLEFT", INSET, -INSET - 4 - (i - 1) * ROW)
 		b:SetPoint("TOPRIGHT", well, "TOPRIGHT", -INSET, -INSET - 4 - (i - 1) * ROW)
-		local text = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-		text:SetPoint("LEFT", 12, 0)
-		text:SetPoint("RIGHT", -8, 0)
-		text:SetJustifyH("LEFT")
-		text:SetTextColor(unpack(NAME))
-		b:SetFontString(text)
-		-- the one in view: a plate of the replies' slate, a vine along its
-		-- top and its foot, its name lit (Agent.lua shows it with SetShown)
-		local plate = b:CreateTexture(nil, "BACKGROUND")
-		plate:SetTexture(WC.Style.STONE.claude, "REPEAT", "REPEAT")
-		plate:SetHorizTile(true)
-		plate:SetVertTile(true)
-		plate:SetAllPoints()
-		local parts = { plate }
-		for _, edge in ipairs({ "TOP", "BOTTOM" }) do
-			for _, t in ipairs(vine(b, edge)) do parts[#parts + 1] = t end
-		end
 		-- each trial look's pieces for this row, shown while it is not in view
 		local idle = { rule = {}, slot = {}, bands = {}, plaque = {} }
 		if i < #WC.Conversations.list then idle.rule[1] = run(b, "Thin", "BOTTOM") end
@@ -440,10 +378,10 @@ local function buildTabs(frame, messages)
 			idle.plaque[#idle.plaque + 1] = f
 		end
 		b.idle = idle
+		-- the one in view is the chosen row (Agent.lua shows it with SetShown)
 		local selected = {}
 		function selected:SetShown(on)
-			for _, t in ipairs(parts) do t:SetShown(on) end
-			text:SetTextColor(unpack(on and NAME_LIT or NAME))
+			b:SetChosen(on)
 			b.inView = on
 			if restyle then restyle() end
 		end
@@ -519,8 +457,8 @@ local function buildTabs(frame, messages)
 	pageWell:Hide()
 	local function place(p)
 		p:SetParent(pageWell)
-		p:SetPoint("TOPLEFT", 12, -10)
-		p:SetPoint("BOTTOMRIGHT", -12, 10)
+		p:SetPoint("TOPLEFT", WC.Style.PAGE_X, -WC.Style.PAGE_Y)
+		p:SetPoint("BOTTOMRIGHT", -WC.Style.PAGE_X, WC.Style.PAGE_Y)
 	end
 	for _, p in pairs(pages) do place(p) end
 	-- One stone over the whole page well, edge to edge inside its border, for
@@ -528,9 +466,7 @@ local function buildTabs(frame, messages)
 	-- well's own backing peeked out around a smaller card, the player,
 	-- 2026-11-11; Settings looked bare beside Status without it).
 	local stone = pageWell:CreateTexture(nil, "BACKGROUND", nil, 1)
-	stone:SetTexture(WC.Style.STONE.claude, "REPEAT", "REPEAT")
-	stone:SetHorizTile(true)
-	stone:SetVertTile(true)
+	WC.Style.Stone(stone, "claude")
 	stone:SetPoint("TOPLEFT", FLOOR, -FLOOR)
 	stone:SetPoint("BOTTOMRIGHT", -FLOOR, FLOOR)
 	-- the same shadow as the chat well's, on every other tab, from the wall's foot
@@ -654,10 +590,7 @@ local function buildLog()
 	-- set it 7 in on the left for Blizzard's wider border, which left a strip
 	-- of the world showing between our rim and the panel).
 	if frame.Bg then
-		frame.Bg:SetTexture(WC.Style.STONE.you, "REPEAT", "REPEAT")
-		frame.Bg:SetHorizTile(true)
-		frame.Bg:SetVertTile(true)
-		frame.Bg:SetVertexColor(0.72, 0.72, 0.72)
+		WC.Style.Stone(frame.Bg, "you", 0.72)
 		frame.Bg:ClearAllPoints()
 		frame.Bg:SetPoint("TOPLEFT", RIM, -RIM)
 		frame.Bg:SetPoint("BOTTOMRIGHT", -RIM, RIM)

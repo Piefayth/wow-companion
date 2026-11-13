@@ -531,27 +531,35 @@ local function describeDone(done)
 	if done.skill then parts[#parts + 1] = ("%s %d"):format(done.skill.name, done.skill.rank) end
 	return table.concat(parts, ", ")
 end
--- The Errands tab: a
--- list well on the left like the quest log, the chosen errand's details in a well
--- on the right, three buttons along its bottom. The details follow the cursor;
--- every colour names a kind of fact. Nothing secure: works in combat.
+-- The Errands tab, made of our other pages' parts (WC.Style), so it changes
+-- with them: the list in a well of dark stone down the left, as Settings' and
+-- Status's names are, its rows the conversation picker's (WC.Style.ChoiceRow)
+-- under a heading, scrolled with the chat's bar (WC.ScrollBar); the chosen
+-- errand's details on the light stone beside it, the thick vine down the
+-- seam, headings as Settings' sections, the facts' names in its bronze, the
+-- chat's vine between sections, and our buttons (WC.Style.Button) along its
+-- foot. The details follow the cursor; every colour names a kind of fact.
+-- Nothing secure: works in combat.
+local S = WC.Style
 local NL = string.char(10)
-local C_WHITE, C_GREY = "|cffffffff", "|cffa0a0a0"
-local C_BLUE, C_GREEN = "|cff71d5ff", "|cff1eff00"
-local list, detail, rows, selectedId = nil, nil, {}, nil
-local MAX_ROWS = 6
+local C_WHITE, C_GREY, C_GREEN = "|cffffffff", S.GREY, S.GOOD
+-- the list well's right edge from the page's left; its heading's band; a row
+local LIST, HEAD, ROW = 214, 30, 24
+local list, content, detail, rows, selectedId = nil, nil, nil, {}, nil
 local function atlasOK(name) return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil end
-local function inset(parent)
-	local made, f = pcall(CreateFrame, "Frame", nil, parent, "InsetFrameTemplate")
-	if not made or not f then f = CreateFrame("Frame", nil, parent) end
-	return f
-end
-local function font(parent, object, width)
+local function font(parent, object, colour)
 	local fs = parent:CreateFontString(nil, "OVERLAY", object)
 	fs:SetJustifyH("LEFT")
 	fs:SetJustifyV("TOP")
-	if width then fs:SetWidth(width) end
+	if colour then fs:SetTextColor(unpack(colour)) end
 	return fs
+end
+-- the chat's vine across a 16-tall frame, rounded at both ends
+local function divider(parent)
+	local f = CreateFrame("Frame", nil, parent)
+	f:SetHeight(16)
+	S.VineLine(f, "", false, true, true)
+	return f
 end
 local function distText(m)
 	local parts = {}
@@ -563,7 +571,7 @@ local function rowLine2(e)
 	local m = measured[e.id]
 	if m and m.step then return C_GREEN .. ("On route, step %d"):format(m.step) .. "|r" end
 	local d = distText(m)
-	if d ~= "" then return C_BLUE .. d .. "|r" end
+	if d ~= "" then return C_PLACE .. d .. "|r" end
 	local h = e.done.have
 	if h and h.count > 1 then return C_WHITE .. ("%d/%d"):format(math.min(C_Item.GetItemCount(h.item, true) or 0, h.count), h.count) .. "|r" end
 	if e.place then
@@ -574,132 +582,116 @@ local function rowLine2(e)
 end
 local drawPage
 local function choose(id) if selectedId ~= id then selectedId = id drawPage() end end
+-- one row per errand: its name on the left, its detail ("19 min away")
+-- right-aligned short of the pin
 local function rowFor(i)
 	if rows[i] then return rows[i] end
-	local b = CreateFrame("Button", nil, list)
-	b:SetSize(198, 48)
-	-- the nav-button art, its select glow and highlight all cover the title
-	-- band only, one size (a bigger glow overhangs the art)
-	b.band = CreateFrame("Frame", nil, b)
-	b.band:SetPoint("TOPLEFT")
-	b.band:SetPoint("TOPRIGHT")
-	b.band:SetHeight(21)
-	-- Blizzard's geometry (AuctionCategoryButtonTemplate): the art 32 tall from
-	-- (-2, 0) over a 21-tall band, the glow on the art's exact bounds
-	local function art(layer, atlas, sub)
-		local t = b.band:CreateTexture(nil, layer, nil, sub)
-		t:SetAtlas(atlas)
-		t:SetPoint("TOPLEFT", -2, 0)
-		t:SetSize(198 + 4, 32)
-		return t
-	end
-	art("BACKGROUND", "auctionhouse-nav-button")
-	-- the glow and highlight cover only the art's visible part, the band
-	local function glowOn(t)
-		t:ClearAllPoints()
-		t:SetPoint("TOPLEFT", -2, 0)
-		t:SetPoint("BOTTOMRIGHT", 2, 0)
-		return t
-	end
-	b.sel = glowOn(art("ARTWORK", "auctionhouse-nav-button-select"))
-	b.sel:SetBlendMode("ADD")
-	b.sel:Hide()
-	b.hl = glowOn(art("ARTWORK", "auctionhouse-nav-button-highlight", 1))
-	b.hl:SetBlendMode("ADD")
-	b.hl:Hide()
-	b:SetScript("OnLeave", function(self) self.hl:Hide() end)
-	-- one line at the art's own height, as the conversation picker has it: the
-	-- art stretched to two lines makes the select glow a thick slab. The
-	-- full name is in the detail pane.
-	-- one button per errand: the name on the left, its
-	-- detail ("19 min away") on the band itself, right-aligned short of the pin
-	b.l2 = font(b.band, "GameFontHighlightSmall")
-	b.l2:SetPoint("RIGHT", b.band, "RIGHT", -30, 0)
+	local b = S.ChoiceRow(content)
+	b:SetHeight(ROW)
+	b.l2 = font(b.face, "GameFontHighlightSmall")
+	b.l2:SetPoint("RIGHT", -30, 0)
 	b.l2:SetJustifyH("RIGHT")
 	b.l2:SetJustifyV("MIDDLE")
 	b.l2:SetWordWrap(false)
-	b.l1 = font(b.band, "GameFontNormal")
-	b.l1:SetPoint("LEFT", 12, 0)
-	b.l1:SetPoint("RIGHT", b.l2, "LEFT", -8, 0)
-	b.l1:SetJustifyV("MIDDLE")
-	b.l1:SetWordWrap(false)
+	b.text:ClearAllPoints()
+	b.text:SetPoint("LEFT", 12, 0)
+	b.text:SetPoint("RIGHT", b.l2, "LEFT", -8, 0)
 	if atlasOK("Waypoint-MapPin-Tracked") then
-		b.pinMark = b.band:CreateTexture(nil, "OVERLAY")
+		b.pinMark = b.face:CreateTexture(nil, "OVERLAY")
 		b.pinMark:SetAtlas("Waypoint-MapPin-Tracked")
 		b.pinMark:SetSize(14, 14)
-		b.pinMark:SetPoint("RIGHT", b.band, "RIGHT", -10, 0)
+		b.pinMark:SetPoint("RIGHT", -10, 0)
 	end
 	-- the details follow the cursor; A goes on to the first button
-	b:SetScript("OnEnter", function(self) self.hl:Show() if self.errand then choose(self.errand.id) end end)
-	b:SetScript("OnClick", function(self)
-		if self.errand then choose(self.errand.id) end
-	end)
+	b:SetScript("OnEnter", function(self) if self.errand then choose(self.errand.id) end end)
+	b:SetScript("OnClick", function(self) if self.errand then choose(self.errand.id) end end)
 	WC.MarkFocusable(b)
 	rows[i] = b
 	return b
 end
 local function build(p)
-	list = inset(p)
-	list:SetPoint("TOPLEFT")
-	list:SetPoint("BOTTOMLEFT")
-	list:SetWidth(214)
-	local bg = list:CreateTexture(nil, "BACKGROUND", nil, 1)
-	bg:SetAtlas("auctionhouse-background-categories")
-	bg:SetPoint("TOPLEFT", 3, -3)
-	bg:SetPoint("BOTTOMRIGHT", -3, 3)
-	-- a real header: the section font, centred, a thin gold rule under it
-	list.header = font(list, "GameFontNormal")
-	list.header:SetPoint("TOP", list, "TOP", 0, -10)
-	list.header:SetJustifyH("CENTER")
-	list.rule = list:CreateTexture(nil, "ARTWORK")
-	list.rule:SetColorTexture(1, 0.82, 0, 0.18)
-	list.rule:SetHeight(1)
-	list.rule:SetPoint("TOPLEFT", 10, -30)
-	list.rule:SetPoint("TOPRIGHT", -10, -30)
-	list.doneHead = font(list, "GameFontDisableSmall")
+	local BX, BY, SEAM = S.BLEED_X, S.BLEED_Y, S.SEAM
+	-- the wells, to the page well's floor, and the thick vine down their seam
+	S.PageRock(p)
+	local dark = S.Well(p, "you", S.DEEPER)
+	dark:SetPoint("TOPLEFT", -BX, BY)
+	dark:SetPoint("BOTTOMRIGHT", p, "BOTTOMLEFT", LIST, -BY)
+	local light = S.Well(p, "claude")
+	light:SetPoint("TOPLEFT", LIST + SEAM, BY)
+	light:SetPoint("BOTTOMRIGHT", BX, -BY)
+	local seam = CreateFrame("Frame", nil, p)
+	seam:SetAllPoints()
+	seam:SetFrameLevel(p:GetFrameLevel() + 5)
+	S.Spine(seam, p, LIST + SEAM / 2)
+
+	-- the list: its heading, then the rows and what is done, scrolling under it
+	list = CreateFrame("Frame", nil, p)
+	list:SetPoint("TOPLEFT", -BX, 0)
+	list:SetPoint("BOTTOMRIGHT", p, "BOTTOMLEFT", LIST, -BY)
+	list.header = S.Heading(list)
+	list.header:SetPoint("TOP", list, "TOP", 0, -4)
+	local scroll = CreateFrame("ScrollFrame", nil, list)
+	scroll:SetPoint("TOPLEFT", 0, -HEAD)
+	scroll:SetPoint("BOTTOMRIGHT")
+	content = CreateFrame("Frame", nil, scroll)
+	content:SetSize(1, 1)
+	scroll:SetScrollChild(content)
+	scroll:SetScript("OnSizeChanged", function(_, w) content:SetWidth(w) end)
+	scroll:EnableMouseWheel(true)
+	scroll:SetScript("OnMouseWheel", function(self, delta)
+		local most = math.max(0, content:GetHeight() - self:GetHeight())
+		self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW)))
+	end)
+	-- the bar at the list's right, clear of the spine's bark
+	local barWell = CreateFrame("Frame", nil, list)
+	barWell:SetPoint("TOPRIGHT", -6, -HEAD + 6)
+	barWell:SetPoint("BOTTOMRIGHT", -6, 0)
+	barWell:SetWidth(40)
+	WC.MarkIgnored((WC.ScrollBar.Build(barWell, scroll, 0, list:GetFrameLevel())))
+	list.scroll = scroll
+	list.doneRule = divider(content)
+	list.doneHead = S.Heading(content)
 	list.doneHead:SetText("Done")
-	list.done = font(list, "GameFontDisableSmall", 190)
+	list.done = font(content, "GameFontHighlightSmall", S.DIM)
 	list.done:SetSpacing(6)
-	detail = inset(p)
-	detail:SetPoint("TOPLEFT", list, "TOPRIGHT", 8, 0)
+
+	-- the chosen errand, on the light stone
+	detail = CreateFrame("Frame", nil, p)
+	detail:SetPoint("TOPLEFT", LIST + SEAM + 12, 0)
 	detail:SetPoint("BOTTOMRIGHT")
-	detail.title = font(detail, "GameFontNormalLarge", 300)
-	detail.title:SetPoint("TOPLEFT", 14, -12)
-	detail.title:SetMaxLines(2)
-	detail.added = font(detail, "GameFontDisableSmall")
-	detail.added:SetPoint("TOPRIGHT", -14, -15)
+	detail.added = font(detail, "GameFontHighlightSmall", S.DIM)
+	detail.added:SetPoint("TOPRIGHT", 0, -7)
 	detail.added:SetJustifyH("RIGHT")
-	-- sections the way the quest log has them: a gold header, then its text
-	detail.whenLabel = font(detail, "GameFontNormal")
+	detail.title = font(detail, "GameFontNormalLarge", S.NAME_LIT)
+	detail.title:SetPoint("TOPLEFT", 0, -4)
+	detail.title:SetPoint("RIGHT", detail.added, "LEFT", -8, 0)
+	detail.title:SetMaxLines(2)
+	-- sections the way the quest log has them: a heading, then its text
+	detail.whenLabel = S.Heading(detail)
 	detail.whenLabel:SetText("Objective")
-	detail.when = font(detail, "GameFontHighlight", 360)
-	detail.noteLabel = font(detail, "GameFontNormal")
+	detail.when = font(detail, "GameFontHighlight")
+	detail.noteLabel = S.Heading(detail)
 	detail.noteLabel:SetText("Notes")
-	detail.note = font(detail, "GameFontHighlight", 370)
+	detail.note = font(detail, "GameFontHighlight")
 	detail.note:SetMaxLines(4)
 	detail.note:SetSpacing(2)
 	detail.note:SetTextColor(0.8, 0.8, 0.8)
-	local function rule()
-		local r = detail:CreateTexture(nil, "ARTWORK")
-		r:SetColorTexture(1, 0.82, 0, 0.18)
-		r:SetHeight(1)
-		return r
-	end
-	detail.rule = rule()
-	detail.rule2 = rule()
-	-- facts: labels right-aligned in one column, values in the next
+	detail.rule = divider(detail)
+	detail.rule2 = divider(detail)
+	-- facts: their names right-aligned in one column, in bronze, values in the next
 	detail.facts = {}
 	for i = 1, 6 do
-		local label = font(detail, "GameFontNormalSmall", 72)
+		local label = font(detail, "GameFontNormal", S.LABEL)
+		label:SetWidth(72)
 		label:SetJustifyH("RIGHT")
-		detail.facts[i] = { label = label, value = font(detail, "GameFontHighlight", 290) }
+		detail.facts[i] = { label = label, value = font(detail, "GameFontHighlight") }
 	end
-	local function button(label, x, onClick)
-		local made, b = pcall(CreateFrame, "Button", nil, detail, "UIPanelButtonTemplate")
-		if not made or not b then return nil end
-		b:SetSize(124, 26)
-		b:SetPoint("BOTTOMLEFT", x, 10)
-		b:SetText(label)
+	local last
+	local function button(label, onClick)
+		local b = S.Button(detail)
+		b:SetLabel(label)
+		if last then b:SetPoint("LEFT", last, "RIGHT", 8, 0) else b:SetPoint("BOTTOMLEFT", -2, 0) end
+		last = b
 		b:SetScript("OnClick", function(self) pcall(onClick, self) end)
 		WC.MarkFocusable(b)
 		return b
@@ -707,20 +699,20 @@ local function build(p)
 	local function current()
 		for _, e in ipairs(E.List()) do if e.id == selectedId then return e end end
 	end
-	detail.arrow = button("Point arrow", 10, function()
+	detail.arrow = button("Point arrow", function()
 		local e = current()
 		local nav = e and e.place and WC.Use("nav")
 		if nav and nav.aim(e.place.map, e.place.x, e.place.y, e.text) then
 			WC.Board.toast("|cffffd100Arrow|r  " .. e.text, 0.9, 0.9, 0.9, 4)
 		end
 	end)
-	detail.pin = button("Pin: On", 142, function()
+	detail.pin = button("Pin: On", function()
 		local e = current()
 		if not e then return end
 		e.pinned = e.pinned == false and true or false
 		E.Show()
 	end)
-	detail.remove = button("Remove", 274, function(self)
+	detail.remove = button("Remove", function(self)
 		local e = current()
 		if not e then return end
 		if detail.confirm == e.id and GetTime() - (detail.confirmAt or 0) < 4 then
@@ -728,16 +720,17 @@ local function build(p)
 			E.Remove(e.id)
 		else
 			detail.confirm, detail.confirmAt = e.id, GetTime()
-			self:SetText("|cffff2020Press again|r")
+			self:SetLabel(S.BAD .. "Press again|r")
 			C_Timer.After(4, function()
-				if detail.confirm == e.id then detail.confirm = nil self:SetText("Remove") end
+				if detail.confirm == e.id then detail.confirm = nil self:SetLabel("Remove") end
 			end)
 		end
 	end)
-	detail.empty = font(detail, "GameFontNormalLarge")
+	detail.empty = font(detail, "GameFontNormalLarge", S.NAME_LIT)
 	detail.empty:SetPoint("CENTER", 0, 20)
 	detail.empty:SetText("No errands")
-	detail.emptyHint = font(detail, "GameFontDisable", 300)
+	detail.emptyHint = font(detail, "GameFontHighlight", S.DIM)
+	detail.emptyHint:SetWidth(300)
 	detail.emptyHint:SetPoint("CENTER", 0, -14)
 	detail.emptyHint:SetJustifyH("CENTER")
 	detail.emptyHint:SetText("Ask the companion to add one, for example: remind me to get the other half pendant.")
@@ -746,56 +739,64 @@ drawPage = function()
 	if not (page and page:IsVisible()) then return end
 	if not list then build(page) end
 	local open = E.List()
-	list.header:SetText(("Errands  |cff9d9d9d%d|r"):format(#open))
+	list.header:SetText(("Errands  %s%d|r"):format(S.GREY, #open))
 	local found = false
 	for _, e in ipairs(open) do if e.id == selectedId then found = true end end
 	if not found then selectedId = open[1] and open[1].id or nil end
-	local y = -40
+	-- the rows edge to edge across the well, flush one under the next, clear of the bar
+	local y = -4
 	for i = 1, math.max(#open, #rows) do
 		local e = open[i]
-		if e and i <= MAX_ROWS then
+		if e then
 			local b = rowFor(i)
 			b.errand = e
-			b.l1:SetText(e.text)
-			local band = 21
-			local line2 = rowLine2(e)
-			b.l2:SetText(line2)
-			b:SetHeight(band)
-			b.sel:SetShown(e.id == selectedId)
+			b:SetText(e.text)
+			b.l2:SetText(rowLine2(e))
+			b:SetChosen(e.id == selectedId)
 			if b.pinMark then b.pinMark:SetShown(e.place ~= nil and e.pinned ~= false) end
 			b:ClearAllPoints()
-			b:SetPoint("TOPLEFT", list, "TOPLEFT", 8, y)
+			b:SetPoint("TOPLEFT", content, "TOPLEFT", 2, y)
+			b:SetPoint("TOPRIGHT", content, "TOPRIGHT", -(6 + WC.ScrollBar.ROOM), y)
 			b:Show()
-			y = y - b:GetHeight() - 6
+			y = y - ROW
 		elseif rows[i] then
 			rows[i]:Hide()
 			rows[i].errand = nil
 		end
 	end
-	-- done: up to three, greyed
+	-- done: up to three, dimmed, under the chat's vine
 	local finished = {}
 	for _, e in ipairs(store().items) do if e.doneAt then finished[#finished + 1] = e end end
 	table.sort(finished, function(a, b) return a.doneAt > b.doneAt end)
-	list.doneHead:ClearAllPoints()
-	list.doneHead:SetPoint("TOPLEFT", list, "TOPLEFT", 10, y - 10)
-	list.done:ClearAllPoints()
-	list.done:SetPoint("TOPLEFT", list.doneHead, "BOTTOMLEFT", 0, -6)
 	local lines = {}
 	for i, e in ipairs(finished) do
 		if i > 3 then lines[#lines + 1] = ("+%d more"):format(#finished - 3) break end
 		lines[#lines + 1] = e.text .. "  " .. date("%b %d", e.doneAt)
 	end
-	list.doneHead:SetShown(#finished > 0)
-	list.done:SetText(table.concat(lines, NL))
+	local anyDone = #finished > 0
+	list.doneRule:SetShown(anyDone)
+	list.doneHead:SetShown(anyDone)
+	list.done:SetShown(anyDone)
+	if anyDone then
+		list.doneRule:ClearAllPoints()
+		list.doneRule:SetPoint("LEFT", content, "TOPLEFT", 6, y - 10)
+		list.doneRule:SetPoint("RIGHT", content, "TOPRIGHT", -(6 + WC.ScrollBar.ROOM), y - 10)
+		list.doneHead:ClearAllPoints()
+		list.doneHead:SetPoint("TOPLEFT", content, "TOPLEFT", 14, y - 22)
+		list.done:ClearAllPoints()
+		list.done:SetPoint("TOPLEFT", list.doneHead, "BOTTOMLEFT", 0, -6)
+		list.done:SetPoint("RIGHT", content, "RIGHT", -(6 + WC.ScrollBar.ROOM), 0)
+		list.done:SetText(table.concat(lines, NL))
+		y = y - 22 - list.doneHead:GetStringHeight() - 6 - list.done:GetStringHeight()
+	end
+	content:SetHeight(math.max(1, 6 - y))
 	-- the chosen errand
 	local e
 	for _, x in ipairs(open) do if x.id == selectedId then e = x end end
 	local showing = e ~= nil
 	for _, r in ipairs({ detail.title, detail.added, detail.whenLabel, detail.when, detail.note, detail.noteLabel, detail.rule, detail.rule2 }) do r:SetShown(showing) end
 	for _, f in ipairs(detail.facts) do f.label:Hide() f.value:Hide() end
-	for _, b in ipairs({ detail.arrow, detail.pin, detail.remove }) do
-		if b then b:SetShown(showing) end
-	end
+	for _, b in ipairs({ detail.arrow, detail.pin, detail.remove }) do b:SetShown(showing) end
 	detail.empty:SetShown(not showing)
 	detail.emptyHint:SetShown(not showing)
 	if not showing then return end
@@ -806,6 +807,7 @@ drawPage = function()
 	detail.whenLabel:SetPoint("TOPLEFT", detail.title, "BOTTOMLEFT", 0, -12)
 	detail.when:ClearAllPoints()
 	detail.when:SetPoint("TOPLEFT", detail.whenLabel, "BOTTOMLEFT", 10, -5)
+	detail.when:SetPoint("RIGHT", detail, "RIGHT", -4, 0)
 	local h = e.done.have
 	local when = describeDone(e.done)
 	if h then
@@ -814,11 +816,12 @@ drawPage = function()
 			or ("Get %s into your bags"):format(name)
 	end
 	detail.when:SetText("- " .. C_WHITE .. when .. "|r")
+	-- a section's vine across the details' stone, from the seam to the edge
 	local function ruleUnder(r, anchor)
 		r:ClearAllPoints()
-		r:SetPoint("TOP", anchor, "BOTTOM", 0, -12)
-		r:SetPoint("LEFT", detail, "LEFT", 14, 0)
-		r:SetPoint("RIGHT", detail, "RIGHT", -14, 0)
+		r:SetPoint("TOP", anchor, "BOTTOM", 0, -4)
+		r:SetPoint("LEFT", detail, "LEFT", -6, 0)
+		r:SetPoint("RIGHT", detail, "RIGHT", 0, 0)
 	end
 	ruleUnder(detail.rule, detail.when)
 	-- facts: one fact per row, the same spacing throughout
@@ -828,7 +831,7 @@ drawPage = function()
 		local info = C_Map.GetMapInfo(e.place.map)
 		facts[#facts + 1] = { "Location", C_WHITE .. (info and info.name or "?") .. "|r  " .. C_GREY .. ("%.1f, %.1f"):format(e.place.x, e.place.y) .. "|r" }
 		local d = distText(m)
-		if d ~= "" then facts[#facts + 1] = { "Travel", C_BLUE .. d .. "|r" } end
+		if d ~= "" then facts[#facts + 1] = { "Travel", C_PLACE .. d .. "|r" } end
 		if m and m.step then
 			facts[#facts + 1] = { "Route", C_GREEN .. ("Near step %d%s"):format(m.step, m.stepTitle and (", " .. m.stepTitle) or "") .. "|r" }
 		end
@@ -837,7 +840,7 @@ drawPage = function()
 	if src then facts[#facts + 1] = { "Source", C_WHITE .. src .. "|r" } end
 	local worth = valueOf(e)
 	if worth then facts[#facts + 1] = { "Value", worth } end
-	local y = -10
+	local y2 = -4
 	local last = detail.rule
 	for i, f in ipairs(facts) do
 		local slot = detail.facts[i]
@@ -846,31 +849,31 @@ drawPage = function()
 		slot.value:SetText(f[2])
 		slot.label:ClearAllPoints()
 		slot.value:ClearAllPoints()
-		slot.label:SetPoint("TOPLEFT", detail.rule, "BOTTOMLEFT", 0, y - 1)
-		slot.value:SetPoint("TOPLEFT", detail.rule, "BOTTOMLEFT", 84, y)
+		slot.label:SetPoint("TOPLEFT", detail.rule, "BOTTOMLEFT", 6, y2 - 1)
+		slot.value:SetPoint("TOPLEFT", detail.rule, "BOTTOMLEFT", 90, y2)
+		slot.value:SetPoint("RIGHT", detail, "RIGHT", -4, 0)
 		slot.label:Show()
 		slot.value:Show()
-		y = y - math.max(slot.value:GetStringHeight(), 14) - 7
+		y2 = y2 - math.max(slot.value:GetStringHeight(), 14) - 7
 		last = slot.value
 	end
-	-- Notes last, under their own rule
+	-- Notes last, under their own vine
 	if e.note then
 		ruleUnder(detail.rule2, last)
 		detail.noteLabel:ClearAllPoints()
-		detail.noteLabel:SetPoint("TOPLEFT", detail.rule2, "BOTTOMLEFT", 0, -10)
+		detail.noteLabel:SetPoint("TOPLEFT", detail.rule2, "BOTTOMLEFT", 6, -4)
 		detail.note:ClearAllPoints()
 		detail.note:SetPoint("TOPLEFT", detail.noteLabel, "BOTTOMLEFT", 10, -5)
+		detail.note:SetPoint("RIGHT", detail, "RIGHT", -4, 0)
 		detail.note:SetText(e.note)
 	else
 		detail.rule2:Hide() detail.noteLabel:Hide() detail.note:Hide()
 	end
 	local has = e.place ~= nil
-	if detail.arrow then detail.arrow:SetEnabled(has and WC.Has("nav", "aim") ~= nil) end
-	if detail.pin then
-		detail.pin:SetEnabled(has)
-		detail.pin:SetText(e.pinned == false and "Pin: Off" or "Pin: On")
-	end
-	if detail.remove and detail.confirm ~= e.id then detail.remove:SetText("Remove") end
+	detail.arrow:SetEnabled(has and WC.Has("nav", "aim") ~= nil)
+	detail.pin:SetEnabled(has)
+	detail.pin:SetLabel(e.pinned == false and "Pin: Off" or "Pin: On")
+	if detail.confirm ~= e.id then detail.remove:SetLabel("Remove") end
 end
 -- its tab in the Companion window, added at load: no Errands, no tab
 WC.Companion.AddTab("Errands", function(p)

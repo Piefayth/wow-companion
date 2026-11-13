@@ -21,12 +21,9 @@ local NOTE_FONT = "GameFontHighlightSmall"
 -- Every turn on our own stone (WC.Style.STONE): the replies on the lighter
 -- one, the player's on the darker. Owners differ by value, never by hue.
 -- Turns parted by the scroll bar's own divider (ScrollBar.lua), which joins its border.
-local STONE = WC.Style.STONE
 -- owner: whose turn, which picks the stone
 local function ownBand(band, owner)
-	band:SetTexture(STONE[owner] or STONE.claude, "REPEAT", "REPEAT")
-	band:SetHorizTile(true)
-	band:SetVertTile(true)
+	WC.Style.Stone(band, WC.Style.STONE[owner] and owner or "claude")
 end
 local function turnBand(content, owner)
 	local band = content:CreateTexture(nil, "BACKGROUND", nil, -1)

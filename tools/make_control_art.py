@@ -19,7 +19,7 @@ Pieces (UI units, U texture px each, as the scroll bar's):
 
 Turned pieces are transposed, never rotated: a transpose keeps the light
 from the top left. The game keeps a texture for the session under its path,
-so a change bumps VERSION (and SettingsPage.lua's CONTROL_VERSION); older files are
+so a change bumps VERSION (and Style.lua's CONTROL_VERSION); older files are
 deleted.
 """
 import glob

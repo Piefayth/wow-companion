@@ -299,3 +299,155 @@ end
 local CHORD_ROWS = { 14, 52 }
 WowCompanion_Style.CHORD = ("|T%sChord-6:%d:%d:0:0:64:64:0:64:%d:%d|t"):format(ART, GLYPH_SIZE,
 	math.floor(GLYPH_SIZE * 64 / (CHORD_ROWS[2] - CHORD_ROWS[1]) + 0.5), CHORD_ROWS[1], CHORD_ROWS[2])
+
+-- The words of our windows, in washed bronze: a name in a list of choices
+-- (NAME, NAME_HL under the cursor, NAME_LIT chosen), what names a setting or
+-- a fact (LABEL), a control's value (BRONZE), what is not there yet (DIM).
+-- In text, a short word for good or bad, colour-blind safe, and grey detail.
+WowCompanion_Style.NAME = { 0.78, 0.69, 0.53 }
+WowCompanion_Style.NAME_HL = { 0.91, 0.84, 0.67 }
+WowCompanion_Style.NAME_LIT = { 0.98, 0.92, 0.78 }
+WowCompanion_Style.LABEL = { 0.86, 0.76, 0.56 }
+WowCompanion_Style.BRONZE = { 0.78, 0.66, 0.45 }
+WowCompanion_Style.DIM = { 0.5, 0.5, 0.5 }
+WowCompanion_Style.GREY, WowCompanion_Style.GOOD, WowCompanion_Style.BAD = "|cff8c8c8c", "|cff7fd07f", "|cffe0786a"
+
+-- A texture tiled with one of the stones; shade darkens it
+function WowCompanion_Style.Stone(tex, which, shade)
+	tex:SetTexture(WowCompanion_Style.STONE[which], "REPEAT", "REPEAT")
+	tex:SetHorizTile(true)
+	tex:SetVertTile(true)
+	shade = shade or 1
+	tex:SetVertexColor(shade, shade, shade)
+end
+
+-- A page of ours (the Companion window's tabs, the settings window) stands
+-- PAGE_X, PAGE_Y inside its well, whose floor starts FLOOR in, under the
+-- border's inner edge, which fades out over it: a page's wells reach BLEED_X,
+-- BLEED_Y past the page, to that floor.
+WowCompanion_Style.FLOOR = 3
+WowCompanion_Style.PAGE_X, WowCompanion_Style.PAGE_Y = 12, 10
+WowCompanion_Style.BLEED_X = WowCompanion_Style.PAGE_X - WowCompanion_Style.FLOOR
+WowCompanion_Style.BLEED_Y = WowCompanion_Style.PAGE_Y - WowCompanion_Style.FLOOR
+-- A page is sunk wells of stone on the window's rock, the rock showing in a
+-- SEAM between them, the thick vine down it (Spine). The darker side's stone
+-- darker still (DEEPER), as Status's names and Settings' sections are.
+WowCompanion_Style.SEAM, WowCompanion_Style.DEEPER = 3, 0.6
+local SHADE = 12
+-- the rock under a page's wells, out to its well's floor
+function WowCompanion_Style.PageRock(page)
+	local rock = page:CreateTexture(nil, "BACKGROUND", nil, -2)
+	rock:SetTexture([[Interface\FrameGeneral\UI-Background-Rock]], "REPEAT", "REPEAT")
+	rock:SetHorizTile(true)
+	rock:SetVertTile(true)
+	rock:SetPoint("TOPLEFT", -WowCompanion_Style.BLEED_X, WowCompanion_Style.BLEED_Y)
+	rock:SetPoint("BOTTOMRIGHT", WowCompanion_Style.BLEED_X, -WowCompanion_Style.BLEED_Y)
+	return rock
+end
+-- A well of stone on page, sunk by a soft shadow inside its top and left
+-- edges, light falling from the top left, no rim. Returns its stone, for the
+-- caller to anchor; what lies on the stone under the shadow goes at sublevel 0.
+function WowCompanion_Style.Well(page, which, shade)
+	local t = page:CreateTexture(nil, "BACKGROUND", nil, -1)
+	WowCompanion_Style.Stone(t, which, shade)
+	for _, side in ipairs({ "Top", "Left" }) do
+		local s = page:CreateTexture(nil, "BACKGROUND", nil, 2)
+		s:SetTexture([[Interface\Common\ShadowOverlay-]] .. side)
+		s:SetAlpha(0.7)
+		s:SetPoint("TOPLEFT", t)
+		s:SetPoint(side == "Top" and "TOPRIGHT" or "BOTTOMLEFT", t)
+		if side == "Top" then s:SetHeight(SHADE) else s:SetWidth(SHADE) end
+	end
+	return t
+end
+-- The thick vine down page's whole height, centred x from its left, in a frame
+-- of owner's (which decides what it is drawn over)
+function WowCompanion_Style.Spine(owner, page, x)
+	local spine = CreateFrame("Frame", nil, owner)
+	spine:SetWidth(16)
+	spine:SetPoint("TOP", page, "TOPLEFT", x, WowCompanion_Style.BLEED_Y)
+	spine:SetPoint("BOTTOM", page, "BOTTOMLEFT", x, -WowCompanion_Style.BLEED_Y)
+	WowCompanion_Style.VineLine(spine, "Thick", true, true, true)
+	return spine
+end
+
+-- A heading over what follows it, as the Settings page names its sections
+function WowCompanion_Style.Heading(parent)
+	return parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
+end
+
+-- A row of a list of choices, as the conversation picker's: its name in NAME
+-- on the well's stone; the chosen one a plate of the replies' slate between
+-- two of the chat's vines, its name lit. row:SetChosen(on); row.text its name.
+function WowCompanion_Style.ChoiceRow(parent)
+	local b = CreateFrame("Button", nil, parent)
+	local plate = b:CreateTexture(nil, "BACKGROUND")
+	WowCompanion_Style.Stone(plate, "claude")
+	plate:SetAllPoints()
+	local parts = { plate }
+	for _, edge in ipairs({ "TOP", "BOTTOM" }) do
+		local f = CreateFrame("Frame", nil, b)
+		f:SetHeight(16)
+		f:SetPoint("LEFT", b, edge .. "LEFT")
+		f:SetPoint("RIGHT", b, edge .. "RIGHT")
+		WowCompanion_Style.VineLine(f, "", false, true, true)
+		parts[#parts + 1] = f
+	end
+	-- the words over the vines, which reach 8 into the row
+	local face = CreateFrame("Frame", nil, b)
+	face:SetAllPoints()
+	face:SetFrameLevel(b:GetFrameLevel() + 2)
+	b.face = face
+	local text = face:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	text:SetPoint("LEFT", 12, 0)
+	text:SetPoint("RIGHT", -8, 0)
+	text:SetJustifyH("LEFT")
+	text:SetWordWrap(false)
+	b:SetFontString(text)
+	b.text = text
+	function b:SetChosen(on)
+		for _, t in ipairs(parts) do t:SetShown(on) end
+		text:SetTextColor(unpack(on and WowCompanion_Style.NAME_LIT or WowCompanion_Style.NAME))
+		self.chosen = on
+	end
+	b:SetChosen(false)
+	return b
+end
+
+-- The controls' art (tools/make_control_art.py): the scroll bar's fleur
+-- arrows, carved groove, bark borders and heartwood thumb, for the settings
+-- page's controls and our buttons. Each version its own names, as the stone's.
+local CONTROL_VERSION = 2 -- make_control_art.py's VERSION
+function WowCompanion_Style.Control(piece)
+	return ART .. "Control-" .. piece .. "-" .. CONTROL_VERSION
+end
+local function controlFont(name, colour)
+	local f = CreateFont(name)
+	f:CopyFontObject(GameFontHighlight)
+	f:SetTextColor(unpack(colour))
+	return f
+end
+local BUTTON_FONT = controlFont("WowCompanionButtonFont", WowCompanion_Style.BRONZE)
+local BUTTON_FONT_OFF = controlFont("WowCompanionButtonFontOff", WowCompanion_Style.DIM)
+-- A button of ours: a slate slab standing out of the stone, its word in
+-- bronze, as wide as its word (button:SetLabel(text)). Footer-sized, as
+-- Blizzard's Defaults button is, so an action is not the loudest thing on a page.
+function WowCompanion_Style.Button(parent)
+	local b = CreateFrame("Button", nil, parent)
+	b:SetSize(128, 28)
+	b:SetNormalTexture(WowCompanion_Style.Control("Button-Normal"))
+	b:SetPushedTexture(WowCompanion_Style.Control("Button-Pushed"))
+	b:SetHighlightTexture(WowCompanion_Style.Control("Button-Highlight"), "ADD")
+	b:SetDisabledTexture(WowCompanion_Style.Control("Button-Disabled"))
+	local word = b:CreateFontString(nil, "OVERLAY")
+	b:SetFontString(word)
+	b:SetNormalFontObject(BUTTON_FONT)
+	b:SetDisabledFontObject(BUTTON_FONT_OFF)
+	word:SetPoint("CENTER", 0, 1)
+	b:SetPushedTextOffset(0, -1)
+	function b:SetLabel(text)
+		self:SetText(text)
+		self:SetWidth(word:GetStringWidth() + 2 * 16 + 16)
+	end
+	return b
+end

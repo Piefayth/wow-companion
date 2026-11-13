@@ -40,56 +40,30 @@ local SPINE, LABEL_X, EDGE, VALUE_W = 170, 10, 8, 32
 local page = CreateFrame("Frame", "WowCompanionSettingsPage", UIParent)
 page:Hide()
 
-local function stone(tex, which)
-	tex:SetTexture(WC.Style.STONE[which], "REPEAT", "REPEAT")
-	tex:SetHorizTile(true)
-	tex:SetVertTile(true)
-end
-
--- Three wells, as the Chat tab is made of wells: the section names down the
--- left on the dark stone, the settings on the light stone, the focused row's
--- note under them on the dark (its name in gold), so the note has a place of
--- its own. The window's rock shows in a seam between them; each well is sunk
--- by a soft shadow inside its top and left edges, light falling from the top
--- left, no rim (the player's pick from the Settings looks sheet, 2026-11-12).
--- To the backing's edges (9 px outside the page each side, 7 above and
--- below); fixed while the rows scroll.
-local FOOT, SEAM, SHADE = 58, 3, 12
+-- Three wells (WC.Style.Well), as the Chat tab is made of wells: the section
+-- names down the left on the dark stone, the settings on the light stone, the
+-- focused row's note under them on the dark (its name in gold), so the note
+-- has a place of its own (the player's pick from the Settings looks sheet,
+-- 2026-11-12). Out to the page well's floor; fixed while the rows scroll.
+local FOOT, SEAM = 58, WC.Style.SEAM
+local BX, BY = WC.Style.BLEED_X, WC.Style.BLEED_Y
 local band = CreateFrame("Frame", nil, page)
 band:SetPoint("BOTTOMLEFT", SPINE, 0)
 band:SetPoint("BOTTOMRIGHT", 0, 0)
 band:SetHeight(FOOT)
-local rock = page:CreateTexture(nil, "BACKGROUND", nil, 0)
-rock:SetTexture([[Interface\FrameGeneral\UI-Background-Rock]], "REPEAT", "REPEAT")
-rock:SetHorizTile(true)
-rock:SetVertTile(true)
-rock:SetPoint("TOPLEFT", -9, 7)
-rock:SetPoint("BOTTOMRIGHT", 9, -7)
+WC.Style.PageRock(page)
 local function well(which, left, top, right, bottom, shade)
-	local t = page:CreateTexture(nil, "BACKGROUND", nil, 1)
-	stone(t, which)
-	if shade then t:SetVertexColor(shade, shade, shade) end
+	local t = WC.Style.Well(page, which, shade)
 	t:SetPoint("TOPLEFT", left[1], left[2], left[3], top)
 	t:SetPoint("BOTTOMRIGHT", right[1], right[2], right[3], bottom)
-	for _, side in ipairs({ "Top", "Left" }) do
-		local shade = page:CreateTexture(nil, "BACKGROUND", nil, 2)
-		shade:SetTexture([[Interface\Common\ShadowOverlay-]] .. side)
-		shade:SetAlpha(0.7)
-		shade:SetPoint("TOPLEFT", t)
-		shade:SetPoint(side == "Top" and "TOPRIGHT" or "BOTTOMLEFT", t)
-		if side == "Top" then shade:SetHeight(SHADE) else shade:SetWidth(SHADE) end
-	end
 end
 -- names: the left edge to the seam; settings: the seam to the right edge,
--- down to the note's seam; the note: under the settings. The names and the
--- note on the dark stone darker still, as Status's names are (its "deeper")
-local DEEPER = 0.6
-well("you", { page, "TOPLEFT", -9 }, 7, { page, "BOTTOMLEFT", SPINE - 2 - SEAM }, -7, DEEPER)
-well("claude", { page, "TOPLEFT", SPINE - 2 }, 7, { band, "TOPRIGHT", 9 }, SEAM)
-well("you", { band, "TOPLEFT", -2 }, 0, { band, "BOTTOMRIGHT", 9 }, -7, DEEPER)
--- words in the bronze of the controls' values: a setting's name, the note's
--- title; the section names stay white
-local LABEL = { 0.86, 0.76, 0.56 }
+-- down to the note's seam; the note: under the settings
+well("you", { page, "TOPLEFT", -BX }, BY, { page, "BOTTOMLEFT", SPINE - 2 - SEAM }, -BY, WC.Style.DEEPER)
+well("claude", { page, "TOPLEFT", SPINE - 2 }, BY, { band, "TOPRIGHT", BX }, SEAM)
+well("you", { band, "TOPLEFT", -2 }, 0, { band, "BOTTOMRIGHT", BX }, -BY, WC.Style.DEEPER)
+-- a setting's name and the note's title in LABEL; the section names stay white
+local LABEL = WC.Style.LABEL
 local bandName = band:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 bandName:SetPoint("TOPLEFT", 14, -10)
 bandName:SetPoint("RIGHT", -EDGE, 0)
@@ -121,17 +95,17 @@ local function describe(row)
 end
 
 -- the rows and section names above it, in a scroll frame the controller's
--- cursor scrolls as it moves (SmartNavigation's HandleScroll), 9 px wider
--- on the left than the page so the names reach the edge, and out to the
+-- cursor scrolls as it moves (SmartNavigation's HandleScroll), as wide
+-- on the left as the wells, so the names reach the edge, and out to the
 -- well's right edge so the section bands run under the chat's scroll bar
 -- (WC.ScrollBar), the rows keeping clear of it as the turns do
 local barWell = CreateFrame("Frame", nil, page)
-barWell:SetPoint("TOPRIGHT", 9, 7)
-barWell:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, SEAM)
+barWell:SetPoint("TOPRIGHT", BX, BY)
+barWell:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", BX, SEAM)
 barWell:SetWidth(40)
 local scroll = CreateFrame("ScrollFrame", nil, page)
-scroll:SetPoint("TOPLEFT", -9, 0)
-scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, SEAM + 3)
+scroll:SetPoint("TOPLEFT", -BX, 0)
+scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", BX, SEAM + 3)
 local content = CreateFrame("Frame", nil, scroll)
 content:SetSize(1, 1)
 scroll:SetScrollChild(content)
@@ -159,15 +133,11 @@ collect(column)
 -- note, a T where they meet; over the scrolling rows, under the scroll bar
 local seams = CreateFrame("Frame", nil, page)
 seams:SetAllPoints()
-local down = CreateFrame("Frame", nil, seams)
-down:SetWidth(16)
-down:SetPoint("TOP", page, "TOPLEFT", SPINE - 2 - SEAM / 2, 7)
-down:SetPoint("BOTTOM", page, "BOTTOMLEFT", SPINE - 2 - SEAM / 2, -7)
-WC.Style.VineLine(down, "Thick", true, true, true)
+local down = WC.Style.Spine(seams, page, SPINE - 2 - SEAM / 2)
 local across = CreateFrame("Frame", nil, seams)
 across:SetHeight(16)
 across:SetPoint("LEFT", band, "TOPLEFT", -2 - SEAM / 2, SEAM / 2)
-across:SetPoint("RIGHT", band, "TOPRIGHT", 9, SEAM / 2)
+across:SetPoint("RIGHT", band, "TOPRIGHT", BX, SEAM / 2)
 WC.Style.VineLine(across, "Thick", false, false, true)
 WC.Style.VineJoin(across, "Thick", "TRightBig", "LEFT")
 
@@ -202,14 +172,10 @@ local function place(r, control, value)
 	control:SetPoint("RIGHT", r, "RIGHT", -(EDGE + (value and VALUE_W or 0)), 0)
 end
 
--- The controls in the chat's language (tools/make_control_art.py): the same
--- fleur arrows, carved groove, bark borders and heartwood thumb as the scroll
--- bar, values in washed bronze. Each draws over the Blizzard control it
--- stands in for, which stays (invisible) for its logic and its menu.
-local CONTROL_ART = [[Interface\AddOns\WowCompanion\Art\Control-]]
-local CONTROL_VERSION = 2 -- make_control_art.py's VERSION
-local function controlArt(piece) return CONTROL_ART .. piece .. "-" .. CONTROL_VERSION end
-local BRONZE = { 0.78, 0.66, 0.45 }
+-- The controls in the chat's language (WC.Style.Control), values in washed
+-- bronze. Each draws over the Blizzard control it stands in for, which stays
+-- (invisible) for its logic and its menu.
+local controlArt = WC.Style.Control
 local FILL = 7.8 / 5.25 -- the thumb widened to the groove's floor, as the chat's
 
 -- an arrow cap (Choice- or Slide-), a button of ours with the art's states
@@ -235,7 +201,7 @@ local function between(parent, piece, left, right)
 end
 local function bronze(parent)
 	local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	fs:SetTextColor(unpack(BRONZE))
+	fs:SetTextColor(unpack(WC.Style.BRONZE))
 	return fs
 end
 
@@ -345,28 +311,14 @@ local function slider(row)
 	return r
 end
 
--- An action: a button of ours where the other rows have their control
--- (as Blizzard's SettingsButtonControlTemplate places theirs), footer-sized (their Defaults button is 96 x 22) so a rarely used action is
--- not the loudest thing on the page; confirm on the row presses it.
+-- An action: our button (WC.Style.Button) where the other rows have their
+-- control (as Blizzard's SettingsButtonControlTemplate places theirs), its
+-- right end on the other controls' line; confirm on the row presses it.
 local function button(row)
 	local r = settingRow(row)
-	-- a slate slab standing out of the stone, its word in bronze
-	local b = CreateFrame("Button", nil, r)
-	b:SetSize(128, 28)
+	local b = WC.Style.Button(r)
 	b:SetPoint("RIGHT", r, "RIGHT", -EDGE, 0)
-	b:SetNormalTexture(controlArt("Button-Normal"))
-	b:SetPushedTexture(controlArt("Button-Pushed"))
-	b:SetHighlightTexture(controlArt("Button-Highlight"), "ADD")
-	b:SetDisabledTexture(controlArt("Button-Disabled"))
-	local word = bronze(b)
-	b:SetFontString(word)
-	word:SetPoint("CENTER", 0, 1)
-	b:SetPushedTextOffset(0, -1)
-	-- as wide as what it holds, its right end on the other controls' line
-	local function fill()
-		b:SetText(textOf(row.button))
-		b:SetWidth(word:GetStringWidth() + 2 * 16 + 16)
-	end
+	local function fill() b:SetLabel(textOf(row.button)) end
 	fill()
 	refreshers[#refreshers + 1] = fill
 	b:SetScript("OnClick", row.onClick)
@@ -413,7 +365,7 @@ local KINDS = { dropdown = dropdown, slider = slider, button = button, key = key
 -- spine between the wells to the backing's right edge
 local function header(name)
 	if headers[name] then return headers[name] end
-	local h = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
+	local h = WC.Style.Heading(content)
 	h:SetWidth(SPINE - 24)
 	h:SetJustifyH("RIGHT")
 	h:SetText(name)
@@ -424,7 +376,7 @@ local function header(name)
 	-- the spine then cut across every joint (seen on screen, 2026-11-12)
 	-- every other section on the dark stone, as Status's rows alternate
 	h.band = content:CreateTexture(nil, "BACKGROUND")
-	stone(h.band, "you")
+	WC.Style.Stone(h.band, "you")
 	h.divider = CreateFrame("Frame", nil, content)
 	h.divider:SetHeight(16)
 	WC.Style.VineLine(h.divider, "", false, false, true)
@@ -492,7 +444,7 @@ local function layout()
 	local function close(bottom)
 		if not open then return end
 		open.band:ClearAllPoints()
-		open.band:SetPoint("TOPLEFT", content, "TOPLEFT", 9 + SPINE - 2, -open.top)
+		open.band:SetPoint("TOPLEFT", content, "TOPLEFT", BX + SPINE - 2, -open.top)
 		open.band:SetPoint("BOTTOMRIGHT", content, "TOPRIGHT", 0, -bottom)
 		open.band:SetShown(count % 2 == 0)
 	end
@@ -508,12 +460,12 @@ local function layout()
 				open = h
 				h.divider:SetShown(section ~= nil)
 				h.divider:ClearAllPoints()
-				h.divider:SetPoint("LEFT", content, "TOPLEFT", 9 + SPINE - 2 - SEAM / 2, -y + GAP / 2)
+				h.divider:SetPoint("LEFT", content, "TOPLEFT", BX + SPINE - 2 - SEAM / 2, -y + GAP / 2)
 				h.divider:SetPoint("RIGHT", content, "TOPRIGHT", 0, -y + GAP / 2)
 				section = s
-				h:SetPoint("TOPRIGHT", content, "TOPLEFT", 9 + SPINE - 18, -y - 10)
+				h:SetPoint("TOPRIGHT", content, "TOPLEFT", BX + SPINE - 18, -y - 10)
 			end
-			e.frame:SetPoint("TOPLEFT", 9 + SPINE, -y)
+			e.frame:SetPoint("TOPLEFT", BX + SPINE, -y)
 			y = y + ROW_H
 		end
 	end
@@ -561,16 +513,17 @@ local function buildWindow()
 	WC.Style.NoPortrait(f)
 	if f.SetTitle then f:SetTitle("WoW Companion settings") end
 	if f.CloseButton then f.CloseButton:SetScript("OnClick", function() f:Hide() end) end
-	-- the light stone 3 px inside the inset, the page 12 / 10 inside it, as
-	-- in the Companion window's page well
+	-- the light stone on the inset's floor, the page inside it, as in the
+	-- Companion window's page well
 	local inset = f.Inset or f
+	local S = WC.Style
 	local back = inset:CreateTexture(nil, "BACKGROUND", nil, 1)
-	stone(back, "claude")
-	back:SetPoint("TOPLEFT", 3, -3)
-	back:SetPoint("BOTTOMRIGHT", -3, 3)
+	S.Stone(back, "claude")
+	back:SetPoint("TOPLEFT", S.FLOOR, -S.FLOOR)
+	back:SetPoint("BOTTOMRIGHT", -S.FLOOR, S.FLOOR)
 	local well = CreateFrame("Frame", nil, inset)
-	well:SetPoint("TOPLEFT", 12, -10)
-	well:SetPoint("BOTTOMRIGHT", -12, 10)
+	well:SetPoint("TOPLEFT", S.PAGE_X, -S.PAGE_Y)
+	well:SetPoint("BOTTOMRIGHT", -S.PAGE_X, S.PAGE_Y)
 	WC.MarkFocusable(f)
 	if UIPanelWindows then
 		UIPanelWindows["WowCompanionSettings"] = { area = "left", pushable = 1, whileDead = 1, allowOtherPanels = 1 }

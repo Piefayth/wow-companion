@@ -96,7 +96,7 @@ extras a player may use, never required (the player, 2026-11-11).
     `Conversations.lua` (the conversations as the PC names them, their labels;
     `WC.Conversations`), `Bars.lua` (the gamepad action bars: frames, slots,
     triggers, `WC.GamepadBars`), `Ring.lua` (the one radial ring: look, layout, stick
-    aim, the stick capture and camera hold; `WC.Ring`), `Style.lua` (Blizzard look, glyphs, destroy dialog, the vine dividers `WC.Style.Vine`/`VineLine`),
+    aim, the stick capture and camera hold; `WC.Ring`), `Style.lua` (Blizzard look, glyphs, destroy dialog, the vine dividers `WC.Style.Vine`/`VineLine`; every page's parts, which a page builds from rather than copies: the palette, `Stone`, `Well`, `Spine`, `Heading`, `ChoiceRow`, `Button`),
     `ScrollBar.lua` (our windows' scroll bar and the chat's dividers, `WC.ScrollBar`),
     `Rows.lua` (settings rows as controller stops, `WC.RowStop`, `WC.SliderStop`),
     `SettingsPage.lua` (the one settings page, `WC.SettingsPage.Add` for each
