@@ -10,7 +10,9 @@ dark warm outline, its cast), the strap pressed over the vine as a shallow
 ridge in its height. Round 9 (259c200) was "pretty close"; round 10
 (d99cde6) varied how it stands up and its D, pressed harder, was liked;
 round 11 varies D (LOOKS); round 11b's E with a foot was rejected (one
-shape, not a piece); round 12 is E with a connector of its own, each pickable on the Settings page's Trial row. A gusset over
+shape, not a piece); round 12 (ac265dd) E with a connector of its own, centred on the vine
+across the strap's end too: crooked but F5; round 12b each piece lined up
+with what it lies on, each pickable on the Settings page's Trial row. A gusset over
 the names panel's corner, its arm along the panel's edge carried on as a
 strap over the vine, cut square where the vine comes out. Drawn in place for
 each end, the light from the top left on both:
@@ -51,8 +53,8 @@ LOOKS = {
 # comes out, a piece of its own (CONNECTORS' kinds), raised above the cover or
 # set under it, never one shape with it (round 11's feet were rejected)
 FLAT = dict(bevel=0.45, cast=0.3, outline=1.1, ridge=0.0, span=2.2, shape=2)
-for key, part in (("F1", "clamp"), ("F2", "collar"), ("F3", "tab"), ("F4", "sleeve"),
-                  ("F5", "bands"), ("F6", "bridge")):
+for key, part in (("F5", "bands"), ("G1", "collar"), ("G2", "ring"), ("G3", "sleeve"), ("G4", "clip"),
+                  ("G5", "clamp")):
     LOOKS[key] = dict(FLAT, part=part)
 
 def gusset():
@@ -63,24 +65,30 @@ def gusset():
 def connector(kind):
     """The connector at the top end (the vine leaving downward): its pieces,
     whether it sits over the cover (else under it), and how round it stands
-    across the vine (half-width in units, height in texels)."""
+    across the vine (half-width in units, height in texels). The strap is not
+    centred on the vine (its right edge is the vine's, its left 2.5 past), so a
+    piece lines up with what it lies on: below the end, the vine; on the
+    strap, the strap's edges (round 12's pieces across both read crooked)."""
     L, R = EDGE_X - 3.0, STRAP  # the strap's end
     vl, vr = MID - VINE, MID + VINE
     box = lambda x0, y0, x1, y1: [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
-    if kind == "clamp":  # a band wider than the strap, laid across its end and the vine
-        return [box(L - 0.8, TIP - 1.6, R + 0.8, TIP + 0.9)], True, (4.2, 1.6)
-    if kind == "collar":  # a ring round the vine, seated against the strap's end
-        return [box(vl - 1.1, TIP - 0.6, vr + 1.1, TIP + 2.0)], True, (2.8, 2.6)
-    if kind == "tab":  # a strip riveted on the strap and lapped down over the vine
-        return [box(vl - 0.5, TIP - 3.4, vr + 0.5, TIP + 2.8)], True, (2.2, 2.0)
-    if kind == "sleeve":  # a ferrule the strap's end is set over, narrowing to the vine
-        side = sb.bez((vl - 1.6, TIP - 1.5), (vl - 1.6, TIP + 1.4), (vl - 0.4, TIP + 2.0), (vl - 0.2, TIP + 3.4))
-        return [[tuple(p) for p in side] + [(2 * MID - x, y) for x, y in [tuple(p) for p in side][::-1]]], False, (3.0, 2.4)
-    if kind == "bands":  # two thin rings round the vine below the end
+    if kind == "bands":  # round 12's F5: two thin rings round the vine below the end
         return [box(vl - 0.8, TIP + 0.4, vr + 0.8, TIP + 1.4), box(vl - 0.8, TIP + 2.2, vr + 0.8, TIP + 3.2)], True, (2.4, 2.0)
-    if kind == "bridge":  # a bar across the end whose ends turn down round the vine
-        return [box(vl - 1.8, TIP - 1.0, vr + 1.8, TIP + 0.6), box(vl - 1.8, TIP - 1.0, vl - 0.6, TIP + 2.8),
-                box(vr + 0.6, TIP - 1.0, vr + 1.8, TIP + 2.8)], True, (3.4, 1.4)
+    if kind == "collar":  # one ring round the vine, seated against the end
+        return [box(vl - 0.9, TIP + 0.1, vr + 0.9, TIP + 2.0)], True, (2.6, 2.4)
+    if kind == "ring":  # a broad ring and a thin one below it
+        return [box(vl - 0.9, TIP + 0.1, vr + 0.9, TIP + 1.7), box(vl - 0.6, TIP + 2.5, vr + 0.6, TIP + 3.3)], True, (2.6, 2.2)
+    if kind == "sleeve":  # a ferrule the strap's end is set over: as wide as the vine
+        # and the strap's right edge allow, narrowing onto the vine
+        w = R - MID
+        side = sb.bez((MID - w, TIP - 1.5), (MID - w, TIP + 1.2), (vl - 0.3, TIP + 1.8), (vl - 0.1, TIP + 3.4))
+        side = [tuple(p) for p in side]
+        return [side + [(2 * MID - x, y) for x, y in side[::-1]]], False, (3.0, 2.4)
+    if kind == "clip":  # a U clip round the vine below the end, its bar against the end
+        return [box(vl - 1.4, TIP + 0.1, vr + 1.4, TIP + 1.0), box(vl - 1.4, TIP + 0.1, vl - 0.5, TIP + 3.2),
+                box(vr + 0.5, TIP + 0.1, vr + 1.4, TIP + 3.2)], True, (3.0, 1.4)
+    if kind == "clamp":  # a band across the strap's end, the strap's width and a little each side
+        return [box(L - 0.6, TIP - 2.4, R + 0.6, TIP - 0.4)], True, (4.2, 1.2)
     return None
 
 
