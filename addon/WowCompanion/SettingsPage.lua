@@ -187,6 +187,10 @@ local function trialPick(list, field)
 end
 local function endLook() return trialPick(ENDS, "spineEnd") end
 local function meet() return trialPick(MEETS, "dividerMeet").key end
+-- the covers' own frame, over the joints (each joint's stretch of the spine
+-- drew over the bottom cover's top, seen on screen 2026-11-13)
+local capped = CreateFrame("Frame", nil, seams)
+capped:SetAllPoints(down)
 local function paintEnds()
 	local e = endLook()
 	for i, t in ipairs(down.ends) do
@@ -197,13 +201,13 @@ local function paintEnds()
 		t:SetWidth(e.wide)
 		t:ClearAllPoints()
 		t:SetPoint(which:upper(), down, which:upper(), 0, (round and 0 or END_OFF) * (i == 1 and 1 or -1))
-		down.covers = down.covers or {}
-		local c = down.covers[i] or WC.Style.Unsnapped(down:CreateTexture(nil, "OVERLAY"))
-		down.covers[i] = c
+		capped.covers = capped.covers or {}
+		local c = capped.covers[i] or WC.Style.Unsnapped(capped:CreateTexture(nil, "OVERLAY"))
+		capped.covers[i] = c
 		c:SetTexture(([[Interface\AddOns\WowCompanion\Art\Vine-CornerCover%s-T6]]):format(which), "CLAMP", "CLAMP")
 		c:SetSize(48, 16)
 		c:ClearAllPoints()
-		c:SetPoint(which:upper(), down, which:upper())
+		c:SetPoint(which:upper(), capped, which:upper())
 		c:SetShown(e.cover == true)
 	end
 	joins:SetPoint("TOP", down, 0, -e.cut)
@@ -518,6 +522,7 @@ local function lift()
 	joins:SetFrameLevel(joined and base + 2 or base)
 	for _, h in pairs(headers) do h.join:SetFrameLevel(joins:GetFrameLevel()) end
 	across:SetFrameLevel(base + 3)
+	capped:SetFrameLevel(base + 3)
 	column:SetFrameLevel(base + 4)
 	for f, over in pairs(barLevels) do f:SetFrameLevel(base + 4 + over) end
 end
