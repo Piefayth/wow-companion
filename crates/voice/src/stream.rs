@@ -196,7 +196,7 @@ mod tests {
     #[test]
     fn hotwords_are_the_vocabulary_and_the_command_words() {
         let words = hotwords(&["Teleport: Moonglade".into(), "Faerie Fire".into()]);
-        assert!(words.starts_with("Teleport Moonglade/Faerie Fire/Claude/Claude Code/macro/action bar/"));
+        assert!(words.starts_with("Teleport Moonglade/Faerie Fire/macro/action bar/"));
         assert!(words.ends_with("/guild"));
         assert!(!words.contains("//"));
     }

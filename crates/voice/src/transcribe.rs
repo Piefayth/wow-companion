@@ -7,7 +7,7 @@ pub(crate) const WHISPER_RATE: u32 = 16_000;
 pub(crate) const MINIMUM_CLIP: Duration = Duration::from_millis(250);
 // Whisper has never heard of Hearthstone or Shadowstep and will cheerfully write
 // "fire ball". Seeding the decoder with the vocabulary fixes most of it.
-pub(crate) const COMMANDS: &str = "Commands: Claude, Claude Code, macro, action bar, slot, bind, chat, whisper, party, raid, guild.";
+pub(crate) const COMMANDS: &str = "Commands: macro, action bar, slot, bind, chat, whisper, party, raid, guild.";
 // used until the game has exported a spellbook to take names from
 pub(crate) const FALLBACK_SPELLS: &[&str] = &["Hearthstone", "Rejuvenation", "Moonfire", "Bear Form"];
 // Whisper keeps only the last ~224 tokens of a prompt; stay well inside that, or
