@@ -159,17 +159,17 @@ cast:SetAllPoints()
 WC.Style.CastOn(cast, settings, "LEFT")
 
 -- Trial, temporary (the player, 2026-11-13): the spine's ends where it meets
--- the raised panel's edges, round 2 corner fittings (tools/make_spine_trials.py), and how the dividers,
+-- the raised panel's edges, round 3 corner fittings (tools/make_spine_trials.py), and how the dividers,
 -- lying lower, meet the spine on the panel's edge. Kept in WowCompanionDB.spineEnd
 -- and .dividerMeet; what is not picked goes with this switch.
 local ENDS = {
 	{ key = "Round", name = "Round, as now", wide = 16, cut = 3 },
-	{ key = "Plate", name = "Corner plate", wide = 48, cut = 16 },
-	{ key = "Rounded", name = "Corner plate, rounded", wide = 48, cut = 16 },
-	{ key = "Strap", name = "Strap, pointed arms", wide = 48, cut = 19 },
-	{ key = "Gusset", name = "Gusset", wide = 48, cut = 14 },
-	{ key = "PlateScroll", name = "Corner plate and scroll", wide = 48, cut = 16 },
-	{ key = "Clamp", name = "Clamp over the edges", wide = 48, cut = 16 },
+	{ key = "Square", name = "Square corner", wide = 48, cut = 9 },
+	{ key = "Point", name = "Square, pointed arm", wide = 48, cut = 9 },
+	{ key = "Scroll", name = "Square, scroll arm", wide = 48, cut = 9 },
+	{ key = "Heavier", name = "Square, a little heavier", wide = 48, cut = 9 },
+	{ key = "Deeper", name = "Square, further inside", wide = 48, cut = 11 },
+	{ key = "Brace", name = "Square, braced", wide = 48, cut = 13 },
 }
 local END_OFF = 2 -- the fittings' art starts this far past the panel's edge (make_spine_trials.py's OFF)
 local MEETS = {
@@ -191,7 +191,7 @@ local function paintEnds()
 		local which = i == 1 and "Top" or "Bottom"
 		local round = e.key == "Round"
 		t:SetTexture(round and WC.Style.Vine("Thick" .. which)
-			or ([[Interface\AddOns\WowCompanion\Art\Vine-ThickEnd%s%s-T2]]):format(e.key, which), "CLAMP", "CLAMP")
+			or ([[Interface\AddOns\WowCompanion\Art\Vine-ThickEnd%s%s-T3]]):format(e.key, which), "CLAMP", "CLAMP")
 		t:SetWidth(e.wide)
 		t:ClearAllPoints()
 		t:SetPoint(which:upper(), down, which:upper(), 0, (round and 0 or END_OFF) * (i == 1 and 1 or -1))
