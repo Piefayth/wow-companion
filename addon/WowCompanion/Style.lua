@@ -347,11 +347,37 @@ function WowCompanion_Style.PageRock(page)
 	return rock
 end
 -- A well of stone on page, sunk by a soft shadow inside its top and left
--- edges, light falling from the top left, no rim. Returns its stone, for the
--- caller to anchor; what lies on the stone under the shadow goes at sublevel 0.
-function WowCompanion_Style.Well(page, which, shade)
+-- edges, light falling from the top left, no rim. Raised, it stands up out of
+-- the page instead: lit along its top and left edges, shaded along its bottom
+-- and right, and the window's top shadow stops short of it (a page names its
+-- raised stone page.raised, Window.lua). Returns its stone, for the caller to
+-- anchor; what lies on the stone under the shading goes at sublevel 0.
+local RAISED = { Top = { "VERTICAL", 0, 0.10 }, Left = { "HORIZONTAL", 0.10, 0 },
+	Bottom = { "VERTICAL", -0.45, 0 }, Right = { "HORIZONTAL", 0, -0.45 } } -- + light, - shade: at min, at max
+function WowCompanion_Style.Well(page, which, shade, raised)
 	local t = page:CreateTexture(nil, "BACKGROUND", nil, -1)
 	WowCompanion_Style.Stone(t, which, shade)
+	if raised then
+		for side, edge in pairs(RAISED) do
+			local s = page:CreateTexture(nil, "BACKGROUND", nil, 2)
+			local v = edge[2] ~= 0 and edge[2] or edge[3]
+			local c = v > 0 and 1 or 0
+			s:SetColorTexture(1, 1, 1, 1)
+			s:SetGradient(edge[1], CreateColor(c, c, c, math.abs(edge[2])), CreateColor(c, c, c, math.abs(edge[3])))
+			if v > 0 then s:SetBlendMode("ADD") end
+			s:SetPoint(side:upper(), t)
+			if edge[1] == "VERTICAL" then
+				s:SetPoint("LEFT", t)
+				s:SetPoint("RIGHT", t)
+				s:SetHeight(SHADE)
+			else
+				s:SetPoint("TOP", t)
+				s:SetPoint("BOTTOM", t)
+				s:SetWidth(SHADE)
+			end
+		end
+		return t
+	end
 	for _, side in ipairs({ "Top", "Left" }) do
 		local s = page:CreateTexture(nil, "BACKGROUND", nil, 2)
 		s:SetTexture([[Interface\Common\ShadowOverlay-]] .. side)

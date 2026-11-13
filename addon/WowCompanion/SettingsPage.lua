@@ -52,16 +52,18 @@ band:SetPoint("BOTTOMLEFT", SPINE, 0)
 band:SetPoint("BOTTOMRIGHT", 0, 0)
 band:SetHeight(FOOT)
 WC.Style.PageRock(page)
-local function well(which, left, top, right, bottom, shade)
-	local t = WC.Style.Well(page, which, shade)
+local function well(which, left, top, right, bottom, shade, raised)
+	local t = WC.Style.Well(page, which, shade, raised)
 	t:SetPoint("TOPLEFT", left[1], left[2], left[3], top)
 	t:SetPoint("BOTTOMRIGHT", right[1], right[2], right[3], bottom)
+	return t
 end
 -- names: the left edge to the seam; settings: the seam to the right edge,
--- down to the note's seam; the note: under the settings
-well("you", { page, "TOPLEFT", -BX }, BY, { page, "BOTTOMLEFT", SPINE - 2 - SEAM }, -BY, WC.Style.DEEPER)
+-- down to the note's seam; the note: under the settings. The two dark ones
+-- raised, on trial (the player, 2026-11-12: sunk, they read as set back)
+local raised = well("you", { page, "TOPLEFT", -BX }, BY, { page, "BOTTOMLEFT", SPINE - 2 - SEAM }, -BY, WC.Style.DEEPER, true)
 well("claude", { page, "TOPLEFT", SPINE - 2 }, BY, { band, "TOPRIGHT", BX }, SEAM)
-well("you", { band, "TOPLEFT", -2 }, 0, { band, "BOTTOMRIGHT", BX }, -BY, WC.Style.DEEPER)
+well("you", { band, "TOPLEFT", -2 }, 0, { band, "BOTTOMRIGHT", BX }, -BY, WC.Style.DEEPER, true)
 -- a setting's name and the note's title in LABEL; the section names stay white
 local LABEL = WC.Style.LABEL
 local bandName = band:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -525,6 +527,7 @@ end
 -- frame is the page's area: its holder decides the margin (the Companion
 -- window's pages already sit 12 px inside their well)
 function Page.ShowIn(frame)
+	frame.raised = raised
 	page:SetParent(frame)
 	page:ClearAllPoints()
 	page:SetAllPoints()
