@@ -302,13 +302,15 @@ WowCompanion_Style.CHORD = ("|T%sChord-6:%d:%d:0:0:64:64:0:64:%d:%d|t"):format(A
 
 -- The words of our windows, in washed bronze: a name in a list of choices
 -- (NAME, NAME_HL under the cursor, NAME_LIT chosen), what names a setting or
--- a fact (LABEL), a control's value (BRONZE), what is not there yet (DIM).
+-- a fact (LABEL), a control's value (BRONZE, BRONZE_LIT lit), what is not
+-- there yet (DIM).
 -- In text, a short word for good or bad, colour-blind safe, and grey detail.
 WowCompanion_Style.NAME = { 0.78, 0.69, 0.53 }
 WowCompanion_Style.NAME_HL = { 0.91, 0.84, 0.67 }
 WowCompanion_Style.NAME_LIT = { 0.98, 0.92, 0.78 }
 WowCompanion_Style.LABEL = { 0.86, 0.76, 0.56 }
 WowCompanion_Style.BRONZE = { 0.78, 0.66, 0.45 }
+WowCompanion_Style.BRONZE_LIT = { 0.95, 0.80, 0.53 } -- bronze brightened, never toward white (a button under the cursor)
 WowCompanion_Style.DIM = { 0.5, 0.5, 0.5 }
 WowCompanion_Style.GREY, WowCompanion_Style.GOOD, WowCompanion_Style.BAD = "|cff8c8c8c", "|cff7fd07f", "|cffe0786a"
 
@@ -676,7 +678,7 @@ end
 
 -- The controls' art (tools/make_control_art.py): the scroll bar's fleur
 -- arrows, carved groove, bark borders and heartwood thumb, for the settings
--- page's controls and our buttons. Each version its own names, as the stone's.
+-- page's controls. Each version its own names, as the stone's.
 local CONTROL_VERSION = 2 -- make_control_art.py's VERSION
 function WowCompanion_Style.Control(piece)
 	return ART .. "Control-" .. piece .. "-" .. CONTROL_VERSION
@@ -689,25 +691,63 @@ local function controlFont(name, colour)
 end
 local BUTTON_FONT = controlFont("WowCompanionButtonFont", WowCompanion_Style.BRONZE)
 local BUTTON_FONT_OFF = controlFont("WowCompanionButtonFontOff", WowCompanion_Style.DIM)
--- A button of ours: a slate slab standing out of the stone, its word in
--- bronze, as wide as its word (button:SetLabel(text)). Footer-sized, as
--- Blizzard's Defaults button is, so an action is not the loudest thing on a page.
+-- A button of ours (tools/make_button_art.py, the player's pick, 2026-11-12):
+-- a slab of the dark stone with cut corners and a faceted bevel in a bark rim,
+-- its word in bronze, as wide as its word (button:SetLabel(text)). Under the
+-- cursor it stays dark and lights round it: the focus glow outside, the rim
+-- and the word a brighter bronze (button:SetLit(on) for a row that holds the
+-- cursor for it); pressed, its face sinks; unavailable, greyed. The art is
+-- 160 x 36 with the 128 x 28 body in its middle, cut in three so the ends keep
+-- their cuts and the middle stretches.
+local BUTTON_VERSION = 1 -- make_button_art.py's VERSION
+local BUTTON_SLICES = { { 0, 28 }, { 28, 132 }, { 132, 160 } }
 function WowCompanion_Style.Button(parent)
 	local b = CreateFrame("Button", nil, parent)
 	b:SetSize(128, 28)
-	b:SetNormalTexture(WowCompanion_Style.Control("Button-Normal"))
-	b:SetPushedTexture(WowCompanion_Style.Control("Button-Pushed"))
-	b:SetHighlightTexture(WowCompanion_Style.Control("Button-Highlight"), "ADD")
-	b:SetDisabledTexture(WowCompanion_Style.Control("Button-Disabled"))
+	local parts = {}
+	for i, cut in ipairs(BUTTON_SLICES) do
+		local t = b:CreateTexture(nil, "BACKGROUND")
+		t:SetTexCoord(cut[1] / 160, cut[2] / 160, 0, 1)
+		t:SetPoint("TOP", 0, 4)
+		t:SetPoint("BOTTOM", 0, -4)
+		parts[i] = t
+	end
+	parts[1]:SetWidth(28)
+	parts[1]:SetPoint("LEFT", -16, 0)
+	parts[3]:SetWidth(28)
+	parts[3]:SetPoint("RIGHT", 16, 0)
+	parts[2]:SetPoint("LEFT", parts[1], "RIGHT")
+	parts[2]:SetPoint("RIGHT", parts[3], "LEFT")
 	local word = b:CreateFontString(nil, "OVERLAY")
 	b:SetFontString(word)
 	b:SetNormalFontObject(BUTTON_FONT)
 	b:SetDisabledFontObject(BUTTON_FONT_OFF)
 	word:SetPoint("CENTER", 0, 1)
 	b:SetPushedTextOffset(0, -1)
+	local over, held, lit = false, false, false
+	local function paint()
+		local on = b:IsEnabled()
+		local state = on and (held and "Pushed" or (over or lit) and "Lit") or "Rest"
+		for _, t in ipairs(parts) do
+			t:SetTexture(ART .. "Button-" .. state .. "-" .. BUTTON_VERSION)
+			t:SetDesaturated(not on)
+		end
+		if on then word:SetTextColor(unpack((over or lit) and WowCompanion_Style.BRONZE_LIT or WowCompanion_Style.BRONZE)) end
+	end
+	b:HookScript("OnEnter", function() over = true paint() end)
+	b:HookScript("OnLeave", function() over, held = false, false paint() end)
+	b:HookScript("OnMouseDown", function() held = true paint() end)
+	b:HookScript("OnMouseUp", function() held = false paint() end)
+	b:HookScript("OnEnable", paint)
+	b:HookScript("OnDisable", paint)
+	function b:SetLit(on)
+		lit = on
+		paint()
+	end
 	function b:SetLabel(text)
 		self:SetText(text)
 		self:SetWidth(word:GetStringWidth() + 2 * 16 + 16)
 	end
+	paint()
 	return b
 end
