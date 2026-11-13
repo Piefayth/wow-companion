@@ -1,6 +1,6 @@
 -- Radial wheels of the player's own, each opened by a bar slot whose macro is
 -- "/click WCWheel_<name> Macro" (WCWheel.Macro(name) gives the line).
--- Right stick points and letting it go uses; R2 uses; the d-pad keeps its bar actions;
+-- Right stick points and letting it go uses (the one way); the d-pad keeps its bar actions;
 -- Circle closes; the left stick
 -- still walks. Every button is secure, so a wheel works in combat; what is on
 -- it is rebuilt out of combat only.
@@ -53,7 +53,7 @@ end
 local ring = CreateFrame("Frame", "WCWheelRing", UIParent, "SecureHandlerBaseTemplate")
 ring:Hide()
 -- the look, the aim, the stick capture and the camera hold (Core's Ring.lua)
-local look = WC.Ring.Build(ring, { prompt = "Release stick or R2 Use      Circle Close" })
+local look = WC.Ring.Build(ring, { prompt = "Release stick Use      Circle Close" })
 
 local function SecureButton(name)
     local button = CreateFrame("Button", name, UIParent, "SecureActionButtonTemplate,SecureHandlerBaseTemplate")
@@ -67,7 +67,7 @@ end
 -- each a click on WCWheelAim): their sum points at the nearest slot, so up and
 -- right held together is the up-right slot. The game's own key thresholds draw
 -- the borders, and every key edge is seen, so the highlight (wc-sticky, which
--- the look shows) is always what a release or R2 uses. Returns the slot, or nil
+-- the look shows) is always what a release uses. Returns the slot, or nil
 -- with no key held.
 ring:SetAttribute("wc-pick", [[
     local dx, dy = 0, 0
@@ -96,25 +96,6 @@ ring:SetAttribute("wc-push", [[
 ring:SetAttribute("wc-forget", [[
     for _, key in ipairs(newtable("PADRSTICKUP", "PADRSTICKDOWN", "PADRSTICKLEFT", "PADRSTICKRIGHT")) do
         self:SetAttribute("wc-held-" .. key, nil)
-    end
-]])
-
--- R2 becomes "use" while the ring is up, but only once let go if it was held
--- when the ring opened (a slot on the R2 bar): its release has to reach the
--- game's own binding, which got the press, or the bar page stays down.
-ring:SetAttribute("wc-take-r2", [[
-    local opening = ...
-    if not self:IsShown() then return end
-    if not (opening or self:GetAttribute("wc-waiting")) then return end
-    local state = GetGamePadState()
-    local index = self:GetAttribute("wc-btn-r2")
-    if state and state.buttons and index and state.buttons[index] then
-        self:SetAttribute("wc-waiting", true)
-        return
-    end
-    self:SetAttribute("wc-waiting", nil)
-    for _, modifier in ipairs(]] .. MODIFIERS_LUA .. [[) do
-        self:SetBindingClick(true, modifier .. "PADRTRIGGER", "WCWheelUse", "LeftButton")
     end
 ]])
 
@@ -148,7 +129,7 @@ local function OpenButton(name)
 end
 
 -- Loads slot `pick` of the open wheel onto `self` and closes the ring; the
--- secure action then runs it. Shared by the stick release and R2.
+-- secure action then runs it.
 local LOAD_PICK = [[
     ring:Hide()
     for _, attribute in ipairs(newtable("spell", "item", "macro", "macrotext", "unit")) do
@@ -162,13 +143,15 @@ local LOAD_PICK = [[
 -- stick is let go. Only a key going down moves the pick: a diagonal let go
 -- loses its keys one at a time, and the first must not turn it into its
 -- neighbour. The action runs on the up edge, hence useOnKeyDown false.
+-- A release is an up edge with no key held, or of the key pressed last (the
+-- game can drop the other key's up edge when a diagonal is let go; Easy
+-- Controller Forever measured it), or with the stick back near the centre.
 local aim = SecureButton("WCWheelAim")
 aim:RegisterForClicks("AnyDown", "AnyUp")
 aim:SetAttribute("useOnKeyDown", false)
 SecureHandlerWrapScript(aim, "OnClick", aim, [[
     self:SetAttribute("type", nil)
     local ring = self:GetFrameRef("ring")
-    ring:RunAttribute("wc-take-r2")
     if not ring:IsShown() then return false end
     ring:SetAttribute("wc-held-" .. button, down or nil)
     local pick = ring:RunAttribute("wc-pick")
@@ -176,62 +159,17 @@ SecureHandlerWrapScript(aim, "OnClick", aim, [[
     if down then
         ring:SetAttribute("wc-sticky", pick)
         ring:SetAttribute("wc-aimed", true)
+        ring:SetAttribute("wc-last", button)
         return false
     end
-    -- An up edge with keys still held is the stick on its way: the pick stays
-    -- (a diagonal lets its two keys go one at a time, and the stick state lags
-    -- the keys, so nothing tells a turn from a release here). A key whose up
-    -- edge never reached us must not hold the wheel open, so a stick back near
-    -- the centre is a release whatever the keys say.
-    if pick and push >= 0.5 then return false end
+    -- any other up edge, with a key still held and the stick still out, is the
+    -- stick on its way and the pick stays
+    if pick and ring:GetAttribute("wc-last") ~= button and push >= 0.5 then return false end
     ring:RunAttribute("wc-forget")
     if not ring:GetAttribute("wc-aimed") then return false end
     pick = ring:GetAttribute("wc-sticky")
     if not pick then return false end
     local key = ring:GetAttribute("wc-active")
-]] .. LOAD_PICK .. [[
-]])
-
--- D-pad: step the pick round the ring (up / left back, down / right on).
-local step = SecureButton("WCWheelStep")
-step:RegisterForClicks("AnyDown")
-SecureHandlerWrapScript(step, "OnClick", step, [[
-    local ring = self:GetFrameRef("ring")
-    ring:RunAttribute("wc-take-r2")
-    local count = ring:GetAttribute((ring:GetAttribute("wc-active") or "") .. "-count") or 0
-    if not ring:IsShown() or count < 1 then return false end
-    local current = ring:GetAttribute("wc-sticky")
-    local forward = button == "PADDRIGHT" or button == "PADDDOWN"
-    if not current then
-        current = forward and 1 or count
-    elseif forward then
-        current = current % count + 1
-    else
-        current = (current - 2) % count + 1
-    end
-    ring:SetAttribute("wc-sticky", current)
-    return false
-]])
-
--- R2: use what the stick points at now, else the sticky pick, on the press
--- or the release as ActionButtonUseKeyDown says action buttons fire.
-local use = SecureButton("WCWheelUse")
-use:RegisterForClicks("AnyDown", "AnyUp")
-SecureHandlerWrapScript(use, "OnClick", use, [[
-    self:SetAttribute("type", nil)
-    local ring = self:GetFrameRef("ring")
-    ring:RunAttribute("wc-take-r2")
-    if not ring:IsShown() then
-        self:SetAttribute("wc-pressed", nil)
-        return false
-    end
-    if down then self:SetAttribute("wc-pressed", true) end
-    if (down and 1 or 0) ~= (self:GetAttribute("wc-keydown") or 1) then return false end
-    if not down and not self:GetAttribute("wc-pressed") then return false end
-    self:SetAttribute("wc-pressed", nil)
-    local key = ring:GetAttribute("wc-active")
-    local pick = ring:GetAttribute("wc-sticky")
-    if not pick then return false end
 ]] .. LOAD_PICK .. [[
 ]])
 
@@ -243,10 +181,9 @@ SecureHandlerWrapScript(close, "OnClick", close, [[
     return false
 ]])
 
--- While the ring is up it owns R2, Circle and both sticks'
--- directions, whatever modifier the held triggers emulate.
+-- While the ring is up it owns Circle and both sticks' directions, whatever
+-- modifier the held triggers emulate.
 SecureHandlerWrapScript(ring, "OnShow", ring, [[
-    self:RunAttribute("wc-take-r2", true)
     for _, modifier in ipairs(]] .. MODIFIERS_LUA .. [[) do
         self:SetBindingClick(true, modifier .. "PAD2", "WCWheelClose", "LeftButton")
         -- the d-pad is left alone: it keeps its bar actions, so another
@@ -262,19 +199,10 @@ SecureHandlerWrapScript(ring, "OnShow", ring, [[
 ]])
 SecureHandlerWrapScript(ring, "OnHide", ring, [[
     self:ClearBindings()
-    self:SetAttribute("wc-waiting", nil)
     self:SetAttribute("wc-aimed", nil)
+    self:SetAttribute("wc-last", nil)
     self:RunAttribute("wc-forget")
 ]])
-
--- Out of combat a held R2 is taken as soon as it is let go, not only at the
--- next stick or d-pad press.
-local takeWatch = CreateFrame("Frame", nil, ring)
-takeWatch:SetScript("OnUpdate", function()
-    if ring:GetAttribute("wc-waiting") and not InCombatLockdown() then
-        SecureHandlerExecute(ring, [[ self:RunAttribute("wc-take-r2") ]])
-    end
-end)
 
 -- Stick directions only arrive as keys with GamePadStickAxisButtons on: on
 -- while the ring is up, put back after (saved, so a /reload mid-ring still
@@ -388,11 +316,6 @@ local function Expand(slots)
     return out
 end
 
-local function ButtonIndex(binding)
-    local index = C_GamePad.ButtonBindingToIndex(binding)
-    return index and index + 1 -- GetGamePadState().buttons counts from 1
-end
-
 function W.Rebuild(quiet)
     if InCombatLockdown() then
         pending = true
@@ -400,8 +323,6 @@ function W.Rebuild(quiet)
     end
     pending = false
     ring:SetAttribute("wc-stick", 2) -- the right stick (StickConfigNameToIndex is absent here)
-    ring:SetAttribute("wc-btn-r2", ButtonIndex("PADRTRIGGER"))
-    use:SetAttribute("wc-keydown", GetCVarSafe("ActionButtonUseKeyDown") == "0" and 0 or 1)
     for key in pairs(ringData) do ring:SetAttribute(key .. "-count", 0) end
     wipe(ringData)
     for key, wheel in pairs(WowCompanionWheelDB.wheels) do
