@@ -1,20 +1,20 @@
 """Raised wells, on trial (the player, 2026-11-12: the dark panels should stand
-up out of the page, hard-edged). Each variant is a slab of the dark slate
-standing on the light slate: its bevel the slate itself lit from the top left
-(a height map, as the scroll bar's art), its bottom and right faces showing
-its thickness, a tight contact shadow and a soft cast shadow on the floor
-round it. Nine pieces per variant, laid round a well by Style.lua (RAISED):
+up out of the page). Each variant is the dark slate seen from straight above,
+high in the middle and sloping down to its edges, its slopes the slate itself
+lit from the top left (a height map, as the scroll bar's art); no walls seen
+from an angle (round 2's sides read as a building seen off-angle, too dark).
+The slopes run down to the vines between the wells, so a vine lies in the
+valley. Nine pieces per variant, laid round a well by Style.lua (RAISE_LOOKS):
 
     python tools/make_slab_art.py   writes addon/WowCompanion/Art/Slab-<v>-<piece>-<ROUND>.tga
 
   Corners  2C x 2C units, the four corners (texcoord quarters)
   Top, Bottom  L x C, Left, Right  C x L: the edges, stretched along
 
-C = margin + thickness + bevel + 2: the art covers the well's whole rectangle,
-the slab inset from it by the margin (and its thickness at the bottom and
-right). The slab's flat face is left clear: the game tiles the slate there.
-4 texture pixels per unit, each piece resampled to power-of-two sides (odd
-sizes drew wrong in the game, 2026-11-12).
+C = MARGIN + bevel + 2: the art reaches MARGIN past the well, where a faint
+contact shadow falls. The flat top is left clear: the game tiles the slate
+there. 4 texture pixels per unit, each piece resampled to power-of-two sides
+(odd sizes drew wrong in the game, 2026-11-12).
 """
 import os
 import sys
@@ -27,64 +27,61 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import artout  # noqa: E402
 import make_scrollbar_art as sb  # noqa: E402
 
-ROUND = 2
+ROUND = 3
 PX = 4  # texture pixels per unit, as the controls' art
 L = 384  # an edge strip's length, units
+MARGIN = 3  # Style.lua's SLAB_MARGIN
 OUT = sb.CORE_OUT
 SLATE = os.path.join(OUT, "Slate-6.tga")  # Style.lua's STONE.you
-# name, bevel (units), round bevel, thickness, margin, the slate's shade:
-# the same table is Style.lua's RAISED
+# name, slope width (units), its profile, the rise over it (units), the
+# slate's shade: Style.lua's RAISE_LOOKS
 VARIANTS = [
-    ("Chamfer, dark", 3, False, 2, 8, 0.6),
-    ("Chamfer, lifted", 3, False, 3, 8, 0.8),
-    ("Rounded edge", 5, True, 2, 8, 0.8),
-    ("Thick slab", 2, False, 5, 10, 0.8),
-    ("Wide bevel, no sides", 6, False, 0, 8, 0.85),
-    ("Tight margin", 3, False, 3, 5, 0.9),
+    ("Chamfer 6", 6, "chamfer", 5, 0.8),
+    ("Chamfer 10", 10, "chamfer", 7, 0.8),
+    ("Cushion 12", 12, "cushion", 8, 0.8),
+    ("Two steps", 10, "steps", 7, 0.8),
+    ("Dome 24", 24, "cushion", 10, 0.8),
+    ("Chamfer 8, dark stone", 8, "chamfer", 6, 0.6),
 ]
 LIGHT = np.array([-0.55, -0.75, 0.9]); LIGHT /= np.linalg.norm(LIGHT)
 
 
-def render(bevel, rounded, thick, margin, shade):
-    C = margin + thick + bevel + 2
+def profile(r, kind):
+    """The rise at r (0 at the edge, 1 where the top is flat), 0..1."""
+    if kind == "cushion":
+        return r * r * (3 - 2 * r) * 0.5 + np.sqrt(1 - (1 - r) ** 2) * 0.5
+    if kind == "steps":
+        return 0.5 * np.clip(r / 0.4, 0, 1) + 0.5 * np.clip((r - 0.6) / 0.4, 0, 1)
+    return r
+
+
+def render(bevel, kind, rise, shade):
+    C = MARGIN + bevel + 2
     N = 2 * C + L  # the whole slab's art, units
     n = N * PX
     ys, xs = np.mgrid[0:n, 0:n] / PX + 0.5 / PX  # pixel centres, units
-    x0, y0, x1, y1 = margin, margin, N - margin - thick, N - margin - thick
+    x0, y0, x1, y1 = MARGIN, MARGIN, N - MARGIN, N - MARGIN
     # distance inward from the slab's edge, and its height
     d = np.minimum.reduce([xs - x0, ys - y0, x1 - xs, y1 - ys])
-    inside = d > 0
+    slab = d > 0
     r = np.clip(d / bevel, 0, 1)
-    h = (np.sqrt(1 - (1 - r) ** 2) if rounded else r) * bevel
+    h = profile(r, kind) * rise
     gy, gx = np.gradient(h, 1 / PX)
     nrm = np.dstack([-gx, -gy, np.ones_like(h)])
     nrm /= np.linalg.norm(nrm, axis=2, keepdims=True)
     lit = (nrm @ LIGHT) / LIGHT[2]
     slate = np.asarray(Image.open(SLATE).convert("RGB"), float)
     stone = slate[(ys.astype(int)) % 256, (xs.astype(int)) % 256] * shade
-    # the slope's light pushed past nature, so the bevel reads at TV distance
-    rgb = stone * np.clip(1 + 2.2 * (lit - 1), 0.3, 2.8)[..., None]
-    # its thickness: the slab swept down and right, the faces in shadow
-    slab = inside
-    sweep = slab.copy()
-    for k in range(1, thick * PX + 1):
-        sweep |= np.roll(np.roll(slab, k, 0), k, 1)
-    side = sweep & ~slab
-    rgb[side] = stone[side] * 0.42
-    # a hard dark line round the faces, and where they meet the slab's top;
-    # none round the lit top and left, where a line read as a groove
-    edge = side & ~ndimage.binary_erosion(sweep, iterations=1)
-    lip = side & ndimage.binary_dilation(slab, iterations=1)
-    rgb[edge | lip] = np.array(sb.OUTLINE, float)
-    # shadows on the floor: tight contact, and a soft one cast down and right
-    s = sweep.astype(float)
-    contact = np.clip(ndimage.gaussian_filter(s, 1.2 * PX) * 1.6, 0, 1) * 0.75
-    cast = ndimage.gaussian_filter(np.roll(np.roll(s, 3 * PX, 0), 2 * PX, 1), 5 * PX) * 0.5
-    shadow = 1 - (1 - contact) * (1 - cast)
-    a = np.where(sweep, 1.0, shadow)
-    a[slab & (r >= 1)] = 0  # the flat face: the game's tiled slate
+    # the lit slopes pushed past nature so they read at TV distance; the
+    # shaded ones gentler (round 2's dark sides were "crazy")
+    k = np.where(lit > 1, 1 + 2.0 * (lit - 1), 1 + 0.8 * (lit - 1))
+    rgb = stone * np.clip(k, 0.45, 2.6)[..., None]
+    # a faint contact shadow round it
+    contact = np.clip(ndimage.gaussian_filter(slab.astype(float), 1.2 * PX) * 1.6, 0, 1) * 0.35
+    a = np.where(slab, 1.0, contact)
+    a[slab & (r >= 1)] = 0  # the flat top: the game's tiled slate
     out = np.zeros((n, n, 4))
-    out[..., :3] = np.where(sweep[..., None], rgb, 0)
+    out[..., :3] = np.where(slab[..., None], rgb, 0)
     out[..., 3] = a * 255
     return C, out
 
@@ -101,8 +98,8 @@ def pow2(rgba):
 
 def main():
     artout.clear(OUT, "Slab-*.tga")
-    for v, (name, bevel, rounded, thick, margin, shade) in enumerate(VARIANTS, 1):
-        C, img = render(bevel, rounded, thick, margin, shade)
+    for v, (name, bevel, kind, rise, shade) in enumerate(VARIANTS, 1):
+        C, img = render(bevel, kind, rise, shade)
         c, n = C * PX, img.shape[0]
         pieces = {
             "Corners": np.concatenate([np.concatenate([img[:c, :c], img[:c, -c:]], 1),

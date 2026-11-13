@@ -352,22 +352,21 @@ end
 -- names its raised stone page.raised, Window.lua). Returns its stone, for the
 -- caller to anchor; what lies on the stone under the shading goes at sublevel 0.
 --
--- Trial, temporary (the player, 2026-11-12): a raised well is a slab of its
--- stone standing on the light stone, drawn by tools/make_slab_art.py (its
--- bevel the stone lit, its thickness, its shadows on the floor round it), one
--- of RAISE_LOOKS picked live on the Settings page (WowCompanionDB.raisedLook);
--- the looks not picked go when one is chosen. Each: its name, then
--- make_slab_art.py's VARIANTS numbers: bevel, thickness, margin, the stone's
--- shade. The slab fills the well, its thickness inside it at the bottom and
--- right; the art reaches the margin past it, where its shadow falls.
-local SLAB_ROUND = 2 -- make_slab_art.py's ROUND
+-- Trial, temporary (the player, 2026-11-12): a raised well is its stone seen
+-- from straight above, high in the middle and sloping down to its edges, drawn
+-- by tools/make_slab_art.py (its slopes the stone lit), one of RAISE_LOOKS
+-- picked live on the Settings page (WowCompanionDB.raisedLook); the looks not
+-- picked go when one is chosen. Each: its name, then make_slab_art.py's
+-- VARIANTS: the slope's width and the stone's shade. The slab fills the well;
+-- the art reaches SLAB_MARGIN past it, where a faint shadow falls.
+local SLAB_ROUND, SLAB_MARGIN = 3, 3 -- make_slab_art.py's ROUND, MARGIN
 local RAISE_LOOKS = {
-	{ name = "Chamfer, dark", bevel = 3, thick = 2, margin = 8, shade = 0.6 },
-	{ name = "Chamfer, lifted", bevel = 3, thick = 3, margin = 8, shade = 0.8 },
-	{ name = "Rounded edge", bevel = 5, thick = 2, margin = 8, shade = 0.8 },
-	{ name = "Thick slab", bevel = 2, thick = 5, margin = 10, shade = 0.8 },
-	{ name = "Wide bevel, no sides", bevel = 6, thick = 0, margin = 8, shade = 0.85 },
-	{ name = "Tight margin", bevel = 3, thick = 3, margin = 5, shade = 0.9 },
+	{ name = "Chamfer 6", bevel = 6, shade = 0.8 },
+	{ name = "Chamfer 10", bevel = 10, shade = 0.8 },
+	{ name = "Cushion 12", bevel = 12, shade = 0.8 },
+	{ name = "Two steps", bevel = 10, shade = 0.8 },
+	{ name = "Dome 24", bevel = 24, shade = 0.8 },
+	{ name = "Chamfer 8, dark stone", bevel = 8, shade = 0.6 },
 }
 WowCompanion_Style.RAISE_LOOKS = RAISE_LOOKS
 local raisedWells = {}
@@ -376,13 +375,13 @@ local SLAB_CORNERS = { { "TOPLEFT", 0, 0.5, 0, 0.5 }, { "TOPRIGHT", 0.5, 1, 0, 0
 	{ "BOTTOMLEFT", 0, 0.5, 0.5, 1 }, { "BOTTOMRIGHT", 0.5, 1, 0.5, 1 } }
 local function paintRaised(w, v)
 	local look = RAISE_LOOKS[v]
-	local C = look.margin + look.thick + look.bevel + 2
-	local m = look.margin
+	local m = SLAB_MARGIN
+	local C = m + look.bevel + 2
 	local art = ART .. "Slab-" .. v .. "-%s-" .. SLAB_ROUND
 	local t, f = w.floor, w.slab
 	f:ClearAllPoints()
 	f:SetPoint("TOPLEFT", t, "TOPLEFT")
-	f:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", -look.thick, look.thick)
+	f:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT")
 	f:SetVertexColor(look.shade, look.shade, look.shade)
 	for i, c in ipairs(SLAB_CORNERS) do
 		local x = w.pieces[i]
