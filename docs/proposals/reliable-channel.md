@@ -26,25 +26,19 @@ trustworthy; none made a wrong bell survivable.
 
 ## The design
 
-### 1. A bell name is used in one session only
+### 1. (Dropped) a bell name per session
 
-Bells are named for the session (`g<loads>-<slot>.wav`), not one of three sets.
-The PC keeps the next two sessions' bells created (empty) ahead of time, and
-deletes a session's bells once the game has left it for good (at Wow.exe exit).
+Proposed, then dropped the same day: it rested on an inferred cause (the game
+replaying a played name), and a probe showed a sound file created after the
+game launched does not play at all (`willPlay` nil for a full bell copied in at
+16:53), so names made ahead of a session would likely never ring. The design no
+longer depends on why early takes happen.
 
-- Gain: removes the measured cause, if the cause is the replay of a played name.
-- Cost: **the cause is inferred, not proven.** The evidence is strong (every
-  false take, no clean one) but it is correlation; layer 2 is what makes the
-  design hold if this inference is wrong.
-- Cost: **the PC must stay two reloads ahead.** If the companion is not
-  running across two or more reloads, the game asks for names that do not exist,
-  remembers them as missing (rule 3), and that session hears nothing until the
-  next reload. Today's three fixed sets cannot fail this way. Mitigation: the
-  companion makes them at start, and the addon's install makes the first ten
-  sessions' worth; `doctor` checks it. This is a new failure mode traded for
-  removing the current one.
-- Cost: the same file count as today (about 1,536), with deletes added; the
-  deletes happen only with the game closed, so rule 3 is never in play.
+### 1. A stale slot is refused
+
+Every slot carries its session's number (274ee58). A slot whose number is not
+this session's is an early take: the game applies nothing from it and counts it.
+Its real content is lost from that slot, and layer 2 delivers it.
 
 ### 2. Every slot carries everything not yet confirmed
 
@@ -104,9 +98,5 @@ arrives with the next one or at your next reload".
 2. **Layer 2**: the PC adds the carried lines; the game counts what they
    repaired before relying on them. It changes what is in a slot, not how a slot
    is found, so it is the safest change and fixes losses whatever their cause.
-3. **Layer 1 beside the channel**: the PC also writes per-session names; a
-   watcher in the game asks the new name of the slot after the one the real poll
-   takes, never takes a slot, and counts false rings. One whole session at zero,
-   then the poll switches and the three sets are removed.
 
 Each step removes what it replaces in the same change.
