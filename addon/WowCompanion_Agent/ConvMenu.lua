@@ -20,7 +20,7 @@
 -- a band of its own for what cross and circle do.
 local W, ROW, FOOT, PAD = 160, 24, 24, 6
 local RIM, RULE = 6, 3 -- the window's rim (Window.lua), the rule's width
-local JOIN = 18 -- a joint piece's reach past the window's rim, out and up: RIM + JOIN at the edges' texel density (make_frame_art.py's)
+local JOIN = 18 -- a joint's reach past the window's rim, out and up: RIM + JOIN at the edges' texel density (make_frame_art.py's)
 local DRAWER = [[Interface\AddOns\WowCompanion_Agent\Art\Drawer-%s-25]] -- make_frame_art.py's DRAWER_VERSION
 local menu = CreateFrame("Frame", "WCConvMenu", UIParent)
 menu:Hide()
@@ -29,20 +29,39 @@ local function piece(name, layer, sub)
 	t:SetTexture(DRAWER:format(name), "CLAMP", "CLAMP")
 	return t
 end
-local tj, bj = piece("TopJoin"), piece("BottomJoin")
-tj:SetSize(RIM + JOIN, RIM + JOIN)
-tj:SetPoint("TOPLEFT", 0, JOIN)
-bj:SetSize(RIM + JOIN, RIM + JOIN)
-bj:SetPoint("BOTTOMLEFT", 0, -JOIN)
+-- each joint is one picture laid as four quads cut along the rims' lines
+-- (the window's rim, the drawer's rim, the elbow beyond), each sharing its
+-- edges with the pieces it meets, so the game rounds them to the same pixels
+-- and the rims run on without a step
+local F = RIM / (RIM + JOIN) -- the rim's share of a joint picture
+local function joint(name, v, s, rimRows, farRows)
+	local corner, foot, side, bend = piece(name), piece(name), piece(name), piece(name)
+	corner:SetTexCoord(0, F, rimRows[1], rimRows[2])
+	foot:SetTexCoord(F, 1, rimRows[1], rimRows[2])
+	side:SetTexCoord(0, F, farRows[1], farRows[2])
+	bend:SetTexCoord(F, 1, farRows[1], farRows[2])
+	local other = v == "TOP" and "BOTTOM" or "TOP"
+	corner:SetPoint(v .. "LEFT", menu, v .. "LEFT")
+	corner:SetPoint(other .. "RIGHT", menu, v .. "LEFT", RIM, -s * RIM)
+	foot:SetPoint(v .. "LEFT", corner, v .. "RIGHT")
+	foot:SetPoint(other .. "RIGHT", menu, v .. "LEFT", RIM + JOIN, -s * RIM)
+	side:SetPoint(other .. "LEFT", corner, v .. "LEFT")
+	side:SetPoint(v .. "RIGHT", menu, v .. "LEFT", RIM, s * JOIN)
+	bend:SetPoint(other .. "LEFT", corner, v .. "RIGHT")
+	bend:SetPoint(v .. "RIGHT", menu, v .. "LEFT", RIM + JOIN, s * JOIN)
+	return foot
+end
+local topFoot = joint("TopJoin", "TOP", 1, { 1 - F, 1 }, { 0, 1 - F })
+local bottomFoot = joint("BottomJoin", "BOTTOM", -1, { 0, F }, { F, 1 })
 local tr, br = piece("TopRightCorner"), piece("BottomRightCorner")
 tr:SetSize(RIM, RIM)
 tr:SetPoint("TOPRIGHT")
 br:SetSize(RIM, RIM)
 br:SetPoint("BOTTOMRIGHT")
 local top, bottom = piece("TopEdge"), piece("BottomEdge")
-top:SetPoint("TOPLEFT", RIM + JOIN, 0)
+top:SetPoint("TOPLEFT", topFoot, "TOPRIGHT")
 top:SetPoint("BOTTOMRIGHT", tr, "BOTTOMLEFT")
-bottom:SetPoint("BOTTOMLEFT", RIM + JOIN, 0)
+bottom:SetPoint("BOTTOMLEFT", bottomFoot, "BOTTOMRIGHT")
 bottom:SetPoint("TOPRIGHT", br, "TOPLEFT")
 -- the right rim, the rule's end tucked under it, the right rim again
 local ruleRight = piece("RightRule")
