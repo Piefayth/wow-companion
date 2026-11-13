@@ -286,11 +286,10 @@ local function buildTabs(frame, messages)
 	well:SetPoint("TOPRIGHT", -(RIM + GAP), -WELL_TOP)
 	well:SetPoint("BOTTOMRIGHT", -(RIM + GAP), RIM + FOOT)
 	well:SetWidth(WELL)
-	-- its floor; ConvList.lua hides it, with the walls, for a look on the window's own stone
-	well.floor = well:CreateTexture(nil, "BACKGROUND", nil, 1)
-	WC.Style.Stone(well.floor, "you")
-	well.floor:SetPoint("TOPLEFT", FLOOR, -FLOOR)
-	well.floor:SetPoint("BOTTOMRIGHT", -FLOOR, FLOOR)
+	local back = well:CreateTexture(nil, "BACKGROUND", nil, 1)
+	WC.Style.Stone(back, "you")
+	back:SetPoint("TOPLEFT", FLOOR, -FLOOR)
+	back:SetPoint("BOTTOMRIGHT", -FLOOR, FLOOR)
 	frame.chatParts = frame.chatParts or {}
 	table.insert(frame.chatParts, well)
 	-- The transcript sits in a well of its own, an inset like the conversation

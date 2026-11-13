@@ -11,7 +11,7 @@ bare stone, the names scaled to the normal font) and the pad's glyphs (the
 round 4 shot, glyphs in sockets). Blizzard's voice chat mic (not in our files)
 is drawn here in its shape.
 
-    python tools/mock_convlist.py     writes target/tmp/convlist8/<look>.png and all.png (--offer: each with the offered button too)
+    python tools/mock_convlist.py     writes target/tmp/convlist9/<look>.png and all.png (--offer: each with the offered button too)
 """
 import os
 import re
@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-TMP = os.path.join(ROOT, "target", "tmp", "convlist8")
+TMP = os.path.join(ROOT, "target", "tmp", "convlist9")
 SHOTS = os.path.join(os.environ.get("LOCALAPPDATA", ""), "wow-companion", "shots")
 SHOT = os.path.join(SHOTS, "convlist5-full.png")  # 3840 x 2160, the window open on Chat, round 4's brass rows
 WORDS = os.path.join(SHOTS, "convlist4-full.png")  # the same window, round 2's rows: names on bare stone
@@ -74,7 +74,7 @@ def lay(lua, C, key, H, offered):
         r = out.rows[key_]
         rows[key_] = dict(x=r.x, y=r.y, w=r.w, h=r.h, name=r.name, chord=r.chord)
     offer = [out.offer[i] for i in range(1, 5)] if out.offer else None
-    return pieces, rows, offer, dict(bare=out.bare, x0=out.x0, x1=out.x1)
+    return pieces, rows, offer
 
 
 # --- the textures ---------------------------------------------------------------
@@ -301,13 +301,8 @@ def mock(lua, C, key, base, sample, words, gl, ptr, offered=False):
     H = (foot - top) / PX
     X = lambda u: left + u * PX  # noqa: E731
     Y = lambda u: top + u * PX  # noqa: E731
-    pieces, rows, offer, how = lay(lua, C, key, H, offered)
-    if how["bare"]:  # the well hidden: the window's own stone (Window.lua's frame.Bg, the dark stone at 0.72)
-        x0, x1 = int(round(left)), int(round(right)) + 1
-        img[int(top):int(foot) + 1, x0:x1] = stone_like(sample, int(foot) + 1 - int(top), x1 - x0) * 0.72
-        clip = (int(round(X(how["x0"]))), int(round(X(how["x1"]))))
-    else:
-        clip = (int(round(X(4))), int(round(X(W - 4))))  # the walls cover the rest
+    pieces, rows, offer = lay(lua, C, key, H, offered)
+    clip = (int(round(X(4))), int(round(X(W - 4))))  # the walls cover the rest
     ratio = light_ratio()
     pieces.sort(key=lambda p: (LAYERS[p["layer"]], p["sub"], p["i"]))
     for p in pieces:
