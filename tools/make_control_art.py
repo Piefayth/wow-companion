@@ -10,10 +10,11 @@ Pieces (UI units, U texture px each, as the scroll bar's):
                                     side: the slider's ends
   Slide-Mid 32 wide x 8 tall turned: 8x32, stretched sideways between them
   Slide-Thumb 48x32                 the heartwood thumb lying down
-  Step-<Left|Right>-<state> 32x32   the fleur alone, no groove: a choice's arrows
-  Plate-<Left|Mid|Right> 16x24      a slot carved in the stone, bark bordered,
-                                    showing a choice's value (Mid stretched)
-  Button-<state> 128x24             a raised slate plate in a bark border
+  Choice-<Left|Right>-<state> 40x32 the arrows joined to a slot as wide as the
+                                    value's line, as the slider's to its groove
+  Choice-Mid 8x32                   that slot, stretched between them
+  Button-<state> 128x28             a thick slate slab standing out of the stone
+                                    in a bark border
 
 Turned pieces are transposed, never rotated: a transpose keeps the light
 from the top left. The game keeps a texture for the session under its path,
@@ -32,7 +33,7 @@ import make_scrollbar_art as sb  # noqa: E402
 
 VERSION = 1
 OUT = sb.CORE_OUT
-SLATE = ((9, 10, 13), (24, 26, 31), (50, 52, 60))  # the button's raised slate: the stone's own dark, a step lighter at its lit edge
+SLATE = ((7, 8, 11), (27, 29, 35), (72, 74, 84))  # the button's raised slate: the stone's own dark, a step lighter at its lit edge
 
 
 def T(img):
@@ -60,8 +61,11 @@ def plate(w, h, face):
     cy = h / 2
     inner = stadium(2.2 + r, w - 2.2 - r, cy, r)
     if face == "raised":
+        # a thick slab standing out of the stone: a broad bevel, lit along its
+        # top edge, its shadow cast down and right
         m = pen.mask([inner])
-        c.metal(m, SLATE, bevel=1.4 * sb.U, outline=0, shadow=False, sheen=False, paint=True, grain=False, gloss=0.15)
+        sb.shadow(c, m, 0.8)
+        c.metal(m, SLATE, bevel=3.2 * sb.U, outline=0, shadow=False, sheen=True, paint=True, grain=False, gloss=0.3)
     elif face == "carved":
         sb.carve(c, pen.mask([inner]))
     hw = sb.BORDER_HW
@@ -69,6 +73,51 @@ def plate(w, h, face):
     sb.shadow(c, border, 0.4)
     c.metal(border, sb.BARK, bevel=0.6 * sb.U, outline=1.1, shadow=False, sheen=False, paint=True, grain=False, gloss=0.35)
     return c.final()
+
+
+def choice_set():
+    """A choice's arrows joined to its slot, as the slider's are to its groove:
+    the scroll bar's caps drawn round a groove as wide as the slot (20 units,
+    its borders at 5.1 and 26.9), the round end lower so it clears the fleur;
+    40 tall, turned to 40 x 32. Returns the caps by state and the slot's Mid."""
+    saved = {k: getattr(sb, k) for k in ("GT", "FOOT", "GX0", "GX1", "RAIL", "ARC", "Pen", "groove_end", "border_path")}
+    groove_end, border_path, Pen = sb.groove_end, sb.border_path, sb.Pen
+    try:
+        sb.GX0, sb.GX1, sb.RAIL = 6, 26, (5.1, 26.9)
+        sb.ARC = 16 - sb.RAIL[0]
+        sb.GT = 32.0
+        sb.FOOT = sb.GT - sb.ARC + 1.5
+
+        class Tall(Pen):
+            def __init__(self, c, h, flip=False, dy=0.0):
+                Pen.__init__(self, c, CAP, flip, dy)
+        sb.Pen = Tall
+        sb.groove_end = lambda pen, gt=None: groove_end(pen, sb.GT if gt is None else gt)
+        sb.border_path = lambda pen, gt=None: border_path(pen, sb.GT if gt is None else gt)
+        out = {}
+        for down in (False, True):
+            d = "Left" if not down else "Right"
+            imgs = {}
+            for mode in ("Normal", "Pushed", "Bare"):
+                c = sb.ucanvas(32, CAP)
+                sb.fleur_cap(c, down, mode)
+                imgs[mode] = c.final()
+            imgs["Pushed"][..., :3] *= 0.84
+            out[d + "-Normal"], out[d + "-Pushed"] = T(imgs["Normal"]), T(imgs["Pushed"])
+            out[d + "-Disabled"] = T(sb.greyed(imgs["Normal"]))
+            out[d + "-Highlight"] = T(sb.glow(imgs["Bare"]))
+        c = sb.ucanvas(32, 8)
+        sb.carve(c, sb.groove_run(c))
+        sb.border(Pen(c, 8), sb.straight_borders(Pen(c, 8)))
+        m = c.final()
+        out["Mid"] = T(np.repeat(m.mean(0, keepdims=True), m.shape[0], 0))
+        return out
+    finally:
+        for k, v in saved.items():
+            setattr(sb, k, v)
+
+
+CAP = 40  # a choice cap's length in units
 
 
 def main():
@@ -82,25 +131,16 @@ def main():
     sb.flat_grain(c)
     sb.heart_thumb(c)
     out["Slide-Thumb"] = T(c.final())
-    for down, dst in ((False, "Left"), (True, "Right")):
-        c = sb.ucanvas(32, 32)
-        sb.fleur_cap(c, down, "Bare")
-        bare = c.final()
-        pushed = bare.copy()
-        pushed[..., :3] *= 0.84
-        for state, img in (("Normal", bare), ("Pushed", pushed), ("Highlight", sb.glow(bare)), ("Disabled", sb.greyed(bare))):
-            out["Step-%s-%s" % (dst, state)] = T(img)
-    p = plate(48, 24, "carved")
-    q = 16 * sb.U
-    out["Plate-Left"], out["Plate-Right"] = p[:, :q], p[:, -q:]
-    mid = p[:, 2 * q - 2 * sb.U:2 * q + 2 * sb.U]
-    out["Plate-Mid"] = np.repeat(mid.mean(1, keepdims=True), mid.shape[1], 1)
-    b = plate(128, 24, "raised")
-    pushed = b.copy()
-    pushed[..., :3] *= 0.8
+    for k, v in choice_set().items():
+        out["Choice-" + k] = v
+    b = plate(128, 28, "raised")
+    # pressed: the slab pushed down into the stone, a unit lower and darker
+    pushed = np.zeros_like(b)
+    pushed[sb.U:] = b[:-sb.U]
+    pushed[..., :3] *= 0.78
     out["Button-Normal"], out["Button-Pushed"] = b, pushed
     # the glow warms the bark border alone, never the face
-    out["Button-Highlight"], out["Button-Disabled"] = sb.glow(plate(128, 24, None)), sb.greyed(b)
+    out["Button-Highlight"], out["Button-Disabled"] = sb.glow(plate(128, 28, None)), sb.greyed(b)
     for old in glob.glob(os.path.join(OUT, "Control-*.tga")):
         os.remove(old)
     for stem, rgba in out.items():

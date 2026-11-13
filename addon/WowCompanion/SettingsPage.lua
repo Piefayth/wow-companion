@@ -183,12 +183,49 @@ local function place(r, control, value)
 	control:SetPoint("RIGHT", r, "RIGHT", -(EDGE + (value and VALUE_W or 0)), 0)
 end
 
--- A choice from a list: their dropdown with steppers
--- (SettingsDropdownWithButtonsTemplate's own), its menu the game's. Left and
--- right are the steppers, confirm opens the menu the way their gamepad footer
--- does (MouseDown, MouseUp). A pick does not refresh the steppers by itself
--- (Settings re-inits on every change), so each pick signals the dropdown
--- again, or an end's disabled arrow stays disabled.
+-- The controls in the chat's language (tools/make_control_art.py): the same
+-- fleur arrows, carved groove, bark borders and heartwood thumb as the scroll
+-- bar, values in washed bronze. Each draws over the Blizzard control it
+-- stands in for, which stays (invisible) for its logic and its menu.
+local CONTROL_ART = [[Interface\AddOns\WowCompanion\Art\Control-]]
+local CONTROL_VERSION = 1 -- make_control_art.py's VERSION
+local function controlArt(piece) return CONTROL_ART .. piece .. "-" .. CONTROL_VERSION end
+local BRONZE = { 0.78, 0.66, 0.45 }
+local FILL = 7.8 / 5.25 -- the thumb widened to the groove's floor, as the chat's
+
+-- an arrow cap (Choice- or Slide-), a button of ours with the art's states
+local function cap(parent, kind, side, w, onClick)
+	local b = CreateFrame("Button", nil, parent)
+	b:SetSize(w, 32)
+	local base = kind .. "-" .. side .. "-"
+	b:SetNormalTexture(controlArt(base .. "Normal"))
+	b:SetPushedTexture(controlArt(base .. "Pushed"))
+	b:SetHighlightTexture(controlArt(base .. "Highlight"), "ADD")
+	b:SetDisabledTexture(controlArt(base .. "Disabled"))
+	b:SetScript("OnClick", onClick)
+	return b
+end
+-- the stretch between two caps
+local function between(parent, piece, left, right)
+	local t = parent:CreateTexture(nil, "ARTWORK")
+	t:SetTexture(controlArt(piece))
+	t:SetHeight(32)
+	t:SetPoint("LEFT", left, "RIGHT")
+	t:SetPoint("RIGHT", right, "LEFT")
+	return t
+end
+local function bronze(parent)
+	local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	fs:SetTextColor(unpack(BRONZE))
+	return fs
+end
+
+-- A choice from a list: the fleur arrows joined to a carved slot holding the
+-- value. Under it, invisible, Blizzard's dropdown with steppers
+-- (SettingsDropdownWithButtonsTemplate's own): its menu is the game's, opened
+-- the way their gamepad footer does (MouseDown, MouseUp), and anchored to it.
+-- A pick does not refresh their steppers by itself (Settings re-inits on every
+-- change), so each pick signals the dropdown again.
 local function dropdown(row)
 	local control
 	local r = settingRow(row, function(dir)
@@ -196,51 +233,116 @@ local function dropdown(row)
 	end, "Change")
 	control = CreateFrame("Frame", nil, r, "Metal2DropdownWithSteppersAndLabelTemplate")
 	local dd = control.Dropdown
-	-- the steppers either side, inside the control's width
-	-- as wide as a slider and its value together, so the left arrows of both
-	-- start at one line and both end at the edge
+	-- as wide as a slider and its value together, so both start at one line
+	-- and end at the edge
 	dd:SetWidth(CONTROL_W + VALUE_W - 50)
 	control:SetSize(CONTROL_W + VALUE_W, 26)
 	place(r, control)
+	control:SetAlpha(0)
+	local face = CreateFrame("Frame", nil, r)
+	face:SetSize(CONTROL_W + VALUE_W, 32)
+	face:SetAllPoints(control)
+	face:SetFrameLevel(control:GetFrameLevel() + 5)
+	local less = cap(face, "Choice", "Left", 40, function() control.DecrementButton:Click() end)
+	less:SetPoint("LEFT")
+	local more = cap(face, "Choice", "Right", 40, function() control.IncrementButton:Click() end)
+	more:SetPoint("RIGHT")
+	between(face, "Choice-Mid", less, more)
+	local value = bronze(face)
+	value:SetPoint("LEFT", less, "RIGHT", 2, 0)
+	value:SetPoint("RIGHT", more, "LEFT", -2, 0)
+	-- the value and the arrows from the row itself: an arrow greys at its end
+	local function paint()
+		local names, at = row.options(), 0
+		for i, name in ipairs(names) do if name == row.get() then at = i end end
+		value:SetText(textOf(row.get()) or "")
+		less:SetEnabled(at > 1)
+		more:SetEnabled(at > 0 and at < #names)
+	end
 	dd:SetupMenu(function(_, root)
 		for _, name in ipairs(row.options()) do
 			root:CreateRadio(name, function(n) return n == row.get() end, function(n) row.set(n) dd:SignalUpdate() end, name)
 		end
 	end)
-	refreshers[#refreshers + 1] = function() dd:GenerateMenu() end
+	dd:RegisterCallback(DropdownButtonMixin.Event.OnUpdate, paint, face)
+	refreshers[#refreshers + 1] = function() dd:GenerateMenu() paint() end
 	control:SetSteppersShown(true)
 	WC.MarkIgnored(control)
+	WC.MarkIgnored(face)
+	face:SetScript("OnShow", paint)
+	paint()
 	r:SetScript("OnClick", function() dd:MouseDown() dd:MouseUp() end)
 	return r
 end
 
--- A number in a range: their slider with steppers, its value after it; left
--- and right step it as their footer does (OnStepperClicked).
+-- A number in a range: the scroll bar on its side, the heartwood thumb riding
+-- its groove, the value after it in bronze. Under it, invisible, Blizzard's
+-- slider with steppers keeps the value; left and right step it as their
+-- footer does (OnStepperClicked).
 local function slider(row)
 	local s
 	local r = settingRow(row, function(dir) s:OnStepperClicked(dir > 0) end, "Adjust")
 	s = CreateFrame("Frame", nil, r, "MinimalSliderWithSteppersTemplate")
 	s:SetWidth(CONTROL_W)
 	place(r, s, true)
-	local formatters = {
-		[MinimalSliderWithSteppersMixin.Label.Right] = CreateMinimalSliderFormatter(MinimalSliderWithSteppersMixin.Label.Right, row.format),
-	}
-	s:Init(row.get(), row.min, row.max, row.steps, formatters)
-	s:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, value) row.set(value) end, s)
-	if s.RightText then s.RightText:SetFontObject("GameFontHighlight") end
+	s:Init(row.get(), row.min, row.max, row.steps, {})
+	s:SetAlpha(0)
+	local face = CreateFrame("Frame", nil, r)
+	face:SetSize(CONTROL_W, 32)
+	face:SetPoint("RIGHT", r, "RIGHT", -(EDGE + VALUE_W), 0)
+	face:SetFrameLevel(s:GetFrameLevel() + 5)
+	local less = cap(face, "Slide", "Left", 32, function() s:OnStepperClicked(false) end)
+	less:SetPoint("LEFT")
+	local more = cap(face, "Slide", "Right", 32, function() s:OnStepperClicked(true) end)
+	more:SetPoint("RIGHT")
+	between(face, "Slide-Mid", less, more)
+	local thumb = face:CreateTexture(nil, "OVERLAY")
+	thumb:SetTexture(controlArt("Slide-Thumb"))
+	thumb:SetSize(36, 32 * FILL)
+	local value = bronze(face)
+	value:SetPoint("LEFT", face, "RIGHT", 4, 0)
+	-- the thumb's travel: between the groove's round ends (8 into each cap),
+	-- as the chat's stops a pixel short of them
+	local INSET = 24
+	local function paint(v)
+		v = v or row.get()
+		local span = math.max(1, row.max - row.min)
+		local frac = math.min(1, math.max(0, (v - row.min) / span))
+		local room = CONTROL_W - 2 * INSET - 36
+		thumb:ClearAllPoints()
+		thumb:SetPoint("CENTER", face, "LEFT", INSET + 18 + room * frac, 0)
+		value:SetText(row.format and row.format(v) or tostring(v))
+		less:SetEnabled(v > row.min)
+		more:SetEnabled(v < row.max)
+	end
+	s:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, v)
+		row.set(v)
+		paint(v)
+	end, s)
 	WC.MarkIgnored(s)
+	WC.MarkIgnored(face)
+	face:SetScript("OnShow", function() paint() end)
+	paint()
 	return r
 end
 
--- An action: their button where the other rows have their control
--- (SettingsButtonControlTemplate), footer-sized (their Defaults button is 96 x 22) so a rarely used action is
+-- An action: a button of ours where the other rows have their control
+-- (as Blizzard's SettingsButtonControlTemplate places theirs), footer-sized (their Defaults button is 96 x 22) so a rarely used action is
 -- not the loudest thing on the page; confirm on the row presses it.
 local function button(row)
 	local r = settingRow(row)
-	local b = CreateFrame("Button", nil, r, "UIPanelButtonTemplate")
-	b:SetSize(120, 22)
-	-- level with the dropdowns' outer arrows, which overhang their frame
-	b:SetPoint("RIGHT", r, "RIGHT", -(EDGE - 5), 0)
+	-- a slate slab standing out of the stone, its word in bronze
+	local b = CreateFrame("Button", nil, r)
+	b:SetSize(128, 28)
+	b:SetPoint("RIGHT", r, "RIGHT", -EDGE, 0)
+	b:SetNormalTexture(controlArt("Button-Normal"))
+	b:SetPushedTexture(controlArt("Button-Pushed"))
+	b:SetHighlightTexture(controlArt("Button-Highlight"), "ADD")
+	b:SetDisabledTexture(controlArt("Button-Disabled"))
+	local word = bronze(b)
+	b:SetFontString(word)
+	word:SetPoint("CENTER", 0, 1)
+	b:SetPushedTextOffset(0, -1)
 	b:SetText(textOf(row.button))
 	refreshers[#refreshers + 1] = function() b:SetText(textOf(row.button)) end
 	b:SetScript("OnClick", row.onClick)
