@@ -230,21 +230,13 @@ def frame_pieces():
     }
 
 
-DRAWER_VERSION = 24  # ConvMenu.lua's
+DRAWER_VERSION = 25  # ConvMenu.lua's
 DW, DH = 60.0, 60.0  # the drawn drawer, from the window's outer edge
 DRULE = DH - RIM - 24.0  # the legend's rule (ConvMenu.lua's FOOT under it)
 ELBOW = 11.0  # the radius the drawer's rims bend up and down into the window's by
-WIRE = 1.4  # the volute's wire, its radius
-JOIN = 24.0  # how far a joint piece reaches past the window's rim, out and up
-
-
-def volute(cx, cy, r0, a0, hug, turns, shrink, sense=1, n=700):
-    """A spiral from angle a0 at radius r0: r0 held for `hug` of a turn, then
-    closing in by shrink a turn."""
-    t = np.linspace(0, turns, n)
-    a = np.radians(a0) + sense * 2 * np.pi * t
-    r = r0 - shrink * np.clip(t - hug, 0, None)
-    return np.stack([cx + r * np.cos(a), cy + r * np.sin(a)], 1)
+JOIN = 18.0  # how far a joint piece reaches past the window's rim, out and up:
+# RIM + JOIN is 24, drawn at 256 px, the edges' 64 px a RIM, so the pieces
+# meet texel for texel (at another density the game filters them apart)
 
 
 def drawer():
@@ -252,12 +244,10 @@ def drawer():
     player's pick, 2026-11-13), out of the window's right side: its own rim on
     three sides, the window rim's profile by depth inside the outline of
     window and drawer together, its inside corners rounded by ELBOW, so the
-    drawer's top and bottom rims bend into the window's; in each bend a
-    volute of wire hugging it. The legend's rule, the title rule's make,
-    across it. Drawn with the window's rim at x 0..RIM (its outer edge at
+    drawer's top and bottom rims bend into the window's. The legend's rule,
+    the title rule's make, across it. Drawn with the window's rim at x 0..RIM (its outer edge at
     RIM), JOIN above and below the drawer for the elbows, and ELBOW + 4 past its right
     edge for the depth; returns the picture from y -JOIN, x 0."""
-    from scipy.spatial import cKDTree
     k = K
     w = RIM + DW
     xx, yy = grid(w + ELBOW + 4, DH + 2 * JOIN, k)
@@ -271,7 +261,7 @@ def drawer():
     sd = (ndimage.distance_transform_edt(shape) / k).astype(np.float32)
     # members by height, the higher showing where they overlap
     # and the way each faces, for its light (shade's out): the rims outward,
-    # the rule and the wire as the top edge
+    # the rule as the top edge
     h = np.zeros(xx.shape)
     dark = np.zeros(xx.shape)
     grain = np.zeros(xx.shape)
@@ -290,15 +280,6 @@ def drawer():
     u = yy - DRULE
     rule = (u >= 0) & (u < 3.0) & (xx >= RIM) & (sd > 2.5)
     add(rule, bar(np.clip(u, 0, 3.0), 3.0) * 0.85, np.clip(1 - np.minimum(u, 3.0 - u) / 0.4, 0, 1), brushed(u * 9, 5))
-    # the volutes, round wire hugging each elbow's bend
-    rad = ELBOW - WIRE - 0.4
-    curls = [volute(RIM + ELBOW, cy, rad, a0, 0.3, 1.7, (rad - 1.6) / 1.4 * 0.75, sense=sense)
-             for cy, a0, sense in ((-ELBOW, 90, 1), (DH + ELBOW, 270, -1))]
-    dist, _ = cKDTree(np.concatenate(curls)).query(np.stack([xx.ravel(), yy.ravel()], 1), distance_upper_bound=WIRE + 1)
-    d = np.where(np.isfinite(dist), WIRE - dist, -1).reshape(xx.shape)
-    dd = np.clip(d, 0, WIRE)
-    wire = d > 0
-    add(wire, np.sqrt(dd * (2 * WIRE - dd)) / WIRE * 1.05 + 0.25, np.clip(1 - d / 0.45, 0, 1), brushed(np.clip(d * 6, 0, 59), 9))
     hgt = ndimage.gaussian_filter(h, k * 0.1)
     col = rim_metal(hgt, BRONZE, k, face) * (1 + 0.09 * grain)[..., None]
     col = col + (LINE - col) * np.clip(dark, 0, 0.9)[..., None]
@@ -309,16 +290,13 @@ def drawer():
     occl = np.maximum(np.exp(-(sd - RIM) / 0.9) * 0.75, np.exp(-(yy - DRULE - 3.0) / 0.6) * 0.45)
     bcol = bcol * (1 - np.clip(occl, 0, 0.8))[..., None]
     lay = Layers(xx.shape)
-    # the volutes' shadow on what is behind them
-    cast = ndimage.gaussian_filter(ndimage.shift(wire.astype(float), (0.8 * k, 0.6 * k), order=0), k * 0.7)
-    lay.over(np.zeros(3), np.clip(cast, 0, 1) * 0.6 * ~m)
     lay.over(np.where(band[..., None], bcol, col), (m | band).astype(float))
     return lay.pre()[:, :int(round(w * k))]
 
 
 def drawer_pieces():
     """The drawer's pieces: each joint holds the window's rim beside it (put
-    over the window's own) and its elbow and volute, above or below the
+    over the window's own) and its elbow, above or below the
     drawer; the rest as the frame's are."""
     pre = drawer()
     k = K
@@ -327,8 +305,8 @@ def drawer_pieces():
         return pre[int(round((y0 + JOIN) * k)):int(round((y1 + JOIN) * k)), int(round(x0 * k)):int(round(x1 * k))]
     c, w, mid = RIM, RIM + DW, RIM + DW / 2
     return {
-        "Drawer-TopJoin": fit(cut(0, -JOIN, c + JOIN, c), (128, 128)),
-        "Drawer-BottomJoin": fit(cut(0, DH - c, c + JOIN, DH + JOIN), (128, 128)),
+        "Drawer-TopJoin": fit(cut(0, -JOIN, c + JOIN, c), (256, 256)),
+        "Drawer-BottomJoin": fit(cut(0, DH - c, c + JOIN, DH + JOIN), (256, 256)),
         "Drawer-TopEdge": fit(cut(mid - 1, 0, mid + 1, c), (16, 64)),
         "Drawer-BottomEdge": fit(cut(mid - 1, DH - c, mid + 1, DH), (16, 64)),
         "Drawer-TopRightCorner": fit(cut(w - c, 0, w, c), (64, 64)),

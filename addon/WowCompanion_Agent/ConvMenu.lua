@@ -12,7 +12,7 @@
 -- window's right side, level with its row, and has its own rim on its three
 -- outer sides, the window rim's own profile (tools/make_frame_art.py,
 -- drawer(), Drawer-*): its top and bottom rims bend up and down into the
--- window's rim, a volute of wire in each bend (drawer round 9's 6), so the
+-- window's rim (drawer round 9's 6, its volutes taken off), so the
 -- joints' pieces reach past the drawer, hold the window's rim beside them
 -- and lie over it. Inside, the window's body slate, the options as compact
 -- rows of the list's names (no dividers; the one under the cursor on the
@@ -20,8 +20,8 @@
 -- a band of its own for what cross and circle do.
 local W, ROW, FOOT, PAD = 160, 24, 24, 6
 local RIM, RULE = 6, 3 -- the window's rim (Window.lua), the rule's width
-local JOIN = 24 -- a joint piece's reach past the window's rim, out and up (make_frame_art.py's)
-local DRAWER = [[Interface\AddOns\WowCompanion_Agent\Art\Drawer-%s-24]] -- make_frame_art.py's DRAWER_VERSION
+local JOIN = 18 -- a joint piece's reach past the window's rim, out and up: RIM + JOIN at the edges' texel density (make_frame_art.py's)
+local DRAWER = [[Interface\AddOns\WowCompanion_Agent\Art\Drawer-%s-25]] -- make_frame_art.py's DRAWER_VERSION
 local menu = CreateFrame("Frame", "WCConvMenu", UIParent)
 menu:Hide()
 local function piece(name, layer, sub)
