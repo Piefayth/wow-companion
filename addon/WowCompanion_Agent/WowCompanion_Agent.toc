@@ -10,6 +10,7 @@ Stow.lua
 Offer.lua
 Steps.lua
 Sandbox.lua
+ConvList.lua
 Window.lua
 FocusArt.lua
 Transcript.lua
