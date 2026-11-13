@@ -63,21 +63,40 @@ local function SecureButton(name)
     return button
 end
 
--- The slot the right stick points at, or nil when it is not past `needed`.
+-- The pick is the right stick's direction keys held (PADRSTICKUP and the rest,
+-- each a click on WCWheelAim): their sum points at the nearest slot, so up and
+-- right held together is the up-right slot. The game's own key thresholds draw
+-- the borders, and every key edge is seen, so the highlight (wc-sticky, which
+-- the look shows) is always what a release or R2 uses. Returns the slot, or nil
+-- with no key held.
 ring:SetAttribute("wc-pick", [[
-    local needed = ...
+    local dx, dy = 0, 0
+    if self:GetAttribute("wc-held-PADRSTICKUP") then dy = dy + 1 end
+    if self:GetAttribute("wc-held-PADRSTICKDOWN") then dy = dy - 1 end
+    if self:GetAttribute("wc-held-PADRSTICKLEFT") then dx = dx - 1 end
+    if self:GetAttribute("wc-held-PADRSTICKRIGHT") then dx = dx + 1 end
+    if dx == 0 and dy == 0 then return nil end
+    local key = self:GetAttribute("wc-active")
+    local best, bestDot
+    for index = 1, self:GetAttribute(key .. "-count") or 0 do
+        local dot = dx * self:GetAttribute(key .. "-dx-" .. index) + dy * self:GetAttribute(key .. "-dy-" .. index)
+        if not bestDot or dot > bestDot then best, bestDot = index, dot end
+    end
+    return best
+]])
+-- The stick's push now (0 centre, 1 the rim), or nil with no reading.
+ring:SetAttribute("wc-push", [[
     local state = GetGamePadState()
     local sticks = state and state.sticks
     local stick = sticks and sticks[self:GetAttribute("wc-stick") or 2]
     if not (stick and stick.x and stick.y) then return nil end
-    if stick.x * stick.x + stick.y * stick.y < needed then return nil end
-    local key = self:GetAttribute("wc-active")
-    local best, bestDot
-    for index = 1, self:GetAttribute(key .. "-count") or 0 do
-        local dot = stick.x * self:GetAttribute(key .. "-dx-" .. index) + stick.y * self:GetAttribute(key .. "-dy-" .. index)
-        if not bestDot or dot > bestDot then best, bestDot = index, dot end
+    return (stick.x * stick.x + stick.y * stick.y) ^ 0.5
+]])
+-- forget the keys held (the ring opening or closing)
+ring:SetAttribute("wc-forget", [[
+    for _, key in ipairs(newtable("PADRSTICKUP", "PADRSTICKDOWN", "PADRSTICKLEFT", "PADRSTICKRIGHT")) do
+        self:SetAttribute("wc-held-" .. key, nil)
     end
-    return best
 ]])
 
 -- R2 becomes "use" while the ring is up, but only once let go if it was held
@@ -112,6 +131,7 @@ local OPEN_SNIPPET = [[
     if (ring:GetAttribute(key .. "-count") or 0) < 1 then return false end
     ring:SetAttribute("wc-sticky", nil)
     ring:SetAttribute("wc-aimed", nil)
+    ring:RunAttribute("wc-forget")
     ring:SetAttribute("wc-active", key)
     ring:Show()
     return false
@@ -139,9 +159,11 @@ local LOAD_PICK = [[
 ]]
 
 -- Right stick directions (as keys): move the sticky pick, and use it when the
--- stick is let go. A direction key going up while the stick is still pushed
--- is the stick turning (up to up-right, say), not a release, so it only moves
--- the pick. The action runs on the up edge, hence useOnKeyDown false.
+-- last key is let go. A key going down always moves the pick. A key going up
+-- moves it only while the stick is still pushed out to the rim (the stick
+-- turning, up-right to right); a stick on its way back to the centre lets its
+-- keys go one at a time, and the first of them must not turn a diagonal into
+-- its neighbour. The action runs on the up edge, hence useOnKeyDown false.
 local aim = SecureButton("WCWheelAim")
 aim:RegisterForClicks("AnyDown", "AnyUp")
 aim:SetAttribute("useOnKeyDown", false)
@@ -150,29 +172,16 @@ SecureHandlerWrapScript(aim, "OnClick", aim, [[
     local ring = self:GetFrameRef("ring")
     ring:RunAttribute("wc-take-r2")
     if not ring:IsShown() then return false end
-    -- On the up edge only a stick still pushed well out is a turn between
-    -- directions; at 0.5 a normal release, read as the key lets go near that
-    -- same threshold, was taken for a turn and nothing was used.
-    local pick = ring:RunAttribute("wc-pick", down and 0.12 or 0.8)
-    -- A fast flick can be over before the stick state shows it: the key goes
-    -- down while GetGamePadState still reads the centre, and nothing was aimed,
-    -- so the release did nothing. The key itself names a direction; aim there.
-    if down and not pick then
-        local dx, dy = 0, 0
-        if button == "PADRSTICKUP" then dy = 1 elseif button == "PADRSTICKDOWN" then dy = -1
-        elseif button == "PADRSTICKLEFT" then dx = -1 elseif button == "PADRSTICKRIGHT" then dx = 1 end
-        local key = ring:GetAttribute("wc-active")
-        local bestDot
-        for index = 1, ring:GetAttribute(key .. "-count") or 0 do
-            local dot = dx * ring:GetAttribute(key .. "-dx-" .. index) + dy * ring:GetAttribute(key .. "-dy-" .. index)
-            if not bestDot or dot > bestDot then pick, bestDot = index, dot end
-        end
-    end
+    ring:SetAttribute("wc-held-" .. button, down or nil)
+    local pick = ring:RunAttribute("wc-pick")
     if pick then
-        ring:SetAttribute("wc-sticky", pick)
-        ring:SetAttribute("wc-aimed", true)
+        if down or (ring:RunAttribute("wc-push") or 0) >= 0.85 then
+            ring:SetAttribute("wc-sticky", pick)
+            ring:SetAttribute("wc-aimed", true)
+        end
         return false
     end
+    -- no key held: the stick is let go
     if down or not ring:GetAttribute("wc-aimed") then return false end
     pick = ring:GetAttribute("wc-sticky")
     if not pick then return false end
@@ -218,7 +227,7 @@ SecureHandlerWrapScript(use, "OnClick", use, [[
     if not down and not self:GetAttribute("wc-pressed") then return false end
     self:SetAttribute("wc-pressed", nil)
     local key = ring:GetAttribute("wc-active")
-    local pick = ring:RunAttribute("wc-pick", 0.25) or ring:GetAttribute("wc-sticky")
+    local pick = ring:GetAttribute("wc-sticky")
     if not pick then return false end
 ]] .. LOAD_PICK .. [[
 ]])
@@ -252,6 +261,7 @@ SecureHandlerWrapScript(ring, "OnHide", ring, [[
     self:ClearBindings()
     self:SetAttribute("wc-waiting", nil)
     self:SetAttribute("wc-aimed", nil)
+    self:RunAttribute("wc-forget")
 ]])
 
 -- Out of combat a held R2 is taken as soon as it is let go, not only at the
@@ -280,8 +290,10 @@ ring:HookScript("OnShow", function()
 end)
 ring:HookScript("OnHide", RestoreAxis)
 
+-- the look shows the secure pick itself, never a reading of its own
 ring:SetScript("OnUpdate", function()
-    look:Aim(ringData[ring:GetAttribute("wc-active")] or {}, ring:GetAttribute("wc-sticky"))
+    local pick = ring:GetAttribute("wc-sticky")
+    if pick ~= look.lit then look:Light(pick, ringData[ring:GetAttribute("wc-active")] or {}) end
 end)
 ring:HookScript("OnShow", function()
     local key = ring:GetAttribute("wc-active")
