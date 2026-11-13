@@ -395,23 +395,24 @@ end
 -- height is told by what is round it, as light from the top left would. The
 -- page's lower well beside it takes its shadow, hard-edged, over whatever lies
 -- there (WC.Style.CastOn, drawn in a frame of the caller's over the lower
--- well's contents and under the vines); the window's top shadow is cut or
--- shortened over it (Window.lua, page.raised); its own stone lighter, nearer
--- the light. On trial (the player, 2026-11-12): RAISE_LOOKS, picked live on
+-- well's contents and under the vines); the window's top shadow is cut over
+-- it (Window.lua, page.raised); its own stone lighter, nearer
+-- the light. On trial (the player, 2026-11-12/13): RAISE_LOOKS, picked live on
 -- the Settings page (WowCompanionDB.raisedLook); the looks not picked go when
--- one is chosen. Each: the raised stone's shade; the shadow's solid width,
--- its fading edge and its darkness; the window's top shadow over it ("cut" or
--- "short"); a faint lit line along its top and left edges (rim), or none.
+-- one is chosen. Round 6 keeps round 5's lit rim and lighter stone and tries
+-- its shadow (round 5's was liked but too strong or too hard). Each: the raised
+-- stone's shade; the shadow's solid width, its fading edge and its darkness; a
+-- faint lit line along its top and left edges (rim).
 local RAISE_LOOKS = {
-	{ name = "Hard shadow", shade = 0.6, cast = 6, soft = 3, alpha = 0.6, lip = "cut" },
-	{ name = "Hard shadow, lighter stone", shade = 0.8, cast = 6, soft = 3, alpha = 0.6, lip = "cut" },
-	{ name = "Lighter, frame shadow short", shade = 0.8, cast = 6, soft = 3, alpha = 0.6, lip = "short" },
-	{ name = "Lighter, lit rim", shade = 0.8, cast = 6, soft = 3, alpha = 0.6, lip = "cut", rim = 0.08 },
-	{ name = "Taller", shade = 0.85, cast = 11, soft = 4, alpha = 0.65, lip = "cut" },
-	{ name = "Lower", shade = 0.75, cast = 3, soft = 2, alpha = 0.5, lip = "short" },
+	{ name = "Round 5 (as was)", shade = 0.8, cast = 6, soft = 3, alpha = 0.6, rim = 0.08 },
+	{ name = "Same shape, lighter", shade = 0.8, cast = 6, soft = 3, alpha = 0.38, rim = 0.08 },
+	{ name = "Same weight, softer edge", shade = 0.8, cast = 3, soft = 8, alpha = 0.55, rim = 0.08 },
+	{ name = "Lighter and softer", shade = 0.8, cast = 3, soft = 7, alpha = 0.4, rim = 0.08 },
+	{ name = "All fade, wide", shade = 0.8, cast = 1, soft = 12, alpha = 0.5, rim = 0.08 },
+	{ name = "Faint and tight", shade = 0.8, cast = 3, soft = 2, alpha = 0.3, rim = 0.08 },
 }
 WowCompanion_Style.RAISE_LOOKS = RAISE_LOOKS
-local raisedStones, casts, lookHooks = {}, {}, {}
+local raisedStones, casts = {}, {}
 function WowCompanion_Style.RaisedLook()
 	local want = WowCompanionDB and WowCompanionDB.raisedLook
 	for _, look in ipairs(RAISE_LOOKS) do
@@ -454,11 +455,6 @@ function WowCompanion_Style.PaintRaised(name)
 	local look = WowCompanion_Style.RaisedLook()
 	for _, r in ipairs(raisedStones) do paintRaised(r, look) end
 	for _, c in ipairs(casts) do paintCast(c, look) end
-	for _, fn in ipairs(lookHooks) do fn(look) end
-end
--- fn(look) runs as the look changes (the window's top shadow, Window.lua)
-function WowCompanion_Style.OnRaisedLook(fn)
-	lookHooks[#lookHooks + 1] = fn
 end
 -- a raised well's shadow along side of the lower well's stone, drawn in over
 function WowCompanion_Style.CastOn(over, stone, side)

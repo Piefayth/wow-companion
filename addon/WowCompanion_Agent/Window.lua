@@ -377,34 +377,19 @@ local function buildTabs(frame, messages)
 	pageLip:SetHeight(24)
 	pageLip:SetFrameLevel(pageWell:GetFrameLevel() + 20)
 	-- over a page's raised well (p.raised, its stone, set as the page is
-	-- shown) the window's top shadow is cut, or short as on something nearer
-	-- it (WC.Style's raised look); a second lip draws the short one
-	local raisedLip = CreateFrame("Frame", nil, pageWell)
-	raisedLip:SetFrameLevel(pageWell:GetFrameLevel() + 20)
-	local raisedShade = raisedLip:CreateTexture(nil, "OVERLAY")
-	raisedShade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
-	raisedShade:SetAllPoints()
+	-- shown) the window's top shadow is cut
 	function frame.placeLip()
 		local p = pages[frame.currentTab or 1]
 		local raised = p and p.raised
 		pageLip:ClearAllPoints()
 		pageLip:SetPoint("TOPRIGHT", -INSET, -INSET)
 		pageLip:SetHeight(24)
-		raisedLip:Hide()
 		if not raised then
 			pageLip:SetPoint("TOPLEFT", INSET, -INSET)
 			return
 		end
 		pageLip:SetPoint("TOPLEFT", raised, "TOPRIGHT", 0, FLOOR - INSET)
-		if WC.Style.RaisedLook().lip == "short" then
-			raisedLip:ClearAllPoints()
-			raisedLip:SetPoint("TOPLEFT", INSET, -INSET)
-			raisedLip:SetPoint("TOPRIGHT", pageLip, "TOPLEFT")
-			raisedLip:SetHeight(10)
-			raisedLip:Show()
-		end
 	end
-	WC.Style.OnRaisedLook(function() frame.placeLip() end)
 	local pageShade = pageLip:CreateTexture(nil, "OVERLAY")
 	pageShade:SetTexture([[Interface\Common\ShadowOverlay-Top]])
 	pageShade:SetAllPoints()
