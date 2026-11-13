@@ -41,6 +41,12 @@ none of this. When the player states a new preference or changes one, write it h
   rejected; the lit well and a small lit socket for a button glyph are
   tolerable. The slate is reused too much and getting old: new pieces want
   a fresh material, not more slate.
+  **Existing parts first** (2026-11-12): build new pieces from the window's
+  own parts (vines, wire scrollwork, the two stones, bronze, the crests)
+  until an insufficiency is identified; a "fresh material" never means a
+  new world. Six looks in wood, leather, brass, enamel, iron and lacquer
+  were rejected as foreign to the window. Rows in a list are compact, not
+  full-height cells sharing the well.
   Tabs never open into the chat (2026-11-12): its stone is shaded to sit back
   and scrolls, so no tab can join it; tabs stand apart, on its border.
 - **Options, built and side by side** (2026-11-12): they hand us the legwork
