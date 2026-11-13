@@ -142,8 +142,6 @@ across:SetPoint("LEFT", band, "TOPLEFT", -2 - SEAM / 2, SEAM / 2)
 across:SetPoint("RIGHT", band, "TOPRIGHT", BX, SEAM / 2)
 WC.Style.VineLine(across, "Thick", false, false, true)
 WC.Style.VineJoin(across, "Thick", "TRightBig", "LEFT")
--- the raised names well's shadow falls on the settings, over their rows
-WC.Style.CastOn(raised, seams)
 page:HookScript("OnShow", function() WC.Style.PaintRaised() end)
 
 -- One setting: a row from the names well to the right edge, its name at the left
