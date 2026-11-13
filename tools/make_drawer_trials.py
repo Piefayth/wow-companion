@@ -6,9 +6,9 @@ has picked one.
     python tools/make_drawer_trials.py   writes addon/WowCompanion_Agent/Art/DrawerTrial-*-<v>.tga
                                          and target/drawer-trials.png (all of them, text mocked)
 
-Round 4 (round 1, the six concepts, d5d8e49; round 2, filleted joints,
-4c49c05; round 3, the settings crests' halves, beb6100): the settings page's
-technique, its shapes drawn here (below). A cell is drawn as the game would draw
+Round 5 (round 1 d5d8e49, 2 4c49c05, 3 beb6100, 4 5ed179c): the crossing
+itself as the settings joint's, a four-filleted star of one metal with one
+unbroken ridge of light, the ornament springing from the star. A cell is drawn as the game would draw
 the drawer: a base picture (a slice of the window's right side, faded where
 it is cut, and the drawer butted against its rim, with the legend's panel)
 and, over each place the drawer's top and bottom rims meet the window's rim, a
@@ -31,7 +31,7 @@ import artout
 from make_frame_art import grid, bead, rim_metal, Layers, fit, octagon_depth, brushed, streaks, BRONZE, LINE, BAND
 from make_scrollbar_art import write_tga, Wire
 
-VERSION = 4  # DrawerTrials.lua's
+VERSION = 5  # DrawerTrials.lua's
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 STONE = os.path.join(ROOT, "addon", "WowCompanion", "Art", "%s-6.tga")
@@ -143,6 +143,15 @@ class Joint:
         self.through = through
 
 
+STAR_POINT = 4.0  # the drawer's rim's diamond point inside the window
+STAR_FILLET = 1.8  # the crossing's four fillets
+
+
+def crossings(j):
+    """The crossings' middles, where the bars meet."""
+    return [(X0 - RIM / 2, (DT if m == "Top" else DB - RIM) + RIM / 2) for m in j.through]
+
+
 BUTT = Joint(0.0, 0.0)  # the base: the drawer's rims butted against the window's
 
 
@@ -158,32 +167,42 @@ def metal(j, legend_extra):
     m = closing(m, 2.0) & ~(near_meetings(14) & (j is BUTT)) | m
     if j.inner > 0:
         m = m | (closing(m, j.inner) & near_meetings(j.inner * 3 + 8))
-    # through: the drawer's rim on across the window's to a round end inside
-    # it, its bead with it (its own depth, s_t)
-    s_t = np.full(xx.shape, np.inf, np.float32)
     for meeting in j.through:
+        # the crossing as the settings joint's: one metal, a four-pointed
+        # star, a fillet in every corner (the window's side too), the drawer's
+        # rim through to a short diamond point inside the window
         top = meeting == "Top"
         y0 = DT if top else DB - RIM
+        cy = y0 + RIM / 2
         m = m | rect(XL, y0, X0 + 1, y0 + RIM)
-        band = (xx >= XL - RIM / 2) & (xx < X0 + 2) & (yy >= y0) & (yy < y0 + RIM)
-        s_t = np.where(band, (yy - DT) if top else (DB - yy), s_t)
+        m = m | polys([[(XL, y0), (XL - STAR_POINT, cy), (XL, y0 + RIM)]])
+        near = np.hypot(xx - (X0 - RIM / 2), yy - cy) < STAR_FILLET * 3 + RIM
+        m = m | (closing(m, STAR_FILLET) & near)
     if j.pieces:
         orn = polys(j.pieces)
         # fillets only where a wire meets the frame; a volute's own gaps stay open
         m = m | orn | (closing(m | orn, j.weld) & (edt(~m) < j.weld + 0.7))
-    return m, s_out, np.where(strip, s_w, np.inf), s_t
+    return m, s_out, np.where(strip, s_w, np.inf)
 
 
 def metal_layer(j, legend_extra):
     """The metal and the shadow it casts, premultiplied at final pixels,
     and the shadow's own alpha."""
-    m, s_out, s_w, s_t = metal(j, legend_extra)
+    m, s_out, s_w = metal(j, legend_extra)
     d = edt(m)
     sh = np.clip(d / 1.1, 0, 1)
     hgt = (1 - (1 - sh) ** 2) * 0.68 + 0.11 * np.clip(d / 2.45, 0, 1)
     # the beads: the outer edge's, round the drawer, the window's own on down
     # through the meeting, and the drawer's on across it where it runs through
-    beads = np.maximum.reduce([bead(np.clip((f - 2.0) / 1.25, -1, 1)) for f in (s_out, s_w, s_t)])
+    beads = np.maximum.reduce([bead(np.clip((f - 2.0) / 1.25, -1, 1)) for f in (s_out, s_w)])
+    # at a crossing the bead is the metal's own ridge (from its depth alone),
+    # so the two bars' beads run into one unbroken star of light, as the
+    # settings joint's do; blended out to the rims' own beads
+    star = bead(np.clip((np.minimum(d, 2.0) - 2.0) / 1.25, -1, 1))
+    w = np.zeros(xx.shape, np.float32)
+    for cx, cy in crossings(j):
+        w = np.maximum(w, smoothstep((14.0 - np.hypot(xx - cx, yy - cy)) / 6.0))
+    beads = beads * (1 - w) + star * w
     hgt = ndimage.gaussian_filter(np.where(m, hgt + 0.6 * beads, 0), K * 0.1)
     s = np.clip(np.minimum(s_out, s_w), 0, 59)
     col = rim_metal(hgt, BRONZE, K) * (1 + 0.09 * brushed(s))[..., None]
@@ -306,62 +325,69 @@ def both(pieces):
 
 def wires(*ws):
     """(wire, root half-width, tip half-width) as metal."""
-    return [q for w, w0, w1 in ws for q in w.pieces(w0, w1)]
+    # a tip as heavy as the volute's last turn leaves room for, its eye open
+    return [q for w, w0, w1 in ws for q in w.pieces(w0, min(w1, (getattr(w, "pitch", 99) - 1.0) / 2))]
 
 
 BOTH = ("Top", "Bottom")  # the meetings where the drawer's rim runs through
 
 
-def climb():
-    """A stem leaving the window's rim steeply, rising into a big volute over
-    the drawer; a satellite off its root turning down toward the drawer."""
-    stem = Wire((X0 - 0.5, 36), -35).volute((X0 + 18, 16), 8.5, 180, 1, 2.0, eye=2.2, out=0.5, inn=0.45)
-    sat = stem.fork(0.18, 75).volute((X0 + 15, 36), 4.8, 180, -1, 1.0, eye=1.9, out=0.6, inn=0.5)
-    return wires((stem, 2.0, 0.85), (sat, 1.5, 0.9))
+# The ornament springs from the crossing's middle, out of the star's corner
+# into the free quadrant (above the drawer, outside the window), as the
+# settings joint's stems leave its crossing.
+CX, CY = X0 - RIM / 2, DT + RIM / 2  # the top crossing's middle
+ROOT_HEADING = -45  # heading out of the star's corner, up and away
 
 
-def runner():
-    """A stem leaving the drawer's rim steeply out along it, into a volute
-    curling away from the window; a satellite off it curling back toward it."""
-    stem = Wire((X0 + 12, DT + 0.5), -55).volute((X0 + 30, 22), 8.0, 180, 1, 2.0, eye=2.2, out=0.5, inn=0.45)
-    sat = stem.fork(0.22, -55).volute((X0 + 8, 18), 5.0, 0, -1, 1.0, eye=1.9, out=0.55, inn=0.5)
-    return wires((stem, 2.0, 0.85), (sat, 1.5, 0.9))
-
-
-def bracket():
-    """A shelf bracket forged into both rims, square to each where it meets
-    it, a volute grown off its belly into the corner."""
-    s = Wire((X0 - 0.5, 8), 0).to((X0 + 34, DT + 0.5), 90, out=0.55, inn=0.55)
-    bud = s.fork(0.5, 95).volute((X0 + 12, 30), 5.0, 0, 1, 1.0, eye=1.9, out=0.5, inn=0.5)
-    return wires((s, 2.0, 2.0), (bud, 1.5, 0.9))
-
-
-def bracket_out():
-    """The bracket, a volute grown off its back out of the corner."""
-    s = Wire((X0 - 0.5, 8), 0).to((X0 + 34, DT + 0.5), 90, out=0.55, inn=0.55)
-    bud = s.fork(0.42, -80).volute((X0 + 33, 12), 5.5, 180, 1, 1.0, eye=1.9, out=0.5, inn=0.5)
-    return wires((s, 2.0, 2.0), (bud, 1.5, 0.9))
+def sprig():
+    """One stem out of the corner into a big two-turn volute."""
+    stem = Wire((CX, CY), ROOT_HEADING).volute((X0 + 20, 22), 9.0, 180, 1, 2.0, eye=2.2, out=0.5, inn=0.45)
+    return wires((stem, 1.6, 0.85))
 
 
 def cascade():
-    """A stem leaving the drawer's rim near the window and run out along it a
-    hand above it, scrolls budding off it in turn, ending in a volute: the
-    settings Cascade laid along."""
-    stem = Wire((X0 + 6, DT + 0.5), -60).to((X0 + 22, 32), 0, out=0.45, inn=0.45)         .volute((X0 + 34, 25), 6.5, 180, 1, 1.25, eye=2.0, out=0.4, inn=0.4)
-    a = stem.fork(0.22, -55).volute((X0 + 13, 16), 5.0, 90, -1, 1.0, eye=1.9, out=0.5, inn=0.5)
-    return wires((stem, 1.9, 0.85), (a, 1.5, 0.9))
+    """The settings Cascade from the corner: the stem sweeps into a big
+    volute, two satellites budding off its sweep and turning the other way."""
+    stem = Wire((CX, CY), ROOT_HEADING).volute((X0 + 24, 20), 9.0, 180, 1, 2.0, eye=2.2, out=0.45, inn=0.4)
+    a = stem.fork(0.16, 35).volute((X0 + 17, 35), 5.6, 0, -1, 1.0, eye=1.9, out=0.5, inn=0.5)
+    b = stem.fork(0.30, -55).volute((X0 + 7, 13), 5.6, 0, -1, 1.0, eye=1.9, out=0.5, inn=0.5)
+    return wires((stem, 1.6, 0.85), (a, 1.4, 0.9), (b, 1.4, 0.9))
+
+
+def fork_pair():
+    """Two stems out of the corner, one up the window's rim and one along the
+    drawer's, each into its own volute curling toward the other."""
+    up = Wire((CX, CY), -70).volute((X0 + 9, 12), 7.0, 180, 1, 1.5, eye=2.0, out=0.5, inn=0.45)
+    along = Wire((CX, CY), -20).volute((X0 + 30, 30), 8.0, 0, -1, 1.0, eye=2.6, out=0.5, inn=0.45)
+    return wires((up, 1.6, 0.9), (along, 1.6, 0.9))
+
+
+def lyre():
+    """A stem out of the corner rising to a volute, a long satellite off its
+    root running out over the drawer and curling under: an S lying in the corner."""
+    stem = Wire((CX, CY), ROOT_HEADING).volute((X0 + 14, 14), 7.5, 180, 1, 1.75, eye=2.1, out=0.5, inn=0.45)
+    s2 = stem.fork(0.12, 40).volute((X0 + 34, 30), 6.0, 90, -1, 1.25, eye=2.0, out=0.55, inn=0.5)
+    return wires((stem, 1.6, 0.9), (s2, 1.5, 0.9))
+
+
+def triple():
+    """Two volutes off one stem from the corner, the second smaller and of the
+    other hand (the Triskele's rhythm)."""
+    stem = Wire((CX, CY), ROOT_HEADING).volute((X0 + 12, 18), 7.0, 180, 1, 1.5, eye=2.0, out=0.5, inn=0.45)
+    b = stem.fork(0.25, -10).volute((X0 + 28, 22), 6.0, 0, -1, 1.25, eye=1.9, out=0.5, inn=0.5)
+    return wires((stem, 1.6, 0.9), (b, 1.4, 0.9))
 
 
 def designs():
     band = legend_band()
-    weld = dict(through=BOTH, weld=1.4)
+    weld = dict(through=BOTH, weld=0.9)
     return [
-        (1, "Climb: from the window's rim into a big volute", Joint(5.0, 3.0, pieces=both(climb()), **weld), band),
-        (2, "Runner: from the drawer's rim, a scroll each way", Joint(5.0, 3.0, pieces=both(runner()), **weld), band),
-        (3, "Bracket into both rims, a bud in the corner", Joint(5.0, 3.0, pieces=both(bracket()), **weld), band),
-        (4, "Bracket into both rims, a bud outside it", Joint(5.0, 3.0, pieces=both(bracket_out()), **weld), band),
-        (5, "Cascade laid along the drawer's rim", Joint(5.0, 3.0, pieces=both(cascade()), **weld), band),
-        (6, "Plain: forged through, the diamond, a deep fillet", Joint(9.0, 3.0, through=BOTH), band),
+        (1, "The star alone: the crossing forged, no ornament", Joint(2.0, 1.8, **weld), band),
+        (2, "Sprig: one stem from the star into a big volute", Joint(2.0, 1.8, pieces=both(sprig()), **weld), band),
+        (3, "Cascade from the star, two satellites", Joint(2.0, 1.8, pieces=both(cascade()), **weld), band),
+        (4, "Fork: up the rim and along the drawer", Joint(2.0, 1.8, pieces=both(fork_pair()), **weld), band),
+        (5, "Lyre: a volute and a long S over the drawer", Joint(2.0, 1.8, pieces=both(lyre()), **weld), band),
+        (6, "Pair: two graded volutes off one stem", Joint(2.0, 1.8, pieces=both(triple()), **weld), band),
     ]
 
 
