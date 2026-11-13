@@ -1,22 +1,20 @@
--- Control trials, temporary: slot floors and button faces for the settings
--- page, at real size on the window's slate, while the player chooses (art:
--- tools/make_demo_art.py). Shown only: nothing here is a stop. Goes with its
--- art when one is chosen.
-local BRONZE = { 0.78, 0.66, 0.45 }
-local CREAM = { 0.94, 0.89, 0.77 }
-local INK = { 0.16, 0.11, 0.07 }
-local FLOORS = {
-	{ "Slate", "A. Slate in shadow" },
-	{ "Ink", "B. Near-black, cool" },
-	{ "Lamplit", "C. Warm light at its foot" },
+-- Control trials, temporary: buttons for the settings page, each a variation on
+-- the list's raised slab, at rest and lit (the row under the cursor), beside
+-- today's, while the player chooses (art: tools/make_button_art.py). Shown
+-- only: nothing here is a stop. Goes when one is chosen.
+local S = WC.Style
+local ART = [[Interface\AddOns\WowCompanion\Art\Btn-%s-%s-7]] -- make_button_art.py's ROUND
+-- make_button_art.py's KINDS, in its order, with what each is
+local KINDS = {
+	{ "Slab", "1. Slab, as the list's" },
+	{ "Rimmed", "2. Slab, rim always" },
+	{ "Chamfer", "3. Corners cut" },
+	{ "Scrolls", "4. Scrolls at its ends" },
+	{ "Block", "5. Thick stone block" },
+	{ "Corners", "6. Bronze corners" },
+	{ "Pillow", "7. Swelling face" },
+	{ "Inlaid", "8. Wire inlaid" },
 }
-local BUTTONS = {
-	{ "Bronze", "1. Dark bronze", CREAM },
-	{ "Wood", "2. Polished heartwood", BRONZE },
-	{ "Lacquer", "3. Black lacquer", BRONZE },
-	{ "Brass", "4. Old brass", INK },
-}
-local ART = [[Interface\AddOns\WowCompanion\Art\Demo-R2-]] -- make_demo_art.py's ROUND
 
 WC.Companion.AddTab("Trials", function(page)
 	local built
@@ -27,34 +25,33 @@ WC.Companion.AddTab("Trials", function(page)
 		local box = CreateFrame("Frame", nil, page)
 		box:SetFrameLevel(page:GetParent():GetFrameLevel() + 25)
 		box:SetAllPoints()
-		local function label(text, x, y)
+		local function label(text, y)
 			local fs = box:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-			fs:SetPoint("TOPLEFT", x, y)
+			fs:SetPoint("TOPLEFT", 14, y - 10)
 			fs:SetText(text)
-			return fs
 		end
-		local function piece(name, w, h, x, y, word, colour, dy)
+		local function button(kind, lit, x, y)
 			local t = box:CreateTexture(nil, "ARTWORK")
-			t:SetTexture(ART .. name)
-			t:SetSize(w, h)
+			t:SetTexture(ART:format(kind, lit and "Lit" or "Rest"))
+			t:SetSize(160, 36)
 			t:SetPoint("TOPLEFT", x, y)
 			local fs = box:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-			fs:SetPoint("CENTER", t, "CENTER", 0, dy or 1)
-			fs:SetTextColor(unpack(colour))
-			fs:SetText(word)
+			fs:SetPoint("CENTER", t, "CENTER", 0, 1)
+			fs:SetTextColor(unpack(lit and S.NAME_LIT or S.BRONZE))
+			fs:SetText("Clear")
 		end
-		label("Slot floors (dropdowns, key slots)", 12, -10)
-		for i, f in ipairs(FLOORS) do
-			local y = -36 - (i - 1) * 56
-			label(f[2], 12, y)
-			piece("Floor-" .. f[1], 240, 32, 12, y - 18, "Default", BRONZE)
-		end
-		label("Buttons (and pressed)", 320, -10)
-		for i, b in ipairs(BUTTONS) do
-			local y = -36 - (i - 1) * 56
-			label(b[2], 320, y)
-			piece("Button-" .. b[1], 128, 28, 320, y - 18, "Clear", b[3])
-			piece("Button-" .. b[1] .. "-Pushed", 128, 28, 456, y - 18, "Clear", b[3], 0)
+		local head = box:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+		head:SetPoint("TOPLEFT", 220, -8)
+		head:SetText("At rest, then lit (under the cursor)")
+		label("Now", -28)
+		local now = S.Button(box)
+		now:SetLabel("Clear")
+		now:SetPoint("TOPLEFT", 236, -32)
+		for i, k in ipairs(KINDS) do
+			local y = -28 - i * 44
+			label(k[2], y)
+			button(k[1], false, 220, y)
+			button(k[1], true, 400, y)
 		end
 	end)
 end)

@@ -36,8 +36,17 @@ none of this. When the player states a new preference or changes one, write it h
   as its unselected neighbours, only lit (2026-11-12).
   Every vine joint comes in two variants, ornamental and plain; plain where
   space is tight, like the Status rows (2026-11-12).
+  Settings controls (2026-11-12, Trials round 3): sunk wells made the
+  buttons look off; a dropdown with no box (bare arrows round the word)
+  rejected; the lit well and a small lit socket for a button glyph are
+  tolerable. The slate is reused too much and getting old: new pieces want
+  a fresh material, not more slate.
   Tabs never open into the chat (2026-11-12): its stone is shaded to sit back
   and scrolls, so no tab can join it; tabs stand apart, on its border.
+- **Options, built and side by side** (2026-11-12): they hand us the legwork
+  for speed, not judgement. Never ask them to think a design up; draw many
+  real options at once (six or more, at true size, in game) and let them pick.
+  Ask only what only they can answer (taste, a yes to install or restart).
 - **Nothing of ours opens itself** (2026-11-10). The Companion window opens only
   when they ask (minus tap, `/wc log`); news goes to the board/toast. No data cards
   left on screen: the data strip shows only for the moment of the shot.
