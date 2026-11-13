@@ -11,6 +11,7 @@ Conversations.lua
 Bars.lua
 Ring.lua
 Style.lua
+ScrollBar.lua
 Rows.lua
 SettingsPage.lua
 Board.lua

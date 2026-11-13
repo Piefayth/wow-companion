@@ -1,10 +1,11 @@
--- The chat's scroll bar (the player's pick, 2026-11-12): a groove carved in
+-- The scroll bar of our windows, the chat's and the settings page's (the
+-- player's pick, 2026-11-12): a groove carved in
 -- the stone between two bark borders, the fleur-de-lis arrows in bark over its
 -- ends, a heartwood thumb riding in it, and each divider between turns joining
 -- its left border. The turns' stone runs on behind it to the well's edge.
 -- Drawn by tools/make_scrollbar_art.py.
 
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\Scroll-]]
+local ART = [[Interface\AddOns\WowCompanion\Art\Scroll-]]
 local VERSION = 19 -- the generator's VERSION
 local function art(piece)
 	return ART .. piece .. "-" .. VERSION
@@ -17,16 +18,16 @@ local FILL = 7.8 / 5.25
 -- at 4K (the round end's centre 24 of each 32-tall cap, radius 4)
 local INSET = 20.4
 
-WC.ChatBar = {}
+WC.ScrollBar = {}
 -- the text keeps clear of the bar: the column and its border's art beside it
-WC.ChatBar.ROOM = WIDTH + 6
+WC.ScrollBar.ROOM = WIDTH + 6
 
 -- A divider between turns, spanning the turn's full width: the vine's left end,
 -- its middle stretched, and the Joint taking it into the bar's left border. A
 -- frame above the bar's column (the column is its content's level + 1), so the
 -- Joint lies over the border; it scrolls with the turns, so dividers meet the
 -- border at every scroll position.
-function WC.ChatBar.Divider(content)
+function WC.ScrollBar.Divider(content)
 	local rule = CreateFrame("Frame", nil, content)
 	rule:SetHeight(16)
 	rule:SetFrameLevel(content:GetFrameLevel() + 2)
@@ -50,7 +51,7 @@ end
 -- turns run on behind it). `level` is the well's frame level; the scroll's
 -- child sits at level + 2, the column + 3, the dividers + 4, the arrows + 6,
 -- the thumb + 7. Returns the column and the two arrow buttons.
-function WC.ChatBar.Build(well, scroll, edge, level)
+function WC.ScrollBar.Build(well, scroll, edge, level)
 	local column = CreateFrame("Frame", nil, well)
 	-- Shorter than the well, with the same clear stone past each tip, measured
 	-- at 4K (2026-11-12: 4 left the down tip nearly on the border while the up

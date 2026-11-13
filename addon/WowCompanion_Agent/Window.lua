@@ -331,7 +331,7 @@ local function buildTabs(frame, messages)
 	-- The chat well's geometry, in one place (docs/ui-layout.md): inside the
 	-- inset's border (EDGE, its whole carved wall: the text clips there and
 	-- never scrolls across the wall) the transcript fills the well, and the
-	-- scroll bar (ChatBar.lua) stands over its right end, so each turn's stone
+	-- scroll bar (Core's ScrollBar.lua) stands over its right end, so each turn's stone
 	-- runs on behind the bar to the edge.
 	local EDGE = INSET
 	local level = chatWell:GetFrameLevel()
@@ -348,7 +348,7 @@ local function buildTabs(frame, messages)
 	messages.scroll:SetPoint("BOTTOMRIGHT", chatWell, "BOTTOMRIGHT", -EDGE, EDGE)
 	messages.scroll:SetFrameLevel(level + 1)
 	messages.content:SetFrameLevel(level + 2)
-	local column, up, down = WC.ChatBar.Build(chatWell, messages.scroll, EDGE, level)
+	local column, up, down = WC.ScrollBar.Build(chatWell, messages.scroll, EDGE, level)
 	for _, part in ipairs({ column, up, down }) do table.insert(frame.chatParts, part) end
 	-- a row's height; its name in NAME, NAME_LIT when in view
 	local ROW = 24

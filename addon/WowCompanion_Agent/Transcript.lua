@@ -20,7 +20,7 @@ local NOTE_FONT = "GameFontHighlightSmall"
 
 -- Every turn on our own stone (WC.Style.STONE): the replies on the lighter
 -- one, the player's on the darker. Owners differ by value, never by hue.
--- Turns parted by the scroll bar's own divider (ChatBar.lua), which joins its border.
+-- Turns parted by the scroll bar's own divider (ScrollBar.lua), which joins its border.
 local STONE = WC.Style.STONE
 -- owner: whose turn, which picks the stone
 local function ownBand(band, owner)
@@ -31,7 +31,7 @@ end
 local function turnBand(content, owner)
 	local band = content:CreateTexture(nil, "BACKGROUND", nil, -1)
 	ownBand(band, owner)
-	return band, WC.ChatBar.Divider(content)
+	return band, WC.ScrollBar.Divider(content)
 end
 
 -- A conversation switch empties the transcript and fills it again, so a row's
@@ -55,7 +55,7 @@ end
 local function turnParts(t, owner)
 	local band = take(t.pool.turn, function() return t.content:CreateTexture(nil, "BACKGROUND", nil, -1) end)
 	ownBand(band, owner)
-	return band, take(t.pool.divider, function() return WC.ChatBar.Divider(t.content) end)
+	return band, take(t.pool.divider, function() return WC.ScrollBar.Divider(t.content) end)
 end
 local function codeBand(t)
 	return take(t.pool.band, function()
@@ -132,7 +132,7 @@ end
 -- standing over their right end, and the text keeps clear of it
 function Transcript:Width()
 	local width = self.scroll:GetWidth()
-	width = width and width - WC.ChatBar.ROOM
+	width = width and width - WC.ScrollBar.ROOM
 	return width and width > 60 and width or nil
 end
 
@@ -167,7 +167,7 @@ function Transcript:Place(row, y, width)
 	if row.band then
 		row.band:ClearAllPoints()
 		row.band:SetPoint("TOPLEFT", self.content, "TOPLEFT", PAD_L + row.indent - 6, -y + 3)
-		row.band:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", -(PAD_R + WC.ChatBar.ROOM) + 6, -y + 3)
+		row.band:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", -(PAD_R + WC.ScrollBar.ROOM) + 6, -y + 3)
 		row.band:SetHeight(height + 6)
 		height = height + 3
 	end

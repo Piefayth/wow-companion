@@ -65,9 +65,10 @@ rock:SetHorizTile(true)
 rock:SetVertTile(true)
 rock:SetPoint("TOPLEFT", -9, 7)
 rock:SetPoint("BOTTOMRIGHT", 9, -7)
-local function well(which, left, top, right, bottom)
+local function well(which, left, top, right, bottom, shade)
 	local t = page:CreateTexture(nil, "BACKGROUND", nil, 1)
 	stone(t, which)
+	if shade then t:SetVertexColor(shade, shade, shade) end
 	t:SetPoint("TOPLEFT", left[1], left[2], left[3], top)
 	t:SetPoint("BOTTOMRIGHT", right[1], right[2], right[3], bottom)
 	for _, side in ipairs({ "Top", "Left" }) do
@@ -80,14 +81,20 @@ local function well(which, left, top, right, bottom)
 	end
 end
 -- names: the left edge to the seam; settings: the seam to the right edge,
--- down to the note's seam; the note: under the settings
-well("you", { page, "TOPLEFT", -9 }, 7, { page, "BOTTOMLEFT", SPINE - 2 - SEAM }, -7)
+-- down to the note's seam; the note: under the settings. The names and the
+-- note on the dark stone darker still, as Status's names are (its "deeper")
+local DEEPER = 0.6
+well("you", { page, "TOPLEFT", -9 }, 7, { page, "BOTTOMLEFT", SPINE - 2 - SEAM }, -7, DEEPER)
 well("claude", { page, "TOPLEFT", SPINE - 2 }, 7, { band, "TOPRIGHT", 9 }, SEAM)
-well("you", { band, "TOPLEFT", -2 }, 0, { band, "BOTTOMRIGHT", 9 }, -7)
+well("you", { band, "TOPLEFT", -2 }, 0, { band, "BOTTOMRIGHT", 9 }, -7, DEEPER)
+-- words in the bronze of the controls' values: a setting's name, the note's
+-- title; the section names stay white
+local LABEL = { 0.86, 0.76, 0.56 }
 local bandName = band:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 bandName:SetPoint("TOPLEFT", 14, -10)
 bandName:SetPoint("RIGHT", -EDGE, 0)
 bandName:SetJustifyH("LEFT")
+bandName:SetTextColor(unpack(LABEL))
 local bandText = band:CreateFontString(nil, "OVERLAY", "GameFontHighlightMed2")
 bandText:SetPoint("TOPLEFT", bandName, "BOTTOMLEFT", 0, -4)
 bandText:SetPoint("BOTTOMRIGHT", -EDGE, 2)
@@ -115,15 +122,16 @@ end
 
 -- the rows and section names above it, in a scroll frame the controller's
 -- cursor scrolls as it moves (SmartNavigation's HandleScroll), 9 px wider
--- each side than the page so the names and dividers reach the edges; the
--- scroll bar down the settings well's right edge, as the chat's (WC.Style)
-local column = CreateFrame("Frame", nil, page)
-column:SetPoint("TOPRIGHT", 9, 7)
-column:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, SEAM)
-column:SetWidth(WC.Style.BAR)
+-- on the left than the page so the names reach the edge; the chat's scroll
+-- bar (WC.ScrollBar) down the settings well's right edge, the rows keeping
+-- clear of it as the turns do
+local barWell = CreateFrame("Frame", nil, page)
+barWell:SetPoint("TOPRIGHT", 9, 7)
+barWell:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9, SEAM)
+barWell:SetWidth(40)
 local scroll = CreateFrame("ScrollFrame", nil, page)
 scroll:SetPoint("TOPLEFT", -9, 0)
-scroll:SetPoint("BOTTOMRIGHT", column, "BOTTOMLEFT", 9, 3)
+scroll:SetPoint("BOTTOMRIGHT", band, "TOPRIGHT", 9 - 3 - WC.ScrollBar.ROOM, SEAM + 3)
 local content = CreateFrame("Frame", nil, scroll)
 content:SetSize(1, 1)
 scroll:SetScrollChild(content)
@@ -133,8 +141,18 @@ scroll:SetScript("OnMouseWheel", function(self, delta)
 	local most = math.max(0, content:GetHeight() - self:GetHeight())
 	self:SetVerticalScroll(math.min(most, math.max(0, self:GetVerticalScroll() - delta * ROW_H)))
 end)
--- over the rows' 9 px under it, as the dividers run to the backing's edge
-WC.Style.ScrollBar(scroll, column, ROW_H)
+local column = WC.ScrollBar.Build(barWell, scroll, 3, page:GetFrameLevel())
+WC.MarkIgnored(column)
+-- each of the bar's frames' level over its column's, kept as built: the bar is
+-- lifted whole (lift, below)
+local barLevels = {}
+local function collect(f)
+	for _, child in ipairs({ f:GetChildren() }) do
+		barLevels[child] = child:GetFrameLevel() - column:GetFrameLevel()
+		collect(child)
+	end
+end
+collect(column)
 
 -- The seams between the wells are the thick vine (WC.Style.VineLine): down
 -- between the names and the settings, across between the settings and the
@@ -171,6 +189,7 @@ local function settingRow(row, step, prompt)
 	fs:SetPoint("RIGHT", r, "RIGHT", -(CONTROL_W + VALUE_W + EDGE + 12), 0)
 	fs:SetJustifyH("LEFT")
 	fs:SetWordWrap(false)
+	fs:SetTextColor(unpack(LABEL))
 	fs:SetText(row.label)
 	r:SetScript("OnEnter", function() describe(row) end)
 	r.OnRowFocus = function() describe(row) end
@@ -385,6 +404,9 @@ local function header(name)
 	-- the divider), never the scroll child's: what a scroll frame holds draws
 	-- at the scroll frame's level, under the spine whatever its own level, and
 	-- the spine then cut across every joint (seen on screen, 2026-11-12)
+	-- every other section on the dark stone, as Status's rows alternate
+	h.band = content:CreateTexture(nil, "BACKGROUND")
+	stone(h.band, "you")
 	h.divider = CreateFrame("Frame", nil, content)
 	h.divider:SetHeight(16)
 	WC.Style.VineLine(h.divider, "", false, false, true)
@@ -414,6 +436,7 @@ local function lift()
 	across:SetFrameLevel(base + 1)
 	for _, h in pairs(headers) do h.join:SetFrameLevel(base + 1) end
 	column:SetFrameLevel(base + 2)
+	for f, over in pairs(barLevels) do f:SetFrameLevel(base + 2 + over) end
 end
 -- the joints, outside the scroll frame, shown only while their divider is
 -- shown and inside it
@@ -446,13 +469,25 @@ local function layout()
 		end
 		return orderOf(a) < orderOf(b)
 	end)
-	local y, section = 6, nil
+	local y, section, open, count = 6, nil, nil, 0
+	-- a section's band from the divider over it to the one under it
+	local function close(bottom)
+		if not open then return end
+		open.band:ClearAllPoints()
+		open.band:SetPoint("TOPLEFT", content, "TOPLEFT", 9 + SPINE - 2, -open.top)
+		open.band:SetPoint("BOTTOMRIGHT", content, "TOPRIGHT", 0, -bottom)
+		open.band:SetShown(count % 2 == 0)
+	end
 	for _, e in ipairs(rows) do
 		if e.frame then
 			local s = sectionOf(e)
 			if s ~= section then
 				local h = header(s)
+				close(y + GAP / 2)
 				if section then y = y + GAP end
+				count = count + 1
+				h.top = section and (y - GAP / 2) or -7
+				open = h
 				h.divider:SetShown(section ~= nil)
 				h.divider:ClearAllPoints()
 				h.divider:SetPoint("LEFT", content, "TOPLEFT", 9 + SPINE - 2 - SEAM / 2, -y + GAP / 2)
@@ -464,6 +499,7 @@ local function layout()
 			y = y + ROW_H
 		end
 	end
+	close(math.max(y + GAP / 2, scroll:GetHeight() or 0))
 	content:SetHeight(math.max(y, 1))
 	lift()
 	joints()

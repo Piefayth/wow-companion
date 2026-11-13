@@ -1,13 +1,13 @@
-"""The chat's scroll bar (ChatBar.lua): a groove carved in the stone between
+"""Our windows' scroll bar (Core's ScrollBar.lua): a groove carved in the stone between
 two bark borders, fleur-de-lis arrows in bark over its ends, a heartwood thumb,
 and the dividers between turns joining its left border; drawn here as vector
 shapes, bevelled and lit from the top left, at 16x and averaged down, never
 Blizzard's art.
 
-    python tools/make_scrollbar_art.py   writes addon/WowCompanion_Agent/Art/Scroll-*-<VERSION>.tga
+    python tools/make_scrollbar_art.py   writes addon/WowCompanion/Art/Scroll-*-<VERSION>.tga
 
 The game keeps a texture for the session under its path, so a change bumps
-VERSION (and ChatBar.lua's); older files are deleted.
+VERSION (and ScrollBar.lua's); older files are deleted.
 """
 import glob
 import os
@@ -18,7 +18,7 @@ from scipy import ndimage
 
 S = 16  # supersampling
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
+OUT = os.path.join(ROOT, "addon", "WowCompanion", "Art")
 # the vine dividers are every window's (Style.lua's WC.Style.Vine), so Core's
 CORE_OUT = os.path.join(ROOT, "addon", "WowCompanion", "Art")
 VINE_VERSION = 9  # Style.lua's VINE_VERSION
@@ -679,7 +679,7 @@ def joint(c):
 # carry more.
 
 THUMB_HW = 2.55  # a body's half-width along its length
-END = 3.7  # an end's length: round once ChatBar.lua widens the art to the groove's floor (about 1.45)
+END = 3.7  # an end's length: round once ScrollBar.lua widens the art to the groove's floor (about 1.45)
 _t = np.linspace(0, np.pi / 2, 9)[1:]
 THUMB_ENDS = [(0.6, 0)] + [(0.6 + END * (1 - np.cos(a)), THUMB_HW * np.sin(a)) for a in _t] + [(24.0, THUMB_HW)] +              [(47.4 - END * (1 - np.cos(a)), THUMB_HW * np.sin(a)) for a in _t[::-1]] + [(47.4, 0)]
 

@@ -33,7 +33,17 @@ import make_scrollbar_art as sb  # noqa: E402
 
 VERSION = 1
 OUT = sb.CORE_OUT
-SLATE = ((7, 8, 11), (27, 29, 35), (72, 74, 84))  # the button's raised slate: the stone's own dark, a step lighter at its lit edge
+SLATE = ((5, 6, 8), (17, 18, 22), (46, 47, 54))  # the button's raised slate: as dark as the stone, its lit edge a step lighter
+
+
+def greyed_fleur(normal, bare):
+    """Disabled: the fleur alone greyed, the groove and its borders it joins
+    left as they are (a whole greyed cap read as the bar greying where it met)."""
+    out = normal.copy()
+    m = (bare[..., 3] / 255)[..., None]
+    g = sb.greyed(bare)
+    out[..., :3] = normal[..., :3] * (1 - m) + g[..., :3] * m
+    return out
 
 
 def T(img):
@@ -104,7 +114,7 @@ def choice_set():
                 imgs[mode] = c.final()
             imgs["Pushed"][..., :3] *= 0.84
             out[d + "-Normal"], out[d + "-Pushed"] = T(imgs["Normal"]), T(imgs["Pushed"])
-            out[d + "-Disabled"] = T(sb.greyed(imgs["Normal"]))
+            out[d + "-Disabled"] = T(greyed_fleur(imgs["Normal"], imgs["Bare"]))
             out[d + "-Highlight"] = T(sb.glow(imgs["Bare"]))
         c = sb.ucanvas(32, 8)
         sb.carve(c, sb.groove_run(c))
@@ -124,8 +134,11 @@ def main():
     scroll = sb.render_set()
     out = {}
     for src, dst in (("Up", "Left"), ("Down", "Right")):
-        for state in ("Normal", "Pushed", "Highlight", "Disabled"):
+        for state in ("Normal", "Pushed", "Highlight"):
             out["Slide-%s-%s" % (dst, state)] = T(scroll["Scroll-%s-%s" % (src, state)])
+        c = sb.ucanvas(32, 32)
+        sb.fleur_cap(c, src == "Down", "Bare")
+        out["Slide-%s-Disabled" % dst] = T(greyed_fleur(scroll["Scroll-%s-Normal" % src], c.final()))
     out["Slide-Mid"] = T(scroll["Scroll-Mid"])
     c = sb.ucanvas(32, 48)
     sb.flat_grain(c)
