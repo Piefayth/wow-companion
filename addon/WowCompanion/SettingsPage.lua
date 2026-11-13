@@ -354,14 +354,20 @@ local function key(row)
 	right:SetSize(16, 32)
 	right:SetPoint("RIGHT")
 	local mid = between(b, "Choice-Mid", left, right)
-	-- lit: the same slot added over itself, brighter, and its word in the lit bronze
+	-- lit: the focus glow round the slot, as the arrows' (make_control_art.py),
+	-- and its word in the lit bronze
 	local glow = {}
-	for i, t in ipairs({ left, mid, right }) do
+	-- (the ends' glow 4 wider than the ends, reaching past the slot)
+	for i, piece in ipairs({ { left, "Choice-Left-Closed", "RIGHT" }, { mid, "Choice-Mid" }, { right, "Choice-Right-Closed", "LEFT" } }) do
 		local g = b:CreateTexture(nil, "OVERLAY")
-		g:SetTexture(t:GetTexture())
-		g:SetAllPoints(t)
+		g:SetTexture(controlArt(piece[2] .. "-Highlight"))
+		if piece[3] then
+			g:SetSize(20, 32)
+			g:SetPoint(piece[3], piece[1])
+		else
+			g:SetAllPoints(piece[1])
+		end
 		g:SetBlendMode("ADD")
-		g:SetAlpha(0.35)
 		g:Hide()
 		glow[i] = g
 	end

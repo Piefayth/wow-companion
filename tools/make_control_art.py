@@ -14,6 +14,11 @@ Pieces (UI units, U texture px each, as the scroll bar's):
                                     value's line, as the slider's to its groove
   Choice-<Left|Right>-Closed 16x32  the slot's plain round ends (a key row)
   Choice-Mid 8x32                   that slot, stretched between them
+  Choice-<Left|Right>-Closed-Highlight 20x32, Choice-Mid-Highlight 8x32
+                                    the key slot's glow, drawn for ADD as the
+                                    arrows' is, from its rim: made on the slot
+                                    joined up and cut back to its pieces, the
+                                    ends' 4 wider, reaching past the slot
 
 Turned pieces are transposed, never rotated: a transpose keeps the light
 from the top left. The game keeps a texture for the session under its path,
@@ -25,6 +30,7 @@ import artout
 import sys
 
 import numpy as np
+from scipy import ndimage
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import make_scrollbar_art as sb  # noqa: E402
@@ -90,6 +96,26 @@ def choice_set():
         sb.border(Pen(c, 8), sb.straight_borders(Pen(c, 8)))
         m = c.final()
         out["Mid"] = T(np.repeat(m.mean(0, keepdims=True), m.shape[0], 0))
+        # the key slot's glow: on the slot joined (an end, mids, an end), so the
+        # halo runs on unbroken across the joins, then cut back to its pieces
+        left, mid, right = out["Left-Closed"], out["Mid"], out["Right-Closed"]
+        runs = 9
+        whole = np.concatenate([left] + [mid] * runs + [right], axis=1)
+        # from the bark rim alone, as the arrows' from the fleur: the slot's
+        # outline less its inside
+        rim = whole.copy()
+        a = whole[..., 3]
+        rim[..., 3] = np.clip(a - ndimage.minimum_filter(a, size=int(sb.U * sb.BORDER_HW * 4) | 1), 0, 255)
+        # room beyond each end for the halo to fade (GLOW_ROOM units), so an
+        # end's glow is wider than the end and reaches past it
+        room = GLOW_ROOM * sb.U
+        rim = np.pad(rim, ((0, 0), (room, room), (0, 0)))
+        lit = sb.glow(rim)
+        lw, mw = left.shape[1], mid.shape[1]
+        out["Left-Closed-Highlight"] = lit[:, :room + lw]
+        middle = room + lw + mw * (runs // 2)
+        out["Mid-Highlight"] = lit[:, middle:middle + mw]
+        out["Right-Closed-Highlight"] = lit[:, -(right.shape[1] + room):]
         return out
     finally:
         for k, v in saved.items():
@@ -98,6 +124,7 @@ def choice_set():
 
 CAP = 40  # a choice cap's length in units
 SLOT_END = 16  # a closed end's
+GLOW_ROOM = 4  # a closed end's glow reaches this far past it (Choice-*-Closed-Highlight are 20x32)
 
 
 def main():
