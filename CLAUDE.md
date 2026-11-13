@@ -73,7 +73,7 @@ extras a player may use, never required (the player, 2026-11-11).
   `jobs.rs` (each request's one state, forward only; cancels and replies race
   there; a clip's job is named to the game by `heard` when it is let go),
   `context.rs` (the export, profile and integrations the agent gets),
-  `session.rs` (the game's UI session, on trial beside the channel), `runs.rs` (an
+  `session.rs` (the game's UI session, read once from Link's save: the cursor, the bell set and the slot count all come from it), `runs.rs` (an
   agent's run on disk, any copy follows it), `settings_page.rs`
   (the settings page's half here: `status` with the settings and the mics
   Windows lists, its `bind`/`set` commands; a change is written to settings.toml and the voice loop takes it between

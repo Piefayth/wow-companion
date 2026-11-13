@@ -610,3 +610,18 @@ ended. The look waiting for a reload moved to a file for the same reason. The
 progress courier no longer holds a finished request: it slept 15 s after a
 progress line before looking again, so a reply could wait on it (rarely: 1 of
 36 replies that followed a progress line went out right after one).
+
+## A session's messages waited on a slot that never rang (2026-11-12)
+
+At 21:11 the player reloaded twice in 23 s, and for the whole session that
+followed the game took no message (`channel.taken = 0` in 5,064 plays): Main's
+replies, the agents' reads, everything. The cursor took the session from Core's
+save time, the bell set from Link's load count. A send landed while the game
+was writing its save: Core's file was new and Link's not yet, so the cursor
+started over at slot 1 in the old set. At the next send Link's count was new,
+the set moved on, and the cursor went on at 2. The game waited on its set's
+slot 1. The two readings had been compared on every send since 2026-11-11
+(`session.rs`, on trial), 162 agreements and this one pair of disagreements,
+which the trial's audit lines showed. Session took over the channel: the cursor,
+the set and the slot count come from one reading of Link's save, so they cannot
+come apart, and a save that does not parse yet is read again.

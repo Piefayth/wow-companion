@@ -81,7 +81,7 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
     // The slot bells (docs/proposals/slot-bells.md): this session's set rings one
     // bell per slot sent, none past the slots used (a ring ahead of the cursor is
     // how the game once ran ahead of the PC); the other sets are all empty.
-    let set = crate::game_running().then(|| crate::current_set(addons));
+    let set = if crate::game_running() { crate::session::Session::now(addons).ok().map(|session| session.set()) } else { None };
     let (mut small, mut ahead, mut idle_rung, mut rung) = (Vec::new(), Vec::new(), Vec::new(), 0);
     let mut leftover = Vec::new();
     if let Ok(entries) = fs::read_dir(&signals) {

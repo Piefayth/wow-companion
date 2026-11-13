@@ -40,9 +40,10 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
         let mut saved = None;
         // the UI session, mic state, settings and mics listed the game was last
         // told (`status`; the settings count up as the voice loop takes a
-        // change). A session is the channel's: the last save and when Wow.exe
-        // started, so a fresh launch, which saves nothing, is a new one too; told
-        // while the game was closed, it is told again once the game runs
+        // change). A session is the channel's (session.rs): Link's load count
+        // and when Wow.exe started, so a fresh launch, which saves nothing, is a
+        // new one too; told while the game was closed, it is told again once the
+        // game runs
         let mut told: Option<(Option<String>, bool, usize, Vec<String>)> = None;
         // the session and the mics are looked up at each beat: finding a game
         // that is not running walks every process
@@ -58,7 +59,7 @@ pub fn start(addons: &Path, ready: fn() -> bool) {
             }
             let beat = Instant::now() >= beat_at;
             if beat {
-                stamp = crate::saved_variables_stamp(&addons);
+                stamp = crate::session_key(&addons);
                 mics = crate::voice::input_names();
             }
             let now = (stamp.clone(), crate::voice::MIC.load(Ordering::Relaxed), crate::voice::APPLIED.load(Ordering::SeqCst), mics.clone());

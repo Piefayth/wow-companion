@@ -510,7 +510,7 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, group: u64, ru
     // running low: offer the cure once per UI session, while a slot remains for it
     let used = slots_used(addons);
     if used + SLOTS_OFFER_RELOAD >= known_slots(addons) {
-        let stamp = saved_variables_stamp(addons).unwrap_or_default();
+        let stamp = session_key(addons).unwrap_or_default();
         let mut offered = RELOAD_OFFERED.lock().unwrap();
         if *offered != stamp {
             *offered = stamp;

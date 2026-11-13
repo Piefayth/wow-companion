@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::message::{Line, Msg, Out};
+use crate::session::Session;
 use wow_companion_settings::platform::Process;
 
 pub(crate) const PROGRESS_STOP: u32 = 14;
@@ -42,18 +43,10 @@ pub(crate) fn game_running() -> bool {
     game().is_some()
 }
 
-/// How many slots the running game knows. The game only sees addon folders that
-/// existed when it launched, so slots installed since are invisible to it until a
-/// full restart, and a message sent to one would be lost. The addon records the
-/// count it sees in SavedVariables; until it has, assume the old 64.
+/// How many slots the running game knows (`Session::known_slots`); 0 while its
+/// save does not parse, so nothing is spent on a guess.
 pub(crate) fn known_slots(addons: &Path) -> u32 {
-    let counted = saved_variables(addons, LINK)
-        .and_then(|saved| fs::read_to_string(saved).ok())
-        .and_then(|text| {
-            let at = text.find("[\"slotCount\"] = ")? + "[\"slotCount\"] = ".len();
-            text[at..].split(|c: char| !c.is_ascii_digit()).next()?.parse::<u32>().ok()
-        });
-    counted.unwrap_or(64).min(SLOTS)
+    Session::now(addons).map(|session| session.known_slots()).unwrap_or(0)
 }
 
 /// What waits for the next slot, in the order it was posted: lines (numbered
@@ -245,10 +238,8 @@ fn slot_message(batch: &[Pending]) -> Msg {
 /// The next slot, and its bell.
 fn ring(addons: &Path, msg: &Msg) -> io::Result<()> {
     voice::mark("send has the channel");
-    let slot = next_slot(addons)?;
-    // the session read once, on trial beside the keys used here (src/session.rs)
-    crate::session::shadow(addons, &saved_variables_stamp(addons).unwrap_or_default(), current_set(addons), known_slots(addons));
-    deliver(addons, slot, msg)?;
+    let (slot, set) = next_slot(addons)?;
+    deliver(addons, slot, set, msg)?;
     println!("sent in slot {slot}: {}", msg.lua());
     voice::mark(&format!("bell rung, slot {slot}"));
     Ok(())
@@ -259,21 +250,21 @@ pub(crate) fn game_clients() -> usize {
     wow_companion_settings::platform::windowed_count("Wow.exe")
 }
 
-pub(crate) fn deliver(addons: &Path, slot: u32, msg: &Msg) -> io::Result<()> {
+fn deliver(addons: &Path, slot: u32, set: u64, msg: &Msg) -> io::Result<()> {
     // the inbox lands first: the bell is what tells the addon to go read it
     write_reporting(&addons.join(slot_name(slot)).join("Inbox.lua"), format!("WowCompanion_Inbox = {}\n", msg.lua()).as_bytes())?;
-    let bell = slot_bell_name(current_set(addons), slot);
+    let bell = slot_bell_name(set, slot);
     crate::audit::note("bell", "", &format!("ring {bell}"));
     bells::ring(&addons.join(LINK).join("Signals").join(bell))
 }
 
 // Slots load once per UI session, so the helper has to know where the addon's cursor
-// is. It resets when the UI session does, and the game rewrites SavedVariables at
-// exactly that moment, so that file's timestamp is the reset signal. No game → PC
-// channel needed.
-pub(crate) fn next_slot(addons: &Path) -> io::Result<u32> {
+// is. It resets when the UI session does (session.rs), and the slot and its set
+// come from that one reading. No game → PC channel needed.
+fn next_slot(addons: &Path) -> io::Result<(u32, u64)> {
     let state = addons.join(LINK).join(STATE);
-    let stamp = saved_variables_stamp(addons).unwrap_or_default();
+    let session = Session::now(addons)?;
+    let stamp = session.key();
     let (mut cursor, seen) = fs::read_to_string(&state)
         .ok()
         .and_then(|text| {
@@ -289,7 +280,7 @@ pub(crate) fn next_slot(addons: &Path) -> io::Result<u32> {
         // ring that reached this set while it was idle (a send across a
         // reload) would be taken as a message before it was written, the old
         // inbox read in its place and the real one never read.
-        let set = current_set(addons);
+        let set = session.set();
         let signals = addons.join(LINK).join("Signals");
         for slot in 1..=SLOTS {
             let path = signals.join(slot_bell_name(set, slot));
@@ -299,19 +290,20 @@ pub(crate) fn next_slot(addons: &Path) -> io::Result<u32> {
             }
         }
     }
-    if cursor > known_slots(addons) {
+    if cursor > session.known_slots() {
         return Err(io::Error::other(format!(
-            "all {SLOTS} slots are spent this UI session: `send reload`, or /reload in game"
+            "all {} slots are spent this UI session: `send reload`, or /reload in game",
+            session.known_slots()
         )));
     }
     fs::write(&state, format!("{}\n{}\n", cursor + 1, stamp))?;
-    Ok(cursor)
+    Ok((cursor, session.set()))
 }
 
 /// Slots spent in the running UI session (0 after a reload), without spending one.
 pub(crate) fn slots_used(addons: &Path) -> u32 {
     let state = addons.join(LINK).join(STATE);
-    let stamp = saved_variables_stamp(addons).unwrap_or_default();
+    let Some(stamp) = session_key(addons) else { return 0 };
     let Ok(text) = fs::read_to_string(&state) else { return 0 };
     let mut lines = text.lines();
     let cursor: u32 = lines.next().and_then(|line| line.trim().parse().ok()).unwrap_or(1);
@@ -321,34 +313,16 @@ pub(crate) fn slots_used(addons: &Path) -> u32 {
     cursor.saturating_sub(1)
 }
 
-/// What identifies the game's UI session for the slot cursor: the last save
-/// (written at every /reload and logout) and when the running Wow.exe started.
-/// The second matters: a freshly launched game starts its own cursor at 1 before
-/// it has saved anything, and messages counted against the old session would
-/// leave the fresh addon waiting on a slot that has already rung.
-pub(crate) fn saved_variables_stamp(addons: &Path) -> Option<String> {
-    let saved = session_began(addons).map(|millis| millis.to_string())?;
-    Some(format!("{saved}|{}", game_started().unwrap_or_default()))
+/// The game's UI session, as the slot cursor knows it (`Session::key`); None
+/// while its save does not parse.
+pub(crate) fn session_key(addons: &Path) -> Option<String> {
+    Session::now(addons).ok().map(|session| session.key())
 }
 
-/// When the running Wow.exe started, as Windows reports it; None if not running.
-pub(crate) fn game_started() -> Option<String> {
-    game().map(|started| started.to_string())
-}
-
-/// When the running UI session started, near enough: a `/reload` writes SavedVariables
-/// and *then* reloads, so that write marks the boundary between sessions.
+/// When the running UI session began: a `/reload` writes SavedVariables and
+/// *then* reloads, so that write marks the boundary (`Session::began`).
 pub(crate) fn session_began(addons: &Path) -> Option<u128> {
-    // <client>/Interface/AddOns -> <client>/WTF/Account/<account>/SavedVariables
-    let accounts = addons.parent()?.parent()?.join("WTF").join("Account");
-    let mut newest = None;
-    for account in fs::read_dir(accounts).ok()?.flatten() {
-        let saved = account.path().join("SavedVariables").join(format!("{ADDON}.lua"));
-        if let Some(millis) = modified_millis(&saved) {
-            newest = Some(newest.map_or(millis, |best: u128| best.max(millis)));
-        }
-    }
-    newest
+    Session::now(addons).ok().map(|session| session.began)
 }
 
 pub(crate) fn modified_millis(path: &Path) -> Option<u128> {
@@ -422,17 +396,6 @@ pub(crate) fn slot_bell_name(set: u64, slot: u32) -> String {
     format!("g{set}-{slot:03}.wav")
 }
 
-/// This session's set: the Link addon's count of its loads, which the save holds
-/// for the session before, plus one (the game adds its one at load), modulo SETS.
-/// The next session's while the game is closed: it loads the same save.
-pub(crate) fn current_set(addons: &Path) -> u64 {
-    let loads = saved_variables(addons, LINK)
-        .and_then(|save| fs::read_to_string(save).ok())
-        .and_then(|save| crate::backups::loads(&save))
-        .unwrap_or(0);
-    (loads + 1) % SETS
-}
-
 /// Empty the rung bells of every set but `keep` (none while the game is closed):
 /// nothing polls those, so nothing holds them.
 fn empty_idle_sets(signals: &Path, keep: Option<u64>) -> io::Result<()> {
@@ -455,7 +418,15 @@ pub(crate) fn tend_slot_bells(addons: &Path) {
     let signals = addons.join(LINK).join("Signals");
     let mut tended: Option<Option<u64>> = None;
     loop {
-        let set = game_running().then(|| current_set(addons));
+        let set = match game_running().then(|| Session::read(addons)) {
+            None => None,
+            Some(Some(session)) => Some(session.set()),
+            // the game is writing its save: asked again at the next look
+            Some(None) => {
+                thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
         if tended != Some(set) {
             match empty_idle_sets(&signals, set) {
                 Ok(()) => tended = Some(set),
@@ -473,7 +444,8 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     /// A throwaway game folder: <root>/Interface/AddOns/WowCompanion and the
-    /// account's SavedVariables, which is where the slot cursor's reset comes from.
+    /// account's SavedVariables, with Link's save as the game wrote it after
+    /// `loads` loads (session.rs reads the session from it).
     fn game(name: &str, slot_count: u32) -> (PathBuf, PathBuf) {
         let root = env::temp_dir().join(format!("wc-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
@@ -482,29 +454,33 @@ mod tests {
         fs::create_dir_all(addons.join(LINK)).unwrap();
         let saved_dir = root.join("WTF").join("Account").join("A").join("SavedVariables");
         fs::create_dir_all(&saved_dir).unwrap();
-        // Core's save marks the session; Link's holds the slot count it can see
-        let saved = saved_dir.join(format!("{ADDON}.lua"));
-        fs::write(&saved, "WowCompanionDB = { }").unwrap();
-        fs::write(
-            saved_dir.join(format!("{LINK}.lua")),
-            format!("WowCompanionLinkDB = {{ [\"slotCount\"] = {slot_count}, }}"),
-        )
-        .unwrap();
-        (addons, saved)
+        fs::write(saved_dir.join(format!("{ADDON}.lua")), "WowCompanionDB = { }").unwrap();
+        let link = saved_dir.join(format!("{LINK}.lua"));
+        save(&link, 7, slot_count);
+        (addons, link)
+    }
+
+    fn save(link: &Path, loads: u64, slot_count: u32) {
+        fs::write(link, format!("WowCompanionLinkDB = {{ [\"loads\"] = {loads}, [\"slotCount\"] = {slot_count}, }}")).unwrap();
     }
 
     #[test]
-    fn slots_count_up_and_start_over_when_the_game_saves() {
-        let (addons, saved) = game("cursor", 100);
+    fn slots_count_up_and_start_over_in_the_next_set_when_the_game_saves() {
+        let (addons, link) = game("cursor", 100);
         assert_eq!(slots_used(&addons), 0);
-        assert_eq!(next_slot(&addons).unwrap(), 1);
-        assert_eq!(next_slot(&addons).unwrap(), 2);
+        assert_eq!(next_slot(&addons).unwrap(), (1, 8 % SETS));
+        assert_eq!(next_slot(&addons).unwrap(), (2, 8 % SETS));
         assert_eq!(slots_used(&addons), 2);
-        // a /reload writes SavedVariables: the addon's cursor is back at slot 1
+        // another addon's save landing first is no new session (2026-11-12: read
+        // from Core's save, the cursor started over a set early)
+        let core = link.with_file_name(format!("{ADDON}.lua"));
         let later = SystemTime::now() + Duration::from_secs(5);
-        fs::File::options().write(true).open(&saved).unwrap().set_modified(later).unwrap();
+        fs::File::options().write(true).open(&core).unwrap().set_modified(later).unwrap();
+        assert_eq!(next_slot(&addons).unwrap(), (3, 8 % SETS));
+        // a /reload's save of Link: the cursor back at slot 1, in the next set
+        save(&link, 8, 100);
         assert_eq!(slots_used(&addons), 0);
-        assert_eq!(next_slot(&addons).unwrap(), 1);
+        assert_eq!(next_slot(&addons).unwrap(), (1, 9 % SETS));
     }
 
     #[test]
