@@ -32,6 +32,13 @@ pub const DEFAULT_MODEL: &str = "opus";
 /// links, a button to press. A faster model at low effort, few turns, a trimmed
 /// export, and agent/quick.md on top of the rules.
 pub const QUICK_SLOT: &str = crate::voice::Slot::Quick.key();
+/// A request that compacts its conversation (the conversation menu's Compact):
+/// Claude Code's own command, the whole message. A request like any other, so it
+/// waits its turn behind the conversation's others and outlives a restart; its
+/// answer is the compaction.
+pub const COMPACT: &str = "/compact";
+/// `think`'s conversation: no conversation the player talks to.
+const SCRATCH_SLOT: &str = "think";
 const QUICK_MODEL: &str = "sonnet";
 const QUICK_TURNS: &str = "12";
 
@@ -103,7 +110,10 @@ pub struct Spoken {
 /// (2026-11-12: 940k tokens in L1, most of it old exports). A message says only
 /// that it changed and where each section is, when it differs from what this
 /// thread last saw.
-#[derive(Default)]
+///
+/// Every session is a conversation kept in its slot's files (`resumed_slot`,
+/// `scratch`); there is no blank one: a default session was Main's, and `think`
+/// made with it replaced Main's conversation with its own (2026-11-12).
 pub struct Session {
     /// the `--model` to ask for; empty means DEFAULT_MODEL
     pub model: String,
@@ -211,7 +221,14 @@ impl Session {
             .and_then(|file| std::fs::read_to_string(file).ok())
             .map(|text| text.trim().to_string())
             .filter(|text| !text.is_empty());
-        Session { thread, slot: slot.to_string(), ..Session::default() }
+        Session { model: String::new(), thread, seen: None, offered: None, context: None, setup: String::new(), slot: slot.to_string() }
+    }
+
+    /// A conversation of its own for `think`, begun afresh; `forget` it when done.
+    pub fn scratch() -> Self {
+        let mut session = Self::resumed_slot(SCRATCH_SLOT);
+        session.forget();
+        session
     }
 
     /// Forget this conversation: the next request starts a fresh one.
@@ -230,15 +247,18 @@ impl Session {
     /// work to do (announcing itself in game), so the two should overlap rather
     /// than queue.
     pub fn start(&mut self, job: u64, round: u32, transcript: &str, context: Option<String>) -> io::Result<crate::runs::Run> {
-        let fresh = context.filter(|context| self.seen.as_ref() != Some(context));
+        // a compaction is the command alone: a changed character waits for the
+        // next request
+        let fresh = context.filter(|context| self.seen.as_ref() != Some(context) && transcript != COMPACT);
         let message = match &fresh {
             Some(context) => {
                 std::fs::write(character_file(&self.slot)?, context)?;
                 format!("<character>\n{}\n</character>\n\nThe player said: {transcript}", character_note(context))
             }
+            None if transcript == COMPACT => COMPACT.to_string(),
             None => format!("The player said: {transcript}"),
         };
-        let message = if self.thread.is_none() && !self.setup.is_empty() {
+        let message = if self.thread.is_none() && !self.setup.is_empty() && transcript != COMPACT {
             format!("<setup>\n{}\n</setup>\n\n{message}", self.setup)
         } else {
             message
@@ -342,6 +362,11 @@ fn describe(tool: &str, input: &Value) -> Option<String> {
     })
 }
 
+/// `939,512` as `940k`.
+fn thousands(tokens: u64) -> String {
+    format!("{}k", (tokens + 500) / 1000)
+}
+
 /// Whether a result carries the schema'd answer.
 fn answers(result: &Value) -> bool {
     matches!(result.get("structured_output"), Some(Value::Object(_)))
@@ -351,13 +376,24 @@ fn read(run: &crate::runs::Run, mut progress: impl FnMut(&str), leave: impl Fn()
     let mut envelope: Option<Value> = None;
     // the conversation's size at each call, and the model the turn runs on
     let (mut size, mut model): (Option<u64>, Option<String>) = (None, None);
+    // a compaction in the turn, asked for or automatic: its size before and after
+    let mut compacted: Option<(u64, u64, bool)> = None;
     let followed = crate::runs::follow(run, leave, |line| {
         let Ok(event) = serde_json::from_str::<Value>(line) else { return };
-        match event.get("type").and_then(Value::as_str) {
-            Some("system") if event.get("subtype").and_then(Value::as_str) == Some("init") => {
+        match (event.get("type").and_then(Value::as_str), event.get("subtype").and_then(Value::as_str)) {
+            (Some("system"), Some("init")) => {
                 model = event.get("model").and_then(Value::as_str).map(str::to_string);
             }
-            Some("assistant") => {
+            (Some("system"), Some("status")) if event.get("status").and_then(Value::as_str) == Some("compacting") => {
+                progress("compacting the conversation");
+            }
+            (Some("system"), Some("compact_boundary")) => {
+                let count = |key: &str| event.pointer(&format!("/compact_metadata/{key}")).and_then(Value::as_u64).unwrap_or(0);
+                let manual = event.pointer("/compact_metadata/trigger").and_then(Value::as_str) == Some("manual");
+                compacted = Some((count("pre_tokens"), count("post_tokens"), manual));
+                size = Some(count("post_tokens"));
+            }
+            (Some("assistant"), _) => {
                 if let Some(usage) = event.pointer("/message/usage") {
                     let count = |key: &str| usage.get(key).and_then(Value::as_u64).unwrap_or(0);
                     size = Some(count("input_tokens") + count("cache_read_input_tokens") + count("cache_creation_input_tokens"));
@@ -389,8 +425,8 @@ fn read(run: &crate::runs::Run, mut progress: impl FnMut(&str), leave: impl Fn()
             // first and gave an empty result, and the real answer came second
             // (R1, 2026-11-12). Until one carries an answer the latest stands, so
             // a run that ends in an error still reports it; the rest are logged.
-            Some("result") if envelope.as_ref().map_or(true, |kept| !answers(kept)) => envelope = Some(event),
-            Some("result") => {
+            (Some("result"), _) if envelope.as_ref().map_or(true, |kept| !answers(kept)) => envelope = Some(event),
+            (Some("result"), _) => {
                 let later = event.get("result").and_then(Value::as_str).unwrap_or("");
                 println!("  a later result from the same turn, not delivered: {}", later.chars().take(160).collect::<String>());
             }
@@ -413,6 +449,12 @@ fn read(run: &crate::runs::Run, mut progress: impl FnMut(&str), leave: impl Fn()
     }
     if envelope.get("is_error").and_then(Value::as_bool) == Some(true) {
         return Err(io::Error::other(format!("claude reported an error: {envelope}")));
+    }
+    // a compaction asked for (COMPACT) answers with what it did
+    if let (false, Some((before, after, true))) = (answers(&envelope), compacted) {
+        let say = format!("Compacted: {} to {} tokens.", thousands(before), thousands(after));
+        let spoken = Spoken { say, inbox: None, look: false, fresh: false, modules: Vec::new(), out_of_steps: false };
+        return Ok(Some(Answer { spoken, thread, context }));
     }
     // `structured_output` is the schema'd answer already parsed; `result` carries
     // the same thing as a JSON string. Prefer the former, fall back to the latter.

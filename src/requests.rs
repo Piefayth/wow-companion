@@ -305,6 +305,12 @@ pub(crate) fn watch_commands(addons: &Path, session: impl Fn(&str) -> std::sync:
                     println!("  [{slot}] starts over (the conversation menu)");
                 });
             }
+            // a request like any other (agent::COMPACT), so it waits its turn
+            ["WCCMD", _nonce, "compact", slot] => {
+                if let Err(err) = tell(slot, agent::COMPACT) {
+                    eprintln!("  compact {slot}: {err}");
+                }
+            }
             ["WCCMD", _nonce, "bind", key, what] => crate::settings_page::bind(addons, key, what),
             // the value is the rest of the line as drawn (a mic's name has spaces)
             ["WCCMD", _nonce, "set", key, ..] => {
@@ -355,8 +361,9 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
     voice::mark(&format!("agent starting [{}]", session.slot));
     let context = agent_context_for(addons, &session.slot);
     // what you cancelled after the agent had it is in its conversation; it
-    // must know those words were withdrawn
-    let withdrawn = jobs::take_withdrawn(&session.slot);
+    // must know those words were withdrawn (told at the next request, not a
+    // compaction, whose message is the command alone)
+    let withdrawn = if spoken == agent::COMPACT { Vec::new() } else { jobs::take_withdrawn(&session.slot) };
     let told;
     let spoken_for_agent = if withdrawn.is_empty() {
         spoken
@@ -560,7 +567,7 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, group: u64, ru
 }
 
 pub(crate) fn think(addons: &Path, spoken: &str) -> io::Result<()> {
-    let mut session = agent::Session::default();
+    let mut session = agent::Session::scratch();
     let started = Instant::now();
     let context = agent_context_for(addons, &session.slot);
     // a run of its own, with no job: its folder goes when it is done
@@ -568,6 +575,7 @@ pub(crate) fn think(addons: &Path, spoken: &str) -> io::Result<()> {
     let run = session.start(id, 0, spoken, context)?;
     let answer = session.finish(&run, |doing| println!("  ... {doing}"), || false);
     crate::runs::finished(id);
+    session.forget();
     let answer = answer?.ok_or_else(|| io::Error::other("the run was left"))?;
     println!("({:.1}s) say: {}", started.elapsed().as_secs_f32(), answer.say);
     println!("would send: {}", answer.inbox.as_ref().map(Msg::lua).unwrap_or_else(|| "nothing".into()));
