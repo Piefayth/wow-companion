@@ -168,21 +168,21 @@ cast:SetAllPoints()
 WC.Style.CastOn(cast, settings, "LEFT")
 
 -- Trial, temporary (the player, 2026-11-13): the spine's ends where it meets
--- the raised panel's edges, round 10 (tools/make_cover_trial.py): a thin sheet
+-- the raised panel's edges, round 11 (tools/make_cover_trial.py): a thin sheet
 -- over the panel's corner and the spine's round end, in looks that differ in
 -- how it stands up; and how the dividers, lying lower, meet the spine on the
 -- panel's edge. Kept in WowCompanionDB.spineEnd and .dividerMeet; what is not
 -- picked goes with this switch. cut: how far each end's art reaches down.
 local ENDS = {
 	{ key = "Round", name = "Round, no cover", cut = 3 },
-	{ key = "CoverA", name = "Cover A, round 9", cut = 17, cover = "A" },
-	{ key = "CoverB", name = "Cover B, thin, no shadow", cut = 17, cover = "B" },
-	{ key = "CoverC", name = "Cover C, rounder edges", cut = 17, cover = "C" },
-	{ key = "CoverD", name = "Cover D, pressed harder", cut = 17, cover = "D" },
-	{ key = "CoverE", name = "Cover E, flat over the vine", cut = 17, cover = "E" },
-	{ key = "CoverF", name = "Cover F, deeper shadow", cut = 17, cover = "F" },
-	{ key = "CoverG", name = "Cover G, finer outline", cut = 17, cover = "G" },
-	{ key = "CoverH", name = "Cover H, flush", cut = 17, cover = "H" },
+	{ key = "CoverD", name = "Cover D, round 10's", cut = 17, cover = "D" },
+	{ key = "CoverD2", name = "D2, pressed harder", cut = 17, cover = "D2" },
+	{ key = "CoverD3", name = "D3, hardest", cut = 17, cover = "D3" },
+	{ key = "CoverD4", name = "D4, tight round the vine", cut = 17, cover = "D4" },
+	{ key = "CoverD5", name = "D5, a broad swell", cut = 17, cover = "D5" },
+	{ key = "CoverD6", name = "D6, a full round ridge", cut = 17, cover = "D6" },
+	{ key = "CoverD7", name = "D7, thinner edges", cut = 17, cover = "D7" },
+	{ key = "CoverD8", name = "D8, deeper shadow", cut = 17, cover = "D8" },
 }
 local MEETS = {
 	{ key = "joined", name = "Joined, as now" },
@@ -210,7 +210,7 @@ local function paintEnds()
 		c:SetSize(48, 16)
 		c:SetPoint(which:upper(), capped, which:upper())
 		if e.cover then
-			c:SetTexture(([[Interface\AddOns\WowCompanion\Art\Vine-CornerCover%s%s-T10]]):format(e.cover, which), "CLAMP", "CLAMP")
+			c:SetTexture(([[Interface\AddOns\WowCompanion\Art\Vine-CornerCover%s%s-T11]]):format(e.cover, which), "CLAMP", "CLAMP")
 		end
 		c:SetShown(e.cover ~= nil)
 	end
