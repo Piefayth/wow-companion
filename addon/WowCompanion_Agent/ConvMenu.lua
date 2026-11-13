@@ -11,16 +11,17 @@
 -- A drawer of the window (the player, 2026-11-12/13): it slides out of the
 -- window's right side, level with its row, and has its own rim on its three
 -- outer sides, the window rim's own profile (tools/make_frame_art.py,
--- drawer(), Drawer-*): its top and bottom rims run over the window rim's
--- outer shoulder and under its bead, as the title rule meets the rim, so the
--- joints' pieces hold the window's rim beside them and lie over it. Inside,
--- the window's body slate, the options as compact rows of the list's names
--- (no dividers; the one under the cursor on the replies' slate, its name
--- lit), and under a rule of the title rule's make, a band of its own for
--- what cross and circle do.
+-- drawer(), Drawer-*): its top and bottom rims bend up and down into the
+-- window's rim, a volute of wire in each bend (drawer round 9's 6), so the
+-- joints' pieces reach past the drawer, hold the window's rim beside them
+-- and lie over it. Inside, the window's body slate, the options as compact
+-- rows of the list's names (no dividers; the one under the cursor on the
+-- replies' slate, its name lit), and under a rule of the title rule's make,
+-- a band of its own for what cross and circle do.
 local W, ROW, FOOT, PAD = 160, 24, 24, 6
 local RIM, RULE = 6, 3 -- the window's rim (Window.lua), the rule's width
-local DRAWER = [[Interface\AddOns\WowCompanion_Agent\Art\Drawer-%s-22]] -- make_frame_art.py's DRAWER_VERSION
+local JOIN = 24 -- a joint piece's reach past the window's rim, out and up (make_frame_art.py's)
+local DRAWER = [[Interface\AddOns\WowCompanion_Agent\Art\Drawer-%s-23]] -- make_frame_art.py's DRAWER_VERSION
 local menu = CreateFrame("Frame", "WCConvMenu", UIParent)
 menu:Hide()
 local function piece(name, layer, sub)
@@ -29,19 +30,19 @@ local function piece(name, layer, sub)
 	return t
 end
 local tj, bj = piece("TopJoin"), piece("BottomJoin")
-tj:SetSize(2 * RIM, RIM)
-tj:SetPoint("TOPLEFT")
-bj:SetSize(2 * RIM, RIM)
-bj:SetPoint("BOTTOMLEFT")
+tj:SetSize(RIM + JOIN, RIM + JOIN)
+tj:SetPoint("TOPLEFT", 0, JOIN)
+bj:SetSize(RIM + JOIN, RIM + JOIN)
+bj:SetPoint("BOTTOMLEFT", 0, -JOIN)
 local tr, br = piece("TopRightCorner"), piece("BottomRightCorner")
 tr:SetSize(RIM, RIM)
 tr:SetPoint("TOPRIGHT")
 br:SetSize(RIM, RIM)
 br:SetPoint("BOTTOMRIGHT")
 local top, bottom = piece("TopEdge"), piece("BottomEdge")
-top:SetPoint("TOPLEFT", tj, "TOPRIGHT")
+top:SetPoint("TOPLEFT", RIM + JOIN, 0)
 top:SetPoint("BOTTOMRIGHT", tr, "BOTTOMLEFT")
-bottom:SetPoint("BOTTOMLEFT", bj, "BOTTOMRIGHT")
+bottom:SetPoint("BOTTOMLEFT", RIM + JOIN, 0)
 bottom:SetPoint("TOPRIGHT", br, "TOPLEFT")
 -- the right rim, the rule's end tucked under it, the right rim again
 local ruleRight = piece("RightRule")
@@ -59,7 +60,7 @@ band:SetPoint("TOPLEFT", rule, "BOTTOMLEFT")
 band:SetPoint("BOTTOMRIGHT", -RIM, RIM)
 local body = menu:CreateTexture(nil, "BACKGROUND")
 WC.Style.Stone(body, "you", 0.72)
-body:SetPoint("TOPLEFT", RIM, -RIM)
+body:SetPoint("TOPLEFT", RIM, -1) -- under the top rim: the elbow's inner edge rises
 body:SetPoint("BOTTOMRIGHT", rule, "TOPRIGHT")
 local lit = menu:CreateTexture(nil, "BACKGROUND", nil, 2)
 WC.Style.Stone(lit, "claude")
