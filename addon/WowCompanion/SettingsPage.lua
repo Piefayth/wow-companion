@@ -362,8 +362,13 @@ local function button(row)
 	b:SetFontString(word)
 	word:SetPoint("CENTER", 0, 1)
 	b:SetPushedTextOffset(0, -1)
-	b:SetText(textOf(row.button))
-	refreshers[#refreshers + 1] = function() b:SetText(textOf(row.button)) end
+	-- as wide as what it holds, its right end on the other controls' line
+	local function fill()
+		b:SetText(textOf(row.button))
+		b:SetWidth(word:GetStringWidth() + 2 * 16 + 16)
+	end
+	fill()
+	refreshers[#refreshers + 1] = fill
 	b:SetScript("OnClick", row.onClick)
 	r:SetScript("OnClick", row.onClick)
 	WC.MarkIgnored(b)
@@ -371,11 +376,11 @@ local function button(row)
 end
 
 -- A key binding: the choice's carved slot closed at both ends, no arrows (it is
--- set by pressing), showing the key as the game does, by its icon, in bronze.
+-- set by pressing), holding the key as the game shows it, by its icon.
 local function key(row)
 	local r = settingRow(row)
 	local b = CreateFrame("Button", nil, r)
-	b:SetSize(CONTROL_W + VALUE_W, 32)
+	b:SetHeight(32)
 	place(r, b)
 	local left = b:CreateTexture(nil, "ARTWORK")
 	left:SetTexture(controlArt("Choice-Left-Closed"))
@@ -389,8 +394,13 @@ local function key(row)
 	local word = bronze(b)
 	b:SetFontString(word)
 	word:SetPoint("CENTER")
-	b:SetText(textOf(row.button))
-	refreshers[#refreshers + 1] = function() b:SetText(textOf(row.button)) end
+	-- as wide as what it holds, its right end on the other controls' line
+	local function fill()
+		b:SetText(textOf(row.button))
+		b:SetWidth(word:GetStringWidth() + 2 * 16 + 16)
+	end
+	fill()
+	refreshers[#refreshers + 1] = fill
 	b:SetScript("OnClick", row.onClick)
 	r:SetScript("OnClick", row.onClick)
 	WC.MarkIgnored(b)
