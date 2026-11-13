@@ -6,9 +6,12 @@ has picked one.
     python tools/make_drawer_trials.py   writes addon/WowCompanion_Agent/Art/DrawerTrial-*-<v>.tga
                                          and target/drawer-trials.png (all of them, text mocked)
 
-Round 5 (round 1 d5d8e49, 2 4c49c05, 3 beb6100, 4 5ed179c): the crossing
-itself as the settings joint's, a four-filleted star of one metal with one
-unbroken ridge of light, the ornament springing from the star. A cell is drawn as the game would draw
+Round 6 (round 1 d5d8e49, 2 4c49c05, 3 beb6100, 4 5ed179c, 5 4cdd7e2): the
+round 5 crossing (a four-filleted star of one metal, one ridge of light), and
+the ornament drafted, not sculpted: round rods along centrelines, each its own
+height (sqrt(r^2 - d^2) from its own centreline, never from the union's
+outline), welded to the frame only at its root by a smooth union of radius
+weld, no blur; so forks stay two rods and every volute's eye stays open. A cell is drawn as the game would draw
 the drawer: a base picture (a slice of the window's right side, faded where
 it is cut, and the drawer butted against its rim, with the legend's panel)
 and, over each place the drawer's top and bottom rims meet the window's rim, a
@@ -27,11 +30,12 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
+from scipy.spatial import cKDTree
 import artout
 from make_frame_art import grid, bead, rim_metal, Layers, fit, octagon_depth, brushed, streaks, BRONZE, LINE, BAND
 from make_scrollbar_art import write_tga, Wire
 
-VERSION = 5  # DrawerTrials.lua's
+VERSION = 6  # DrawerTrials.lua's
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 STONE = os.path.join(ROOT, "addon", "WowCompanion", "Art", "%s-6.tga")
@@ -136,10 +140,10 @@ class Joint:
     rim's swell, extra metal, ornament (polygons and circles, in place) and
     the meetings where the drawer's rim runs through the window's."""
 
-    def __init__(self, outer, inner, bulge=no_bulge, extra=None, pieces=(), through=(), weld=0.8):
+    def __init__(self, outer, inner, bulge=no_bulge, extra=None, rods=(), through=(), weld=1.0):
         self.outer, self.inner, self.bulge, self.weld = outer, inner, bulge, weld
         self.extra = extra if extra is not None else np.zeros(xx.shape, bool)
-        self.pieces = list(pieces)
+        self.rods = list(rods)
         self.through = through
 
 
@@ -178,10 +182,6 @@ def metal(j, legend_extra):
         m = m | polys([[(XL, y0), (XL - STAR_POINT, cy), (XL, y0 + RIM)]])
         near = np.hypot(xx - (X0 - RIM / 2), yy - cy) < STAR_FILLET * 3 + RIM
         m = m | (closing(m, STAR_FILLET) & near)
-    if j.pieces:
-        orn = polys(j.pieces)
-        # fillets only where a wire meets the frame; a volute's own gaps stay open
-        m = m | orn | (closing(m | orn, j.weld) & (edt(~m) < j.weld + 0.7))
     return m, s_out, np.where(strip, s_w, np.inf)
 
 
@@ -203,7 +203,28 @@ def metal_layer(j, legend_extra):
     for cx, cy in crossings(j):
         w = np.maximum(w, smoothstep((14.0 - np.hypot(xx - cx, yy - cy)) / 6.0))
     beads = beads * (1 - w) + star * w
-    hgt = ndimage.gaussian_filter(np.where(m, hgt + 0.6 * beads, 0), K * 0.1)
+    hgt = np.where(m, hgt + 0.6 * beads, 0)
+    if j.rods:
+        rod_h, rod_sd, r_near = rods_field(j.rods)
+        # welds: only at each wire's root, a fillet of radius weld between the
+        # rod and the frame (a smooth union there and nowhere else)
+        frame_sd = np.where(m, -edt(m), edt(~m))
+        wk = np.zeros(xx.shape, np.float32)
+        for pts, _ in j.rods:
+            wk = np.maximum(wk, smoothstep((4.0 - np.hypot(xx - pts[0][0], yy - pts[0][1])) / 2.0))
+        k = j.weld * wk + 1e-6
+        hh = np.clip(0.5 + 0.5 * (frame_sd - rod_sd) / k, 0, 1)
+        smin = frame_sd * (1 - hh) + rod_sd * hh - k * hh * (1 - hh)
+        fillet = (smin < 0) & ~m & (rod_h <= 0)
+        depth = np.clip(-smin, 0, None)
+        fil_h = np.sqrt(np.clip(depth * (2 * r_near - depth), 0, None)) / np.maximum(r_near, 1e-3)
+        # a rod is round: its height from its own centreline, never from the
+        # union's outline, so a fork or a crossing stays two rods
+        rod_n = rod_h / np.maximum(r_near, 1e-3)
+        hgt = np.maximum(hgt, np.where(rod_h > 0, 0.25 + 1.0 * rod_n, 0))
+        hgt = np.where(fillet, 0.25 + 1.0 * fil_h, hgt)
+        m = m | (rod_h > 0) | fillet
+        d = edt(m)
     s = np.clip(np.minimum(s_out, s_w), 0, 59)
     col = rim_metal(hgt, BRONZE, K) * (1 + 0.09 * brushed(s))[..., None]
     col = col + (LINE - col) * (np.clip(1 - d / 0.5, 0, 1) * 0.9)[..., None]
@@ -308,25 +329,49 @@ def joints(j, g, base_cast):
 # Each design is the top joint's wires; the bottom joint is the same mirrored
 # about the drawer's middle (points moved, so the light stays top left).
 
-def flip(pieces):
-    """Mirrored about the drawer's middle, for the bottom joint."""
-    out = []
-    for p in pieces:
-        if isinstance(p, tuple):
-            out.append((p[0], DT + DB - p[1], p[2]))
-        else:
-            out.append([(x, DT + DB - y) for x, y in p])
-    return out
+def flip(rods):
+    """Mirrored about the drawer's middle, for the bottom joint (points moved)."""
+    return [(np.stack([p[:, 0], DT + DB - p[:, 1]], 1), r) for p, r in rods]
 
 
-def both(pieces):
-    return list(pieces) + flip(pieces)
+def both(rods):
+    return list(rods) + flip(rods)
+
+
+def rods_field(rods):
+    """Round rods along centrelines: each pixel's height over the nearest rod
+    (sqrt(r^2 - d^2), the rod's own cross-section), the signed distance to the
+    rods' surface, and the radius there."""
+    pts = np.concatenate([p for p, _ in rods])
+    rad = np.concatenate([r for _, r in rods])
+    tree = cKDTree(pts)
+    q = np.stack([xx.ravel(), yy.ravel()], 1)
+    dist, idx = tree.query(q, k=8, distance_upper_bound=float(rad.max()) + 4.0)
+    ok = np.isfinite(dist)
+    idx = np.where(ok, idx, 0)
+    r = rad[idx]
+    h2 = np.where(ok, r * r - dist * dist, -1e9)
+    best = h2.argmax(1)
+    rows = np.arange(len(q))
+    h = np.sqrt(np.clip(h2[rows, best], 0, None))
+    sd = np.where(ok, dist - r, 1e9).min(1)
+    rn = r[rows, best]
+    shape = xx.shape
+    return h.reshape(shape), sd.reshape(shape), rn.reshape(shape)
 
 
 def wires(*ws):
-    """(wire, root half-width, tip half-width) as metal."""
-    # a tip as heavy as the volute's last turn leaves room for, its eye open
-    return [q for w, w0, w1 in ws for q in w.pieces(w0, min(w1, (getattr(w, "pitch", 99) - 1.0) / 2))]
+    """(wire, root half-width, tip half-width) as rods: its centreline and a
+    radius at every point (the swell of make_scrollbar_art's Wire.pieces)."""
+    out = []
+    for w, w0, w1 in ws:
+        w1 = min(w1, (getattr(w, "pitch", 99) - 1.0) / 2)
+        p = np.array(w.pts)
+        seg = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(p, axis=0), axis=1))])
+        t = seg / max(seg[-1], 1e-9)
+        hw = w0 + (w1 - w0) * t + 0.15 * w0 * np.sin(np.pi * np.clip(t / 0.66, 0, 1)) * (1 - t)
+        out.append((p, hw))
+    return out
 
 
 BOTH = ("Top", "Bottom")  # the meetings where the drawer's rim runs through
@@ -357,8 +402,8 @@ def cascade():
 def fork_pair():
     """Two stems out of the corner, one up the window's rim and one along the
     drawer's, each into its own volute curling toward the other."""
-    up = Wire((CX, CY), -70).volute((X0 + 9, 12), 7.0, 180, 1, 1.5, eye=2.0, out=0.5, inn=0.45)
-    along = Wire((CX, CY), -20).volute((X0 + 30, 30), 8.0, 0, -1, 1.0, eye=2.6, out=0.5, inn=0.45)
+    up = Wire((CX, CY), -55).volute((X0 + 13, 12), 7.0, 180, 1, 1.5, eye=2.0, out=0.5, inn=0.45)
+    along = Wire((CX, CY), -32).volute((X0 + 30, 26), 7.5, 90, -1, 1.0, eye=2.4, out=0.5, inn=0.45)
     return wires((up, 1.6, 0.9), (along, 1.6, 0.9))
 
 
@@ -373,21 +418,21 @@ def lyre():
 def triple():
     """Two volutes off one stem from the corner, the second smaller and of the
     other hand (the Triskele's rhythm)."""
-    stem = Wire((CX, CY), ROOT_HEADING).volute((X0 + 12, 18), 7.0, 180, 1, 1.5, eye=2.0, out=0.5, inn=0.45)
-    b = stem.fork(0.25, -10).volute((X0 + 28, 22), 6.0, 0, -1, 1.25, eye=1.9, out=0.5, inn=0.5)
+    stem = Wire((CX, CY), ROOT_HEADING).volute((X0 + 15, 18), 7.0, 180, 1, 1.5, eye=2.0, out=0.5, inn=0.45)
+    b = stem.fork(0.18, 20).volute((X0 + 32, 33), 5.8, 180, 1, 1.0, eye=1.9, out=0.5, inn=0.5)
     return wires((stem, 1.6, 0.9), (b, 1.4, 0.9))
 
 
 def designs():
     band = legend_band()
-    weld = dict(through=BOTH, weld=0.9)
+    weld = dict(through=BOTH, weld=1.2)
     return [
         (1, "The star alone: the crossing forged, no ornament", Joint(2.0, 1.8, **weld), band),
-        (2, "Sprig: one stem from the star into a big volute", Joint(2.0, 1.8, pieces=both(sprig()), **weld), band),
-        (3, "Cascade from the star, two satellites", Joint(2.0, 1.8, pieces=both(cascade()), **weld), band),
-        (4, "Fork: up the rim and along the drawer", Joint(2.0, 1.8, pieces=both(fork_pair()), **weld), band),
-        (5, "Lyre: a volute and a long S over the drawer", Joint(2.0, 1.8, pieces=both(lyre()), **weld), band),
-        (6, "Pair: two graded volutes off one stem", Joint(2.0, 1.8, pieces=both(triple()), **weld), band),
+        (2, "Sprig: one stem from the star into a big volute", Joint(2.0, 1.8, rods=both(sprig()), **weld), band),
+        (3, "Cascade from the star, two satellites", Joint(2.0, 1.8, rods=both(cascade()), **weld), band),
+        (4, "Fork: up the rim and along the drawer", Joint(2.0, 1.8, rods=both(fork_pair()), **weld), band),
+        (5, "Lyre: a volute and a long S over the drawer", Joint(2.0, 1.8, rods=both(lyre()), **weld), band),
+        (6, "Pair: a stem into a volute, a second budding off", Joint(2.0, 1.8, rods=both(triple()), **weld), band),
     ]
 
 

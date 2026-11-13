@@ -1,6 +1,6 @@
 -- Drawer trials, temporary: ways the conversation menu's drawer
 -- (ConvMenu.lua) could hook into the window's rim, side by side at true
--- size. Round 5: each cell is drawn as the drawer would be, a base picture
+-- size. Round 6: each cell is drawn as the drawer would be, a base picture
 -- (a slice of the window's right side and the drawer butted against its rim,
 -- the legend's panel) with a joint piece over each place the drawer's rims
 -- meet the window's: the crossing is the settings joint's, a four-filleted
@@ -8,7 +8,7 @@
 -- (tools/make_drawer_trials.py). Its words drawn here. Shown only: nothing
 -- here is a stop. Goes when one is chosen.
 local S = WC.Style
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\DrawerTrial-%s-5]] -- the generator's VERSION
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\DrawerTrial-%s-6]] -- the generator's VERSION
 -- the generator's cell and joint boxes, in units, at 2.7 texels a unit
 local TEXEL = 2.7
 local CW, CH, BASE_TEX = 172, 180, 512
@@ -22,7 +22,7 @@ local OPTIONS = {
 	{ "Band", "Cascade from the star, two satellites" },
 	{ "Band", "Fork: up the rim and along the drawer" },
 	{ "Band", "Lyre: a volute and a long S over the drawer" },
-	{ "Band", "Pair: two graded volutes off one stem" },
+	{ "Band", "Pair: a stem into a volute, a second budding off" },
 }
 
 local function picture(f, file, x, y, w, h, tex, layer)
