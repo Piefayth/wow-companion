@@ -1,19 +1,20 @@
--- Control trials, temporary: buttons for the settings page, each a variation on
--- the list's raised slab, at rest and lit (the row under the cursor), beside
--- today's, while the player chooses (art: tools/make_button_art.py). Shown
--- only: nothing here is a stop. Goes when one is chosen.
+-- Control trials, temporary: buttons for the settings page, the cut-cornered
+-- slab made more of a button, each at rest, lit (the row under the cursor) and
+-- pressed, beside today's, while the player chooses (art:
+-- tools/make_button_art.py). Shown only: nothing here is a stop. Goes when one
+-- is chosen.
 local S = WC.Style
-local ART = [[Interface\AddOns\WowCompanion\Art\Btn-%s-%s-7]] -- make_button_art.py's ROUND
+local ART = [[Interface\AddOns\WowCompanion\Art\Btn-%s-%s-8]] -- make_button_art.py's ROUND
 -- make_button_art.py's KINDS, in its order, with what each is
 local KINDS = {
-	{ "Slab", "1. Slab, as the list's" },
-	{ "Rimmed", "2. Slab, rim always" },
-	{ "Chamfer", "3. Corners cut" },
-	{ "Scrolls", "4. Scrolls at its ends" },
-	{ "Block", "5. Thick stone block" },
-	{ "Corners", "6. Bronze corners" },
-	{ "Pillow", "7. Swelling face" },
-	{ "Inlaid", "8. Wire inlaid" },
+	{ "CutBlock", "1. Cut, thick block" },
+	{ "CutBlockRim", "2. Cut, block, rim" },
+	{ "CutPillow", "3. Cut, swelling, rim" },
+	{ "CutBlockPillow", "4. Cut, block + swell" },
+	{ "Facets", "5. Cut, faceted bevel" },
+	{ "Plinth", "6. Cut, on a bronze step" },
+	{ "CutCorners", "7. Bronze on the cuts" },
+	{ "CornerScrolls", "8. Scrolls on the cuts" },
 }
 
 WC.Companion.AddTab("Trials", function(page)
@@ -30,19 +31,20 @@ WC.Companion.AddTab("Trials", function(page)
 			fs:SetPoint("TOPLEFT", 14, y - 10)
 			fs:SetText(text)
 		end
-		local function button(kind, lit, x, y)
+		local function button(kind, state, x, y)
+			local lit = state == "Lit"
 			local t = box:CreateTexture(nil, "ARTWORK")
-			t:SetTexture(ART:format(kind, lit and "Lit" or "Rest"))
+			t:SetTexture(ART:format(kind, state))
 			t:SetSize(160, 36)
 			t:SetPoint("TOPLEFT", x, y)
 			local fs = box:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-			fs:SetPoint("CENTER", t, "CENTER", 0, 1)
+			fs:SetPoint("CENTER", t, "CENTER", 0, state == "Pushed" and -1 or 1)
 			fs:SetTextColor(unpack(lit and S.NAME_LIT or S.BRONZE))
 			fs:SetText("Clear")
 		end
 		local head = box:CreateFontString(nil, "OVERLAY", "GameFontDisable")
 		head:SetPoint("TOPLEFT", 220, -8)
-		head:SetText("At rest, then lit (under the cursor)")
+		head:SetText("At rest, lit (under the cursor), pressed")
 		label("Now", -28)
 		local now = S.Button(box)
 		now:SetLabel("Clear")
@@ -50,8 +52,9 @@ WC.Companion.AddTab("Trials", function(page)
 		for i, k in ipairs(KINDS) do
 			local y = -28 - i * 44
 			label(k[2], y)
-			button(k[1], false, 220, y)
-			button(k[1], true, 400, y)
+			for i, state in ipairs({ "Rest", "Lit", "Pushed" }) do
+				button(k[1], state, 220 + (i - 1) * 172, y)
+			end
 		end
 	end)
 end)
