@@ -7,10 +7,14 @@ local LOG_KEEP = WC.Companion.LOG_KEEP
 -- gets a small "Claude 20:45" header, and a reply is rendered from the little
 -- markdown it carries. Blank lines are paragraph gaps, "#" lines headings,
 -- "- " and "1." lines bullets with a hanging indent, ``` fences code on a
--- dark band, and `code` and **bold** inline colour. A ScrollingMessageFrame
+-- dark band, "> " lines a quote beside a thin vine, "---" a vine divider,
+-- `code` and **bold** inline colour, ![name](icon:spell:8921) a game icon in
+-- the line and [Moonfire](spell:8921) a game link (spell, item, quest) the
+-- cursor can stop on. A ScrollingMessageFrame
 -- cannot do any of that (one font, no hanging indent), so this is a scroll
 -- frame of font strings, one per line, stacked top to bottom.
 local TURN_GAP, PARA_GAP, LINE_SPACING = 14, 7, 2
+local QUOTE_IN = 20 -- a quote's text in from the line, its vine in the room
 -- The scroll frame is the chat well's transcript rect (Window.lua,
 -- docs/ui-layout.md) and the backings fill it edge to edge; the text keeps
 -- these margins inside it.
@@ -66,22 +70,113 @@ local function codeBand(t)
 	end)
 end
 -- a row leaves the transcript: its parts hidden and kept for the next
+local function give(pool, part)
+	part:Hide()
+	part:ClearAllPoints()
+	table.insert(pool, part)
+end
+-- a flowed row's extra lines and its links, given back before it flows again
+local function releaseFlow(t, row)
+	for _, part in ipairs(row.parts or {}) do give(t.pool.text, part) end
+	for _, b in ipairs(row.links or {}) do b.link = nil give(t.pool.link, b) end
+	row.parts, row.links = row.words and {} or nil, row.words and {} or nil
+end
 local function release(t, row)
 	local pool = t.pool
+	releaseFlow(t, row)
 	for _, part in ipairs({ { row.fs, pool.text }, { row.marker, pool.text }, { row.band, pool.band },
-		{ row.turn, pool.turn }, { row.divider, pool.divider } }) do
-		if part[1] then
-			part[1]:Hide()
-			part[1]:ClearAllPoints()
-			table.insert(part[2], part[1])
-		end
+		{ row.turn, pool.turn }, { row.divider, pool.divider }, { row.quoteBar, pool.quote },
+		{ row.rule, pool.rule } }) do
+		if part[1] then give(part[2], part[1]) end
 	end
 end
 
+-- a game icon by kind and id, or by the icon's own file id
+local function iconOf(kind, id)
+	id = tonumber(id)
+	if kind == "spell" then return C_Spell.GetSpellTexture(id) end
+	if kind == "item" then return C_Item.GetItemIconByID(id) end
+	if kind == "" then return id end
+end
+local function iconText(kind, id)
+	local icon = iconOf(kind, id)
+	return icon and ("|T%s:0|t"):format(icon) or ""
+end
 local function inline(text)
+	text = text:gsub("!%[[^%]]*%]%(icon:(%a+):(%d+)%)", iconText)
+	text = text:gsub("!%[[^%]]*%]%(icon:(%d+)%)", function(id) return iconText("", id) end)
 	text = text:gsub("%*%*(.-)%*%*", "|cfff4ecdc%1|r")
 	text = text:gsub("`([^`]+)`", "|cff9ad5ff%1|r")
 	return text
+end
+
+-- Game links, [name](kind:id): drawn as the game draws a link in chat (its
+-- icon, the name in brackets in its colour), each a button the cursor stops
+-- on, its tooltip shown there; an item's opens the item viewer
+local LINK = "%[([^%]]+)%]%((%a+):(%d+)%)"
+local LINKED = { spell = true, item = true, quest = true }
+local function linkColour(kind, id)
+	if kind == "spell" then return "71d5ff" end
+	if kind == "quest" then return "ffd100" end
+	local quality = C_Item.GetItemQualityByID(id)
+	if quality then
+		local r, g, b = C_Item.GetItemQualityColor(quality)
+		if r then return ("%02x%02x%02x"):format(r * 255, g * 255, b * 255) end
+	end
+	return "ffffff"
+end
+local function hasLinks(text)
+	for _, kind in text:gmatch(LINK) do
+		if LINKED[kind] then return true end
+	end
+end
+-- the line as words to flow: plain words, and each link whole
+local function words(text)
+	local out, at = {}, 1
+	local function plain(chunk)
+		for word in inline(chunk):gmatch("%S+") do out[#out + 1] = { text = word } end
+	end
+	while true do
+		local s, e, name, kind, id = text:find(LINK, at)
+		if not s then break end
+		plain(text:sub(at, s - 1))
+		if LINKED[kind] then
+			id = tonumber(id)
+			local icon = kind ~= "quest" and iconText(kind, id) or ""
+			out[#out + 1] = { text = ("%s|cff%s[%s]|r"):format(icon ~= "" and icon .. " " or "",
+				linkColour(kind, id), name), link = kind .. ":" .. id, kind = kind }
+		else
+			plain(text:sub(s, e))
+		end
+		at = e + 1
+	end
+	plain(text:sub(at))
+	return out
+end
+-- the colour a word leaves open at its end, so a line broken inside **bold**
+-- carries it onto the next
+local function openColour(open, word)
+	for code in word:gmatch("|([cr]%x*)") do
+		if code:sub(1, 1) == "c" then open = "|" .. code:sub(1, 9) else open = nil end
+	end
+	return open
+end
+local function linkButton(t)
+	return take(t.pool.link, function()
+		local b = CreateFrame("Button", nil, t.content)
+		b:SetScript("OnEnter", function(self)
+			if not self.link then return end
+			GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+			GameTooltip:SetHyperlink(self.link)
+			GameTooltip:Show()
+		end)
+		b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+		b:SetScript("OnClick", function(self)
+			if self.kind == "item" and self.link then WowCompanion_ShowItem(self.link) end
+		end)
+		WC.MarkFocusable(b)
+		return b
+	end)
 end
 
 local Transcript = {}
@@ -112,7 +207,7 @@ local function newTranscript(parent)
 	content:SetSize(1, 1)
 	scroll:SetScrollChild(content)
 	local t = setmetatable({ scroll = scroll, content = content, rows = {}, height = PAD_TOP,
-		pool = { text = {}, band = {}, turn = {}, divider = {} } }, Transcript)
+		pool = { text = {}, band = {}, turn = {}, divider = {}, link = {}, quote = {}, rule = {} } }, Transcript)
 	scroll:EnableMouseWheel(true)
 	scroll:SetScript("OnMouseWheel", function(self, delta)
 		local range = self:GetVerticalScrollRange()
@@ -155,8 +250,28 @@ function Transcript:Place(row, y, width)
 	local fs = row.fs
 	fs:ClearAllPoints()
 	fs:SetPoint("TOPLEFT", self.content, "TOPLEFT", PAD_L + row.indent, -y)
-	fs:SetWidth(width - PAD_L - PAD_R - row.indent)
-	local height = fs:GetStringHeight()
+	local height
+	if row.words then
+		height = self:Flow(row, y, width - PAD_L - PAD_R - row.indent)
+	else
+		fs:SetWidth(width - PAD_L - PAD_R - row.indent)
+		height = fs:GetStringHeight()
+	end
+	if row.rule then
+		row.rule:ClearAllPoints()
+		row.rule:SetPoint("LEFT", self.content, "TOPLEFT", PAD_L, -y - 8)
+		row.rule:SetPoint("RIGHT", self.content, "TOPLEFT", width - PAD_R, -y - 8)
+		height = 16
+	end
+	if row.quoteBar then
+		-- a quote's first line: its vine starts here and grows with the quote
+		row.quoteBar:ClearAllPoints()
+		row.quoteBar:SetPoint("TOPLEFT", self.content, "TOPLEFT", PAD_L + row.indent - QUOTE_IN + 1, -y + 1)
+		self.quoteBar, self.quoteTop = row.quoteBar, y - 1
+	end
+	if row.quote and self.quoteBar then
+		self.quoteBar:SetHeight(y + height + 2 - self.quoteTop)
+	end
 	if row.marker then
 		row.marker:ClearAllPoints()
 		row.marker:SetPoint("TOPRIGHT", fs, "TOPLEFT", -5, 0)
@@ -172,6 +287,56 @@ function Transcript:Place(row, y, width)
 		self.turnBand:SetHeight(y + height + math.floor(TURN_GAP / 2) - self.turnTop)
 	end
 	return y + height
+end
+
+-- A line holding links is broken into lines here, not by the font string, so
+-- each link's place is known and its button laid over it: words are measured
+-- and packed greedily into width, the first line in the row's own string.
+function Transcript:Flow(row, y, width)
+	releaseFlow(self, row)
+	local fs = row.fs
+	local function measure(text) return fs:GetUnboundedStringWidthForText(text) end
+	local lines, open = { { text = "", links = {} } }, nil
+	for _, word in ipairs(row.words) do
+		local line = lines[#lines]
+		local joined = line.text == "" and word.text or line.text .. " " .. word.text
+		if line.text ~= "" and measure(joined) > width then
+			line = { text = open or "", links = {} }
+			lines[#lines + 1] = line
+			joined = line.text .. word.text
+		end
+		if word.link then
+			local before = line.text == "" and "" or line.text .. " "
+			line.links[#line.links + 1] = { word = word, x = measure(before), w = measure(word.text) }
+		end
+		line.text = joined
+		open = openColour(open, word.text)
+	end
+	fs:SetWidth(width)
+	fs:SetText(lines[1].text)
+	local lineHeight = fs:GetStringHeight()
+	local x0 = PAD_L + row.indent
+	for i, line in ipairs(lines) do
+		local top = y + (i - 1) * (lineHeight + LINE_SPACING)
+		if i > 1 then
+			local part = fontString(self, row.font)
+			part:SetTextColor(fs:GetTextColor())
+			part:SetJustifyH("LEFT")
+			part:SetWordWrap(false)
+			part:SetPoint("TOPLEFT", self.content, "TOPLEFT", x0, -top)
+			part:SetWidth(width)
+			part:SetText(line.text)
+			row.parts[#row.parts + 1] = part
+		end
+		for _, l in ipairs(line.links) do
+			local b = linkButton(self)
+			b.link, b.kind = l.word.link, l.word.kind
+			b:SetSize(math.max(l.w, 8), lineHeight + 2)
+			b:SetPoint("TOPLEFT", self.content, "TOPLEFT", x0 + l.x, -top + 1)
+			row.links[#row.links + 1] = b
+		end
+	end
+	return #lines * lineHeight + (#lines - 1) * LINE_SPACING
 end
 
 -- A resize rewraps every line, so the content gets shorter or taller under a
@@ -214,10 +379,11 @@ function Transcript:ToBottom()
 	end)
 end
 
+-- flow (optional): the row's words, flowed by Flow so its links are buttons.
 -- owner (optional): this row begins a turn, on that owner's backing. Made
 -- here, before the row is placed: an appended row is placed at once, and a
 -- backing added after that stretched the turn before it instead.
-function Transcript:Row(font, text, indent, gap, r, g, b, owner)
+function Transcript:Row(font, text, indent, gap, r, g, b, owner, flow)
 	local fs = fontString(self, font)
 	fs:SetJustifyH("LEFT")
 	fs:SetJustifyV("TOP")
@@ -227,7 +393,7 @@ function Transcript:Row(font, text, indent, gap, r, g, b, owner)
 	if r then fs:SetTextColor(r, g, b) end
 	fs:SetText(text)
 	local row = { fs = fs, indent = indent or 0, gap = self.gap or gap or 0,
-		header = owner and true or nil }
+		header = owner and true or nil, words = flow, parts = flow and {}, links = flow and {}, font = font }
 	if owner then row.turn, row.divider = turnParts(self, owner) end
 	self.gap = nil
 	-- Confirmed lines are only ever appended, so the conversation never jumps. What is still to come is shown
@@ -248,6 +414,13 @@ function Transcript:Row(font, text, indent, gap, r, g, b, owner)
 	return row
 end
 
+-- a row of markdown text: inline marks drawn, a line with links flowed here
+-- (Flow) so its links can be buttons
+function Transcript:Text(font, text, indent, gap, r, g, b)
+	if not hasLinks(text) then return self:Row(font, inline(text), indent, gap, r, g, b) end
+	return self:Row(font, "", indent, gap, r, g, b, nil, words(text))
+end
+
 -- one line of a reply or of what you said
 function Transcript:Markdown(line, r, g, b)
 	if line:match("^%s*```") then
@@ -262,8 +435,44 @@ function Transcript:Markdown(line, r, g, b)
 	end
 	if line:match("^%s*$") then
 		self.gap = PARA_GAP
+		self.quoting = nil
 		return
 	end
+	-- a divider: the chat's own vine across the text
+	if line:match("^%s*%-%-%-+%s*$") or line:match("^%s*%*%*%*+%s*$") or line:match("^%s*___+%s*$") then
+		local row = self:Row(BODY_FONT, "", 0, PARA_GAP)
+		row.rule = take(self.pool.rule, function()
+			local f = CreateFrame("Frame", nil, self.content)
+			f:SetHeight(16)
+			WC.Style.VineLine(f, "", false, true, true)
+			return f
+		end)
+		self.gap, self.quoting = PARA_GAP, nil
+		return
+	end
+	-- a quote: its lines indented beside one thin vine, a little dimmed
+	local quoted = line:match("^%s*>%s?(.*)$")
+	if quoted then
+		if quoted:match("^%s*$") then
+			self.gap = PARA_GAP
+			return
+		end
+		local dim = 0.85
+		local row = self:Text(BODY_FONT, quoted, QUOTE_IN, self.quoting and 2 or PARA_GAP,
+			r and r * dim, g and g * dim, b and b * dim)
+		row.quote = true
+		if not self.quoting then
+			row.quoteBar = take(self.pool.quote, function()
+				local f = CreateFrame("Frame", nil, self.content)
+				f:SetWidth(16)
+				WC.Style.VineLine(f, "Thin", true)
+				return f
+			end)
+		end
+		self.quoting = true
+		return
+	end
+	self.quoting = nil
 	local hashes, heading = line:match("^(#+)%s+(.+)$")
 	if heading then
 		self:Row(#hashes == 1 and "GameFontNormalLarge" or "GameFontNormal", inline(heading), 0,
@@ -277,12 +486,12 @@ function Transcript:Markdown(line, r, g, b)
 	end
 	if mark then
 		local indent = 18 + math.floor(#lead / 2) * 16
-		local row = self:Row(BODY_FONT, inline(rest), indent, 3, r, g, b)
+		local row = self:Text(BODY_FONT, rest, indent, 3, r, g, b)
 		row.marker = fontString(self, BODY_FONT)
 		row.marker:SetText((mark == "-" or mark == "*") and "|cffffd100•|r" or ("|cffffd100%s|r"):format(mark))
 		return
 	end
-	self:Row(BODY_FONT, inline(line), 0, 2, r, g, b)
+	self:Text(BODY_FONT, line, 0, 2, r, g, b)
 end
 
 local WHO = {
@@ -364,6 +573,7 @@ function Transcript:Clear()
 	for _, row in ipairs(self.rows) do release(self, row) end
 	self.turnBand = nil
 	self.rows, self.height, self.code, self.gap = {}, PAD_TOP, false, nil
+	self.quoting, self.quoteBar = nil, nil
 	self.live = nil
 	self.content:SetHeight(1)
 end
