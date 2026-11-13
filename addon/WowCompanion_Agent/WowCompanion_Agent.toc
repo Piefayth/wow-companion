@@ -14,6 +14,7 @@ Window.lua
 FocusArt.lua
 Transcript.lua
 ControlTrials.lua
+DrawerTrials.lua
 JobsModel.lua
 Jobs.lua
 ConvMenu.lua
