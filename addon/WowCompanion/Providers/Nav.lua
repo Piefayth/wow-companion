@@ -1,5 +1,5 @@
 -- The nav capability (see Engine.lua, Capabilities): aim(map, x, y, label),
--- nearest(kind), clear(). x and y are the 0-100 map coordinates players quote.
+-- nearest(kind, line), clear(). x and y are the 0-100 map coordinates players quote.
 
 -- Built in: positions from the game alone (aiming is a pins addon's or
 -- Polestar's).
@@ -41,14 +41,15 @@ WC.Provide("nav", "Polestar", {
 		if ok and set then return true end
 	end,
 	-- kinds: innkeeper, repair, vendor, food, reagents, trainer, class, weapon,
-	-- bank, mailbox, auction, flight, stable. Finds; does not aim.
-	nearest = function(kind)
+	-- bank, mailbox, auction, flight, stable; line, a trainer's profession skill
+	-- line (165 Leatherworking). Finds; does not aim.
+	nearest = function(kind, line)
 		local N = nav()
 		local near = N and N.nearby
 		if not (near and near.Find) then return nil end
-		local ok, place, seconds = pcall(near.Find, kind)
+		local ok, place, seconds = pcall(near.Find, kind, line)
 		if ok and type(place) == "table" then
-			return { name = place.name, map = place.map, x = place.x, y = place.y }, seconds
+			return { name = place.name, npc = place.id, map = place.map, x = place.x, y = place.y }, seconds
 		end
 	end,
 	-- seconds of travel from here (Nav.API.Estimate, documented), paths and flights

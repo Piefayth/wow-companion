@@ -274,7 +274,7 @@ do
 	-- small fixed interface named by its job:
 	--   price: auction(itemID) -> copper per item | nil, vendor(itemID) -> copper | nil
 	--   nav:   aim(map, x, y, label) -> true | nil (x, y the 0-100 coordinates
-	--          players quote), nearest(kind) -> place { name, map, x, y }, seconds | nil,
+	--          players quote), nearest(kind, line) -> place { name, npc, map, x, y }, seconds | nil,
 	--          clear()
 	--   gear:  slots(), upgrades(slotName, n)          (Providers/Gear.lua)
 	--   itemSource: sources(itemID), npcName(id), questName(id) (Providers/ItemSource.lua)

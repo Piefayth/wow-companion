@@ -68,7 +68,16 @@ Other things of ours agent code can call (all globals):
   errand without a `done` condition the game reports: have={item,count},
   visit={npc,kind=merchant|trainer|gossip|bank|any}, reach={zone=} or {map,x,y,r},
   quest={id,state=accepted|complete|turnedin}, level=n, skill={name,rank} (rank 1: learn a profession not known yet). If you
-  cannot name one, say so and make none. Print the why when refused. Also
+  cannot name one, say so and make none. Print the why when refused.
+  **Give every errand a `place` the game can name** (the player, 2026-11-13):
+  distance, travel time and "on route, step n" (the guide's coming steps) all
+  come from it. A trainer: `WC.Use('nav').nearest('trainer', line)` in the same
+  `lua` step (line: 165 Leatherworking, 164 Blacksmithing, 197 Tailoring, 202
+  Engineering, 171 Alchemy, 333 Enchanting, 182 Herbalism, 186 Mining, 393
+  Skinning, 185 Cooking, 129 First Aid, 356 Fishing; returns name, npc, map, x,
+  y), and name the NPC in `note`; an item's source, an NPC or a quest giver from
+  `Polestar.Codex`. Only an errand with no place in the world (a level) goes
+  without. Also
   `.Remove(idOrText)`, `.Edit(idOrText, {text,note,place})`, `.List()`; the export's
   `== errands ==` lists them. Pins go through `WC.Use('pins').set(layer, points)`.
 - `WowCompanion_SetFont(name)`: the interface font, live (Fonts.lua; the Tools tab
