@@ -216,7 +216,7 @@ fn deliver_batch(addons: &Path, batch: Vec<Pending>) {
         return;
     }
     let list = slot_message(&batch);
-    if let Err(err) = ring(addons, &list) {
+    if let Err(err) = ring(addons, list) {
         if slots_used(addons) >= known_slots(addons) {
             // every slot spent: nothing can reach the game to say so; the pad can
             voice::ALERT.store(true, Ordering::SeqCst);
@@ -225,8 +225,9 @@ fn deliver_batch(addons: &Path, batch: Vec<Pending>) {
     }
 }
 
-/// What one slot holds: `{ kind = "list", messages = { ... } }`, every message
-/// of the batch in order (the game applies each as if it came alone).
+/// What one slot holds: `{ kind = "list", messages = { ... }, session = n }`,
+/// every message of the batch in order (the game applies each as if it came
+/// alone), and the session it was written for (`ring`).
 fn slot_message(batch: &[Pending]) -> Msg {
     let messages: Vec<Msg> = batch.iter().map(Pending::msg).collect();
     for msg in &messages {
@@ -236,10 +237,11 @@ fn slot_message(batch: &[Pending]) -> Msg {
 }
 
 /// The next slot, and its bell.
-fn ring(addons: &Path, msg: &Msg) -> io::Result<()> {
+fn ring(addons: &Path, msg: Msg) -> io::Result<()> {
     voice::mark("send has the channel");
-    let (slot, set) = next_slot(addons)?;
-    deliver(addons, slot, set, msg)?;
+    let (slot, set, session) = next_slot(addons)?;
+    let msg = msg.int("session", session);
+    deliver(addons, slot, set, &msg)?;
     println!("sent in slot {slot}: {}", msg.lua());
     voice::mark(&format!("bell rung, slot {slot}"));
     Ok(())
@@ -259,9 +261,9 @@ fn deliver(addons: &Path, slot: u32, set: u64, msg: &Msg) -> io::Result<()> {
 }
 
 // Slots load once per UI session, so the helper has to know where the addon's cursor
-// is. It resets when the UI session does (session.rs), and the slot and its set
-// come from that one reading. No game → PC channel needed.
-fn next_slot(addons: &Path) -> io::Result<(u32, u64)> {
+// is. It resets when the UI session does (session.rs), and the slot, its set and
+// the session's number come from that one reading. No game → PC channel needed.
+fn next_slot(addons: &Path) -> io::Result<(u32, u64, u64)> {
     let state = addons.join(LINK).join(STATE);
     let session = Session::now(addons)?;
     let stamp = session.key();
@@ -297,7 +299,7 @@ fn next_slot(addons: &Path) -> io::Result<(u32, u64)> {
         )));
     }
     fs::write(&state, format!("{}\n{}\n", cursor + 1, stamp))?;
-    Ok((cursor, session.set()))
+    Ok((cursor, session.set(), session.number()))
 }
 
 /// Slots spent in the running UI session (0 after a reload), without spending one.
@@ -468,19 +470,19 @@ mod tests {
     fn slots_count_up_and_start_over_in_the_next_set_when_the_game_saves() {
         let (addons, link) = game("cursor", 100);
         assert_eq!(slots_used(&addons), 0);
-        assert_eq!(next_slot(&addons).unwrap(), (1, 8 % SETS));
-        assert_eq!(next_slot(&addons).unwrap(), (2, 8 % SETS));
+        assert_eq!(next_slot(&addons).unwrap(), (1, 8 % SETS, 8));
+        assert_eq!(next_slot(&addons).unwrap(), (2, 8 % SETS, 8));
         assert_eq!(slots_used(&addons), 2);
         // another addon's save landing first is no new session (2026-11-12: read
         // from Core's save, the cursor started over a set early)
         let core = link.with_file_name(format!("{ADDON}.lua"));
         let later = SystemTime::now() + Duration::from_secs(5);
         fs::File::options().write(true).open(&core).unwrap().set_modified(later).unwrap();
-        assert_eq!(next_slot(&addons).unwrap(), (3, 8 % SETS));
+        assert_eq!(next_slot(&addons).unwrap(), (3, 8 % SETS, 8));
         // a /reload's save of Link: the cursor back at slot 1, in the next set
         save(&link, 8, 100);
         assert_eq!(slots_used(&addons), 0);
-        assert_eq!(next_slot(&addons).unwrap(), (1, 9 % SETS));
+        assert_eq!(next_slot(&addons).unwrap(), (1, 9 % SETS, 9));
     }
 
     #[test]

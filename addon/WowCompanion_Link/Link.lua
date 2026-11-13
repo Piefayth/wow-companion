@@ -26,6 +26,9 @@ local SIGNALS = "Interface\\AddOns\\WowCompanion_Link\\Signals\\"
 WC.Saved("WowCompanion_Link", "WowCompanionLinkDB")
 
 local nextSlot = 1
+-- the poll's counts, saved at every reload; and when this session's polling began
+local channel = { plays = 0, taken = 0, slowed = 0, stale = 0 }
+local enteredAt = 0
 
 local function say(message)
 	print("|cff66ccffCompanion|r " .. message)
@@ -184,12 +187,20 @@ local function dispatch(inbox, label)
 end
 
 -- The next slot, loaded and its messages handled.
-local function receive()
+-- `bell` is what the poll saw when it took the slot (check). Every take is
+-- audited with it, and with whether the inbox was written for this session: a
+-- slot taken before the companion wrote it holds an earlier session's message,
+-- which is how dictated lines were lost (2026-11-13). Counted, not refused, until
+-- the evidence says which bell readings to trust.
+local function receive(bell)
 	local slot = nextSlot
 	nextSlot = nextSlot + 1
 	local loaded, reason = C_AddOns.LoadAddOn(slotName(slot))
 	local inbox = WowCompanion_Inbox
 	WowCompanion_Inbox = nil
+	local ours = type(inbox) == "table" and inbox.session == WowCompanionLinkDB.loads
+	if not ours then channel.stale = channel.stale + 1 end
+	audit("take", "", ("slot=%d %s %s"):format(slot, ours and "fresh" or ("STALE session=" .. tostring(type(inbox) == "table" and inbox.session)), bell))
 	if not loaded or not inbox then
 		report("slot " .. slot, "failed: " .. tostring(reason))
 		return
@@ -230,12 +241,10 @@ end
 -- held files look like, it asks every 0.5 s. Polled from
 -- OnUpdate, which WoW keeps calling whatever happened the frame before, rather
 -- than a C_Timer ticker, which a callback error may cancel for good.
--- The counts are saved at every reload.
 local EVERY, SLOW, ASK = 0.1, 0.5, 0.02
-local channel = { plays = 0, taken = 0, slowed = 0 }
 local set -- this session's set, from ADDON_LOADED
 local every = EVERY
-local clock, handle = 0, nil
+local clock, handle, willPlay, playedAt = 0, nil, nil, 0
 local function bellPath(n)
 	return SIGNALS .. ("g%d-%03d.wav"):format(set, n)
 end
@@ -245,18 +254,20 @@ local function check(elapsed)
 		if clock < ASK then return end
 		local playing = C_Sound.IsPlaying(handle)
 		StopSound(handle)
+		local bell = ("will=%s handle=%s asked=%.3f frame=%.3f up=%.1f"):format(tostring(willPlay), tostring(handle),
+			GetTime() - playedAt, elapsed, GetTime() - enteredAt)
 		handle = nil
 		if playing then
 			channel.taken = channel.taken + 1
-			safely("a message from the companion", receive)
+			safely("a message from the companion", receive, bell)
 			clock = every -- the next slot at once
 		end
 	end
 	if clock < every then return end
 	clock = 0
 	channel.plays = channel.plays + 1
-	local _, played = PlaySoundFile(bellPath(nextSlot), "Master")
-	handle = played
+	willPlay, handle = PlaySoundFile(bellPath(nextSlot), "Master")
+	playedAt = GetTime()
 end
 local function heartbeat(fresh)
 	local was = every
@@ -323,6 +334,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 			end
 			WC.Send("MAILBOX_JOBS", mail.jobs)
 		end
+		enteredAt = GetTime()
 		setPolling(true)
 	elseif event == "PLAYER_LOGOUT" then
 		-- how many slots this game session can see (folders made after launch

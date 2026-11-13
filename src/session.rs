@@ -61,9 +61,16 @@ impl Session {
         }
     }
 
+    /// This session's number: the game's own load count while it runs (the save
+    /// holds the one before), which every slot carries so the game can tell a
+    /// message written for it from one left by an earlier session.
+    pub(crate) fn number(&self) -> u64 {
+        self.loads + 1
+    }
+
     /// This session's set of slot bells.
     pub(crate) fn set(&self) -> u64 {
-        (self.loads + 1) % SETS
+        self.number() % SETS
     }
 
     /// How many slots the running game knows. The game only sees addon folders
