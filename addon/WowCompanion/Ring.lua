@@ -1,8 +1,8 @@
 -- The ring: one radial menu for every wheel of ours (the Wheel addon's secure
 -- wheels, the chat wheel's channels). Forever's native radial art, eight slots
--- in its eight segments (top first, clockwise), the right stick aiming, the
--- sticks taken while it is up (the camera stays put) and held a moment after
--- it closes if the right stick is still pushed (so the camera does not swing).
+-- in its eight segments (top first, clockwise), the right stick aiming, taken
+-- while it is up (the camera stays put) and held a moment after it closes if
+-- still pushed (so the camera does not swing); the left stick always walks.
 -- Adapted from Improved Forever's Ring.lua by markg, MIT licence (see the Wheel
 -- addon's LICENSE-ImprovedForever).
 --
@@ -64,23 +64,25 @@ function Ring.Build(frame, opts)
 	frame:SetPoint("CENTER", UIParent, "CENTER", 312, 10) -- where the native radial sits
 	frame:SetFrameStrata("DIALOG")
 
-	-- While the ring is up this child takes the sticks: the right stick aims
-	-- without turning the camera.
+	-- While the ring is up this child takes the right stick, so it aims
+	-- without turning the camera. The left stick is passed on (true: not
+	-- handled, as Blizzard's radial does), so walking goes on untouched.
+	local function rightOnly(_, stick) return stick == "Left" or stick == "Movement" end
 	local capture = CreateFrame("Frame", nil, frame)
 	capture:SetAllPoints(frame)
 	if capture.EnableGamePadStick then
 		capture:EnableGamePadStick(true)
-		capture:SetScript("OnGamePadStick", function() end)
+		capture:SetScript("OnGamePadStick", rightOnly)
 	end
-	-- After the ring closes the right stick is often still pushed: the sticks
-	-- are kept a moment so the camera does not swing round.
+	-- After the ring closes the right stick is often still pushed: it is kept
+	-- a moment so the camera does not swing round.
 	local after = CreateFrame("Frame", nil, UIParent)
 	after:SetAllPoints(UIParent)
 	after:SetFrameStrata("DIALOG")
 	after:Hide()
 	if after.EnableGamePadStick then
 		after:EnableGamePadStick(true)
-		after:SetScript("OnGamePadStick", function() end)
+		after:SetScript("OnGamePadStick", rightOnly)
 	end
 	after:SetScript("OnUpdate", function(self, elapsed)
 		self.held = (self.held or 0) + elapsed

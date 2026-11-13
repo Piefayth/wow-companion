@@ -172,7 +172,7 @@ SecureHandlerWrapScript(close, "OnClick", close, [[
     return false
 ]])
 
--- While the ring is up it owns Circle and both sticks' directions, whatever
+-- While the ring is up it owns Circle and the right stick's directions, whatever
 -- modifier the held triggers emulate.
 SecureHandlerWrapScript(ring, "OnShow", ring, [[
     for _, modifier in ipairs(]] .. MODIFIERS_LUA .. [[) do
@@ -182,10 +182,6 @@ SecureHandlerWrapScript(ring, "OnShow", ring, [[
         for _, key in ipairs(newtable("PADRSTICKUP", "PADRSTICKDOWN", "PADRSTICKLEFT", "PADRSTICKRIGHT")) do
             self:SetBindingClick(true, modifier .. key, "WCWheelAim" .. key, key)
         end
-        self:SetBinding(true, modifier .. "PADLSTICKUP", "MOVEFORWARD")
-        self:SetBinding(true, modifier .. "PADLSTICKDOWN", "MOVEBACKWARD")
-        self:SetBinding(true, modifier .. "PADLSTICKLEFT", "STRAFELEFT")
-        self:SetBinding(true, modifier .. "PADLSTICKRIGHT", "STRAFERIGHT")
     end
 ]])
 SecureHandlerWrapScript(ring, "OnHide", ring, [[
