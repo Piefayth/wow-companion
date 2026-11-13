@@ -547,8 +547,8 @@ end
 --   A        each a slab of the dark stone (tools/make_listitem_art.py's
 --            Slab-*); chosen, the light stone in a bark rim
 --   Raised   each the dark stone raised as a raised well is (RAISED): a faint
---            lit line along its top and left, a shadow cast down and right
---            onto what it lies on; chosen, the light stone, the same
+--            lit line along its top and left, a shadow cast down onto what
+--            it lies on; chosen, the light stone, the same
 --   Pressed  Raised without the shadow
 -- WC.Style.List(content): list:Row(i) the i-th row, made once
 -- (row:SetLines(name, detail), row:SetChosen(on), row.face for the caller's
@@ -585,9 +585,12 @@ local function nine(row, piece, l, t, r, b)
 	return made
 end
 local function shown(parts, on) for _, p in ipairs(parts) do p:SetShown(on) end end
+-- the chosen slab's bark rim round the box l, t, r, b in from frame's sides
+function WowCompanion_Style.BarkRim(frame, l, t, r, b) return nine(frame, "Slab-Rim", l, t, r, b) end
 -- a raised row: its stones, the lit lines along its top and left, and (cast)
--- its shadow down and right, on the content under every row so the row
--- below lies over it
+-- its shadow down onto what it lies on (rows stand flush with their
+-- container's sides), on the content under every row so the row below lies
+-- over it
 local ROW_CAST = 6
 local function raisedRow(cast)
 	return {
@@ -609,17 +612,11 @@ local function raisedRow(cast)
 				local dark, clear = CreateColor(0, 0, 0, RAISED.alpha), CreateColor(0, 0, 0, 0)
 				local down = under:CreateTexture(nil, "BACKGROUND")
 				down:SetColorTexture(1, 1, 1, 1)
-				down:SetPoint("TOPLEFT", row, "BOTTOMLEFT", 2, 0)
-				down:SetPoint("TOPRIGHT", row, "BOTTOMRIGHT", ROW_CAST, 0)
+				down:SetPoint("TOPLEFT", row, "BOTTOMLEFT")
+				down:SetPoint("TOPRIGHT", row, "BOTTOMRIGHT")
 				down:SetHeight(ROW_CAST)
 				down:SetGradient("VERTICAL", clear, dark)
-				local right = under:CreateTexture(nil, "BACKGROUND")
-				right:SetColorTexture(1, 1, 1, 1)
-				right:SetPoint("TOPLEFT", row, "TOPRIGHT", 0, -2)
-				right:SetPoint("BOTTOMLEFT", row, "BOTTOMRIGHT", 0, 0)
-				right:SetWidth(ROW_CAST)
-				right:SetGradient("HORIZONTAL", dark, clear)
-				p.cast = { down, right }
+				p.cast = { down }
 			end
 			return p
 		end,
