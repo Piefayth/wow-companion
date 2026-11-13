@@ -125,12 +125,9 @@ local function buildTabs(frame, messages)
 		get = function() return math.floor((WowCompanionAgentDB.windowScale or 1) * 100 + 0.5) end,
 		set = function(value) frame.SetWindowScale(math.floor(value + 0.5) / 100) end,
 		format = function(value) return ("%d%%"):format(math.floor(value + 0.5)) end })
-	WC.SettingsPage.Add({ kind = "button", section = "Clean up", order = 90, label = "Clear transcript", button = "Clear",
-		text = "Empty the Companion window. The conversation itself carries on.",
-		onClick = function()
-			WowCompanionAgentDB.log = {}
-			messages:Clear()
-		end })
+	WC.SettingsPage.Add({ kind = "button", section = "Clean up", order = 90, label = "Clear chat", button = "Clear",
+		text = "Empty the chat of the conversation in view. The agent remembers it all, and the other conversations' chats stay.",
+		onClick = function() WC.Companion.clear() end })
 
 	-- Status: what is running, read fresh while the tab is looked at. Laid out
 	-- as the Settings page is (WC.Style's wells): the facts' names right-aligned

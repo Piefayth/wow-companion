@@ -498,10 +498,21 @@ local slash = WC.Link.Slash
 slash("context", function() say(("context: %d lines; /reload to write it to disk"):format(WC.Export.Context())) end)
 -- plain Hide, not HideUIPanel (WowCompanion_HideWindow)
 slash("log", function() toggleWindow() end)
+-- One conversation's lines out of the window (the agent remembers it all);
+-- the others' stay
+local function clearConversation(slot)
+	slot = slot or viewSlot
+	local key = slot ~= "" and slot or nil
+	local kept = {}
+	for _, e in ipairs(WowCompanionAgentDB.log or {}) do
+		if e.slot ~= key then kept[#kept + 1] = e end
+	end
+	WowCompanionAgentDB.log = kept
+	if slot == viewSlot and logWindow then logWindow.messages:Clear() end
+end
 slash("clear", function()
-	WowCompanionAgentDB.log = {}
-	logFrame().messages:Clear()
-	say("conversation cleared")
+	clearConversation(viewSlot)
+	say(WC.Conversations.Label(viewSlot) .. "'s chat cleared")
 end)
 
 
@@ -518,4 +529,6 @@ WC.Companion = {
 	replySlot = replySlot,
 	-- the conversation's news has been seen
 	seen = function(slot) setUnread(slot or "", false) end,
+	-- a conversation's lines out of the window (nil: the one in view)
+	clear = function(slot) clearConversation(slot) end,
 }

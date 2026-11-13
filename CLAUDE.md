@@ -128,7 +128,8 @@ extras a player may use, never required (the player, 2026-11-11).
     conversations, the waiting lines and board rows, the offered button, the
     agents' kinds, `/wc`'s agent commands (`WC.Companion` for the files beside
     it). `Stow.lua` (the window in a fight), `Offer.lua` (the offered button,
-    `WC.Offer`), `Steps.lua` (an answer's steps: batch, macro, bar). `Sandbox.lua` agent code (`lua`, `module` steps, the taint scan,
+    `WC.Offer`), `ConvMenu.lua` (triangle on a conversation row: Clear chat,
+    Start over), `Steps.lua` (an answer's steps: batch, macro, bar). `Sandbox.lua` agent code (`lua`, `module` steps, the taint scan,
     blocked-action notices). `Window.lua` (the window and its tabs: Chat, Settings showing Core's page, Status;
     other addons add theirs with `WC.Companion.AddTab`), `Transcript.lua` (lines
     only append), `JobsModel.lua` (pure, property-tested: `python

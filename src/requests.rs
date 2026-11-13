@@ -272,9 +272,11 @@ pub(crate) fn run_queued(addons: &Path, slot: &str, lead: u64) -> Option<String>
 }
 
 /// The game's commands, read off the data strip in this process (src/strip.rs):
-/// "WCCMD <nonce> cancel|now <slot> <job>", a message's Cancel or Send now, and
-/// the settings page's `bind` and `set` (src/settings_page.rs).
-pub(crate) fn watch_commands(addons: &Path) {
+/// "WCCMD <nonce> cancel|now <slot> <job>", a message's Cancel or Send now,
+/// "fresh <slot>" (the conversation menu's Start over), and the settings
+/// page's `bind` and `set` (src/settings_page.rs). `session` finds a
+/// conversation's session.
+pub(crate) fn watch_commands(addons: &Path, session: impl Fn(&str) -> std::sync::Arc<Mutex<agent::Session>>) {
     crate::strip::serve(|line| {
         if line.starts_with("WCCMD") {
             crate::audit::note("cmd", "", &line);
@@ -293,6 +295,15 @@ pub(crate) fn watch_commands(addons: &Path) {
                 if let Ok(req) = req.parse::<u64>() {
                     cancel_request(addons, &main(slot), req, *verb == "now");
                 }
+            }
+            // forgotten once a request it is running ends: a session is held for
+            // the whole request, so the wait is on a thread of its own
+            ["WCCMD", _nonce, "fresh", slot] => {
+                let (slot, held) = (main(slot), session(&main(slot)));
+                thread::spawn(move || {
+                    held.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).forget();
+                    println!("  [{slot}] starts over (the conversation menu)");
+                });
             }
             ["WCCMD", _nonce, "bind", key, what] => crate::settings_page::bind(addons, key, what),
             // the value is the rest of the line as drawn (a mic's name has spaces)

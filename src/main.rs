@@ -379,8 +379,8 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             // Cancel and Send now in the window, and the settings page: the game's
             // commands, read off the data strip
             {
-                let addons = addons.clone();
-                thread::spawn(move || watch_commands(&addons));
+                let (addons, find_session) = (addons.clone(), find_session.clone());
+                thread::spawn(move || watch_commands(&addons, move |slot: &str| find_session(slot)));
             }
             // the slot bells of the sets no session uses, emptied (docs/proposals/slot-bells.md)
             {

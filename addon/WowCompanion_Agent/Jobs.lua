@@ -481,6 +481,10 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	-- tab, where the messages they act on are
 	local anyTab = window and WC.IsFocused(window) or false
 	local focused = anyTab and (window.currentTab or 1) == 1
+	-- the conversation menu (ConvMenu.lua): open, it has the pad; a row under
+	-- the cursor takes triangle for it
+	local menuOpen = WC.ConvMenu and WC.ConvMenu.Open()
+	local row = focused and not menuOpen and WC.ConvMenu and WC.ConvMenu.Row()
 	-- the legend: what square and triangle do right now, shown only while
 	-- they work
 	if window then
@@ -498,7 +502,8 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		local function glyph(key) return WowCompanion_Glyph(key) end
 		local parts = {}
 		if focused and newest() then parts[#parts + 1] = glyph("PAD3") .. " Cancel newest" end
-		if focused and sendable() then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
+		if row then parts[#parts + 1] = glyph("PAD4") .. " Options"
+		elseif focused and sendable() then parts[#parts + 1] = glyph("PAD4") .. " Send queued now" end
 		if focused and offerShown() then parts[#parts + 1] = glyph("PADLSTICK") .. " " .. offerShown() end
 		if anyTab then parts[#parts + 1] = WC.Style.CHORD .. "+" .. glyph("PADRSTICK") .. " Agent" end
 		-- a settings row under the cursor, on any tab (WC.RowStop binds the keys)
@@ -509,19 +514,21 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 		if window.jobsCancelPrompt then window.jobsCancelPrompt:Hide() window.jobsNowPrompt:Hide() end
 	end
 	-- what is bound follows what the legend shows; rebound only on a change
-	local want = focused and (offerShown() and "offer" or "jobs") or anyTab and "switch" or nil
+	local want = menuOpen and "menu" or focused and (offerShown() and "offer" or "jobs") or anyTab and "switch" or nil
+	if want == "offer" or want == "jobs" then want = want .. (row and "+row" or "") end
 	if want ~= bound then
 		ClearOverrideBindings(keyOwner)
 		-- R3 with a conversation's chord picks it (Offer.lua), L3 presses its
 		-- offered button (both unused in menus); autorun and the camera stick
 		-- click come back when the window lets go. The button is secure and the
 		-- press is theirs
-		if want then SetOverrideBindingClick(keyOwner, true, "PADRSTICK", WC.Offer.PICK) end
-		if want == "offer" or want == "jobs" then
+		local chat = want and want:match("^offer") or want and want:match("^jobs")
+		if want and want ~= "menu" then SetOverrideBindingClick(keyOwner, true, "PADRSTICK", WC.Offer.PICK) end
+		if chat then
 			SetOverrideBindingClick(keyOwner, true, "PAD3", "WCJobsCancelKey")
-			SetOverrideBindingClick(keyOwner, true, "PAD4", "WCJobsNowKey")
+			SetOverrideBindingClick(keyOwner, true, "PAD4", want:match("%+row$") and WC.ConvMenu.BUTTON or "WCJobsNowKey")
 		end
-		if want == "offer" then
+		if want and want:match("^offer") then
 			SetOverrideBindingClick(keyOwner, true, "PADLSTICK", WC.Offer.BUTTON, "LeftButton")
 		end
 		bound = want

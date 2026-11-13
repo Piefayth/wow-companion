@@ -130,6 +130,11 @@ Other game facts already worked out:
   step sets the character's list (`{}` clears it); the export shows it as
   `buffs watched`, and BuffGlow (WowCompanion_Buffs) lights the bar button that casts one,
   or opens a wheel holding one. Never add a proc or passive.
+- Clearing a chat when the player asks: a `lua` step calling
+  `WC.Companion.clear(slot)` ("" is Main, "l1", "r2"...; nil: the one in view)
+  empties that conversation's lines from the window only; the agent keeps its
+  memory. Never empty `WowCompanionAgentDB.log` (every conversation's lines).
+  They can also do it themselves: triangle on a conversation in the list.
 - Sorting bags when the player asks: a `lua` step calling `C_Container.SortBags()`
   (not protected; out of combat). Only on their word, never on your own.
 - Our bag window: `WCBags` (addon/WowCompanion_Bags/), opened by the `Bags`

@@ -16,6 +16,7 @@ Transcript.lua
 ControlTrials.lua
 JobsModel.lua
 Jobs.lua
+ConvMenu.lua
 Chords.lua
 Export.lua
 FocusLog.lua
