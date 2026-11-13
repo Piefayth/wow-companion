@@ -370,16 +370,25 @@ local function button(row)
 	return r
 end
 
--- A key binding: Blizzard's key-binding button (KeyBindingFrameBindingButtonTemplate
--- is UIMenuButtonStretchTemplate), as wide as the other controls, showing the key
--- as the game does, by its icon.
+-- A key binding: the choice's carved slot closed at both ends, no arrows (it is
+-- set by pressing), showing the key as the game does, by its icon, in bronze.
 local function key(row)
 	local r = settingRow(row)
-	local b = CreateFrame("Button", nil, r, "UIMenuButtonStretchTemplate")
-	b:SetSize(CONTROL_W, 24)
-	b:SetPoint("RIGHT", r, "RIGHT", -(EDGE - 5), 0)
-	b:SetNormalFontObject("GameFontHighlight")
-	b:SetHighlightFontObject("GameFontHighlight")
+	local b = CreateFrame("Button", nil, r)
+	b:SetSize(CONTROL_W + VALUE_W, 32)
+	place(r, b)
+	local left = b:CreateTexture(nil, "ARTWORK")
+	left:SetTexture(controlArt("Choice-Left-Closed"))
+	left:SetSize(16, 32)
+	left:SetPoint("LEFT")
+	local right = b:CreateTexture(nil, "ARTWORK")
+	right:SetTexture(controlArt("Choice-Right-Closed"))
+	right:SetSize(16, 32)
+	right:SetPoint("RIGHT")
+	between(b, "Choice-Mid", left, right)
+	local word = bronze(b)
+	b:SetFontString(word)
+	word:SetPoint("CENTER")
 	b:SetText(textOf(row.button))
 	refreshers[#refreshers + 1] = function() b:SetText(textOf(row.button)) end
 	b:SetScript("OnClick", row.onClick)
@@ -387,7 +396,6 @@ local function key(row)
 	WC.MarkIgnored(b)
 	return r
 end
-
 local KINDS = { dropdown = dropdown, slider = slider, button = button, key = key }
 
 -- a section's name in the names well, right-aligned beside its first row, and the

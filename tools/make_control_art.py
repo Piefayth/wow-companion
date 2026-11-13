@@ -12,6 +12,7 @@ Pieces (UI units, U texture px each, as the scroll bar's):
   Slide-Thumb 48x32                 the heartwood thumb lying down
   Choice-<Left|Right>-<state> 40x32 the arrows joined to a slot as wide as the
                                     value's line, as the slider's to its groove
+  Choice-<Left|Right>-Closed 16x32  the slot's plain round ends (a key row)
   Choice-Mid 8x32                   that slot, stretched between them
   Button-<state> 128x28             a thick slate slab standing out of the stone
                                     in a bark border
@@ -116,6 +117,13 @@ def choice_set():
             out[d + "-Normal"], out[d + "-Pushed"] = T(imgs["Normal"]), T(imgs["Pushed"])
             out[d + "-Disabled"] = T(greyed_fleur(imgs["Normal"], imgs["Bare"]))
             out[d + "-Highlight"] = T(sb.glow(imgs["Bare"]))
+        for down in (False, True):
+            # the slot closed with a plain round end, no arrow: a key row's
+            c = sb.ucanvas(32, SLOT_END)
+            pen = Pen(c, SLOT_END, down)
+            sb.carve(c, sb.groove_end(pen, SLOT_END - 4))
+            sb.border(pen, [sb.ribbon(sb.border_path(pen, SLOT_END - 4), sb.BORDER_HW)])
+            out[("Right" if down else "Left") + "-Closed"] = T(c.final())
         c = sb.ucanvas(32, 8)
         sb.carve(c, sb.groove_run(c))
         sb.border(Pen(c, 8), sb.straight_borders(Pen(c, 8)))
@@ -128,6 +136,7 @@ def choice_set():
 
 
 CAP = 40  # a choice cap's length in units
+SLOT_END = 16  # a closed end's
 
 
 def main():
