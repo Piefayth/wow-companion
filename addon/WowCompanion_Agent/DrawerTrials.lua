@@ -1,13 +1,14 @@
 -- Drawer trials, temporary: ways the conversation menu's drawer
 -- (ConvMenu.lua) could hook into the window's rim, side by side at true
--- size. Round 2: each cell is drawn as the drawer would be, a base picture
+-- size. Round 3: each cell is drawn as the drawer would be, a base picture
 -- (a slice of the window's right side and the drawer butted against its rim,
 -- the legend's panel) with a joint piece over each place the drawer's rims
--- meet the window's, redrawing both as one forged metal
+-- meet the window's: the drawer's rim runs through the window's, crowned with
+-- the settings page's scrollwork
 -- (tools/make_drawer_trials.py). Its words drawn here. Shown only: nothing
 -- here is a stop. Goes when one is chosen.
 local S = WC.Style
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\DrawerTrial-%s-2]] -- the generator's VERSION
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\DrawerTrial-%s-3]] -- the generator's VERSION
 -- the generator's cell and joint boxes, in units, at 2.7 texels a unit
 local TEXEL = 2.7
 local CW, CH, BASE_TEX = 172, 180, 512
@@ -16,14 +17,14 @@ local X0, RIM, XR, DT = 16, 6, 170, 46
 local ROWS, ROW = DT + 12, 24
 local LEGEND_Y = DT + 75.5 -- the middle of the legend's panel
 local OPTIONS = {
-	{ "Band", "The bracket, forged: the rims flow through fillets" },
-	{ "Band", "Grown from the joint: the scroll rises out of the fillet" },
-	{ "Band", "One great volute, deep fillets" },
-	{ "Band", "A collarless swell at the joint, the bracket smaller" },
-	{ "Band", "The cascade, along the drawer's rim" },
-	{ "Band", "Plain: the forged joint alone, wide fillets" },
-	{ "Carved", "Round 1's sweep, forged; a carved strip" },
-	{ "Sill", "Round 1's knee braces, forged; a grey sill" },
+	{ "Band", "Cascade along the drawer's rim, the settings joint's size" },
+	{ "Band", "Cascade up the window's rim" },
+	{ "Band", "Lyre along the drawer's rim, its lance on the rim" },
+	{ "Band", "Triskele up the window's rim" },
+	{ "Band", "Triskele along the drawer's rim" },
+	{ "Band", "Cascade along the drawer, smaller" },
+	{ "Band", "Cascade above; the bottom crossing plain" },
+	{ "Band", "Plain: the rims run through, no ornament" },
 }
 
 local function picture(f, file, x, y, w, h, tex, layer)
