@@ -284,7 +284,7 @@ local function header(name)
 	h.divider = CreateFrame("Frame", nil, content)
 	h.divider:SetHeight(16)
 	WC.Style.VineLine(h.divider, "", false, false, true)
-	WC.Style.VineJoin(h.divider, "Thick", "TRightFromMedium", "LEFT")
+	WC.Style.VineJoin(h.divider, "Thick", "TRightFromMediumPlain", "LEFT")
 	headers[name] = h
 	return h
 end
