@@ -1,33 +1,47 @@
--- Drawer trials, temporary: six ways the conversation menu's drawer
--- (ConvMenu.lua) could hook into the window's rim, each with its own panel
--- for the legend, side by side at true size. Each cell is one picture
--- (tools/make_drawer_trials.py: a slice of the window's right side and the
--- drawer coming out of it), its words drawn here. Shown only: nothing here is
--- a stop. Goes when one is chosen.
+-- Drawer trials, temporary: ways the conversation menu's drawer
+-- (ConvMenu.lua) could hook into the window's rim, side by side at true
+-- size. Round 2: each cell is drawn as the drawer would be, a base picture
+-- (a slice of the window's right side and the drawer butted against its rim,
+-- the legend's panel) with a joint piece over each place the drawer's rims
+-- meet the window's, redrawing both as one forged metal
+-- (tools/make_drawer_trials.py). Its words drawn here. Shown only: nothing
+-- here is a stop. Goes when one is chosen.
 local S = WC.Style
-local ART = [[Interface\AddOns\WowCompanion_Agent\Art\DrawerTrial-%d-1]] -- the generator's VERSION
--- the generator's cell, in units; its picture 2.7 texels a unit in a 512 texture
-local CW, CH, TEXELS = 186, 188, 2.7 / 512
-local X0, RIM, XR, DT, DB = 16, 6, 170, 46, 150
+local ART = [[Interface\AddOns\WowCompanion_Agent\Art\DrawerTrial-%s-2]] -- the generator's VERSION
+-- the generator's cell and joint boxes, in units, at 2.7 texels a unit
+local TEXEL = 2.7
+local CW, CH, BASE_TEX = 172, 180, 512
+local JW, JH, JOINT_TEX = 60, 70, 256
+local X0, RIM, XR, DT = 16, 6, 170, 46
 local ROWS, ROW = DT + 12, 24
-local LEG = { DT + 64, DB - RIM }
-local TITLES = {
-	"One rim: the window's steps out round it; the rows in a well",
-	"The rims sweep out of the window's; a carved strip",
-	"Scroll brackets; a rule over the title band's leather",
-	"The rim swells into a sleeve; a sunk bronze plate",
-	"A rounded tongue; the page's vine, deeper stone",
-	"Knee braces, plain; a sill of grey stone",
+local LEGEND_Y = DT + 75.5 -- the middle of the legend's panel
+local OPTIONS = {
+	{ "Band", "The bracket, forged: the rims flow through fillets" },
+	{ "Band", "Grown from the joint: the scroll rises out of the fillet" },
+	{ "Band", "One great volute, deep fillets" },
+	{ "Band", "A collarless swell at the joint, the bracket smaller" },
+	{ "Band", "The cascade, along the drawer's rim" },
+	{ "Band", "Plain: the forged joint alone, wide fillets" },
+	{ "Carved", "Round 1's sweep, forged; a carved strip" },
+	{ "Sill", "Round 1's knee braces, forged; a grey sill" },
 }
 
+local function picture(f, file, x, y, w, h, tex, layer)
+	local t = f:CreateTexture(nil, "ARTWORK", nil, layer)
+	t:SetTexture(ART:format(file), "CLAMP", "CLAMP")
+	t:SetPoint("TOPLEFT", x, -y)
+	t:SetSize(w, h)
+	t:SetTexCoord(0, w * TEXEL / tex, 0, h * TEXEL / tex)
+end
+
 local function cell(box, i, x, y)
+	local legend, title = OPTIONS[i][1], OPTIONS[i][2]
 	local f = CreateFrame("Frame", nil, box)
 	f:SetSize(CW, CH)
 	f:SetPoint("TOPLEFT", x, y)
-	local t = f:CreateTexture(nil, "ARTWORK")
-	t:SetTexture(ART:format(i), "CLAMP", "CLAMP")
-	t:SetAllPoints()
-	t:SetTexCoord(0, CW * TEXELS, 0, CH * TEXELS)
+	picture(f, legend, 0, 0, CW, CH, BASE_TEX, 0)
+	picture(f, ("Joint-%d-Top"):format(i), 0, 0, JW, JH, JOINT_TEX, 1)
+	picture(f, ("Joint-%d-Bottom"):format(i), 0, CH - JH, JW, JH, JOINT_TEX, 1)
 	local top = CreateFrame("Frame", nil, f)
 	top:SetAllPoints()
 	top:SetFrameLevel(f:GetFrameLevel() + 4)
@@ -38,22 +52,15 @@ local function cell(box, i, x, y)
 		fs:SetTextColor(unpack(n == 1 and S.NAME_LIT or S.NAME))
 		fs:SetText(name)
 	end
-	local legend = top:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	legend:SetPoint("RIGHT", top, "TOPLEFT", XR - RIM - 8, -(LEG[1] + LEG[2]) / 2)
-	legend:SetText(WowCompanion_Glyph("PAD1") .. " Select    " .. WowCompanion_Glyph("PAD2") .. " Back")
-	if i == 5 then
-		local v = CreateFrame("Frame", nil, f)
-		v:SetHeight(16)
-		v:SetPoint("LEFT", f, "TOPLEFT", X0 + 4, -LEG[1])
-		v:SetPoint("RIGHT", f, "TOPLEFT", XR - RIM - 4, -LEG[1])
-		S.VineLine(v, "", false, true, true)
-	end
+	local keys = top:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	keys:SetPoint("RIGHT", top, "TOPLEFT", XR - RIM - 8, -LEGEND_Y)
+	keys:SetText(WowCompanion_Glyph("PAD1") .. " Select    " .. WowCompanion_Glyph("PAD2") .. " Back")
 	local label = top:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	label:SetPoint("TOPLEFT", 56, -4)
-	label:SetWidth(CW - 58)
+	label:SetPoint("TOPLEFT", JW, -4)
+	label:SetWidth(CW - JW)
 	label:SetJustifyH("LEFT")
 	label:SetTextColor(unpack(S.LABEL))
-	label:SetText(i .. ". " .. TITLES[i])
+	label:SetText(i .. ". " .. title)
 end
 
 WC.Companion.AddTab("Drawers", function(page)
@@ -65,8 +72,8 @@ WC.Companion.AddTab("Drawers", function(page)
 		local box = CreateFrame("Frame", nil, page)
 		box:SetFrameLevel(page:GetParent():GetFrameLevel() + 25)
 		box:SetAllPoints()
-		for i = 1, #TITLES do
-			cell(box, i, 18 + ((i - 1) % 3) * 240, i > 3 and -222 or -4)
+		for i = 1, #OPTIONS do
+			cell(box, i, 4 + ((i - 1) % 4) * 178, i > 4 and -224 or -4)
 		end
 	end)
 end)
