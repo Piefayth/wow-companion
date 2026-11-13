@@ -1,6 +1,6 @@
--- WowCompanion_Agent: the conversation menu. Triangle with the cursor on a
--- conversation in the window's list opens it beside that row (the player,
--- 2026-11-12): Clear chat (its lines out of the window; the agent remembers
+-- WowCompanion_Agent: the window's menu (WC.ConvMenu.Show), opened by
+-- triangle: on a chat link (Transcript.lua) and on a conversation in the
+-- window's list, beside that row (the player, 2026-11-12): Clear chat (its lines out of the window; the agent remembers
 -- them) and Start over (the agent forgets the conversation: the companion's
 -- `fresh` command, src/requests.rs). Stop has its own keys.
 --
@@ -89,21 +89,11 @@ plainButton("WCConvMenuPick", function()
 end)
 plainButton("WCConvMenuBack", close)
 
-plainButton("WCConvMore", function()
+-- list: { { name, fn }, ... }; the drawer level with `row`, the pad its own
+-- until a pick or back
+local function show(list, row)
 	if InCombatLockdown() then return end
-	local slot, row = rowUnderCursor()
-	if not slot then return end
-	local name = WC.Conversations.Label(slot)
-	menu.list = {
-		{ "Clear chat", function()
-			WC.Companion.clear(slot)
-			WC.Board.toast(("|cffffd100%s|r  chat cleared"):format(name), 0.8, 0.8, 0.8, 5)
-		end },
-		{ "Start over", function()
-			WowCompanion_Strip.Command("fresh " .. WC.Conversations.Wire(slot))
-			WC.Board.toast(("|cffffd100%s|r  starts over: it forgets this conversation"):format(name), 0.8, 0.8, 0.8, 8)
-		end },
-	}
+	menu.list = list
 	menu.sel = 1
 	for i = #menu.rows + 1, #menu.list do
 		local text = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -131,6 +121,22 @@ plainButton("WCConvMore", function()
 	for _, key in ipairs({ "PAD2", "PAD3", "PAD4", "PADDLEFT", "PADDRIGHT" }) do
 		SetOverrideBindingClick(keys, true, key, "WCConvMenuBack")
 	end
+end
+
+plainButton("WCConvMore", function()
+	local slot, row = rowUnderCursor()
+	if not slot then return end
+	local name = WC.Conversations.Label(slot)
+	show({
+		{ "Clear chat", function()
+			WC.Companion.clear(slot)
+			WC.Board.toast(("|cffffd100%s|r  chat cleared"):format(name), 0.8, 0.8, 0.8, 5)
+		end },
+		{ "Start over", function()
+			WowCompanion_Strip.Command("fresh " .. WC.Conversations.Wire(slot))
+			WC.Board.toast(("|cffffd100%s|r  starts over: it forgets this conversation"):format(name), 0.8, 0.8, 0.8, 8)
+		end },
+	}, row)
 end)
 
 -- the window closing takes the menu with it
@@ -146,4 +152,5 @@ WC.ConvMenu = {
 	BUTTON = "WCConvMore",
 	Row = function() follow() return (rowUnderCursor()) end,
 	Open = function() return menu:IsShown() end,
+	Show = function(list, row) follow() show(list, row) end,
 }

@@ -162,7 +162,8 @@ local function openColour(open, word)
 	return open
 end
 -- the link the controller's cursor is on, and its menu (triangle, bound by
--- Jobs.lua like the conversation rows'): Blizzard's own context menu
+-- Jobs.lua like the conversation rows'): the window's own menu (ConvMenu.lua;
+-- Blizzard's, opened from our code, never took the pad's cursor)
 local linkButtons = {}
 local function linkUnderCursor()
 	for _, b in ipairs(linkButtons) do
@@ -181,16 +182,15 @@ more:RegisterForClicks("AnyDown")
 more:SetScript("OnClick", function()
 	local b = linkUnderCursor()
 	if not b then return end
-	MenuUtil.CreateContextMenu(b, function(_, root)
-		root:CreateButton("Link in chat", function()
-			local link = chatLink(b)
-			if link then WC.Chat.Line(link)
-			else WC.Companion.remember("error", "The game has no link for that yet; try again in a moment.") end
-		end)
-		if b.kind == "item" then
-			root:CreateButton("Open in the item viewer", function() WowCompanion_ShowItem(b.link) end)
-		end
-	end)
+	local list = { { "Link in chat", function()
+		local link = chatLink(b)
+		if link then WC.Chat.Line(link)
+		else WC.Companion.remember("error", "The game has no link for that yet; try again in a moment.") end
+	end } }
+	if b.kind == "item" then
+		list[2] = { "Open in the item viewer", function() WowCompanion_ShowItem(b.link) end }
+	end
+	WC.ConvMenu.Show(list, b)
 end)
 local function linkButton(t)
 	return take(t.pool.link, function()
