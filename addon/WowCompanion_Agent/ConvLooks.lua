@@ -14,7 +14,8 @@ WC.ConvLooks = C
 local W = 130 -- the well (Window.lua's WELL); its walls cover INSET each side
 local INSET = 4
 local OFFER = 36 -- the offered button's cell
-local HEAD_H, HEAD_RULE, FOOT_H, FOOT_RULE, FOOT_DROP = 37, 32, 28, 4, 24 -- the crests: each one's rule; the foot's ornament under its rule
+local CREST_H, CREST_RULE = 28, 4 -- the crest: its rule 4 into its art, its ornament the rest
+local ORNAMENT = CREST_H - CREST_RULE -- a crest's ornament past its rule
 local CAP = 6 -- a crest's room when the well is too short for crests (a thick vine instead)
 local CHORD_RIGHT, NAME_RIGHT = 98, 14 -- a chord's centre, a name's left
 local LIT = 0.75 -- a part with no lit art: itself added over itself at this alpha
@@ -96,12 +97,12 @@ local function hvine(t, y, x0, x1, weight, lit)
 			layer = "BORDER", sub = 2 })
 	end
 end
--- the kept crests, each on its rule's y, never lit: the open row lights
--- only its own parts (the player, 2026-11-12)
-local function crest(t, part, rule)
-	put(t, { tex = AGENT .. "Crest-" .. part, x = 0, w = W,
-		h = part == "Head" and HEAD_H or FOOT_H, y = rule - (part == "Head" and HEAD_RULE or FOOT_RULE),
-		layer = "ARTWORK", sub = 0 })
+-- the crest, the same at both ends (the player, 2026-11-13): the foot's art
+-- hanging under its rule, turned over for the head to stand on its rule;
+-- never lit: the open row lights only its own parts (the player, 2026-11-12)
+local function crest(t, rule, head)
+	put(t, { tex = AGENT .. "Crest-Foot", x = 0, w = W, h = CREST_H, vflip = head,
+		y = head and rule - CREST_H + CREST_RULE or rule - CREST_RULE, layer = "ARTWORK", sub = 0 })
 end
 
 
@@ -113,8 +114,8 @@ end
 local KEYS = { "", "l1", "l2", "r1", "r2", "quick" }
 local function stack(look, H, offered)
 	local row, extra = ROW, offered and OFFER or 0
-	local ornate = not look.plain and HEAD_RULE + #KEYS * row + extra + FOOT_DROP <= H
-	local top, drop = HEAD_RULE, FOOT_DROP
+	local ornate = not look.plain and ORNAMENT + #KEYS * row + extra + ORNAMENT <= H
+	local top, drop = ORNAMENT, ORNAMENT
 	if not ornate then
 		top, drop = CAP, CAP
 		row = math.max(12, math.min(row, (H - top - drop - extra) / #KEYS))
@@ -130,8 +131,8 @@ end
 -- the crests (or the thick vines in their place)
 local function ends(t, L)
 	if L.ornate then
-		crest(t, "Head", L.top)
-		crest(t, "Foot", L.foot)
+		crest(t, L.top, true)
+		crest(t, L.foot, false)
 	else
 		hvine(t, L.top, 0, W)
 		hvine(t, L.foot, 0, W)
