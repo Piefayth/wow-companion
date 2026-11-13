@@ -698,5 +698,5 @@ WC.Window = WC.Window or {}
 WC.Window.buildLog = buildLog
 -- the middle of the strip under the wells, for the legend (Jobs.lua)
 WC.Window.FOOT_MID = RIM + FOOT / 2
--- the transcript's left edge, inside the chat well's wall
-WC.Window.CHAT_X = RIM + GAP + INSET
+-- the chat well's left edge, the outside of its border
+WC.Window.CHAT_LEFT = RIM + GAP

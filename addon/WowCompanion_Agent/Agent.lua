@@ -216,18 +216,17 @@ local function paintConversations()
 		if button.selected then button.selected:SetShown(key == viewSlot) end
 	end
 	-- the open conversation's context, in the strip under the chat at the
-	-- left, opposite the legend (Jobs.lua): on the chat's text column, in its
-	-- waiting line's font; a Chat tab part (Window.lua)
+	-- left, opposite the legend (Jobs.lua), in its font, flush with the chat
+	-- well's border; a Chat tab part (Window.lua)
 	if not frame.contextText then
-		frame.contextText = frame:CreateFontString(nil, "OVERLAY", ChatFontNormal and "ChatFontNormal" or "GameFontHighlight")
-		frame.contextText:SetPoint("LEFT", frame, "BOTTOMLEFT",
-			WC.Window.CHAT_X + WC.Transcript.PAD_L, WC.Window.FOOT_MID)
+		frame.contextText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		frame.contextText:SetPoint("LEFT", frame, "BOTTOMLEFT", WC.Window.CHAT_LEFT, WC.Window.FOOT_MID)
 		frame.contextText:SetShown((frame.currentTab or 1) == 1)
 		table.insert(frame.chatParts, frame.contextText)
 	end
 	-- (a compaction running shows in the chat's waiting line, Jobs.lua)
 	local context = contextSet()[viewSlot]
-	frame.contextText:SetText(context and context.tokens and ("|cff999999Context %d%%|r"):format(
+	frame.contextText:SetText(context and context.tokens and ("|cffb0b0b0Context %d%%|r"):format(
 		math.floor(context.tokens / context.window * 100 + 0.5)) or "")
 	-- each message's panel, with its Cancel and Send now (Jobs.lua)
 	if WC.Jobs then WC.Jobs.Refresh() end
