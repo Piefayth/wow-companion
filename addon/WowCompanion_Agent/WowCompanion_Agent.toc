@@ -13,7 +13,6 @@ Sandbox.lua
 Window.lua
 FocusArt.lua
 Transcript.lua
-JunctionTrials.lua
 ControlTrials.lua
 JobsModel.lua
 Jobs.lua
