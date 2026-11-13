@@ -496,7 +496,8 @@ function WowCompanion_Style.Spine(owner, page, x)
 	spine:SetWidth(16)
 	spine:SetPoint("TOP", page, "TOPLEFT", x, WowCompanion_Style.BLEED_Y)
 	spine:SetPoint("BOTTOM", page, "BOTTOMLEFT", x, -WowCompanion_Style.BLEED_Y)
-	WowCompanion_Style.VineLine(spine, "Thick", true, true, true)
+	local made = WowCompanion_Style.VineLine(spine, "Thick", true, true, true)
+	spine.ends = { made[1], made[2] } -- its round ends, top and bottom
 	return spine
 end
 

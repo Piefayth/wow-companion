@@ -147,16 +147,55 @@ WC.Style.VineJoin(across, "Thick", "TRightBig", "LEFT")
 -- the section joints' frame: each joint carries its own stretch of the spine,
 -- which near the page's top or foot reached past the spine's end, up through
 -- the floor to the title rule (seen on screen, 2026-11-13); cut to the spine,
--- short of its round ends (CAP: the round end's length, Vine-ThickTop's art)
-local CAP = 3
+-- short of its ends (the trial's cut: how far each end's art reaches down)
 local joins = CreateFrame("Frame", nil, seams)
 joins:SetClipsChildren(true)
 joins:SetPoint("LEFT", page, -BX, 0)
 joins:SetPoint("RIGHT", page, BX, 0)
-joins:SetPoint("TOP", down, 0, -CAP)
-joins:SetPoint("BOTTOM", down, 0, CAP)
--- the names well's shadow on the settings, over their rows and dividers, under the vines
-WC.Style.CastOn(seams, settings, "LEFT")
+-- the names well's shadow on the settings, over their rows and dividers, under
+-- the vines (or over the joints, as the trial's meeting says)
+local cast = CreateFrame("Frame", nil, seams)
+cast:SetAllPoints()
+WC.Style.CastOn(cast, settings, "LEFT")
+
+-- Trial, temporary (the player, 2026-11-13): the spine's ends where it meets
+-- the raised panel's edges (tools/make_spine_trials.py), and how the dividers,
+-- lying lower, meet the spine on the panel's edge. Kept in WowCompanionDB.spineEnd
+-- and .dividerMeet; what is not picked goes with this switch.
+local ENDS = {
+	{ key = "Round", name = "Round, as now", wide = 16, cut = 3 },
+	{ key = "Bend", name = "Bends over the corner", wide = 48, cut = 14 },
+	{ key = "BendVolute", name = "Bends, a volute", wide = 48, cut = 17 },
+	{ key = "Foot", name = "A forged T", wide = 48, cut = 9 },
+	{ key = "FootVolute", name = "A T of volutes", wide = 48, cut = 14 },
+	{ key = "Fleur", name = "The scroll bar's fleur", wide = 32, cut = 17 },
+}
+local MEETS = {
+	{ key = "joined", name = "Joined, as now" },
+	{ key = "shadow", name = "Joined, in the shadow" },
+	{ key = "under", name = "Under the spine" },
+	{ key = "apart", name = "Apart, short of it" },
+}
+local function trialPick(list, field)
+	local want = WowCompanionDB and WowCompanionDB[field]
+	for _, t in ipairs(list) do if t.key == want then return t end end
+	return list[1]
+end
+local function endLook() return trialPick(ENDS, "spineEnd") end
+local function meet() return trialPick(MEETS, "dividerMeet").key end
+local function paintEnds()
+	local e = endLook()
+	for i, t in ipairs(down.ends) do
+		local which = i == 1 and "Top" or "Bottom"
+		t:SetTexture(e.key == "Round" and WC.Style.Vine("Thick" .. which)
+			or ([[Interface\AddOns\WowCompanion\Art\Vine-ThickEnd%s%s-T1]]):format(e.key, which), "CLAMP", "CLAMP")
+		t:SetWidth(e.wide)
+	end
+	joins:SetPoint("TOP", down, 0, -e.cut)
+	joins:SetPoint("BOTTOM", down, 0, e.cut)
+end
+paintEnds()
+page:HookScript("OnShow", paintEnds) -- the saved pick arrives after this file runs
 page:HookScript("OnShow", function() WC.Style.PaintRaised() end)
 
 -- One setting: a row from the names well to the right edge, its name at the left
@@ -430,6 +469,10 @@ local function header(name)
 	h.divider = CreateFrame("Frame", nil, content)
 	h.divider:SetHeight(16)
 	WC.Style.VineLine(h.divider, "", false, false, true)
+	-- the trial's "apart": the divider from clear of the panel's shadow, a round end
+	h.apart = CreateFrame("Frame", nil, content)
+	h.apart:SetHeight(16)
+	WC.Style.VineLine(h.apart, "", false, true, true)
 	h.join = CreateFrame("Frame", nil, joins)
 	h.join:SetSize(1, 1)
 	h.join:SetPoint("CENTER", h.divider, "LEFT")
@@ -450,14 +493,18 @@ local function orderOf(e) return e.row.order or 50 end
 local LIFT = 25
 local function lift()
 	local base = page:GetFrameLevel() + LIFT
-	-- the joints over the spine: each draws its stretch of the spine
+	-- joined, the joints over the spine (each draws its stretch of the
+	-- spine) and the shadow under both; else the shadow over the joints, and
+	-- the spine over them
+	local joined = meet() == "joined"
 	seams:SetFrameLevel(base)
-	down:SetFrameLevel(base)
-	across:SetFrameLevel(base + 1)
-	joins:SetFrameLevel(base + 1)
-	for _, h in pairs(headers) do h.join:SetFrameLevel(base + 1) end
-	column:SetFrameLevel(base + 2)
-	for f, over in pairs(barLevels) do f:SetFrameLevel(base + 2 + over) end
+	cast:SetFrameLevel(joined and base or base + 1)
+	down:SetFrameLevel(joined and base + 1 or base + 2)
+	joins:SetFrameLevel(joined and base + 2 or base)
+	for _, h in pairs(headers) do h.join:SetFrameLevel(joins:GetFrameLevel()) end
+	across:SetFrameLevel(base + 3)
+	column:SetFrameLevel(base + 4)
+	for f, over in pairs(barLevels) do f:SetFrameLevel(base + 4 + over) end
 end
 -- the joints, outside the scroll frame, shown only while their divider is
 -- shown and inside it
@@ -465,7 +512,7 @@ local function joints()
 	local top, bottom = scroll:GetTop(), scroll:GetBottom()
 	for _, h in pairs(headers) do
 		local y = h.divider:IsShown() and top and select(2, h.divider:GetCenter())
-		h.join:SetShown(y and y <= top and y >= bottom or false)
+		h.join:SetShown(y and y <= top and y >= bottom and (meet() == "joined" or meet() == "shadow") or false)
 	end
 end
 scroll:HookScript("OnVerticalScroll", joints)
@@ -509,10 +556,14 @@ local function layout()
 				count = count + 1
 				h.top = section and (y - GAP / 2) or -7
 				open = h
-				h.divider:SetShown(section ~= nil)
+				h.divider:SetShown(section ~= nil and meet() ~= "apart")
 				h.divider:ClearAllPoints()
 				h.divider:SetPoint("LEFT", content, "TOPLEFT", BX + SPINE - 2 - SEAM / 2, -y + GAP / 2)
 				h.divider:SetPoint("RIGHT", content, "TOPRIGHT", 0, -y + GAP / 2)
+				h.apart:SetShown(section ~= nil and meet() == "apart")
+				h.apart:ClearAllPoints()
+				h.apart:SetPoint("LEFT", content, "TOPLEFT", BX + SPINE - 2 + 10, -y + GAP / 2)
+				h.apart:SetPoint("RIGHT", content, "TOPRIGHT", 0, -y + GAP / 2)
 				section = s
 				h:SetPoint("TOPRIGHT", content, "TOPLEFT", BX + SPINE - 18, -y - 10)
 			end
@@ -621,3 +672,27 @@ Page.Add({ kind = "dropdown", section = "Trial", order = 1, label = "Raised pane
 	end,
 	get = function() return WC.Style.RaisedLook().name end,
 	set = function(name) WC.Style.PaintRaised(name) end })
+Page.Add({ kind = "dropdown", section = "Trial", order = 2, label = "Spine ends",
+	text = "On trial: the thick vine's ends where it meets the dark panel's top and bottom.",
+	options = function()
+		local names = {}
+		for i, e in ipairs(ENDS) do names[i] = e.name end
+		return names
+	end,
+	get = function() return endLook().name end,
+	set = function(name)
+		for _, e in ipairs(ENDS) do if e.name == name then WowCompanionDB.spineEnd = e.key end end
+		paintEnds()
+	end })
+Page.Add({ kind = "dropdown", section = "Trial", order = 3, label = "Dividers meet",
+	text = "On trial: how the dividers, lying lower, meet the thick vine on the dark panel's edge.",
+	options = function()
+		local names = {}
+		for i, m in ipairs(MEETS) do names[i] = m.name end
+		return names
+	end,
+	get = function() return trialPick(MEETS, "dividerMeet").name end,
+	set = function(name)
+		for _, m in ipairs(MEETS) do if m.name == name then WowCompanionDB.dividerMeet = m.key end end
+		layout()
+	end })
