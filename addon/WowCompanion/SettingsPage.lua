@@ -142,18 +142,14 @@ WC.Style.VineLine(across, "Thick", false, false, true)
 WC.Style.VineJoin(across, "Thick", "TRightBig", "LEFT")
 
 -- One setting: a row from the names well to the right edge, its name at the left
--- and its control at the edge; the row is the one stop, shaded white at 0.1
--- while the cursor or the mouse is on it (Blizzard's HoverBackgroundTemplate),
--- the cursor just left of its name. The control inside is out of the cycle,
--- as in Blizzard's Settings.
+-- and its control at the edge; the row is the one stop, the cursor just left
+-- of its name. While the cursor or the mouse is on it, its control lights
+-- (r.OnRowLit, set by each kind; Rows.lua): no shade of its own. The control
+-- inside is out of the cycle, as in Blizzard's Settings.
 local function settingRow(row, step, prompt)
 	local r = CreateFrame("Button", nil, content)
 	r:SetPoint("RIGHT", content, "RIGHT", -(12 + WC.ScrollBar.ROOM), 0)
 	r:SetHeight(ROW_H)
-	local hover = r:CreateTexture(nil, "HIGHLIGHT")
-	hover:SetPoint("TOPLEFT", 2, -3)
-	hover:SetPoint("BOTTOMRIGHT", 9, 3)
-	hover:SetColorTexture(1, 1, 1, 0.1)
 	local fs = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	fs:SetPoint("LEFT", LABEL_X, 0)
 	fs:SetPoint("RIGHT", r, "RIGHT", -(CONTROL_W + VALUE_W + EDGE + 12), 0)
@@ -189,6 +185,15 @@ local function cap(parent, kind, side, w, onClick)
 	b:SetDisabledTexture(controlArt(base .. "Disabled"))
 	b:SetScript("OnClick", onClick)
 	return b
+end
+-- both arrows lit as under the mouse, for the row holding the cursor (an
+-- arrow greyed at its end stays grey)
+local function lightCaps(r, less, more)
+	r.OnRowLit = function(on)
+		for _, b in ipairs({ less, more }) do
+			if on then b:LockHighlight() else b:UnlockHighlight() end
+		end
+	end
 end
 -- the stretch between two caps
 local function between(parent, piece, left, right)
@@ -259,6 +264,7 @@ local function dropdown(row)
 	WC.MarkIgnored(face)
 	face:SetScript("OnShow", paint)
 	paint()
+	lightCaps(r, less, more)
 	r:SetScript("OnClick", function() dd:MouseDown() dd:MouseUp() end)
 	return r
 end
@@ -311,6 +317,7 @@ local function slider(row)
 	WC.MarkIgnored(face)
 	face:SetScript("OnShow", function() paint() end)
 	paint()
+	lightCaps(r, less, more)
 	return r
 end
 
@@ -326,9 +333,7 @@ local function button(row)
 	refreshers[#refreshers + 1] = fill
 	b:SetScript("OnClick", row.onClick)
 	r:SetScript("OnClick", row.onClick)
-	-- the row holds the cursor for the button, so the row lights it
-	r:HookScript("OnEnter", function() b:SetLit(true) end)
-	r:HookScript("OnLeave", function() b:SetLit(false) end)
+	r.OnRowLit = function(on) b:SetLit(on) end
 	WC.MarkIgnored(b)
 	return r
 end
@@ -348,7 +353,18 @@ local function key(row)
 	right:SetTexture(controlArt("Choice-Right-Closed"))
 	right:SetSize(16, 32)
 	right:SetPoint("RIGHT")
-	between(b, "Choice-Mid", left, right)
+	local mid = between(b, "Choice-Mid", left, right)
+	-- lit: the same slot added over itself, brighter, and its word in the lit bronze
+	local glow = {}
+	for i, t in ipairs({ left, mid, right }) do
+		local g = b:CreateTexture(nil, "OVERLAY")
+		g:SetTexture(t:GetTexture())
+		g:SetAllPoints(t)
+		g:SetBlendMode("ADD")
+		g:SetAlpha(0.35)
+		g:Hide()
+		glow[i] = g
+	end
 	local word = bronze(b)
 	b:SetFontString(word)
 	word:SetPoint("CENTER")
@@ -361,6 +377,10 @@ local function key(row)
 	refreshers[#refreshers + 1] = fill
 	b:SetScript("OnClick", row.onClick)
 	r:SetScript("OnClick", row.onClick)
+	r.OnRowLit = function(on)
+		for _, g in ipairs(glow) do g:SetShown(on) end
+		word:SetTextColor(unpack(on and WC.Style.BRONZE_LIT or WC.Style.BRONZE))
+	end
 	WC.MarkIgnored(b)
 	return r
 end
