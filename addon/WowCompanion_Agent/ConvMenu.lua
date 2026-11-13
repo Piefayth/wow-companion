@@ -7,14 +7,31 @@
 -- Jobs.lua binds triangle to WCConvMore while the cursor is on a row and
 -- leaves the pad to the menu while it is open (WC.ConvMenu.Open()).
 
-local menu = CreateFrame("Frame", "WCConvMenu", UIParent)
+-- Drawn as the list it opens from (the player, 2026-11-12): a well of the
+-- window's own border and dark slate, its options the list's rows, the one
+-- under the cursor lit as the conversation in view is; it opens to the right
+-- of its row, joined to it by the plain vine joint.
+local ROW, W = 24, 140
+local made, menu = pcall(CreateFrame, "Frame", "WCConvMenu", UIParent, "InsetFrameTemplate")
+if not made or not menu then menu = CreateFrame("Frame", "WCConvMenu", UIParent) end
 menu:SetFrameStrata("FULLSCREEN_DIALOG")
 menu:Hide()
-WC.Style.Menu(menu)
-menu.hl = WC.Style.Highlight(menu)
+local inset = WC.Window.INSET
+WC.Window.Inset(menu)
+local floor = menu:CreateTexture(nil, "BACKGROUND", nil, 1)
+WC.Style.Stone(floor, "you")
+floor:SetPoint("TOPLEFT", WC.Style.FLOOR, -WC.Style.FLOOR)
+floor:SetPoint("BOTTOMRIGHT", -WC.Style.FLOOR, WC.Style.FLOOR)
 menu.rows = {}
+-- the joint: a stretch of the medium vine from the row's edge into the menu
+local stem = CreateFrame("Frame", nil, menu)
+stem:SetHeight(16)
+stem:SetPoint("RIGHT", menu, "TOPLEFT", 2, -(inset + ROW / 2))
+stem:SetWidth(16)
+WC.Style.VineLine(stem, "", false, false, false)
+-- what cross and circle do, under it, as Blizzard's controller menus show
 local pick = WC.Style.Prompt(menu, "PAD1", ACCEPT or "Select")
-pick:SetPoint("TOPLEFT", menu, "BOTTOMLEFT", 2, -10)
+pick:SetPoint("TOPLEFT", menu, "BOTTOMLEFT", 2, -6)
 local back = WC.Style.Prompt(menu, "PAD2", BACK or "Back")
 back:SetPoint("LEFT", pick, "RIGHT", 14, 0)
 local keys = CreateFrame("Frame", "WCConvMenuKeys", UIParent)
@@ -39,13 +56,8 @@ local function paint()
 		local entry = menu.list[i]
 		row:SetText(entry and entry[1] or "")
 		row:SetShown(entry ~= nil)
+		row:SetChosen(i == menu.sel)
 	end
-	menu.hl:ClearAllPoints()
-	menu.hl:SetPoint("LEFT", menu, "LEFT", 2, 0)
-	menu.hl:SetPoint("RIGHT", menu, "RIGHT", -2, 0)
-	menu.hl:SetPoint("TOP", menu, "TOP", 0, -(6 + (menu.sel - 1) * 20))
-	menu.hl:SetHeight(20)
-	menu.hl:Show()
 end
 
 local function plainButton(name, fn)
@@ -79,15 +91,19 @@ plainButton("WCConvMore", function()
 	}
 	menu.sel = 1
 	for i = #menu.rows + 1, #menu.list do
-		-- MenuStyle2's insets: 6 above, 7 below; each row a 20 px cell, text centred in it
-		local text = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		text:SetPoint("LEFT", menu, "TOPLEFT", 12, -(6 + (i - 0.5) * 20))
-		text:SetJustifyH("LEFT")
-		menu.rows[i] = text
+		-- rows edge to edge across the well, as the list's
+		local r = WC.Style.ChoiceRow(menu)
+		r:SetHeight(ROW)
+		r:SetPoint("TOPLEFT", inset, -inset - (i - 1) * ROW)
+		r:SetPoint("TOPRIGHT", -inset, -inset - (i - 1) * ROW)
+		r:EnableMouse(false)
+		menu.rows[i] = r
 	end
-	menu:SetSize(150, 6 + #menu.list * 20 + 7)
+	menu:SetSize(W, #menu.list * ROW + 2 * inset)
+	menu:SetScale(row:GetEffectiveScale() / UIParent:GetEffectiveScale())
 	menu:ClearAllPoints()
-	menu:SetPoint("TOPRIGHT", row, "TOPLEFT", -6, 4)
+	-- out to the right of its row, the row's middle level with the first option's
+	menu:SetPoint("TOPLEFT", row, "TOPRIGHT", 10, inset)
 	paint()
 	menu:Show()
 	SetOverrideBindingClick(keys, true, "PADDUP", "WCConvMenuUp")
