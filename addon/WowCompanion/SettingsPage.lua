@@ -432,23 +432,20 @@ end
 -- and a divider between sections.
 local function sectionOf(e) return e.row.section or "General" end
 local function orderOf(e) return e.row.order or 50 end
--- Levels over the scrolling rows, set on each show (the page is moved into
--- another frame, which resets levels set before). The vines lie under the
--- drop shadow of whatever window shows the page (the Companion's page well
--- casts one from its top, its level + 20), as the wells do, so the spine's top
--- fades into it with them instead of standing out of it (the player,
--- 2026-11-12); the scroll bar stands above it, as the chat's does.
-local VINES, BAR = 15, 25
+-- The vines and the scroll bar above the drop shadow of whatever window shows
+-- the page (the Companion's page well casts one from its top, its level + 20),
+-- so the vines' joints read as joined; set on each show, as the page is moved
+-- into another frame, which resets levels set before
+local LIFT = 25
 local function lift()
-	local base = page:GetFrameLevel() + VINES
+	local base = page:GetFrameLevel() + LIFT
 	-- the joints over the spine: each draws its stretch of the spine
 	seams:SetFrameLevel(base)
 	down:SetFrameLevel(base)
 	across:SetFrameLevel(base + 1)
 	for _, h in pairs(headers) do h.join:SetFrameLevel(base + 1) end
-	local bar = page:GetFrameLevel() + BAR
-	column:SetFrameLevel(bar)
-	for f, over in pairs(barLevels) do f:SetFrameLevel(bar + over) end
+	column:SetFrameLevel(base + 2)
+	for f, over in pairs(barLevels) do f:SetFrameLevel(base + 2 + over) end
 end
 -- the joints, outside the scroll frame, shown only while their divider is
 -- shown and inside it
