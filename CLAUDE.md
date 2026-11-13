@@ -272,7 +272,8 @@ every such request filled the conversations to 940k tokens (2026-11-12). The
 profile and that file's path are appended to the system prompt
 (`agent-prompt*.md`, written each run). A conversation compacts at 20% of its
 window (`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`), and its size after each answer goes to
-the game (`context`, tokens of the window). Its answer is `say`
+the game (`context`, tokens of the window); a compaction is told the moment it starts
+(`context` with `compacting`) and ends (the new size). Its answer is `say`
 plus `steps`, the shapes the addon dispatches (chat, macro, press, reload, bar,
 lua, module…), sent as one batch; at most one button per answer. Output is
 streamed and shown as a progress line, one every 15 s at most (16 a request). Requests run off

@@ -438,10 +438,28 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, group: u64, ru
             })
         };
         let slot = session.slot.clone();
-        let mut progress = |doing: &str| {
-            voice::mark(&format!("agent: {}", doing.chars().take(60).collect::<String>()));
-            println!("  ... {doing}");
-            let _ = tell.send(doing.to_string());
+        // the window the conversation's size is of, as its last answer reported
+        let window = session.context.map(|(_, window)| window);
+        let mut progress = |event: agent::Progress| match event {
+            agent::Progress::Doing(doing) => {
+                voice::mark(&format!("agent: {}", doing.chars().take(60).collect::<String>()));
+                println!("  ... {doing}");
+                let _ = tell.send(doing.to_string());
+            }
+            // a compaction is the conversation's state, told at once on the
+            // context message, not a progress line waiting its turn
+            agent::Progress::Compacting => {
+                println!("  ... compacting the conversation");
+                let _ = send(addons, &Msg::new("context").text("slot", &slot).flag("compacting", true));
+            }
+            agent::Progress::Compacted(tokens) => {
+                println!("  ... compacted to {tokens} tokens");
+                let mut msg = Msg::new("context").text("slot", &slot).int("tokens", tokens);
+                if let Some(window) = window {
+                    msg = msg.int("window", window);
+                }
+                let _ = send(addons, &msg);
+            }
         };
         // A request that runs out of steps carries on by itself, a few times: the
         // work so far stands, and the turn just ended early. Without this, a long
@@ -481,7 +499,7 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, group: u64, ru
                 )));
             }
             println!("  out of steps: continuing ({round} of {CONTINUES})");
-            progress(&format!("continuing ({round} of {CONTINUES})"));
+            progress(agent::Progress::Doing(&format!("continuing ({round} of {CONTINUES})")));
             run = match session.start(
                 group,
                 round,
@@ -573,7 +591,15 @@ pub(crate) fn think(addons: &Path, spoken: &str) -> io::Result<()> {
     // a run of its own, with no job: its folder goes when it is done
     let id = jobs::now_ms() as u64;
     let run = session.start(id, 0, spoken, context)?;
-    let answer = session.finish(&run, |doing| println!("  ... {doing}"), || false);
+    let answer = session.finish(
+        &run,
+        |event| match event {
+            agent::Progress::Doing(doing) => println!("  ... {doing}"),
+            agent::Progress::Compacting => println!("  ... compacting the conversation"),
+            agent::Progress::Compacted(tokens) => println!("  ... compacted to {tokens} tokens"),
+        },
+        || false,
+    );
     crate::runs::finished(id);
     session.forget();
     let answer = answer?.ok_or_else(|| io::Error::other("the run was left"))?;

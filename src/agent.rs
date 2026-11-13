@@ -315,7 +315,7 @@ impl Session {
     /// `progress` as it happens ("reading StanceBar.lua"), so a minute of work is
     /// not a minute of silence. None when `leave()` says this copy is handing
     /// over: the run goes on, and the next copy follows it.
-    pub fn finish(&mut self, run: &crate::runs::Run, progress: impl FnMut(&str), leave: impl Fn() -> bool) -> io::Result<Option<Spoken>> {
+    pub fn finish(&mut self, run: &crate::runs::Run, progress: impl FnMut(Progress), leave: impl Fn() -> bool) -> io::Result<Option<Spoken>> {
         let Some(answer) = read(run, progress, leave)? else { return Ok(None) };
         // remember the thread even on the first reply, so the next utterance resumes
         if let Some(thread) = answer.thread {
@@ -330,6 +330,16 @@ impl Session {
         }
         Ok(Some(answer.spoken))
     }
+}
+
+/// What a run tells the player while it works.
+pub enum Progress<'a> {
+    /// a progress line: what it is doing now
+    Doing(&'a str),
+    /// its conversation is being compacted (asked for, or at the threshold)
+    Compacting,
+    /// the compaction is done: the conversation's size now, in tokens
+    Compacted(u64),
 }
 
 struct Answer {
@@ -372,7 +382,7 @@ fn answers(result: &Value) -> bool {
     matches!(result.get("structured_output"), Some(Value::Object(_)))
 }
 
-fn read(run: &crate::runs::Run, mut progress: impl FnMut(&str), leave: impl Fn() -> bool) -> io::Result<Option<Answer>> {
+fn read(run: &crate::runs::Run, mut progress: impl FnMut(Progress), leave: impl Fn() -> bool) -> io::Result<Option<Answer>> {
     let mut envelope: Option<Value> = None;
     // the conversation's size at each call, and the model the turn runs on
     let (mut size, mut model): (Option<u64>, Option<String>) = (None, None);
@@ -385,13 +395,14 @@ fn read(run: &crate::runs::Run, mut progress: impl FnMut(&str), leave: impl Fn()
                 model = event.get("model").and_then(Value::as_str).map(str::to_string);
             }
             (Some("system"), Some("status")) if event.get("status").and_then(Value::as_str) == Some("compacting") => {
-                progress("compacting the conversation");
+                progress(Progress::Compacting);
             }
             (Some("system"), Some("compact_boundary")) => {
                 let count = |key: &str| event.pointer(&format!("/compact_metadata/{key}")).and_then(Value::as_u64).unwrap_or(0);
                 let manual = event.pointer("/compact_metadata/trigger").and_then(Value::as_str) == Some("manual");
                 compacted = Some((count("pre_tokens"), count("post_tokens"), manual));
                 size = Some(count("post_tokens"));
+                progress(Progress::Compacted(count("post_tokens")));
             }
             (Some("assistant"), _) => {
                 if let Some(usage) = event.pointer("/message/usage") {
@@ -406,14 +417,14 @@ fn read(run: &crate::runs::Run, mut progress: impl FnMut(&str), leave: impl Fn()
                             // the answer itself arrives as this tool; it is not progress
                             if name != "StructuredOutput" {
                                 if let Some(line) = describe(name, part.get("input").unwrap_or(&Value::Null)) {
-                                    progress(&line);
+                                    progress(Progress::Doing(&line));
                                 }
                             }
                         }
                         Some("text") => {
                             let text = part.get("text").and_then(Value::as_str).unwrap_or("").trim();
                             if !text.is_empty() {
-                                progress(text.lines().next().unwrap_or(text));
+                                progress(Progress::Doing(text.lines().next().unwrap_or(text)));
                             }
                         }
                         _ => {}
