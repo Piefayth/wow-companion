@@ -42,7 +42,7 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
-from make_scrollbar_art import write_tga, LIGHT, HALF
+from make_scrollbar_art import write_tga, LIGHT, HALF, FOCUS_GLOW
 from make_frame_art import RIM, CHAMFER, LINE, octagon_depth
 import make_frame_art as frame_art
 import make_tab_art as tabs
@@ -225,7 +225,7 @@ TIGHT_ROUND = {
     "D3": ("D, no white line", tight((214, 178, 124), (210, 172, 118), (170, 130, 84), core_w=0.6, body=1.0)),
     "D4": ("D, amber, wider", tight((236, 196, 128), (210, 164, 100), (166, 118, 66), sigma=3.6, end=5.5)),
     "D5": ("D, deep bronze", tight((216, 172, 112), (190, 146, 92), (150, 104, 60), core_w=0.9, body=1.0)),
-    "D6": ("D3 at D4's width", tight((214, 178, 124), (210, 172, 118), (170, 130, 84), core_w=0.6, body=1.0, sigma=3.6, end=5.5)),
+    "D6": ("D3 at D4's width", tight((214, 178, 124), FOCUS_GLOW, (170, 130, 84), core_w=0.6, body=1.0, sigma=3.6, end=5.5)),
     "D7": ("D3, wider still", tight((214, 178, 124), (210, 172, 118), (170, 130, 84), core_w=0.6, body=1.0, sigma=4.2, end=6.5)),
 }
 

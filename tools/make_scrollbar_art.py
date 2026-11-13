@@ -164,7 +164,8 @@ class Canvas:
 #   RuleLeft 32x16, RuleMid 64x16: the divider's left end and its line,
 #     stretched whole to the Joint
 
-VERSION = 18
+VERSION = 19
+FOCUS_GLOW = (210, 172, 118)  # the window's focus glow (make_focus_art.py's D6, the player's pick, 2026-11-12): every hover glow of ours is this colour
 PRESS = 1.25  # how far a pressed arrow sinks toward the groove, in units
 GT = 24.0  # the arrows' groove end (its round end's centre)
 FOOT = GT - 4.0 - PRESS  # an arrow's foot: under the border's arc, pressed or not
@@ -717,12 +718,13 @@ HEART_CORE = (72, 44, 30)  # its heart, redder and darker
 
 
 def glow(bare):
-    """The highlight, drawn for ADD: a warm rim round the ornament."""
+    """The highlight, drawn for ADD: a rim round the ornament in the focus
+    glow's colour."""
     a = bare[..., 3] / 255
     halo = np.clip(ndimage.gaussian_filter(a, U * 0.8) * 1.8, 0, 1)
     inner = ndimage.gaussian_filter(ndimage.minimum_filter(a, size=int(U * 1.4) | 1), U * 0.4)
     hl = np.zeros_like(bare)
-    hl[..., 0], hl[..., 1], hl[..., 2] = 255, 196, 90
+    hl[..., 0], hl[..., 1], hl[..., 2] = FOCUS_GLOW
     hl[..., 3] = halo * (1 - inner * 0.6) * 0.8 * 255
     return hl
 

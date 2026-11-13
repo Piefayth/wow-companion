@@ -29,9 +29,9 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
-from make_scrollbar_art import write_tga, LIGHT, HALF
+from make_scrollbar_art import write_tga, LIGHT, HALF, FOCUS_GLOW
 
-VERSION = 20
+VERSION = 21
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "addon", "WowCompanion_Agent", "Art")
 K = 32  # px a unit drawn; every piece is averaged down from this
@@ -208,7 +208,8 @@ BRASS = (np.array((62, 42, 16.0)), np.array((150, 114, 52.0)), np.array((214, 18
 def close(state):
     """The close button, 14 units, inside the title band: no plate of its own,
     only a cross of aged brass struck into the band's dark leather, with a dark outline and the shadow it casts. Pushed
-    sinks and dims it; Highlight is a soft warm light behind it, for ADD
+    sinks and dims it; Highlight is a soft light behind it in the focus
+    glow's colour, for ADD
     blending; Disabled is greyed."""
     xx, yy = grid(CLOSE, CLOSE)
     lay = Layers(xx.shape)
@@ -225,8 +226,8 @@ def close(state):
         return np.maximum(one, two)
     if state == "Highlight":
         r = np.hypot(xx - c0, yy - c0)
-        lay.over(np.array((255, 190, 90.0)), np.clip(1 - r / (CLOSE / 2), 0, 1) ** 1.5 * 0.35)
-        lay.over(np.array((255, 220, 130.0)), np.clip((cross(xx, yy) + 1.2) / 1.2, 0, 1) * 0.25)
+        lay.over(np.array(FOCUS_GLOW, float), np.clip(1 - r / (CLOSE / 2), 0, 1) ** 1.5 * 0.35)
+        lay.over(np.array(FOCUS_GLOW, float), np.clip((cross(xx, yy) + 1.2) / 1.2, 0, 1) * 0.25)
         return lay.pre()
     d = cross(xx - o, yy - o)
     lay.over(np.zeros(3), np.clip((cross(xx - o - 0.5, yy - o - 0.7) + 0.8) / 0.8, 0, 1) * 0.6)
