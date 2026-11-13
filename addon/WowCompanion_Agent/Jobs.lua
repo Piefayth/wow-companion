@@ -484,6 +484,13 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	-- the conversation menu (ConvMenu.lua): open, it has the pad; a row under
 	-- the cursor takes triangle for it
 	local menuOpen = WC.ConvMenu and WC.ConvMenu.Open()
+	-- the menu lives only while the window has the pad: focus gone (the chat
+	-- box, another window) closes it, as any menu closes when it is left;
+	-- left open, the focus coming back took the d-pad and the menu was dead
+	if menuOpen and not anyTab then
+		WC.ConvMenu.Close()
+		menuOpen = false
+	end
 	local row = focused and not menuOpen and WC.ConvMenu and WC.ConvMenu.Row()
 	local link = focused and not menuOpen and not row and WC.Transcript.LinkUnderCursor() and true
 	-- the legend: what square and triangle do right now, shown only while

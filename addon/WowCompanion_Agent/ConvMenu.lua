@@ -152,5 +152,6 @@ WC.ConvMenu = {
 	BUTTON = "WCConvMore",
 	Row = function() follow() return (rowUnderCursor()) end,
 	Open = function() return menu:IsShown() end,
+	Close = close,
 	Show = function(list, row) follow() show(list, row) end,
 }
