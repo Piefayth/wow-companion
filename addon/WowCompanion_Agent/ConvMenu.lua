@@ -1,8 +1,9 @@
 -- WowCompanion_Agent: the window's menu (WC.ConvMenu.Show), opened by
 -- triangle: on a chat link (Transcript.lua) and on a conversation in the
 -- window's list, beside that row (the player, 2026-11-12): Clear chat (its lines out of the window; the agent remembers
--- them) and Start over (the agent forgets the conversation: the companion's
--- `fresh` command, src/requests.rs). Stop has its own keys.
+-- them), Compact (a /compact request in that conversation: the companion's
+-- `compact` command) and Start over (the agent forgets the conversation: the
+-- companion's `fresh` command, src/requests.rs). Stop has its own keys.
 --
 -- Jobs.lua binds triangle to WCConvMore while the cursor is on a row and
 -- leaves the pad to the menu while it is open (WC.ConvMenu.Open()).
@@ -131,6 +132,10 @@ plainButton("WCConvMore", function()
 		{ "Clear chat", function()
 			WC.Companion.clear(slot)
 			WC.Board.toast(("|cffffd100%s|r  chat cleared"):format(name), 0.8, 0.8, 0.8, 5)
+		end },
+		{ "Compact", function()
+			WowCompanion_Strip.Command("compact " .. WC.Conversations.Wire(slot))
+			WC.Board.toast(("|cffffd100%s|r  compacts: its answer says the new size"):format(name), 0.8, 0.8, 0.8, 8)
 		end },
 		{ "Start over", function()
 			WowCompanion_Strip.Command("fresh " .. WC.Conversations.Wire(slot))
