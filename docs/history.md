@@ -640,3 +640,16 @@ system prompt, and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=20` makes a conversation
 compact at about 200k: measured honoured by `--print` on a resumed session (2%
 compacted 27.8k to 5.8k in 12 s), while `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone
 was not. A fresh agent reading the file answered from it at 57k tokens.
+
+## A message stayed "running" above newer ones (2026-11-13)
+
+The player saw Main's work line, its seconds counting, sitting above messages
+sent and answered after it. Two messages had been said while Main was busy, and
+one run took both. The companion restarted onto a new build during that run. The
+run's members were a field of the jobs table, held in memory only; the ledger
+keeps each job's id, conversation and state. The copy that took over followed the
+run by the job that led it, and its answer ended only that job. The other job
+stayed running for good, and the game draws one work line over a conversation's
+running jobs, from the oldest. The field is gone: a conversation runs one agent
+at a time, so its running jobs are that run's, which the states alone say, and
+the game already read them that way.

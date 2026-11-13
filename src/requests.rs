@@ -328,16 +328,18 @@ fn started(slot: &str, id: u64) -> Msg {
     Msg::new("progress").flag("started", true).text("text", "thinking").text("slot", slot).int("job", id).text("state", jobs::State::Running.name())
 }
 
-/// A request that failed: its job ends failed and the game is told, unless a
-/// cancel ended it first (then the failure is only the kill, and is dropped).
-pub(crate) fn failed(addons: &Path, slot: &str, group: u64, err: io::Error) -> io::Result<bool> {
-    crate::runs::finished(group);
-    if !jobs::finish(group, jobs::State::Failed) {
+/// The run of job `run` failed: the conversation's running jobs end failed and
+/// the game is told, unless a cancel ended them first (then the failure is only
+/// the kill, and is dropped).
+pub(crate) fn failed(addons: &Path, slot: &str, run: u64, err: io::Error) -> io::Result<bool> {
+    crate::runs::finished(run);
+    let ended = jobs::finish(slot, jobs::State::Failed);
+    if ended.is_empty() {
         println!("  ended by a cancel");
         return Ok(false);
     }
     eprintln!("  not delivered: {err}");
-    let line = Line::new(slot, "error", &format!("That request failed: {err}")).job(group, jobs::State::Failed).ended(jobs::members(group));
+    let line = Line::new(slot, "error", &format!("That request failed: {err}")).job(run, jobs::State::Failed).ended(ended);
     post(addons, line)?;
     Ok(false)
 }
@@ -349,10 +351,10 @@ pub(crate) fn failed(addons: &Path, slot: &str, group: u64, err: io::Error) -> i
 /// (a resumed look).
 pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, shown: bool, job: Option<u64>) -> io::Result<bool> {
     println!("asking: {spoken}");
-    let group = job.unwrap_or_else(|| jobs::create(&session.slot, spoken, jobs::State::Queued));
+    let lead = job.unwrap_or_else(|| jobs::create(&session.slot, spoken, jobs::State::Queued));
     // a panic on this thread ends this job failed (src/crash.rs)
-    let _working = crate::crash::working_on(group);
-    if let Err(state) = jobs::advance(group, jobs::State::Running) {
+    let _working = crate::crash::working_on(lead);
+    if let Err(state) = jobs::advance(lead, jobs::State::Running) {
         println!("  dropped: {} before it started", state.name());
         return Ok(false);
     }
@@ -375,14 +377,14 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
         );
         &told
     };
-    let run = match session.start(group, 0, spoken_for_agent, context) {
+    let run = match session.start(lead, 0, spoken_for_agent, context) {
         Ok(run) => run,
-        Err(err) => return failed(addons, &session.slot, group, err),
+        Err(err) => return failed(addons, &session.slot, lead, err),
     };
     // cancelled before its process existed: end it now
-    if !jobs::set_pid(group, run.pid) {
+    if !jobs::set_pid(&session.slot, run.pid) {
         end_processes(&[run.pid]);
-        crate::runs::finished(group);
+        crate::runs::finished(lead);
         println!("  cancelled before it started");
         return Ok(false);
     }
@@ -393,20 +395,20 @@ pub(crate) fn ask(addons: &Path, session: &mut agent::Session, spoken: &str, sho
     let announced = if shown {
         // a `started` progress is never dropped on a busy channel: it is what
         // ends the queued mark on the request's line
-        send(addons, &started(&session.slot, group))
+        send(addons, &started(&session.slot, lead))
     } else {
-        post(addons, Line::new(&session.slot, "you", spoken).pending("thinking").job(group, jobs::State::Running))
+        post(addons, Line::new(&session.slot, "you", spoken).pending("thinking").job(lead, jobs::State::Running))
     };
     if let Err(err) = announced {
         println!("  not announced ({err}); the request goes on");
     }
-    follow(addons, session, group, run)
+    follow(addons, session, lead, run)
 }
 
-/// Follow job `group`'s run to its answer and deliver it: a run this copy
+/// Follow the run led by job `lead` to its answer and deliver it: a run this copy
 /// started, or one a companion left going (src/runs.rs). Returns whether the
 /// agent wants to look at the results before it is done.
-pub(crate) fn follow(addons: &Path, session: &mut agent::Session, group: u64, run: crate::runs::Run) -> io::Result<bool> {
+pub(crate) fn follow(addons: &Path, session: &mut agent::Session, lead: u64, run: crate::runs::Run) -> io::Result<bool> {
     let _following = Following::start();
     let answer = {
         // Progress goes to the window, newest only, every PROGRESS_EVERY at most:
@@ -429,7 +431,7 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, group: u64, ru
                         }
                     }
                     if sent < PROGRESS_LIMIT {
-                        let progress = Msg::new("progress").text("text", &latest).text("slot", &slot).int("job", group);
+                        let progress = Msg::new("progress").text("text", &latest).text("slot", &slot).int("job", lead);
                         if send(&addons, &progress).is_ok() {
                             sent += 1;
                         }
@@ -476,12 +478,12 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, group: u64, ru
                 Err(err) => Err(err),
             };
             // Send now interrupted this run: the next one takes its messages
-            if jobs::interrupted(group) {
+            if jobs::interrupted(&slot) {
                 println!("  interrupted: the next run takes it");
-                crate::runs::finished(group);
+                crate::runs::finished(lead);
                 return Ok(false);
             }
-            if jobs::state(group).is_some_and(jobs::State::ended) {
+            if jobs::state(lead).is_some_and(jobs::State::ended) {
                 break Err(io::Error::other("stopped"));
             }
             let answer = match finished {
@@ -501,13 +503,13 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, group: u64, ru
             println!("  out of steps: continuing ({round} of {CONTINUES})");
             progress(agent::Progress::Doing(&format!("continuing ({round} of {CONTINUES})")));
             run = match session.start(
-                group,
+                lead,
                 round,
                 "(The step limit ended your last turn before you answered. Carry on where you left off, then answer as usual.)",
                 None,
             ) {
                 Ok(next) => {
-                    if !jobs::set_pid(group, next.pid) {
+                    if !jobs::set_pid(&slot, next.pid) {
                         end_processes(&[next.pid]);
                         break Err(io::Error::other("stopped"));
                     }
@@ -524,7 +526,7 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, group: u64, ru
         }
         match answer {
             Ok(answer) => answer,
-            Err(err) => return failed(addons, &slot, group, err),
+            Err(err) => return failed(addons, &slot, lead, err),
         }
     };
     // nothing goes out from a copy that is leaving: the next one follows the
@@ -558,20 +560,21 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, group: u64, ru
             eprintln!("  module {name} not saved to modules/: {err}");
         }
     }
-    // the race with a cancel is decided here, once: whichever ended the job
+    // the race with a cancel is decided here, once: whichever ended the jobs
     // first stands, and a reply that lost is dropped (the game shows cancelled)
-    if !jobs::finish(group, jobs::State::Answered) {
-        crate::runs::finished(group);
+    let ended = jobs::finish(&session.slot, jobs::State::Answered);
+    if ended.is_empty() {
+        crate::runs::finished(lead);
         println!("  cancelled while answering: reply dropped");
         return Ok(false);
     }
     let reply = Line::new(&session.slot, "claude", &say)
-        .job(group, jobs::State::Answered)
-        .ended(jobs::members(group))
+        .job(lead, jobs::State::Answered)
+        .ended(ended)
         .steps(answer.inbox.clone());
     post(addons, reply)?;
     // the reply is in the ledger: the run is done with
-    crate::runs::finished(group);
+    crate::runs::finished(lead);
     // asked to start over: the next request begins a new conversation
     if answer.fresh {
         println!("  this conversation starts over");

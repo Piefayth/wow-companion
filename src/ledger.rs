@@ -5,8 +5,9 @@
 //!   until a save shows the game holds it (`WowCompanionAgentDB.lines[conversation]`,
 //!   the highest number it holds with none missing below).
 //! - The jobs (src/jobs.rs) are mirrored here at every change, so their states
-//!   survive the companion; a job not ended when the companion starts ended with
-//!   the companion, and says so.
+//!   survive the companion; a job not ended when the companion starts, and not
+//!   carried on by a run or a queue it left (src/runs.rs), ended with the
+//!   companion, and says so.
 //! - The mailbox, `WowCompanion_Mailbox/Mail.lua`, an addon the game loads at
 //!   every login and reload, holds every unconfirmed line and every job's state:
 //!   lines made while the game was closed are in the window when it opens.
@@ -91,14 +92,22 @@ impl Book {
         self.jobs = jobs;
     }
 
-    /// At a start: every job not ended ended with the companion, unless it is
-    /// `going` (src/runs.rs: its agent was left running, or finished, for the
-    /// next companion to follow, or it waits in a queue with its words kept). An
-    /// ended one's line says so; the job itself becomes failed.
-    pub(crate) fn recover(&mut self, going: &[u64]) -> Vec<Line> {
+    /// At a start: every job not ended ended with the companion, unless it goes
+    /// on (src/runs.rs): a running one whose conversation's run was left for the
+    /// next companion to follow (`runs`, by the job that leads each; the run
+    /// answers every running job of its conversation, src/jobs.rs), or one
+    /// waiting in a queue with its words kept (`queued`). An ended one's line
+    /// says so; the job itself becomes failed.
+    pub(crate) fn recover(&mut self, runs: &[u64], queued: &[u64]) -> Vec<Line> {
+        let running: Vec<String> = self
+            .jobs
+            .iter()
+            .filter(|(id, _, state)| *state == State::Running && runs.contains(id))
+            .map(|(_, slot, _)| slot.clone())
+            .collect();
         let mut lines = Vec::new();
         for (id, slot, state) in self.jobs.iter_mut() {
-            if state.ended() || (matches!(state, State::Running | State::Queued) && going.contains(id)) {
+            if state.ended() || (*state == State::Running && running.contains(slot)) || (*state == State::Queued && queued.contains(id)) {
                 continue;
             }
             let text = format!(
@@ -325,7 +334,7 @@ fn say(addons: &Path, news: Vec<String>) {
 /// job back in the jobs table. Returns the lines that say which ended, to send
 /// (they are in the mailbox already). With the agents off there is no
 /// conversation, so no ledger: nothing is loaded.
-pub(crate) fn open(addons: &Path, agents: bool, going: &[u64]) -> Vec<Line> {
+pub(crate) fn open(addons: &Path, agents: bool, runs: &[u64], queued: &[u64]) -> Vec<Line> {
     // what is wrong now is this companion's to say: only a change rewrites the
     // file, so one left by an earlier companion, or by a check since removed,
     // would stand for good
@@ -358,7 +367,7 @@ pub(crate) fn open(addons: &Path, agents: bool, going: &[u64]) -> Vec<Line> {
             book.continue_above(lines);
         }
     }
-    let recovered = book.recover(going);
+    let recovered = book.recover(runs, queued);
     jobs::restore(book.jobs());
     let store = Store { book, ledger: ledger_path, mailbox: addons.join(MAILBOX).join("Mail.lua") };
     news.extend(save(&store));
@@ -504,16 +513,31 @@ mod tests {
     #[test]
     fn a_job_running_at_a_start_ended_with_the_companion_unless_its_run_goes_on() {
         let mut book = Book::default();
-        book.mirror(vec![(6, "r2".into(), State::Running), (7, "l1".into(), State::Running), (8, "".into(), State::Answered), (9, "".into(), State::Queued)]);
-        let lines = book.recover(&[6]);
+        book.mirror(vec![
+            (5, "r2".into(), State::Running),
+            (6, "r2".into(), State::Running),
+            (7, "l1".into(), State::Running),
+            (8, "".into(), State::Answered),
+            (9, "".into(), State::Queued),
+            (10, "".into(), State::Queued),
+        ]);
+        let lines = book.recover(&[6], &[10]);
         assert_eq!(lines.len(), 2);
         assert_eq!((lines[0].slot.as_str(), lines[0].job, lines[0].n), ("l1", Some((7, State::Failed)), 1));
         assert!(lines[0].text.contains("while it was running"), "{}", lines[0].text);
         assert!(lines[1].text.contains("while it was queued"), "{}", lines[1].text);
-        // 6's run goes on; 9 is queued, which no run carries
+        // 6's run goes on, and answers 5, taken with it; 9 is queued with no
+        // words kept; 10's were
         assert_eq!(
             book.jobs(),
-            &[(6, "r2".to_string(), State::Running), (7, "l1".to_string(), State::Failed), (8, "".to_string(), State::Answered), (9, "".to_string(), State::Failed)]
+            &[
+                (5, "r2".to_string(), State::Running),
+                (6, "r2".to_string(), State::Running),
+                (7, "l1".to_string(), State::Failed),
+                (8, "".to_string(), State::Answered),
+                (9, "".to_string(), State::Failed),
+                (10, "".to_string(), State::Queued),
+            ]
         );
     }
 

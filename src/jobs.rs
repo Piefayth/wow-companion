@@ -13,6 +13,14 @@
 //! A cancel from the game names a job and is idempotent, so the game may repeat
 //! it until it sees an end.
 //!
+//! A conversation runs one agent at a time, and that run answers every job of
+//! the conversation that is running: they start together (the queued ones it
+//! takes), end together, and a cancel of one ends them all. That is all that
+//! ties them, so the states alone, kept by the ledger, say it after a restart
+//! (a run's own list, held only here, was lost in a hand-over and left one job
+//! running for good, 2026-11-13). The game reads it the same way (JobsModel.lua,
+//! `Work`).
+//!
 //! Every change is mirrored into the ledger (src/ledger.rs), which keeps the
 //! states on disk and in the mailbox; a job leaves this table when a save shows
 //! the game has its end (`forget`).
@@ -71,9 +79,6 @@ pub(crate) struct Job {
     pub(crate) state: State,
     /// Words heard so far (while hearing), then the request's text.
     pub(crate) text: String,
-    /// Requests answered together share the first one's id: cancelling one
-    /// that runs ends the agent run they share.
-    pub(crate) group: u64,
     /// Clips released into it whose words have not come back yet.
     clips: u32,
     /// When its newest clip was let go: only a clip let go soon after joins.
@@ -151,7 +156,6 @@ fn put(jobs: &mut BTreeMap<u64, Job>, id: u64, slot: &str, state: State, text: &
             slot: slot.to_string(),
             state,
             text: text.to_string(),
-            group: id,
             clips: 0,
             last_release: now,
             withdraw: false,
@@ -298,21 +302,20 @@ pub(crate) fn advance(id: u64, to: State) -> Result<State, State> {
     })
 }
 
-/// End a running group: every member answered, or failed. False when a cancel
-/// ended it first (then the reply or the error is dropped: the game already
-/// shows it cancelled).
-pub(crate) fn finish(group: u64, to: State) -> bool {
+/// End the conversation's run: every job of it still running answered, or
+/// failed. Returns them, as a reply or a failure tells the game which messages
+/// it ended (tools/test_jobs.py, invariant 1); none when a cancel ended them
+/// first (then the reply or the error is dropped: the game already shows it
+/// cancelled).
+pub(crate) fn finish(slot: &str, to: State) -> Vec<(u64, String, State)> {
     with(|jobs| {
-        let members: Vec<u64> = jobs.values().filter(|job| job.group == group).map(|job| job.id).collect();
-        let mut finished = false;
-        for id in members {
-            let job = jobs.get_mut(&id).unwrap();
-            if !job.state.ended() {
+        jobs.values_mut()
+            .filter(|job| job.slot == slot && job.state == State::Running)
+            .map(|job| {
                 job.state = to;
-                finished = true;
-            }
-        }
-        finished
+                (job.id, job.slot.clone(), to)
+            })
+            .collect()
     })
 }
 
@@ -338,7 +341,6 @@ pub(crate) fn take_queued(slot: &str, lead: u64) -> Option<Vec<(u64, String, boo
         for (id, _, _) in &taken {
             let job = jobs.get_mut(id).unwrap();
             job.state = State::Running;
-            job.group = lead;
             job.interrupted = false;
         }
         Some(taken).filter(|taken| !taken.is_empty())
@@ -363,21 +365,20 @@ pub(crate) fn interrupt(slot: &str) -> Vec<u32> {
     })
 }
 
-/// Whether the run led by `group` was interrupted (its jobs wait for, or have
-/// joined, the next run): its thread ends without an answer or a failure.
-pub(crate) fn interrupted(group: u64) -> bool {
-    with(|jobs| jobs.values().any(|job| job.group == group && job.interrupted)
-        || jobs.get(&group).is_some_and(|lead| lead.group != group))
+/// Whether the conversation's run was interrupted (its jobs wait for the next
+/// run): its thread ends without an answer or a failure.
+pub(crate) fn interrupted(slot: &str) -> bool {
+    with(|jobs| jobs.values().any(|job| job.slot == slot && job.state == State::Running && job.interrupted))
 }
 
-/// The agent process now running this group. Returns false when the group was
-/// cancelled before its process existed: then the caller ends it at once.
-pub(crate) fn set_pid(group: u64, pid: u32) -> bool {
+/// The agent process now running the conversation. Returns false when its jobs
+/// were cancelled before the process existed: then the caller ends it at once.
+pub(crate) fn set_pid(slot: &str, pid: u32) -> bool {
     with(|jobs| {
         let mut live = false;
-        for job in jobs.values_mut().filter(|job| job.group == group) {
+        for job in jobs.values_mut().filter(|job| job.slot == slot && job.state == State::Running) {
             job.pid = Some(pid);
-            live |= !job.state.ended();
+            live = true;
         }
         live
     })
@@ -389,17 +390,18 @@ pub(crate) struct Cancelled {
     pub(crate) pids: Vec<u32>,
 }
 
-/// Cancel these jobs. A running one takes its whole group with it (they share
-/// one agent run). Jobs already ended are left as they are: cancelling is
-/// idempotent, and "too late" is simply a job that had already ended.
+/// Cancel these jobs. A running one takes every running job of its
+/// conversation with it (they share one agent run). Jobs already ended are left
+/// as they are: cancelling is idempotent, and "too late" is simply a job that
+/// had already ended.
 pub(crate) fn cancel(ids: &[u64]) -> Cancelled {
     with(|jobs| {
         let mut targets: Vec<u64> = Vec::new();
         for id in ids {
             let Some(job) = jobs.get(id) else { continue };
             if job.state == State::Running {
-                let group = job.group;
-                targets.extend(jobs.values().filter(|j| j.group == group).map(|j| j.id));
+                let slot = job.slot.clone();
+                targets.extend(jobs.values().filter(|j| j.slot == slot && j.state == State::Running).map(|j| j.id));
             } else {
                 targets.push(*id);
             }
@@ -445,13 +447,6 @@ pub(crate) fn get(ids: &[u64]) -> Vec<Job> {
     with(|jobs| ids.iter().filter_map(|id| jobs.get(id).cloned()).collect())
 }
 
-/// Every request answered together with `group` (its members, the lead too),
-/// each with its state: a reply or a failure says exactly which messages it
-/// ended, so the game infers nothing (tools/test_jobs.py, invariant 1).
-pub(crate) fn members(group: u64) -> Vec<(u64, String, State)> {
-    with(|jobs| jobs.values().filter(|job| job.group == group).map(|job| (job.id, job.slot.clone(), job.state)).collect())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,11 +487,11 @@ mod tests {
     #[test]
     fn a_cancel_and_a_reply_racing_resolve_to_one() {
         let id = create("t-race", "hello", State::Running);
-        assert!(set_pid(id, 4242));
+        assert!(set_pid("t-race", 4242));
         let cancelled = cancel(&[id]);
         assert_eq!(cancelled.pids, vec![4242]);
         // the reply lost: it is dropped, the game already shows cancelled
-        assert!(!finish(id, State::Answered));
+        assert!(finish("t-race", State::Answered).is_empty());
         assert_eq!(state(id), Some(State::Cancelled));
         // and a repeated cancel changes nothing
         assert!(cancel(&[id]).ended.is_empty());
@@ -505,7 +500,7 @@ mod tests {
     #[test]
     fn too_late_is_a_job_that_already_ended() {
         let id = create("t-late", "hello", State::Running);
-        assert!(finish(id, State::Answered));
+        assert_eq!(finish("t-late", State::Answered), vec![(id, "t-late".to_string(), State::Answered)]);
         assert!(cancel(&[id]).ended.is_empty());
         assert_eq!(state(id), Some(State::Answered));
         assert_eq!(advance(id, State::Running), Err(State::Answered));
@@ -515,7 +510,7 @@ mod tests {
     fn a_cancel_before_the_agent_started_ends_it_when_it_does() {
         let id = create("t-early", "hello", State::Running);
         assert!(cancel(&[id]).pids.is_empty());
-        assert!(!set_pid(id, 7));
+        assert!(!set_pid("t-early", 7));
     }
 
     #[test]
@@ -556,10 +551,26 @@ mod tests {
         let taken = take_queued("t-queue", b).unwrap();
         assert_eq!(taken.iter().map(|(id, _, _)| *id).collect::<Vec<_>>(), vec![a, b]);
         assert!(take_queued("t-queue", a).is_none(), "already taken");
-        set_pid(b, 9);
+        set_pid("t-queue", 9);
         let cancelled = cancel(&[a]);
         assert_eq!(cancelled.ended.len(), 2);
         assert_eq!(cancelled.pids, vec![9]);
+    }
+
+    /// A companion taking over has only the ledger's states: the run it follows
+    /// still ends every job taken with it (one was left running for good when
+    /// the run's own list was lost in a hand-over, 2026-11-13).
+    #[test]
+    fn a_run_restored_from_the_states_alone_ends_every_job_it_took() {
+        let a = create("t-handover", "a", State::Queued);
+        let b = create("t-handover", "b", State::Queued);
+        take_queued("t-handover", a).unwrap();
+        let mirrored = |id| (id, "t-handover".to_string(), state(id).unwrap());
+        restore(&[mirrored(a), mirrored(b)]);
+        assert_eq!(
+            finish("t-handover", State::Answered),
+            vec![(a, "t-handover".to_string(), State::Answered), (b, "t-handover".to_string(), State::Answered)]
+        );
     }
 
     #[test]
@@ -590,15 +601,14 @@ mod tests {
     #[test]
     fn send_now_joins_the_interrupted_message_to_the_queued_ones() {
         let running = create("t-now", "first", State::Running);
-        set_pid(running, 7);
+        set_pid("t-now", 7);
         let waiting = create("t-now", "second", State::Queued);
         assert_eq!(interrupt("t-now"), vec![7]);
-        assert!(interrupted(running), "the run's thread ends quietly");
+        assert!(interrupted("t-now"), "the run's thread ends quietly");
         assert_eq!(state(running), Some(State::Running), "never cancelled");
         let taken = take_queued("t-now", waiting).unwrap();
         assert_eq!(taken, vec![(running, "first".to_string(), true), (waiting, "second".to_string(), false)]);
-        assert!(interrupted(running), "it now belongs to the new run");
-        assert!(!interrupted(waiting));
+        assert!(!interrupted("t-now"), "the new run, which has them both, goes on");
         assert!(take_withdrawn("t-now").is_empty(), "nothing is withdrawn");
     }
 

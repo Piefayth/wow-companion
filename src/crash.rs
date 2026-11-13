@@ -93,7 +93,7 @@ pub(crate) fn install(addons: &Path) {
 fn fail(job: u64, why: &str) {
     let Some(addons) = ADDONS.get() else { return };
     let Some(found) = jobs::get(&[job]).into_iter().next() else { return };
-    let _ = requests::failed(addons, &found.slot, found.group, io::Error::other(why.to_string()));
+    let _ = requests::failed(addons, &found.slot, found.id, io::Error::other(why.to_string()));
 }
 
 /// At a start: a crash recorded since the last start is said once (a line of

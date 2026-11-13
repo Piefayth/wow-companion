@@ -317,8 +317,12 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             lifecycle::wait_until_alone();
             let left = runs::left();
             let queued = runs::queued();
-            let going: Vec<u64> = left.iter().map(|run| run.job).chain(queued.iter().map(|(job, ..)| *job)).collect();
-            let recovered = ledger::open(&addons, agents, &going);
+            let recovered = ledger::open(
+                &addons,
+                agents,
+                &left.iter().map(|run| run.job).collect::<Vec<_>>(),
+                &queued.iter().map(|(job, ..)| *job).collect::<Vec<_>>(),
+            );
             {
                 let addons = addons.clone();
                 thread::spawn(move || {
@@ -333,7 +337,7 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
             let (took, taken) = std::sync::mpsc::channel::<()>();
             let mut following = 0;
             for run in left {
-                if jobs::state(run.job) != Some(jobs::State::Running) || !jobs::set_pid(run.job, run.pid) {
+                if jobs::state(run.job) != Some(jobs::State::Running) || !jobs::set_pid(&run.slot, run.pid) {
                     runs::finished(run.job);
                     continue;
                 }

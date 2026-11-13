@@ -70,8 +70,9 @@ extras a player may use, never required (the player, 2026-11-11).
   saved it, and every job's state, on disk and in the mailbox addon the game reads
   at every load; docs/proposals/ledger.md), `savedvars.rs` (the save file read as
   values), `requests.rs` (asking the agent, progress, auto-continue, cancels, `tell`),
-  `jobs.rs` (each request's one state, forward only; cancels and replies race
-  there; a clip's job is named to the game by `heard` when it is let go),
+  `jobs.rs` (each request's one state, forward only; a conversation's running
+  jobs are its one run's and end together; cancels and replies race there; a
+  clip's job is named to the game by `heard` when it is let go),
   `context.rs` (the export, Lua errors and integrations the agent reads),
   `session.rs` (the game's UI session, read once from Link's save: the cursor, the bell set and the slot count all come from it), `runs.rs` (an
   agent's run on disk, any copy follows it), `settings_page.rs`
