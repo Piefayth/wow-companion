@@ -159,17 +159,19 @@ cast:SetAllPoints()
 WC.Style.CastOn(cast, settings, "LEFT")
 
 -- Trial, temporary (the player, 2026-11-13): the spine's ends where it meets
--- the raised panel's edges (tools/make_spine_trials.py), and how the dividers,
+-- the raised panel's edges, round 2 corner fittings (tools/make_spine_trials.py), and how the dividers,
 -- lying lower, meet the spine on the panel's edge. Kept in WowCompanionDB.spineEnd
 -- and .dividerMeet; what is not picked goes with this switch.
 local ENDS = {
 	{ key = "Round", name = "Round, as now", wide = 16, cut = 3 },
-	{ key = "Bend", name = "Bends over the corner", wide = 48, cut = 14 },
-	{ key = "BendVolute", name = "Bends, a volute", wide = 48, cut = 17 },
-	{ key = "Foot", name = "A forged T", wide = 48, cut = 9 },
-	{ key = "FootVolute", name = "A T of volutes", wide = 48, cut = 14 },
-	{ key = "Fleur", name = "The scroll bar's fleur", wide = 32, cut = 17 },
+	{ key = "Plate", name = "Corner plate", wide = 48, cut = 16 },
+	{ key = "Rounded", name = "Corner plate, rounded", wide = 48, cut = 16 },
+	{ key = "Strap", name = "Strap, pointed arms", wide = 48, cut = 19 },
+	{ key = "Gusset", name = "Gusset", wide = 48, cut = 14 },
+	{ key = "PlateScroll", name = "Corner plate and scroll", wide = 48, cut = 16 },
+	{ key = "Clamp", name = "Clamp over the edges", wide = 48, cut = 16 },
 }
+local END_OFF = 2 -- the fittings' art starts this far past the panel's edge (make_spine_trials.py's OFF)
 local MEETS = {
 	{ key = "joined", name = "Joined, as now" },
 	{ key = "shadow", name = "Joined, in the shadow" },
@@ -187,9 +189,12 @@ local function paintEnds()
 	local e = endLook()
 	for i, t in ipairs(down.ends) do
 		local which = i == 1 and "Top" or "Bottom"
-		t:SetTexture(e.key == "Round" and WC.Style.Vine("Thick" .. which)
-			or ([[Interface\AddOns\WowCompanion\Art\Vine-ThickEnd%s%s-T1]]):format(e.key, which), "CLAMP", "CLAMP")
+		local round = e.key == "Round"
+		t:SetTexture(round and WC.Style.Vine("Thick" .. which)
+			or ([[Interface\AddOns\WowCompanion\Art\Vine-ThickEnd%s%s-T2]]):format(e.key, which), "CLAMP", "CLAMP")
 		t:SetWidth(e.wide)
+		t:ClearAllPoints()
+		t:SetPoint(which:upper(), down, which:upper(), 0, (round and 0 or END_OFF) * (i == 1 and 1 or -1))
 	end
 	joins:SetPoint("TOP", down, 0, -e.cut)
 	joins:SetPoint("BOTTOM", down, 0, e.cut)
