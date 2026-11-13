@@ -358,7 +358,8 @@ end
 -- of RAISE_LOOKS picked live on the Settings page (WowCompanionDB.raisedLook);
 -- the looks not picked go when one is chosen. Each: its name, then
 -- make_slab_art.py's VARIANTS numbers: bevel, thickness, margin, the stone's
--- shade. The art covers the well; the slab stands its margin inside it.
+-- shade. The slab fills the well, its thickness inside it at the bottom and
+-- right; the art reaches the margin past it, where its shadow falls.
 local SLAB_ROUND = 2 -- make_slab_art.py's ROUND
 local RAISE_LOOKS = {
 	{ name = "Chamfer, dark", bevel = 3, thick = 2, margin = 8, shade = 0.6 },
@@ -376,11 +377,12 @@ local SLAB_CORNERS = { { "TOPLEFT", 0, 0.5, 0, 0.5 }, { "TOPRIGHT", 0.5, 1, 0, 0
 local function paintRaised(w, v)
 	local look = RAISE_LOOKS[v]
 	local C = look.margin + look.thick + look.bevel + 2
+	local m = look.margin
 	local art = ART .. "Slab-" .. v .. "-%s-" .. SLAB_ROUND
 	local t, f = w.floor, w.slab
 	f:ClearAllPoints()
-	f:SetPoint("TOPLEFT", t, "TOPLEFT", look.margin, -look.margin)
-	f:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", -(look.margin + look.thick), look.margin + look.thick)
+	f:SetPoint("TOPLEFT", t, "TOPLEFT")
+	f:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", -look.thick, look.thick)
 	f:SetVertexColor(look.shade, look.shade, look.shade)
 	for i, c in ipairs(SLAB_CORNERS) do
 		local x = w.pieces[i]
@@ -388,13 +390,13 @@ local function paintRaised(w, v)
 		x:SetTexCoord(c[2], c[3], c[4], c[5])
 		x:ClearAllPoints()
 		x:SetSize(C, C)
-		x:SetPoint(c[1], t)
+		x:SetPoint(c[1], t, c[1], c[1]:find("LEFT") and -m or m, c[1]:find("TOP") and m or -m)
 	end
 	local edges = {
-		{ "Top", "TOPLEFT", "TOPRIGHT", C, 0, -C, 0, true },
-		{ "Bottom", "BOTTOMLEFT", "BOTTOMRIGHT", C, 0, -C, 0, true },
-		{ "Left", "TOPLEFT", "BOTTOMLEFT", 0, -C, 0, C, false },
-		{ "Right", "TOPRIGHT", "BOTTOMRIGHT", 0, -C, 0, C, false },
+		{ "Top", "TOPLEFT", "TOPRIGHT", C - m, m, m - C, m, true },
+		{ "Bottom", "BOTTOMLEFT", "BOTTOMRIGHT", C - m, -m, m - C, -m, true },
+		{ "Left", "TOPLEFT", "BOTTOMLEFT", -m, m - C, -m, C - m, false },
+		{ "Right", "TOPRIGHT", "BOTTOMRIGHT", m, m - C, m, C - m, false },
 	}
 	for i, e in ipairs(edges) do
 		local x = w.pieces[4 + i]
