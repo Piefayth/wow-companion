@@ -354,19 +354,20 @@ end
 --
 -- Trial, temporary (the player, 2026-11-12): a raised well is its stone seen
 -- from straight above, high in the middle and sloping down to its edges, drawn
--- by tools/make_slab_art.py (its slopes the stone lit), one of RAISE_LOOKS
+-- by tools/make_slab_art.py (its slopes the stone lit, a channel at its edge
+-- for the vine beside it; the vines are their own art, unchanged), one of RAISE_LOOKS
 -- picked live on the Settings page (WowCompanionDB.raisedLook); the looks not
 -- picked go when one is chosen. Each: its name, then make_slab_art.py's
--- VARIANTS: the slope's width and the stone's shade. The slab fills the well;
+-- VARIANTS: the whole edge's width (channel and slope) and the stone's shade. The slab fills the well;
 -- the art reaches SLAB_MARGIN past it, where a faint shadow falls.
-local SLAB_ROUND, SLAB_MARGIN = 3, 3 -- make_slab_art.py's ROUND, MARGIN
+local SLAB_ROUND, SLAB_MARGIN = 4, 3 -- make_slab_art.py's ROUND, MARGIN
 local RAISE_LOOKS = {
-	{ name = "Chamfer 6", bevel = 6, shade = 0.8 },
-	{ name = "Chamfer 10", bevel = 10, shade = 0.8 },
-	{ name = "Cushion 12", bevel = 12, shade = 0.8 },
-	{ name = "Two steps", bevel = 10, shade = 0.8 },
-	{ name = "Dome 24", bevel = 24, shade = 0.8 },
-	{ name = "Chamfer 8, dark stone", bevel = 8, shade = 0.6 },
+	{ name = "Channel, chamfer", edge = 13, shade = 0.8 },
+	{ name = "Channel, cushion", edge = 17, shade = 0.8 },
+	{ name = "Channel and bead", edge = 15, shade = 0.8 },
+	{ name = "Narrow deep channel", edge = 9, shade = 0.8 },
+	{ name = "Wide shallow channel", edge = 15, shade = 0.8 },
+	{ name = "Cove", edge = 14, shade = 0.8 },
 }
 WowCompanion_Style.RAISE_LOOKS = RAISE_LOOKS
 local raisedWells = {}
@@ -376,7 +377,7 @@ local SLAB_CORNERS = { { "TOPLEFT", 0, 0.5, 0, 0.5 }, { "TOPRIGHT", 0.5, 1, 0, 0
 local function paintRaised(w, v)
 	local look = RAISE_LOOKS[v]
 	local m = SLAB_MARGIN
-	local C = m + look.bevel + 2
+	local C = m + look.edge + 2
 	local art = ART .. "Slab-" .. v .. "-%s-" .. SLAB_ROUND
 	local t, f = w.floor, w.slab
 	f:ClearAllPoints()
