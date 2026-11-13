@@ -704,6 +704,8 @@ local function build(p)
 	-- rim, Trials' 3), pressed.
 	-- Goes when the player picks a button for Style.Button.
 	local FACETS = [[Interface\AddOns\WowCompanion\Art\Btn-Facets-%s-9]]
+	-- the word under the cursor: the bronze brightened, never toward white
+	local BRONZE_LIT = { 0.95, 0.80, 0.53 }
 	local function facets(b)
 		b:ClearNormalTexture()
 		b:ClearPushedTexture()
@@ -731,7 +733,7 @@ local function build(p)
 				t:SetTexture(FACETS:format(state))
 				t:SetDesaturated(not b:IsEnabled())
 			end
-			b:GetFontString():SetTextColor(unpack(over and b:IsEnabled() and S.NAME_LIT or S.BRONZE))
+			b:GetFontString():SetTextColor(unpack(over and b:IsEnabled() and BRONZE_LIT or S.BRONZE))
 		end
 		b:HookScript("OnEnter", function() over = true paint() end)
 		b:HookScript("OnLeave", function() over, down = false, false paint() end)
