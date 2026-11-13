@@ -1,17 +1,10 @@
--- The conversation list in the Companion window's right well, in the look on
--- trial (ConvLooks.lua lays each out and says its style): WC.Companion.ConvLook(key),
--- or the settings page's "Conversation list" row, switches it live, and
--- WowCompanionAgentDB.convLook keeps it; the looks not picked then go, with
--- this switch. Each row is a button the pad's cursor stops on (its name in the
+-- The conversation list in the Companion window's right well (ConvLooks.lua
+-- lays it out). Each row is a button the pad's cursor stops on (its name in the
 -- normal font, its chord in the game's own glyphs, its state), the open one
 -- the same row lit
 -- (Agent.lua: b.Paint, b.selected:SetShown), with a cell for an offered button
 -- (Offer.lua: frame.ConvLayout, frame.convOfferSlot).
 local C = WC.ConvLooks
-local function picked()
-	local key = type(WowCompanionAgentDB) == "table" and WowCompanionAgentDB.convLook
-	return C.LOOKS[key] and key or C.ORDER[1]
-end
 
 -- the names of the buttons that talk to `key` (Main is the talk button), as
 -- the companion reported them; none until it has
@@ -91,7 +84,7 @@ function WC.Companion.ConvList(frame, well)
 	local function layout()
 		local H = well:GetHeight() or 0
 		if H <= 0 then return end
-		local lay = C.Lay(picked(), H, offered, open or false)
+		local lay = C.Lay(H, offered, open or false)
 		for i, d in ipairs(lay.pieces) do draw(i, d) end
 		for i = #lay.pieces + 1, #pool do pool[i]:Hide() end
 		for key, b in pairs(buttons) do
@@ -122,12 +115,6 @@ function WC.Companion.ConvList(frame, well)
 	function frame.ConvLayout(shown)
 		offered = shown and true or false
 		layout()
-	end
-	function WC.Companion.ConvLook(key)
-		if not C.LOOKS[key] then return false end
-		WowCompanionAgentDB.convLook = key
-		layout()
-		return true
 	end
 
 	for _, key in ipairs(WC.Conversations.list) do
@@ -177,18 +164,4 @@ function WC.Companion.ConvList(frame, well)
 	well:HookScript("OnSizeChanged", layout)
 	frame.convButtons[""].selected:Show()
 	layout()
-
-	WC.SettingsPage.Add({ kind = "dropdown", section = "Companion window", order = 12, label = "Conversation list",
-		text = "A trial: the conversation list's looks, to pick one at true size. Each shows on the Chat tab at once.",
-		options = function()
-			local names = {}
-			for i, key in ipairs(C.ORDER) do names[i] = C.LOOKS[key].label end
-			return names
-		end,
-		get = function() return C.LOOKS[picked()].label end,
-		set = function(label)
-			for _, key in ipairs(C.ORDER) do
-				if C.LOOKS[key].label == label then WC.Companion.ConvLook(key) end
-			end
-		end })
 end

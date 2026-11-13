@@ -1,12 +1,9 @@
--- The conversation list's looks on trial (round 8, docs/looks.md): Main, L1,
--- L2, R1, R2, Quick, the offered button's cell under them; a row's name in the
--- normal font, its chord's glyphs or its state ("12s", "new", the mic while it
--- is talked to) beside it. Round 7's floor, at the well's top or centred, with
--- its crests or without.
--- Pure: C.Lay(key, H, offered, open) says where every texture goes in a well
--- H units tall and where each row and its words sit, and ConvList.lua draws
--- it; tools/mock_convlist.py runs this same file to draw the looks over a
--- screenshot.
+-- The conversation list's layout (the player's pick, 2026-11-13; its rounds
+-- in docs/looks.md): Main, L1, L2, R1, R2, Quick at the well's top, the
+-- offered button's cell under them; a row's name in the normal font, its
+-- chord's glyphs or its state ("12s", "new", the mic while it is talked to)
+-- beside it. Pure: C.Lay(H, offered, open) says where every texture goes in a
+-- well H units tall and where each row and its words sit; ConvList.lua draws it.
 local C = {}
 WC.ConvLooks = C
 
@@ -106,21 +103,18 @@ local function crest(t, rule, head)
 end
 
 
--- The places every look shares: the head crest's rule (top), each row, the
--- offered button's cell, the foot crest's rule (foot). plain: thick vines in
--- the crests' place, as when the well is too short for the crests (and
--- shorter still, the rows shrink); centre: the list in the middle of the
--- well's height, else at its top.
+-- The places: the head crest's rule (top), each row, the offered button's
+-- cell, the foot crest's rule (foot). Too short for the crests, thick vines
+-- stand in for them; shorter still, the rows shrink.
 local KEYS = { "", "l1", "l2", "r1", "r2", "quick" }
-local function stack(look, H, offered)
+local function stack(H, offered)
 	local row, extra = ROW, offered and OFFER or 0
-	local ornate = not look.plain and ORNAMENT + #KEYS * row + extra + ORNAMENT <= H
+	local ornate = ORNAMENT + #KEYS * row + extra + ORNAMENT <= H
 	local top, drop = ORNAMENT, ORNAMENT
 	if not ornate then
 		top, drop = CAP, CAP
 		row = math.max(12, math.min(row, (H - top - drop - extra) / #KEYS))
 	end
-	if look.centre then top = top + math.max(0, (H - (top + #KEYS * row + extra + drop)) / 2) end
 	local rows, y = {}, top
 	for i, key in ipairs(KEYS) do
 		rows[i] = { key = key, y = y, h = row }
@@ -139,7 +133,7 @@ local function ends(t, L)
 	end
 end
 
--- Floor: the list sunk between the crests' rules, the well's walls under the
+-- The list sunk between the crests' rules, the well's walls under the
 -- head rule and over the foot's, the head's shadow falling in; every cell the
 -- light stone at rest, a medium rule between rows; the open cell the light
 -- stone at full, lit, its two rules lit (over the crests' rules at the ends)
@@ -162,23 +156,14 @@ local function floor(t, L, open)
 	if openAt(n) and not L.offer then hvine(t, L.foot, 0, W, "Thick", true) end
 end
 
-local looks = {}
-C.LOOKS = looks
-C.ORDER = { "top", "topPlain", "centred", "centredPlain" }
-looks.top = { label = "Floor, top", draw = floor }
-looks.topPlain = { label = "Floor, top, no crests", plain = true, draw = floor }
-looks.centred = { label = "Floor, centred", centre = true, draw = floor }
-looks.centredPlain = { label = "Floor, centred, no crests", centre = true, plain = true, draw = floor }
-
--- The look key laid out in a well H units tall: pieces, every texture; rows,
+-- The list laid out in a well H units tall: pieces, every texture; rows,
 -- each row's place and its words' (name: its left, chord: the centre of its
 -- glyphs, and of its state, which takes the chord's place while there is one;
 -- units in from the row's left); offer, the offered button's cell { x, y, w, h }
-function C.Lay(key, H, offered, open)
-	local look = looks[key]
-	local L = stack(look, H, offered)
+function C.Lay(H, offered, open)
+	local L = stack(H, offered)
 	local t, rows = {}, {}
-	look.draw(t, L, open)
+	floor(t, L, open)
 	for _, r in ipairs(L.rows) do
 		rows[r.key] = { x = INSET, y = r.y, w = W - 2 * INSET, h = r.h,
 			name = NAME_RIGHT - INSET, chord = CHORD_RIGHT - INSET }
