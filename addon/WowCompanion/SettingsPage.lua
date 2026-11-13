@@ -144,6 +144,17 @@ across:SetPoint("LEFT", band, "TOPLEFT", -2 - SEAM / 2, SEAM / 2)
 across:SetPoint("RIGHT", band, "TOPRIGHT", BX, SEAM / 2)
 WC.Style.VineLine(across, "Thick", false, false, true)
 WC.Style.VineJoin(across, "Thick", "TRightBig", "LEFT")
+-- the section joints' frame: each joint carries its own stretch of the spine,
+-- which near the page's top or foot reached past the spine's end, up through
+-- the floor to the title rule (seen on screen, 2026-11-13); cut to the spine,
+-- short of its round ends (CAP: the round end's length, Vine-ThickTop's art)
+local CAP = 3
+local joins = CreateFrame("Frame", nil, seams)
+joins:SetClipsChildren(true)
+joins:SetPoint("LEFT", page, -BX, 0)
+joins:SetPoint("RIGHT", page, BX, 0)
+joins:SetPoint("TOP", down, 0, -CAP)
+joins:SetPoint("BOTTOM", down, 0, CAP)
 -- the names well's shadow on the settings, over their rows and dividers, under the vines
 WC.Style.CastOn(seams, settings, "LEFT")
 page:HookScript("OnShow", function() WC.Style.PaintRaised() end)
@@ -409,7 +420,7 @@ local function header(name)
 	h:SetJustifyH("RIGHT")
 	h:SetText(name)
 	-- grown out of the thick spine between the wells, forged into it
-	-- (WC.Style.VineJoin). The joint is the seams' (over the spine, following
+	-- (WC.Style.VineJoin). The joint is the seams' (joins: over the spine, following
 	-- the divider), never the scroll child's: what a scroll frame holds draws
 	-- at the scroll frame's level, under the spine whatever its own level, and
 	-- the spine then cut across every joint (seen on screen, 2026-11-12)
@@ -419,7 +430,7 @@ local function header(name)
 	h.divider = CreateFrame("Frame", nil, content)
 	h.divider:SetHeight(16)
 	WC.Style.VineLine(h.divider, "", false, false, true)
-	h.join = CreateFrame("Frame", nil, seams)
+	h.join = CreateFrame("Frame", nil, joins)
 	h.join:SetSize(1, 1)
 	h.join:SetPoint("CENTER", h.divider, "LEFT")
 	WC.Style.VineJoin(h.join, "Thick", "TRightFromMediumPlain", "CENTER")
@@ -443,6 +454,7 @@ local function lift()
 	seams:SetFrameLevel(base)
 	down:SetFrameLevel(base)
 	across:SetFrameLevel(base + 1)
+	joins:SetFrameLevel(base + 1)
 	for _, h in pairs(headers) do h.join:SetFrameLevel(base + 1) end
 	column:SetFrameLevel(base + 2)
 	for f, over in pairs(barLevels) do f:SetFrameLevel(base + 2 + over) end
