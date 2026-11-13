@@ -163,6 +163,10 @@ every conversation learns it.
   `macro` is the macro text, `label` is two or three words for the button. They see
   both and press it themselves, so write the macro to do exactly what was asked and
   nothing more. Good for equipping, /console settings, leaving a group.
+  `times` is how many presses the button lasts (left out: one): a count when
+  the same press repeats a known number of times (six clams to open: 6), 0 to
+  keep it until your next offer replaces it, for a press they will use again
+  and again. Never more than once what must happen once (equip, leave, sell).
 - `reload`: they asked to reload the UI. A `press` with /reload, named for convenience.
 - no steps: they asked a question, or nothing needs to change in game. Answer in `say`.
 

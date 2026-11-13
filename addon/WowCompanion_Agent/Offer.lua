@@ -11,7 +11,7 @@
 -- in a fight waits for its end, and in a fight the button keeps the offer it had
 -- (its label then names the conversation it belongs to).
 local BUTTON = "WowCompanionDo"
-local offers = {} -- [slot] = { label, macro }; saved at login (below)
+local offers = {} -- [slot] = { label, macro, left }; saved at login (below)
 local actionButton
 local showOffer
 local logFrame = WC.Companion.window
@@ -62,14 +62,27 @@ local function buildActionButton()
 		-- the cursor can land on it, and goes to it when the window takes focus
 		WC.MarkFocusable(actionButton)
 		WC.SetFocusButton(frame, actionButton)
-		-- a pressed offer is done
+		-- a press uses one of the offer's presses; the last one ends it (left
+		-- 0: it lasts until the next offer replaces it)
 		actionButton:SetScript("PostClick", function(self)
-			if self.slot then offers[self.slot] = nil end
-			self.slot = nil
+			local held = self.slot and offers[self.slot]
+			if held and held.left ~= 0 then
+				held.left = (held.left or 1) - 1
+				if held.left <= 0 then
+					offers[self.slot] = nil
+					self.slot = nil
+				end
+			end
 			WC.AfterCombat(showOffer)
 		end)
 	end
 	return frame
+end
+
+-- an offer's label, with the presses it has left when more than one
+local function labelOf(held)
+	local left = held.left or 1
+	return left > 1 and ("%s  x%d"):format(held.label, left) or held.label
 end
 
 -- The view's offer on the button, or the button away when it has none or
@@ -80,8 +93,8 @@ showOffer = function()
 	if InCombatLockdown() then
 		if actionButton and actionButton.slot and offers[actionButton.slot] then
 			local held = offers[actionButton.slot]
-			actionButton:SetText(actionButton.slot == view and held.label
-				or (WC.Conversations.Label(actionButton.slot) .. ": " .. held.label))
+			actionButton:SetText(actionButton.slot == view and labelOf(held)
+				or (WC.Conversations.Label(actionButton.slot) .. ": " .. labelOf(held)))
 		end
 		return "in combat"
 	end
@@ -103,21 +116,22 @@ showOffer = function()
 	if not actionButton then return "nothing" end
 	actionButton.slot = view
 	actionButton:SetAttribute("macrotext", held.macro)
-	actionButton:SetText(held.label)
+	actionButton:SetText(labelOf(held))
 	actionButton:Show()
 	return "shown"
 end
 
+-- times: the presses it lasts (1 when not given), 0 until the next offer
 local offer
-offer = function(label, macro, slot)
+offer = function(label, macro, slot, times)
 	slot = slot or WC.Link.Current() or WowCompanion_ViewSlot()
 	-- attributes on a secure frame cannot be set in combat: an offer that comes
 	-- in a fight waits for its end
 	if InCombatLockdown() then
-		WC.AfterCombat(function() offer(label, macro, slot) end)
+		WC.AfterCombat(function() offer(label, macro, slot, times) end)
 		return "waiting for the fight to end"
 	end
-	offers[slot] = { label = label, macro = macro }
+	offers[slot] = { label = label, macro = macro, left = tonumber(times) or 1 }
 	local bound = showOffer()
 	-- show the macro, not just the label: the player is the one authorising this, and
 	-- "Do it" tells them nothing about what they would be running
@@ -145,7 +159,7 @@ end
 -- the limit of what this can do, which is also the limit of what the player could
 -- type themselves -- so it grants no power they did not already have.
 function handlers.press(inbox)
-	return offer(inbox.label or "Do it", inbox.macro or "", inbox.slot)
+	return offer(inbox.label or "Do it", inbox.macro or "", inbox.slot, inbox.times)
 end
 for kind, fn in pairs(handlers) do WC.Link.Handle(kind, fn) end
 

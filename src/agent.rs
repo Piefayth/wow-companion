@@ -59,7 +59,8 @@ const SCHEMA: &str = r#"{
           "slot":  { "type": "integer" },
           "what":  { "type": "string", "enum": ["spell", "macro", "item", "empty"] },
           "code":  { "type": "string" },
-          "remove": { "type": "boolean" }
+          "remove": { "type": "boolean" },
+          "times": { "type": "integer" }
         },
         "required": ["kind"],
         "additionalProperties": false
@@ -384,7 +385,14 @@ fn step_inbox(command: &Value) -> io::Result<Msg> {
             }
         }
         "macro" => Msg::new("macro").text("name", field(command, "name")?).text("body", field(command, "body")?),
-        "press" => Msg::new("press").text("label", field(command, "label")?).text("macro", field(command, "macro")?),
+        "press" => {
+            let press = Msg::new("press").text("label", field(command, "label")?).text("macro", field(command, "macro")?);
+            // how many presses the button lasts; 0 keeps it until the next offer
+            match command.get("times").and_then(Value::as_i64) {
+                Some(times) => press.int("times", times.max(0)),
+                None => press,
+            }
+        }
         "reload" => Msg::new("reload"),
         "lua" => Msg::new("lua").text("code", field(command, "code")?),
         "module" => {
