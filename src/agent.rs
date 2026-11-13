@@ -39,6 +39,15 @@ pub const QUICK_SLOT: &str = crate::voice::Slot::Quick.key();
 pub const COMPACT: &str = "/compact";
 /// `think`'s conversation: no conversation the player talks to.
 const SCRATCH_SLOT: &str = "think";
+/// Every tool that works in a turn that ends with its answer. Left out, each
+/// definition costing every call: what waits or schedules past the turn
+/// (Monitor, ScheduleWakeup, the Cron tools, RemoteTrigger, PushNotification;
+/// background work is refused anyway, hook.rs, so TaskStop), worktrees,
+/// notebooks, the review reporter, design sync, Workflow, Skill (the skills are
+/// office documents, browsers and the like), LSP. Measured: 48.7k tokens before
+/// the first word with all 29, 37.9k with these (2026-11-13).
+const TOOLS: [&str; 13] =
+    ["Task", "Bash", "PowerShell", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "WebSearch", "SendMessage", "ListAgents", "ToolSearch"];
 const QUICK_MODEL: &str = "sonnet";
 const QUICK_TURNS: &str = "12";
 
@@ -299,9 +308,10 @@ impl Session {
         // the repository root: docs, this code, the addon, and its CLAUDE.md
         claude.current_dir(crate::home());
         claude
-            // every tool, no prompts: nothing should ever block on a prompt nobody
-            // is at the keyboard to answer
+            // no prompts: nothing should ever block on a prompt nobody is at the
+            // keyboard to answer
             .arg("--dangerously-skip-permissions")
+            .args(["--tools", &TOOLS.join(",")])
             // streamed, so the player sees what it is doing; the last event is
             // the same result the plain json format would have printed
             .args(["--output-format", "stream-json", "--verbose"])

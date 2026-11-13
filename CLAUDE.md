@@ -264,7 +264,9 @@ is a sign the change should not have shipped, not a fix.
 ## The agent
 
 `claude -p`, Claude Code at full strength (`--dangerously-skip-permissions`, every
-tool, repo root as working directory), **Opus**, by the player's choice. The prompt
+tool that works in a turn: agent.rs `TOOLS`, the rest cost tokens and could not
+run; no auto-memory, which is the developers'; repo root as working directory),
+**Opus**, by the player's choice. The prompt
 goes on stdin. **The character is a file the agent reads, never the prompt**
 (`character.txt`, `character-<slot>.txt` in the companion's folder): a request
 after a reload says only that it changed and where each section is; a copy in

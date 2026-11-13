@@ -25,10 +25,13 @@ pub(crate) fn background() -> io::Result<()> {
 }
 
 /// The settings an agent run is started with: the hook above on every tool that
-/// can start something in the background.
+/// can start something in the background, and no auto-memory (the memory in
+/// this project's folder is the developers' notes; the agent's are the profile
+/// and the rules).
 pub(crate) fn settings(exe: &std::path::Path) -> String {
     let command = format!("\"{}\" hook background", exe.display());
     serde_json::json!({
+        "autoMemoryEnabled": false,
         "hooks": { "PreToolUse": [ {
             "matcher": "Agent|Task|Bash|PowerShell",
             "hooks": [ { "type": "command", "command": command } ]
