@@ -475,10 +475,28 @@ placeCancel:SetScript("OnClick", function()
     if InCombatLockdown() then return end
     if ring:IsShown() then ring:Hide() else W.CancelPlacing() end
 end)
+-- a wheel made by placing (NewWheelAt) that ended still empty goes, with its
+-- macro and the bar slot it took
+local function Unmake(made)
+    local wheel = WowCompanionWheelDB.wheels[made.key]
+    if not wheel or #wheel.slots > 0 then return end
+    WowCompanionWheelDB.wheels[made.key] = nil
+    local kind, id = GetActionInfo(made.action)
+    if kind == "macro" and GetMacroInfo(id) == made.name then
+        PickupAction(made.action)
+        ClearCursor()
+    end
+    if GetMacroIndexByName(made.name) > 0 then DeleteMacro(made.name) end
+    W.Rebuild(true)
+end
 local function EndPlacing()
     local placing = W.placing
     W.placing = nil
     if not InCombatLockdown() then ClearOverrideBindings(placer) end
+    if placing and placing.made then
+        local made = placing.made
+        WC.AfterCombat(function() Unmake(made) end)
+    end
     W.Rebuild(true)
     if placing and placing.onEnd then pcall(placing.onEnd) end
 end
@@ -501,8 +519,9 @@ function W.Place(slot, label, onEnd)
 end
 -- A new wheel from placing: an empty bar slot pressed while placing (a post-hook
 -- on UseAction, which every bar button's press calls, the empty ones too) gets
--- a new, empty wheel and that wheel's macro; placing goes on, so the next press
--- of the slot opens it to flick where the thing goes.
+-- a new, empty wheel and that wheel's macro, and the wheel opens at once (its
+-- button clicked out of combat, as the macro would) to flick where the thing
+-- goes; placing ended with nothing on it takes it all away again (Unmake).
 local function NewWheelAt(action)
     local n = 1
     while WowCompanionWheelDB.wheels["w" .. n] or GetMacroIndexByName("Wheel " .. n) > 0 do n = n + 1 end
@@ -519,7 +538,9 @@ local function NewWheelAt(action)
     PickupMacro(index)
     PlaceAction(action)
     ClearCursor()
-    Print(label .. " is on the slot: press it and flick where " .. W.placing.label .. " goes")
+    W.placing.made = { key = key, name = label, action = action }
+    _G["WCWheel_" .. key]:Click("Macro", true)
+    Print(label .. " is on the slot: flick where " .. W.placing.label .. " goes")
 end
 hooksecurefunc("UseAction", function(action)
     if W.placing and not InCombatLockdown() and not HasAction(action) then
