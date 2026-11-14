@@ -10,6 +10,7 @@
 
 Pad.lua
 Link.lua
+Trial.lua
 Strip.lua
 Chat.lua
 ChatWheel.lua

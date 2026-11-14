@@ -126,5 +126,20 @@ Tested 2026-11-14, on slots no session reaches (500-512), with the game running:
 3. Hard links, tried first, also read fresh through every name, and
    `fs::write` kept them; the rename needs none, and so no NTFS.
 
-Then a trial beside the channel, on slots and bells it never reaches, and the
-switch after a whole session of counts (CLAUDE.md, "Changing the channel").
+## The trial (built 2026-11-14)
+
+Beside the channel, on files the channel never touches (CLAUDE.md, "Changing
+the channel"): every batch the channel sends also goes, after the channel's
+bell has rung, as write n of the session into `WowCompanion_Link\Inbox.lua`
+(`src/inbox.rs`), and rings trial bell `t<set>-<n>`. In game `Trial.lua` asks
+those bells as the channel asks its own and loads its own 256 slots
+(`WowCompanion_T001...`, whose Slot.xml names that inbox). It counts every write
+it sees, every false ring, every gap, and applies nothing. Its counts go in
+Link's audit; `python -I tools/inbox_trial.py` sets them against the PC's
+writes, session by session. The folders are new, so it starts at the first
+full game start after the install.
+
+It carries only the session's writes; the lines and jobs the mailbox holds
+join the inbox at the switch, which also takes out the slot cursor, the slots'
+own inboxes, the session stamp check, the trial's slots and bells, and this
+trial.

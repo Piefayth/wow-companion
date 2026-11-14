@@ -382,6 +382,8 @@ WC.Link = {
 	Slash = function(word, fn) slash[word] = fn end,
 	say = say,
 	MessagesSent = function() return nextSlot - 1 end,
+	-- how often the bells are asked now (check), for the inbox trial (Trial.lua)
+	Every = function() return every end,
 	Audit = audit,
 	-- the talk button by WoW's name, for prompts that name it, or nil while the
 	-- companion has reported none

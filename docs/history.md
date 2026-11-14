@@ -687,3 +687,15 @@ in the same frame was tried and read quiet on one of the next five false takes,
 so it went; asking again later was turned down (a delay, and a guessed
 threshold). A slot stamped for an earlier session is now dropped, not handled
 (docs/proposals/reliable-channel.md).
+
+## One inbox for every slot, tested in the running game (2026-11-14)
+
+A false ring costs a message only because a slot is one message. On slots no
+session reaches, with the game running: a slot whose Slot.xml names a file
+outside its folder (`..\WowCompanion_S504\Inbox.lua`) loaded that file, and each
+load read it as it stood, after it was replaced by a rename. Hard links read
+fresh too, but need NTFS, and a rename needs nothing. Timing a load with an
+empty inbox opened the game's error window ("File ... Inbox.lua is empty."): the
+game reports an empty Lua file as a Lua error, so the one inbox is never empty
+and never half written. A slot load costs 2.6-6.5 ms whatever its size up to 50
+KB. The inbox went on trial beside the channel (docs/proposals/reliable-channel.md).

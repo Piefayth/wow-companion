@@ -97,8 +97,8 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
                 leftover.push(name);
                 continue;
             }
-            // the pulse bells are the heartbeat's
-            if name.starts_with("pulse-") {
+            // the pulse bells are the heartbeat's; the trial's are counted in game
+            if name.starts_with("pulse-") || trial_bell(&name) {
                 continue;
             }
             match entry.metadata().map(|meta| meta.len()) {
@@ -199,10 +199,15 @@ fn rings(path: &std::path::Path) -> bool {
     }
 }
 
-/// The bell names in use (bells.rs, main.rs, heartbeat.rs, Status.lua). Anything
-/// else in Signals was left by an earlier design.
+/// The bell names in use (bells.rs, main.rs, heartbeat.rs, Status.lua, inbox.rs).
+/// Anything else in Signals was left by an earlier design.
 fn current_bell(name: &str) -> bool {
-    slot_bell(name).is_some() || matches!(name.trim_end_matches(".wav"), "doctor" | "pulse-a" | "pulse-b")
+    slot_bell(name).is_some() || trial_bell(name) || matches!(name.trim_end_matches(".wav"), "doctor" | "pulse-a" | "pulse-b")
+}
+
+/// One of the inbox trial's bells (src/inbox.rs).
+fn trial_bell(name: &str) -> bool {
+    (0..crate::SETS).any(|set| (1..=crate::inbox::TRIAL_SLOTS).any(|n| crate::inbox::trial_bell_name(set, n) == name))
 }
 
 /// The set and slot a slot bell's name stands for.
@@ -235,10 +240,10 @@ mod tests {
 
     #[test]
     fn only_todays_bell_names_are_current() {
-        for name in ["g0-001.wav", "g2-512.wav", "pulse-a.wav", "doctor.wav"] {
+        for name in ["g0-001.wav", "g2-512.wav", "t1-256.wav", "pulse-a.wav", "doctor.wav"] {
             assert!(current_bell(name), "{name}");
         }
-        for name in ["1.wav", "m1.wav", "c3.wav", "f5.wav", "g3-001.wav", "g0-513.wav", "g0-1.wav", "alive-a.wav", "show.wav", "always.wav", "never.wav"] {
+        for name in ["1.wav", "m1.wav", "c3.wav", "f5.wav", "g3-001.wav", "g0-513.wav", "g0-1.wav", "t0-257.wav", "t3-001.wav", "alive-a.wav", "show.wav", "always.wav", "never.wav"] {
             assert!(!current_bell(name), "{name}");
         }
     }

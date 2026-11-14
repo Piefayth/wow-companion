@@ -14,6 +14,7 @@ mod restart;
 mod install;
 mod jobs;
 mod ledger;
+mod inbox;
 mod message;
 mod savedvars;
 mod session;

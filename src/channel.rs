@@ -59,15 +59,19 @@ impl Pending {
         }
     }
 
-    /// A progress line that only says what a request is doing now: a newer one
-    /// for the same request makes it worthless. A `started` one is not: it ends
-    /// the queued mark on its request's line.
     fn progress_of(&self) -> Option<i128> {
         match self {
-            Pending::Now(msg) if msg.kind() == Some("progress") && !msg.has("started") => msg.int_of("job"),
-            _ => None,
+            Pending::Now(msg) => progress_job(msg),
+            Pending::Line(_) => None,
         }
     }
+}
+
+/// The request a progress line says what is doing now: a newer one for the
+/// same request makes it worthless. A `started` one is not: it ends the queued
+/// mark on its request's line.
+pub(crate) fn progress_job(msg: &Msg) -> Option<i128> {
+    (msg.kind() == Some("progress") && !msg.has("started")).then(|| msg.int_of("job")).flatten()
 }
 
 struct Queue {
@@ -210,8 +214,11 @@ fn deliver_batch(addons: &Path, batch: Vec<Pending>) {
     if batch.is_empty() {
         return;
     }
-    let list = slot_message(&batch);
-    if let Err(err) = ring(addons, list) {
+    let messages: Vec<Msg> = batch.iter().map(Pending::msg).collect();
+    let sent = ring(addons, slot_message(messages.clone()));
+    // the inbox on trial gets the batch once the channel's bell has rung
+    crate::inbox::trial(addons, &messages, sent.as_ref().ok().copied());
+    if let Err(err) = sent {
         set_aside(addons, batch, &err.to_string());
     }
 }
@@ -219,23 +226,22 @@ fn deliver_batch(addons: &Path, batch: Vec<Pending>) {
 /// What one slot holds: `{ kind = "list", messages = { ... }, session = n }`,
 /// every message of the batch in order (the game applies each as if it came
 /// alone), and the session it was written for (`ring`).
-fn slot_message(batch: &[Pending]) -> Msg {
-    let messages: Vec<Msg> = batch.iter().map(Pending::msg).collect();
+fn slot_message(messages: Vec<Msg>) -> Msg {
     for msg in &messages {
         crate::audit::note("send", "", &msg.lua().chars().take(200).collect::<String>());
     }
     Msg::new("list").list("messages", messages)
 }
 
-/// The next slot, and its bell.
-fn ring(addons: &Path, msg: Msg) -> io::Result<()> {
+/// The next slot, and its bell. Returns the slot.
+fn ring(addons: &Path, msg: Msg) -> io::Result<u32> {
     voice::mark("send has the channel");
     let (slot, set, session) = next_slot(addons)?;
     let msg = msg.int("session", session);
     deliver(addons, slot, set, &msg)?;
     println!("sent in slot {slot}: {}", msg.lua());
     voice::mark(&format!("bell rung, slot {slot}"));
-    Ok(())
+    Ok(slot)
 }
 
 /// How many game clients are open (multiboxing: each reads every message).
@@ -274,14 +280,7 @@ fn next_slot(addons: &Path) -> io::Result<(u32, u64, u64)> {
         // reload) would be taken as a message before it was written, the old
         // inbox read in its place and the real one never read.
         let set = session.set();
-        let signals = addons.join(LINK).join("Signals");
-        for slot in 1..=SLOTS {
-            let path = signals.join(slot_bell_name(set, slot));
-            if fs::metadata(&path).is_ok_and(|meta| meta.len() > 0) {
-                crate::audit::note("bell", "", &format!("stale {} cleared at the session's start", slot_bell_name(set, slot)));
-                bells::empty(&path)?;
-            }
-        }
+        empty_rung(&addons.join(LINK).join("Signals"), (1..=SLOTS).map(|slot| slot_bell_name(set, slot)), "left rung at the session's start")?;
     }
     if cursor > session.known_slots() {
         // every slot spent: nothing can reach the game to say so; the pad can
@@ -391,17 +390,24 @@ pub(crate) fn slot_bell_name(set: u64, slot: u32) -> String {
     format!("g{set}-{slot:03}.wav")
 }
 
-/// Empty the rung bells of every set but `keep` (none while the game is closed):
-/// nothing polls those, so nothing holds them.
+/// Empty each of the bells `names` in `signals` that is rung, saying `why`.
+pub(crate) fn empty_rung(signals: &Path, names: impl IntoIterator<Item = String>, why: &str) -> io::Result<()> {
+    for name in names {
+        let path = signals.join(&name);
+        if fs::metadata(&path).is_ok_and(|meta| meta.len() > 0) {
+            crate::audit::note("bell", "", &format!("empty {name} ({why})"));
+            bells::empty(&path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Empty the rung bells of every set but `keep` (none while the game is closed),
+/// the slot bells and the inbox trial's: nothing polls those, so nothing holds them.
 fn empty_idle_sets(signals: &Path, keep: Option<u64>) -> io::Result<()> {
     for set in (0..SETS).filter(|set| Some(*set) != keep) {
-        for slot in 1..=SLOTS {
-            let path = signals.join(slot_bell_name(set, slot));
-            if fs::metadata(&path).is_ok_and(|meta| meta.len() > 0) {
-                crate::audit::note("bell", "", &format!("empty {} (idle set)", slot_bell_name(set, slot)));
-                bells::empty(&path)?;
-            }
-        }
+        let trial = (1..=crate::inbox::TRIAL_SLOTS).map(move |n| crate::inbox::trial_bell_name(set, n));
+        empty_rung(signals, (1..=SLOTS).map(|slot| slot_bell_name(set, slot)).chain(trial), "idle set")?;
     }
     Ok(())
 }
@@ -509,16 +515,18 @@ mod tests {
         let signals = std::env::temp_dir().join(format!("wc-slot-bells-{}", std::process::id()));
         fs::create_dir_all(&signals).unwrap();
         let rung = |set, slot| signals.join(slot_bell_name(set, slot));
+        let trial = |set| signals.join(crate::inbox::trial_bell_name(set, 3));
         for set in 0..SETS {
             fs::write(rung(set, 7), bells::bell()).unwrap();
+            fs::write(trial(set), bells::bell()).unwrap();
         }
         empty_idle_sets(&signals, Some(1)).unwrap();
-        let size = |set| fs::metadata(rung(set, 7)).unwrap().len();
-        assert_eq!((size(0), size(2)), (0, 0));
-        assert!(size(1) > 0, "the running session's ring stays");
+        let size = |path: PathBuf| fs::metadata(path).unwrap().len();
+        assert_eq!((size(rung(0, 7)), size(rung(2, 7)), size(trial(0)), size(trial(2))), (0, 0, 0, 0));
+        assert!(size(rung(1, 7)) > 0 && size(trial(1)) > 0, "the running session's rings stay");
         // the game closed: every set
         empty_idle_sets(&signals, None).unwrap();
-        assert_eq!(size(1), 0);
+        assert_eq!((size(rung(1, 7)), size(trial(1))), (0, 0));
         fs::remove_dir_all(&signals).unwrap();
     }
 
@@ -554,7 +562,7 @@ mod tests {
         line.n = 4;
         let batch = vec![Pending::Now(Msg::new("heard").int("job", 9).text("slot", "r1").text("state", "hearing")), Pending::Line(line)];
         assert_eq!(
-            slot_message(&batch).lua(),
+            slot_message(batch.iter().map(Pending::msg).collect()).lua(),
             r#"{ kind = "list", messages = { { kind = "heard", job = 9, slot = "r1", state = "hearing" }, { kind = "log", slot = "", n = 4, who = "claude", text = "done", andThen = { kind = "reload" } } } }"#
         );
     }

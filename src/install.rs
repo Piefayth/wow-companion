@@ -51,7 +51,8 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     let missing = |path: &Path| !path.exists();
     // every bell exists before the game can ask for it: one it asked for while
     // missing is never heard (bells.rs, rule 3)
-    for bell in (0..SETS).flat_map(|set| (1..=SLOTS).map(move |slot| slot_bell_name(set, slot))) {
+    let trial_bells = (0..SETS).flat_map(|set| (1..=inbox::TRIAL_SLOTS).map(move |n| inbox::trial_bell_name(set, n)));
+    for bell in (0..SETS).flat_map(|set| (1..=SLOTS).map(move |slot| slot_bell_name(set, slot))).chain(trial_bells) {
         let path = signals.join(bell);
         if missing(&path) {
             bells::empty(&path)?;
@@ -69,6 +70,19 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
             fs::write(dir.join("Inbox.lua"), "")?;
         }
     }
+    // the inbox on trial (src/inbox.rs): its slots, which read Link's one inbox,
+    // and the inbox, which the client must find at launch
+    for slot in 1..=inbox::TRIAL_SLOTS {
+        let dir = addons.join(inbox::trial_slot_name(slot));
+        note_fresh(&dir);
+        fs::create_dir_all(&dir)?;
+        written.push(dir.clone());
+        fs::write(dir.join(format!("{}.toc", inbox::trial_slot_name(slot))), inbox::trial_toc(slot))?;
+        fs::write(dir.join("Slot.xml"), inbox::TRIAL_XML)?;
+    }
+    if missing(&addons.join(LINK).join(inbox::FILE)) {
+        fs::write(addons.join(LINK).join(inbox::FILE), inbox::UNWRITTEN)?;
+    }
     // the mailbox the game takes at every load (src/ledger.rs), from the ledger
     // on disk; never the repo's (it has none: an install must not wipe lines)
     if let Err(err) = crate::ledger::write_mailbox(addons) {
@@ -77,7 +91,7 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     if let Err(err) = wow_companion_settings::changes::record_folders(&written) {
         println!("warning: could not record what was installed, for uninstall: {err}");
     }
-    println!("installed {ADDON} and {SLOTS} slots into {}", addons.display());
+    println!("installed {ADDON}, {SLOTS} slots and {} trial slots into {}", inbox::TRIAL_SLOTS, addons.display());
     match fresh.len() {
         0 => println!("no new folders: a /reload loads the changes"),
         n => println!(
@@ -106,7 +120,7 @@ fn needs_agent(suite: &Path, name: &str) -> bool {
 
 fn generated(addon: &str) -> &'static [&'static str] {
     match addon {
-        LINK => &["Signals", "helper-state.txt"],
+        LINK => &["Signals", "helper-state.txt", crate::inbox::FILE],
         "WowCompanion_Mailbox" => &["Mail.lua"],
         _ => &[],
     }

@@ -65,6 +65,7 @@ extras a player may use, never required (the player, 2026-11-11).
 - `src/`: the helper, one job per file: `main.rs` (command dispatch, `run`'s
   wiring of the voice loop), `channel.rs` (slots, the cursor, bells; one sender
   thread takes everything pending into one slot and one bell, a `list`),
+  `inbox.rs` (the one inbox on trial beside the channel),
   `message.rs` (every message to the game as a value, written as Lua in one place;
   a conversation `Line` is numbered), `ledger.rs` (every line until the game has
   saved it, and every job's state, on disk and in the mailbox addon the game reads
@@ -232,7 +233,11 @@ reaches the game with two tricks, and the game reaches the PC only at a reload.
   playing until the game's background open of it fails**, several frames at a
   busy moment, and the game then takes a slot the PC has not written
   (docs/proposals/reliable-channel.md). A slot stamped for an earlier session is
-  dropped. **All bell files go
+  dropped. **On trial beside it, the one inbox** (`src/inbox.rs`, `Trial.lua`):
+  every batch also goes as write n of the session into `WowCompanion_Link\Inbox.lua`,
+  replaced whole by a rename, and rings `t<set>-<n>`; 256 trial slots
+  (`WowCompanion_T001…`) whose Slot.xml names that file. The game counts what it
+  sees and applies nothing; `python -I tools/inbox_trial.py` compares. **All bell files go
   through `src/bells.rs`, which holds the rules the game forced on us** (a bell
   over 174,762 bytes, a long sound streamed, never a missing file, every write
   retried and reported). Never write a sound file the game reads any other way.

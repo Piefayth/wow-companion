@@ -29,7 +29,8 @@
 //!    empty one too, for seconds. At 10 asks a second it does not.
 //!
 //! What this means in practice: the slot bells (docs/proposals/slot-bells.md)
-//! use `ring` / `empty`; the heartbeat's pulse bells `ring` / `silence`. See
+//! and the inbox trial's use `ring` / `empty`; the heartbeat's pulse bells
+//! `ring` / `silence`. See
 //! CLAUDE.md, "Changing the channel", before touching either.
 
 use std::{
@@ -112,7 +113,9 @@ pub fn silence(path: &Path) -> io::Result<()> {
     patiently(path, "silence", || fs::write(path, quiet()))
 }
 
-fn patiently(path: &Path, what: &str, mut attempt: impl FnMut() -> io::Result<()>) -> io::Result<()> {
+/// `attempt` retried while the game holds `path` (rule 4), as `what` in what it
+/// reports; the inbox trial's rename too (src/inbox.rs).
+pub(crate) fn patiently(path: &Path, what: &str, mut attempt: impl FnMut() -> io::Result<()>) -> io::Result<()> {
     let start = Instant::now();
     let mut tries = 0;
     loop {
