@@ -100,3 +100,127 @@ arrives with the next one or at your next reload".
    is found, so it is the safest change and fixes losses whatever their cause.
 
 Each step removes what it replaces in the same change.
+
+## Review (the PC-side session, 2026-11-13, against 235af88)
+
+Measured from the take audit in Link's save (15:06-16:52) and the PC's
+audit.log and timing.log. Wow.exe started 14:26:37.
+
+**1. "Every false take was a name already played in this game run" is wrong.**
+Dropping per-session names was right; the claim should go from "What failed"
+too, so the history doesn't keep it.
+- Session from 16:40 (set 2): before it, this run had rung set 2 only up to slot
+  26. The game falsely took 27-31 (16:42:25-40) and 54-59 (16:45:37-16:47:46).
+  The PC's audit, which goes back to 2026-11-10, has 54-59 never rung at all.
+- This morning: Wow.exe started 10:36:04, and the first session (10:44:06) took
+  slots 2 and 3 in its first second. Their bells were empty, and the game had not
+  played them in that run. This predates the take audit, so there is no
+  `willPlay` for it.
+- Session from 16:25: the PC wrote nothing (the save was unreadable). The game
+  still took slots 1-23 one at a time over 7 minutes, and slot 1 only after 108 s,
+  roughly 1,000 asks that correctly said "not playing".
+- The pattern is moments, not names. Takes come in runs of 3-4 consecutive slots
+  inside one second, because the drain asks the next slot at once after a take.
+  They come at random times, with no PC file activity within ±4 s. Roughly 12
+  such moments in the ~4,600 asks of the 16:25 session (0.3% of asks).
+- Ten never-played bells probed once each cannot show immunity at that rate:
+  ten asks see nothing 97% of the time.
+
+**2. Suggest: stop the drain on a stale take.** The drain exists to empty a
+backlog of written slots. A stale take proves there is no backlog, so asking the
+next slot "at once" only spends more slots inside the same bad moment. If the
+next ask waits the normal 0.1 s, the measured runs of 3-4 should shrink toward
+one. This matters for layer 2's tail:
+- An early take moves the game's cursor *ahead* of the PC.
+- The PC's next writes land in slots the game has passed, until the PC's cursor
+  catches up.
+- One echo 2 s later lands in the next burned slot whenever the run was longer
+  than one. Today's runs of 3-4 would defeat it.
+- Either shorten the runs as above, or say plainly that the tail waits for the
+  next send or reload.
+
+**3. Dedup by `n`, and `andThen`** (asked):
+- **Re-applying a held line is safe.** Agent.lua `handlers.log` returns `HELD`
+  for a held `n`, and Link.lua `dispatch` returns before `JOB_MESSAGE` and before
+  `andThen`. Out-of-order arrival is handled by `Hold`'s `above`.
+- **Carried copies have no steps.** `Book::number` keeps `kept.steps = None`, and
+  `Line::msg(false)` leaves `andThen` out (the test at message.rs:247). So if the
+  slot carrying a line's live copy is lost, the text is repaired but its button,
+  macro or Lua runs zero times. "Never twice" holds; "never lost" doesn't, for
+  steps.
+- **To repair steps too:** the ledger keeps them for the session they were sent
+  in, stamped with it, and the game runs a carried `andThen` only when the stamp
+  is this session's. Without that stamp, a game crash before a save rolls the
+  game's held numbers back while the ledger still holds the line, and the step
+  would rerun after the relaunch. The mailbox avoids this today by never carrying
+  steps.
+- `WC.Jobs.Hold` returns true (apply) when the jobs model isn't built yet, and
+  for a message with no `n`. Every carried line must have `n`, and the model must
+  exist before Link's first take at load. Worth checking the load order.
+
+**4. What isn't a line stays lossy.** Mostly harmless; `status` is the
+exception:
+- `heard`: the clip's waiting line shows late.
+- `progress`, `context`: stale for a moment.
+- `read`: the WCCMD command gives way after `COMMAND_SECONDS`, no stall.
+- An agent's strip `lua`: its read times out.
+- `stopped`: the cancel retries.
+- `status`: the mic warning and settings stay wrong until the next change. It is
+  a "now" value, so carrying the latest copy in every slot is cheap and
+  idempotent.
+
+**5. Dictation as a ledger entry needs more than the ledger.**
+- Chat.lua has no dedup: `chat`, `send` and `wheel` carry no number.
+- `Hold` lives in the Agent addon.
+- With the agents off (the dictation product), there is no Agent addon, and
+  `ledger::open` returns at once when `!agents`.
+- So dictation needs a ledger in that product too, its own number, and dedup in
+  Link, recorded when applied even while the line waits for a chat box.
+
+**6. Slot size, measured:**
+- The 52 sessions in today's companion.log carried at most 14 lines (10.4 KB) of
+  `log` messages each; the median is 2.1 KB.
+- The player reloads every few minutes and each save confirms the ledger, so
+  50-150 KB is a session hours long with no reload.
+- Add the `LoadAddOn` time (`debugprofilestop`) and the inbox's bytes to the take
+  audit, and the cap question gets answered from data.
+- The PC already writes the same lines to the mailbox at every change, so its
+  side costs nothing new.
+
+**7. Layer 3 and the outage case:**
+- The player's rule is "dont do this sort of 'negative confirmation' stuff".
+  Keep the window message to a gap still open after the repair, and count the
+  rest silently, as the doc already says.
+- For the PC-side outage, 156779d removed the buzz that fired on an unreadable
+  save: it was the false "all slots spent" alarm, and the player asked what the
+  unexplained buzzing was. A buzz for "cannot send" would be a new signal and
+  needs the player's yes. The first slot that works could carry "the companion
+  could not send from hh:mm to hh:mm: <why>" instead.
+
+## Finding the bug first (the player, 2026-11-13)
+
+The player asked whether all this patches around a bug nobody has found. It
+does: the design makes a wrong bell reading survivable without knowing why the
+game gives one. So the build waits, and the bug is looked for first.
+
+What is known: the game plays an empty slot bell, and about 0.3% of the time
+`PlaySoundFile` says it will play and `C_Sound.IsPlaying` says it is playing 20
+ms later. That comes at random moments, in runs of 3-4 consecutive asks within
+a second, whatever the name's history. The leading guess, untested: the game
+opens a sound file in the background, and at a busy moment the 20 ms ask comes
+before an empty file's open has failed, so a sound about to fail counts as
+playing. If so, the fix is in how a ring is confirmed (a real bell is half a
+second of sound, so it still plays long after a failed open has given up), and
+the layers above are not needed.
+
+The probe (`WowCompanion_Link/BellProbe.lua`, beside the channel, never takes
+a slot):
+- It asks empty bells no session reaches (slots 509-512 of each set, and
+  never.wav) every 0.1 s, the channel's way.
+- On an anomaly it asks again at 0.02, 0.1, 0.3, 0.6 and 1 s, and asks the next
+  control at once, as the drain does.
+- Every 5 s it asks always.wav (ten silent seconds) the same way, for what a
+  real sound answers.
+- Counts, anomalies with frame times, combat and the time since the last
+  loading screen go to `WowCompanionLinkDB.bellProbe`, read live by strip.
+- One play session, then this section gets the result.
