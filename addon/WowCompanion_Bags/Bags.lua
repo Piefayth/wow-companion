@@ -262,53 +262,85 @@ local function build()
 				return a.slot < b.slot
 			end)
 		end
-		-- place: each section starts a row under its title
-		local y = EDGE + TITLE_H + GAP_V
-		local col, last, hn = 0, nil, 0
-		self.cells = {}
+		-- place: one solid block, as Blizzard's bags: only the top row is short,
+		-- so a column's gaps are at its top. Blizzard's grid navigation (columns by
+		-- X, rows counted from the bottom, SmartNavPanelInfoAdded) then moves the
+		-- way the slots look. A section runs on from the last; its title is a
+		-- label over its first slot, in room left above that row.
+		local max, now = ContainerFrame_GetContainerNumSlots(Enum.BagIndex.Backpack)
+		-- Blizzard's add-slots button (shown while the account has no
+		-- authenticator, ContainerFrameExtendedSlotPack) is the block's last cell
+		local add = max > now and not IsAccountSecured()
+		local n = #all + (add and 1 or 0)
+		local top = n % COLS
+		if top == 0 then top = COLS end
+		local function cell(k)
+			if k <= top then return 0, k - 1 end
+			return 1 + math.floor((k - top - 1) / COLS), (k - top - 1) % COLS
+		end
+		local starts, titled = {}, {}
 		for i, e in ipairs(all) do
-			local b = e.b
-			if sections and e.key ~= last then
-				if col > 0 then y = y + SIZE + GAP col = 0 end
-				hn = hn + 1
-				local h = header(hn)
-				h:ClearAllPoints()
-				h:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX, -y)
-				h:SetText(WC.BagsEval.TITLE[e.key] or e.key)
-				h:Show()
-				y = y + HDR
-				last = e.key
-				groups[#groups + 1] = i
+			if sections and (i == 1 or all[i - 1].key ~= e.key) then
+				starts[#starts + 1] = i
+				titled[(cell(i))] = true
 			elseif not sections and (i == 1 or all[i - 1].bag ~= e.bag) then
 				groups[#groups + 1] = i
 			end
+		end
+		local rowY, y = {}, EDGE + TITLE_H + GAP_V
+		local last = cell(n)
+		for r = 0, last do
+			if titled[r] then y = y + HDR end
+			rowY[r] = y
+			y = y + SIZE + GAP
+		end
+		y = y - GAP
+		local function at(frame, k)
+			local r, c = cell(k)
+			frame:ClearAllPoints()
+			frame:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX + c * (SIZE + GAP), -rowY[r])
+			return r, c
+		end
+		self.cells = {}
+		for i, e in ipairs(all) do
+			local b = e.b
 			self.order[i] = b
-			meta[b].index = i
-			meta[b].group = #groups
 			b:SetParent(holder(e.bag))
-			b:ClearAllPoints()
-			b:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX + col * (SIZE + GAP), -y)
-			self.cells[i] = { col = col, row = y }
+			local r, c = at(b, i)
+			self.cells[i] = { col = c, row = rowY[r] }
 			b:Show()
-			col = col + 1
-			if col == COLS and i < #all then col = 0 y = y + SIZE + GAP end
+		end
+		-- titles: as wide as the room to the next title in the row
+		for hn, i in ipairs(starts) do
+			local r, c = cell(i)
+			local nr, nc = COLS, COLS
+			if starts[hn + 1] then nr, nc = cell(starts[hn + 1]) end
+			local cells = (nr == r) and (nc - c) or (COLS - c)
+			local h = header(hn)
+			h:ClearAllPoints()
+			h:SetPoint("BOTTOMLEFT", self, "TOPLEFT", self.gridX + c * (SIZE + GAP), -(rowY[r] - 2))
+			h:SetWidth(cells * (SIZE + GAP) - GAP)
+			h:SetWordWrap(false)
+			h:SetText(WC.BagsEval.TITLE[all[i].key] or all[i].key)
+			h:Show()
+			groups[#groups + 1] = i
+		end
+		table.sort(groups)
+		local g = 0
+		for i, b in ipairs(self.order) do
+			if groups[g + 1] == i then g = g + 1 end
+			meta[b].index = i
+			meta[b].group = g
 		end
 		self.groups = groups
-		-- Blizzard's add-slots button (shown while the account has no
-		-- authenticator, ContainerFrameExtendedSlotPack) gets a cell of its own
-		-- after the last slot: the Locked section's, in sections view
 		self.addCell = self.addCell or CreateFrame("Frame", nil, self)
 		self.addCell:SetSize(SIZE, SIZE)
-		self.addCell:ClearAllPoints()
-		local max, now = ContainerFrame_GetContainerNumSlots(Enum.BagIndex.Backpack)
-		if max > now and not IsAccountSecured() then
-			if col >= COLS then col = 0 y = y + SIZE + GAP end
-			self.addCell:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX + col * (SIZE + GAP), -y)
+		if add then
+			at(self.addCell, n)
 			self.addCell:Show()
 		else
 			self.addCell:Hide()
 		end
-		y = y + SIZE
 		self:SetSize(EDGE * 2 + math.max(gridW, self.legendW or 0), y + GAP_V + LEGEND_H + EDGE)
 		if WC.BagsInput and WC.BagsInput.Publish then WC.BagsInput.Publish(self) end
 		-- focus stays on the same slot wherever it moved
