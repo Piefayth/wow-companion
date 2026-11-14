@@ -17,15 +17,27 @@ local function Seen(button)
         local info = C_SpellBook.GetSpellBookItemInfo(parent.slotIndex, parent.spellBank)
         if info then return ("%s: %s (%s)"):format(context, tostring(info.name), tostring(info.spellID)) end
     end
-    return ("%s: %s"):format(context, tostring(button:GetDebugName()))
+    local id = button.GetID and button:GetID()
+    local gear = id and id >= 1 and id <= 19 and GetInventoryItemLink("player", id)
+    if gear then return ("%s: worn slot %d, %s"):format(context, id, gear) end
+    return ("%s: %s id=%s parent=%s bag=%s"):format(context, tostring(button:GetDebugName()), tostring(id),
+        tostring(parent and parent:GetDebugName()), tostring(button.GetBagID and button:GetBagID()))
 end
+
+-- every sighting, newest last, for the agent to read live (the strip)
+WCContextSeen = {}
 
 -- true when the tap was for the thing under the cursor
 function WC.Companion.ContextTap()
     if InCombatLockdown() then return false end
     local button = SmartNavigation and SmartNavigation:GetCurrentButton()
-    if not (button and button:IsVisible()) then return false end
+    if not (button and button:IsVisible()) then
+        WCContextSeen[#WCContextSeen + 1] = "no button: " .. tostring(button and button:GetDebugName())
+        return false
+    end
     local ok, seen = pcall(Seen, button)
-    WC.Say("The companion button saw " .. (ok and seen or ("unreadable: " .. tostring(seen))))
+    seen = ok and seen or ("unreadable: " .. tostring(seen))
+    WCContextSeen[#WCContextSeen + 1] = seen
+    WC.Say("The companion button saw " .. seen)
     return true
 end
