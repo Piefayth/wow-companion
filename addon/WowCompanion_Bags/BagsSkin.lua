@@ -56,18 +56,12 @@ local function skip(b, why)
 	skipped[b] = why
 	WC.MarkIgnored(b)
 end
--- their add-slots button, drawn on ours where they draw it: on the last
--- locked slot (ContainerFrameExtendedSlotPack:LayoutAddSlots)
+-- their add-slots button, drawn in the cell our layout keeps for it (f.addCell)
 local addSlots = CreateFrame("Frame", nil, f)
 addSlots:SetSize(28, 28)
-addSlots:SetFrameLevel(f:GetFrameLevel() + 20)
 addSlots:Hide()
 addSlots:CreateTexture(nil, "OVERLAY"):SetAtlas("Bags-icon-AddAuthenticator", true)
 addSlots:GetRegions():SetAllPoints()
-local function lastLocked()
-	local max, now = ContainerFrame_GetContainerNumSlots(Enum.BagIndex.Backpack)
-	if max > now then return f:SlotFor(Enum.BagIndex.Backpack, max) end
-end
 local pooled = {}
 local function eachStop(fn)
 	wipe(pooled)
@@ -115,14 +109,14 @@ local function lay()
 		if item then
 			ours = f:SlotFor(b:GetBagID(), b:GetID())
 		elseif p == addSlots then
-			ours = lastLocked()
+			ours = f.addCell and f.addCell:IsShown() and f.addCell
 		end
 		if not (p and ours) then all = false return end
 		p:ClearAllPoints()
-		if item then p:SetAllPoints(ours) else p:SetPoint("LEFT", ours, "LEFT", -14, -2) end
+		if item then p:SetAllPoints(ours) else p:SetPoint("CENTER", ours, "CENTER") end
 	end)
 	local a = blizz.AddSlotsButton
-	addSlots:SetShown(a and a:IsShown() and anchored[a] and lastLocked() and true or false)
+	addSlots:SetShown(a and a:IsShown() and anchored[a] and f.addCell and f.addCell:IsShown() and true or false)
 	return all
 end
 
@@ -143,6 +137,16 @@ local function closed()
 end
 EventRegistry:RegisterCallback("ContainerFrame.OpenBag", function() C_Timer.After(0, opened) end, "WCBagsSkin")
 EventRegistry:RegisterCallback("ContainerFrame.CloseBag", function() C_Timer.After(0, closed) end, "WCBagsSkin")
+-- one tooltip, theirs (with what addons add to it), moved onto our slot each
+-- time they place it
+f.theirTooltip = true
+hooksecurefunc("ContainerFrameItemButton_CalculateItemTooltipAnchors", function(b, tooltip)
+	if not (f:IsShown() and anchored[b] and b.GetBagID) then return end
+	local ours = f:SlotFor(b:GetBagID(), b:GetID())
+	if not ours then return end
+	tooltip:ClearAllPoints()
+	tooltip:SetPoint("TOPRIGHT", ours, "TOPLEFT", -6, 0)
+end)
 -- our highlight follows their cursor over their (unseen) buttons
 EventRegistry:RegisterCallback("ContainerFrameItemButton.EnterButton", function(_, b)
 	if f:IsShown() and b and b.GetBagID then f:FocusOn(b:GetBagID(), b:GetID()) end

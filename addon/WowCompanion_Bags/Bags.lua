@@ -294,6 +294,20 @@ local function build()
 			if col == COLS and i < #all then col = 0 y = y + SIZE + GAP end
 		end
 		self.groups = groups
+		-- Blizzard's add-slots button (shown while the account has no
+		-- authenticator, ContainerFrameExtendedSlotPack) gets a cell of its own
+		-- after the last slot: the Locked section's, in sections view
+		self.addCell = self.addCell or CreateFrame("Frame", nil, self)
+		self.addCell:SetSize(SIZE, SIZE)
+		self.addCell:ClearAllPoints()
+		local max, now = ContainerFrame_GetContainerNumSlots(Enum.BagIndex.Backpack)
+		if max > now and not IsAccountSecured() then
+			if col >= COLS then col = 0 y = y + SIZE + GAP end
+			self.addCell:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX + col * (SIZE + GAP), -y)
+			self.addCell:Show()
+		else
+			self.addCell:Hide()
+		end
 		y = y + SIZE
 		self:SetSize(EDGE * 2 + math.max(gridW, self.legendW or 0), y + GAP_V + LEGEND_H + EDGE)
 		if WC.BagsInput and WC.BagsInput.Publish then WC.BagsInput.Publish(self) end
@@ -312,7 +326,8 @@ local function build()
 		self:Layout()
 	end
 
-	-- the highlight and our tooltip on slot i
+	-- the highlight and our tooltip on slot i (no tooltip of ours while
+	-- self.theirTooltip: BagsSkin moves Blizzard's onto our slot)
 	function f:Focus(i)
 		local b = self.order[i]
 		if not b then return end
@@ -325,7 +340,7 @@ local function build()
 		tip:ClearAllPoints()
 		tip:SetPoint("TOPRIGHT", b, "TOPLEFT", -6, 0)
 		local id = C_Container.GetContainerItemID(m.bag, m.slot)
-		if id then
+		if id and not self.theirTooltip then
 			tip:SetBagItem(m.bag, m.slot)
 			-- price addons add to GameTooltip only; ours asks the price capability
 			-- (Engine.lua: an auction addon's provider, else the game's vendor price)
