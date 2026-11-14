@@ -367,16 +367,21 @@ goes to a detached process.
   A frame holding a secure button is protected, and a protected frame cannot
   Show/Hide in a fight. So keep the window itself **unprotected** and put
   bindings on a separate invisible `SecureHandlerShowHideTemplate` (`WCBagsPad`):
-  its `_onshow` binds the pad with `SetBindingClick` by button name, `_onhide`
-  clears, and `CallMethod` shows or hides the window. **Blizzard's bags open
-  ours by a secure path, the same in a fight and out**: a `SecureHandlerShowHide`
-  of ours is a child of `ContainerFrameCombinedBags`, so whatever shows theirs
-  (radial, vendor, mail) runs its `_onshow`, which shows our pad and hides their
+  its shown state is open (`CallMethod` shows or hides the window), and its
+  snippets grab and release the pad with `SetBindingClick` by button name.
+  Out of a fight the window is a UI panel with no area (`ShowUIPanel` then only
+  shows it, a frame after the snippet: from `CallMethod` it tainted focus), and
+  the pad is held while the controller's focus is on it, so the triggers and the
+  focus button are the game's own. In a fight it is out of the cycle and the
+  focus button's keys (`TOGGLEUIFOCUS`, read as the fight starts) release and
+  grab. **Blizzard's bags open ours by a secure path, the same in a fight and
+  out**: a `SecureHandlerShowHide` of ours is a child of
+  `ContainerFrameCombinedBags`, so whatever shows theirs (radial, vendor, mail)
+  runs its `_onshow`, which opens ours (or gives it the pad back) and hides their
   frame (`handle:Hide(true)`). Their frame counts as protected while it holds our
   protected child, which is what lets restricted code hide it in combat. Our
-  toggles show or hide the pad; circle hides it. No alpha tricks, no FrameHidden,
-  no UI-panel registration for the bag window. (Replaced the alpha-0 stand-in,
-  mirror mode and cursor anchors, 2026-11-10.) Item slots are
+  toggles show or hide the pad; circle hides it. (Replaced the alpha-0 stand-in,
+  mirror mode and cursor anchors, 2026-11-10; joined the focus cycle 2026-11-14.) Item slots are
   Blizzard's `ContainerFrameItemButtonTemplate` (bag from the parent's `GetID`,
   slot from the button's), the Bagnon way. Never write Lua fields on those
   buttons; keep our data in a side table. Attributes are written only out of

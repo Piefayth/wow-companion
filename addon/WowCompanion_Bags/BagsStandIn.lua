@@ -1,8 +1,9 @@
 -- Bags, the same in and out of combat: Blizzard's bag frame opens ours, by the same secure path in a fight
 -- or out of one. A secure handler of ours is a child of their combined bags, so
 -- whatever shows theirs (the bag radial, a vendor, the mailbox) shows it, and its
--- _onshow runs in the restricted environment: it shows our pad's handler (which
--- binds the pad and opens our window) and hides their frame at once. Their frame
+-- _onshow runs in the restricted environment: it opens ours through the pad's
+-- handler (or, when ours is open, gives it the pad back) and hides their frame
+-- at once. Their frame
 -- counts as protected while it holds our protected child, which is what lets the
 -- restricted code hide it in combat; hiding it there is secure, so the
 -- controller's focus manager lets it go cleanly. Nothing of theirs is written:
@@ -20,11 +21,10 @@ do
 		trigger:SetPoint("TOPLEFT")
 		trigger:SetFrameRef("pad", pad)
 		trigger:SetFrameRef("bags", blizz)
-		-- always opens: a vendor opening their bags while ours is up must not
+		-- never closes: a vendor opening their bags while ours is up must not
 		-- close ours (circle closes)
 		trigger:SetAttribute("_onshow", [[
-			local pad = self:GetFrameRef("pad")
-			if not pad:IsShown() then pad:Show() end
+			self:GetFrameRef("pad"):RunAttribute("open")
 			self:GetFrameRef("bags"):Hide(true)
 		]])
 		-- a vendor, mailbox or bank closing: Blizzard closes its bags then; ours

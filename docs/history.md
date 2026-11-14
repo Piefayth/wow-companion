@@ -732,3 +732,14 @@ every ring the poll asked the next bell at once, which the old channel needed to
 drain a burst one slot at a time; with one inbox a take reads every newer write,
 so the at-once ask only asked the same empty bell again inside the same busy
 moment. It went: the next ask waits for the poll's 0.1 s.
+
+## The bags joined the focus cycle (2026-11-14)
+
+Our bags took the pad whenever they were open and were never a UI panel, so
+the focus button and the triggers could not reach them: from the bags the
+focus button never returned to combat (the player). Out of a fight they are now
+a UI panel with no area, and the pad is held while the controller's focus is on
+them; in a fight they leave the cycle like every window of ours, and the focus
+button's keys switch the pad between them and combat (`WC.ShowPanel`'s
+`holds`: the window rejoins after the fight only if it holds the pad then).
+Blizzard's bag button opens ours, or gives an open one the pad back.

@@ -137,8 +137,10 @@ do
 	-- the restriction is not yet enforced, so the manager still takes the call.
 	-- A window that had the controller then gets it back when the fight ends; one
 	-- only open stays out of the cycle until it is opened again, since rejoining
-	-- takes the controller (FrameShown) and only Blizzard may give it back.
-	local panels = {} -- every window WC.ShowPanel opened
+	-- takes the controller (FrameShown) and only Blizzard may give it back. A
+	-- window that takes the pad in a fight by its own secure means (the bags)
+	-- says instead whether it holds it as the fight ends.
+	local panels = {} -- every window WC.ShowPanel opened -> true, or its holds()
 	local stowed = {} -- frame -> its points and clamping, while stowed
 	local function owe(k, fn)
 		if not owed[k] then owedOrder[#owedOrder + 1] = k end
@@ -156,7 +158,8 @@ do
 	-- the window back in the controller's focus cycle, if it is open
 	local function rejoin(frame)
 		return function()
-			if frame:IsShown() and not stowed[frame] then
+			local holds = panels[frame]
+			if frame:IsShown() and not stowed[frame] and (holds == true or holds()) then
 				frame:Hide()
 				ShowUIPanel(frame)
 			end
@@ -173,16 +176,17 @@ do
 				if frame:IsShown() and not stowed[frame] then
 					local held = m.isUIFocused and m.focusedFrame == frame
 					pcall(m.FrameHidden, m, frame)
-					if held then owe(key("panel", frame), rejoin(frame)) end
+					if held or panels[frame] ~= true then owe(key("panel", frame), rejoin(frame)) end
 				end
 			end
 		end)
 	end
 	-- Show a window of ours as a UI panel, so the controller's focus cycle
 	-- reaches it. In a fight it is shown plainly (or brought back, if it was
-	-- closed in this fight) and joins the cycle when the fight ends.
-	function WC.ShowPanel(frame)
-		panels[frame] = true
+	-- closed in this fight) and joins the cycle when the fight ends; with
+	-- holds, only if holds() then.
+	function WC.ShowPanel(frame, holds)
+		panels[frame] = holds or true
 		if stowed[frame] then return unstow(frame) end
 		local name = frame:GetName()
 		local panel = name and UIPanelWindows and UIPanelWindows[name]

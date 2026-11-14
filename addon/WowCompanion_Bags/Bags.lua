@@ -17,10 +17,11 @@ do
 -- The pad: a separate, invisible secure handler (WCBagsPad, BagsInput.lua) owns
 -- the bindings. Its secure snippets bind the d-pad to moving, square to the
 -- focused slot's right click (use), cross to its left click (pick up / put
--- down), so they work in combat. It is shown by our secure toggle (the Bags macro
--- and the bag keys) in combat or out, and from plain code out of combat. When
--- Blizzard's bag radial opens bags in combat, BagsStandIn.lua lays ours over
--- Blizzard's own (focused by the game's controller manager) instead.
+-- down), so they work in combat. Out of a fight the window is a UI panel and the
+-- pad follows the controller's focus on it; in a fight the pad holds by itself.
+-- It is shown by our secure toggle (the Bags macro and the bag keys) and by
+-- Blizzard's bag frame (BagsStandIn.lua), in combat or out, and from plain code
+-- out of combat.
 local COLS, SIZE, GAP = 8, 37, 5
 local MAXBAG = 4
 local EDGE, TITLE_H, LEGEND_H, GAP_V = 18, 20, 24, 8
@@ -42,9 +43,12 @@ local function build()
 		edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 },
 	})
 	f:Hide()
-	-- one way in and out of combat: the window is never a UI panel
-	-- of the controller's manager; the pad's secure handler (BagsInput.lua) takes
-	-- the pad whenever it is open, fight or not
+	-- a UI panel, so the controller's focus cycle reaches it (WC.ShowPanel), with
+	-- no area: ShowUIPanel then only shows it, where it is; the manager is told
+	-- of its hide however it closes
+	WC.MarkFocusable(f)
+	if UIPanelWindows then UIPanelWindows["WCBags"] = {} end
+	f:SetScript("OnHide", function(self) WC.FrameHidden(self) end)
 
 	local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	title:SetPoint("LEFT", f, "TOPLEFT", EDGE, -(EDGE + TITLE_H / 2))
@@ -349,13 +353,19 @@ local function build()
 		local b = buttons[bag * 100 + slot]
 		if b and meta[b].index then self:Focus(meta[b].index) end
 	end
-	function f:Closed() hl:Hide() tip:Hide() end
 
 	-- the pad's handler, its buttons and the triangle menu (BagsInput, BagsMenu)
 	local pad, holdBindings = WC.BagsInput.Build(f)
 	f.pad = pad
-	local menu = WC.BagsMenu.Build(f, holdBindings, MAXBAG)
-	f:HookScript("OnHide", function()
+	local menu = WC.BagsMenu.Build(f, MAXBAG)
+	-- the pad taken or let go: the menu's bindings went with it
+	function f:Held(on)
+		menu:Hide()
+		holdBindings()
+		if not on then hl:Hide() tip:Hide() end
+	end
+	-- closed (the pad's handler hid): what the window showed is done with
+	function f:Closed()
 		-- seen now: the New section empties, as Blizzard's bags clear it on close
 		if C_NewItems and C_NewItems.RemoveNewItem then
 			for _, b in ipairs(f.order) do
@@ -367,9 +377,7 @@ local function build()
 		if CursorHasItem() then ClearCursor() end
 		hl:Hide()
 		tip:Hide()
-		-- the pad's handler follows the window, when it may
-		if not InCombatLockdown() and pad:IsShown() then pad:Hide() end
-	end)
+	end
 
 	-- Opening and closing from plain code: through the pad's handler, which is
 	-- protected, so only out of combat; in a fight the secure toggle, circle and
@@ -385,6 +393,7 @@ local function build()
 	-- the mouse's close button (the pad's is circle)
 	local x = CreateFrame("Button", "WCBagsCloseX", f, "UIPanelCloseButton")
 	x:SetPoint("TOPRIGHT", -6, -6)
+	WC.MarkIgnored(x)
 	x:SetScript("OnClick", function()
 		if CursorHasItem() then ClearCursor() f:Paint() return end
 		f:Shut()
@@ -401,17 +410,9 @@ local function build()
 	f:RegisterEvent("BAG_UPDATE_DELAYED")
 	f:RegisterEvent("ITEM_LOCK_CHANGED")
 	f:RegisterEvent("BAG_UPDATE_COOLDOWN")
-	f:RegisterEvent("PLAYER_REGEN_DISABLED")
 	f:RegisterEvent("PLAYER_REGEN_ENABLED")
 	pcall(f.RegisterEvent, f, "CURSOR_CHANGED")
 	f:SetScript("OnEvent", function(self, event)
-		if event == "PLAYER_REGEN_DISABLED" then
-			-- the last moment to put the pad's own bindings back (the menu's would
-			-- be stuck all fight)
-			menu:Hide()
-			if pad:IsShown() then ClearOverrideBindings(pad) pad:Execute(pad:GetAttribute("_onshow")) end
-			return
-		end
 		if event == "BAG_UPDATE_DELAYED" or event == "PLAYER_REGEN_ENABLED" then
 			local n = 0
 			for bag = 0, MAXBAG do n = n + (C_Container.GetContainerNumSlots(bag) or 0) end

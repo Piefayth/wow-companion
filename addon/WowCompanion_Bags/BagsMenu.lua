@@ -1,9 +1,9 @@
 -- Bags: the triangle menu (put on a bar, split, destroy, sort). Loads before
--- Bags.lua, which calls WC.BagsMenu.Build(f, holdBindings, MAXBAG) and keeps the menu it returns.
+-- Bags.lua, which calls WC.BagsMenu.Build(f, MAXBAG) and keeps the menu it returns.
 
 WC.BagsMenu = WC.BagsMenu or {}
 
-function WC.BagsMenu.Build(f, holdBindings, MAXBAG)
+function WC.BagsMenu.Build(f, MAXBAG)
 	-- triangle: more actions, out of combat (Blizzard's list has bind to the
 	-- bar and split the stack; sorting is added here)
 	-- drawn as Blizzard's context menu (WowCompanion_Style, in the addon)
@@ -97,10 +97,8 @@ function WC.BagsMenu.Build(f, holdBindings, MAXBAG)
 	end
 	closeMenu = function()
 		menu:Hide()
-		if not InCombatLockdown() and f:IsShown() then
-			ClearOverrideBindings(f.pad)
-			f.pad:Execute(f.pad:GetAttribute("_onshow"))
-			holdBindings()
+		if not InCombatLockdown() and f.pad:IsShown() and f.pad:GetAttribute("held") then
+			f.pad:Execute(f.pad:GetAttribute("grab"))
 		end
 	end
 	local function paintMenu()
