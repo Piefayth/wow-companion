@@ -1,27 +1,13 @@
 -- WowCompanion_Bags: files share nothing local; they talk through globals (WC, WCBags).
 
 do
--- Our bag window, built the way Bagnon, AdiBags and BetterBags build theirs,
--- usable all the time, in combat too.
---
--- The window holds nothing secure, so it is not protected: anything may show
--- or hide it, in combat too. Each slot is Blizzard's own ContainerFrameItemButton
--- Template under a per-bag holder frame whose ID is the bag (SetID) and whose
--- own ID is the slot: Blizzard's click code reads both through GetID, a C call,
--- so using, equipping, selling and picking up run as Blizzard's trusted code
--- (C_Container.UseContainerItem / PickupContainerItem are AllowedWhenUntainted).
--- We never write a Lua field on a slot button (Blizzard's code would read it and
--- the click would run tainted): our own data about a slot lives in `meta`, and we
+-- What the bags look like: sections, verdicts, Blizzard's bag icons. Blizzard's
+-- own bag frame is the window (BagsSkin.lua): it is focused, walked and pressed,
+-- and wears this one. Nothing here is secure, so it shows and hides in combat.
+-- Each slot is drawn on Blizzard's ContainerFrameItemButtonTemplate under a
+-- per-bag holder whose ID is the bag (the template reads bag and slot through
+-- GetID); our data about a slot lives in `meta`, never on the button, and we
 -- draw through the template's regions (icon, Count, IconBorder, Cooldown).
---
--- The pad: a separate, invisible secure handler (WCBagsPad, BagsInput.lua) owns
--- the bindings. Its secure snippets bind the d-pad to moving, square to the
--- focused slot's right click (use), cross to its left click (pick up / put
--- down), so they work in combat. Out of a fight the window is a UI panel and the
--- pad follows the controller's focus on it; in a fight the pad holds by itself.
--- It is shown by our secure toggle (the Bags macro and the bag keys) and by
--- Blizzard's bag frame (BagsStandIn.lua), in combat or out, and from plain code
--- out of combat.
 local COLS, SIZE, GAP = 8, 37, 5
 -- Blizzard's bags, slot for slot: the bags they show (the reagent bag, the
 -- keyring when shown) and every slot they draw, the backpack's locked ones too
@@ -46,12 +32,6 @@ local function build()
 		edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 },
 	})
 	f:Hide()
-	-- a UI panel, so the controller's focus cycle reaches it (WC.ShowPanel), with
-	-- no area: ShowUIPanel then only shows it, where it is; the manager is told
-	-- of its hide however it closes
-	WC.MarkFocusable(f)
-	if UIPanelWindows then UIPanelWindows["WCBags"] = {} end
-	f:SetScript("OnHide", function(self) WC.FrameHidden(self) end)
 
 	local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	title:SetPoint("LEFT", f, "TOPLEFT", EDGE, -(EDGE + TITLE_H / 2))
@@ -78,7 +58,6 @@ local function build()
 		end
 	end
 
-	local tip = CreateFrame("GameTooltip", "WCBagsTip", UIParent, "GameTooltipTemplate")
 	local hl = CreateFrame("Frame", nil, f)
 	hl:SetSize(SIZE + 8, SIZE + 8)
 	hl:SetFrameLevel(f:GetFrameLevel() + 20)
@@ -115,12 +94,9 @@ local function build()
 		b:SetSize(SIZE, SIZE)
 		b:Show()
 		meta[b] = { bag = bag, slot = slot }
-		-- our own highlight and tooltip follow the pad; the game's controller
-		-- cursor must not also land here (two markers and two
-		-- tooltips). Blizzard's template is a focusable item button.
+		-- the cursor walks Blizzard's buttons, never these (the template is a
+		-- focusable item button)
 		WC.MarkIgnored(b)
-		-- ours on top of theirs: focus follows the mouse too, without writing to b
-		b:HookScript("OnEnter", function(self) f:Focus(meta[self].index) end)
 		buttons[key] = b
 		return b
 	end
@@ -184,7 +160,7 @@ local function build()
 
 	function f:Carry()
 		local kind, id = GetCursorInfo()
-		local b = self.order[self.focusIndex or 1]
+		local b = self.focused
 		if kind == "item" and id and b then
 			carry.icon:SetTexture(C_Item.GetItemIconByID(id))
 			carry:ClearAllPoints()
@@ -244,15 +220,13 @@ local function build()
 		for _, c in pairs(icons) do if c:IsShown() then paintIcon(c) end end
 		self.title:SetText(("Bags   |cffffffff%d free of %d|r%s"):format(free, total, held))
 		self:Carry()
-		if self.focusIndex and self.order[self.focusIndex] and tip:IsShown() then self:Focus(self.focusIndex) end
 	end
 
 	-- Which slots exist and where they sit. The view (Sections by default, or
-	-- storage order) draws items apart from where they are stored. Out of combat
-	-- only: in a fight the order stays (the pad's grid is attributes of a
-	-- protected frame) and is owed until the fight ends.
-	-- the view (sections or storage), saved in WowCompanionBagsDB, read live
-	-- (the saved table loads after this file runs)
+	-- storage order) draws items apart from where they are stored. In a fight
+	-- the order stays, so no slot moves under the cursor, and is owed until the
+	-- fight ends. The view is saved in WowCompanionBagsDB, read live (the saved
+	-- table loads after this file runs)
 	function f:View() return WowCompanionBagsDB and WowCompanionBagsDB.view or "sections" end
 	local headers = {}
 	local function header(n)
@@ -267,8 +241,6 @@ local function build()
 	local HDR = 16
 	function f:Layout()
 		if InCombatLockdown() and #self.order > 0 then self.layoutOwed = true self:Paint() return end
-		local keep = self.order[self.focusIndex or 0]
-		keep = keep and meta[keep]
 		for _, b in pairs(buttons) do b:Hide() end
 		for _, h in pairs(headers) do h:Hide() end
 		for _, c in pairs(icons) do c:Hide() end
@@ -288,7 +260,6 @@ local function build()
 			end
 		end
 		local sections = self:View() == "sections" and WC.BagsEval
-		local groups = {}
 		if sections then
 			local rank = {}
 			for k, key in ipairs(WC.BagsEval.ORDER) do rank[key] = k end
@@ -385,11 +356,9 @@ local function build()
 			y = y + SIZE + GAP
 		end
 		y = y - GAP
-		self.cells = {}
 		self.addCell = self.addCell or CreateFrame("Frame", nil, self)
 		self.addCell:SetSize(SIZE, SIZE)
 		self.addCell:Hide()
-		local i = 0
 		for _, r in ipairs(rows) do
 			for c, e in ipairs(r) do
 				local frame = e.add and self.addCell or e.icon or e.b
@@ -398,14 +367,8 @@ local function build()
 				frame:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX + (c - 1) * (SIZE + GAP), -r.y)
 				frame:Show()
 				if e.b then
-					i = i + 1
-					e.index = i
-					self.order[i] = e.b
+					self.order[#self.order + 1] = e.b
 					e.b:SetParent(holder(e.bag))
-					self.cells[i] = { col = c - 1, row = r.y }
-					if not sections and (i == 1 or self.order[i - 1] and meta[self.order[i - 1]].bag ~= e.bag) then
-						groups[#groups + 1] = i
-					end
 				end
 			end
 		end
@@ -420,33 +383,8 @@ local function build()
 			h:SetWordWrap(false)
 			h:SetText(WC.BagsEval.TITLE[t.e.label] or t.e.label)
 			h:Show()
-			-- the shoulders jump to a section's first slot (the add cell has none)
-			local first = t.e.index
-			if not first then
-				for ri = t.ri, #rows do for c, e in ipairs(rows[ri]) do
-					if e.index and (ri > t.ri or c > t.c) then first = e.index break end
-				end if first then break end end
-			end
-			if first and groups[#groups] ~= first then groups[#groups + 1] = first end
 		end
-		table.sort(groups)
-		local g = 0
-		for k, b in ipairs(self.order) do
-			while groups[g + 1] and groups[g + 1] <= k do g = g + 1 end
-			meta[b].index = k
-			meta[b].group = math.max(g, 1)
-		end
-		self.groups = groups
 		self:SetSize(EDGE * 2 + math.max(gridW, self.legendW or 0), y + GAP_V + LEGEND_H + EDGE)
-		if WC.BagsInput and WC.BagsInput.Publish then WC.BagsInput.Publish(self) end
-		-- focus stays on the same slot wherever it moved
-		if keep then
-			local b = buttons[keep.bag * 100 + keep.slot]
-			if b and meta[b].index then
-				self.focusIndex = meta[b].index
-				if self.pad and not InCombatLockdown() then self.pad:SetAttribute("focus", self.focusIndex) end
-			end
-		end
 		self:Paint()
 	end
 	function f:SetView(view)
@@ -454,150 +392,51 @@ local function build()
 		self:Layout()
 	end
 
-	-- the highlight and our tooltip on slot i (no tooltip of ours while
-	-- self.theirTooltip: BagsSkin moves Blizzard's onto our slot)
-	function f:Focus(i)
-		local b = self.order[i]
-		if not b then return end
-		self.focusIndex = i
+	-- the highlight, on the frame Blizzard's cursor is anchored to (none: hidden);
+	-- on a slot, the carried item is drawn on that slot
+	function f:Mark(frame, bag, slot)
+		self.focused = bag and buttons[bag * 100 + slot]
 		hl:ClearAllPoints()
-		hl:SetPoint("CENTER", b, "CENTER")
-		hl:Show()
-		local m = meta[b]
-		tip:SetOwner(b, "ANCHOR_NONE")
-		tip:ClearAllPoints()
-		tip:SetPoint("TOPRIGHT", b, "TOPLEFT", -6, 0)
-		local id = C_Container.GetContainerItemID(m.bag, m.slot)
-		if id and not self.theirTooltip then
-			tip:SetBagItem(m.bag, m.slot)
-			-- price addons add to GameTooltip only; ours asks the price capability
-			-- (Engine.lua: an auction addon's provider, else the game's vendor price)
-			local price = WC.Use and WC.Use("price")
-			if price then
-				local info = C_Container.GetContainerItemInfo(m.bag, m.slot)
-				local n = info and info.stackCount or 1
-				local vendor = price.vendor(id)
-				local function money(c) return GetMoneyString and GetMoneyString(c, true) or tostring(c) end
-				if vendor and vendor > 0 then
-					tip:AddDoubleLine("Vendor" .. (n > 1 and (" x" .. n) or ""), money(vendor * n), 1, 0.82, 0, 1, 1, 1)
-				end
-				if WC.Has("price", "auction") then
-					local ah = price.auction(id)
-					if ah and ah > 0 then
-						tip:AddDoubleLine("Auction" .. (n > 1 and (" x" .. n) or ""), money(ah * n), 1, 0.82, 0, 1, 1, 1)
-					else
-						tip:AddLine("Auction: not seen in your scans", 0.6, 0.6, 0.6)
-					end
-				end
-			end
-			tip:Show()
-		else
-			tip:Hide()
-		end
+		if frame then hl:SetPoint("CENTER", frame, "CENTER") hl:Show() else hl:Hide() end
 		self:Carry()
 	end
-	-- the highlight alone on a cell that is not a slot (a bag icon, the add cell)
-	-- the skin's highlight, on the frame Blizzard's cursor is anchored to (none:
-	-- hidden); a slot's bag and slot keep focusIndex for the carried icon
-	function f:Mark(frame, bag, slot)
-		local b = bag and buttons[bag * 100 + slot]
-		self.focusIndex = b and meta[b].index or nil
-		tip:Hide()
-		hl:ClearAllPoints()
-		if not frame then hl:Hide() return end
-		hl:SetPoint("CENTER", frame, "CENTER")
-		hl:Show()
-	end
-
-	-- the pad's handler, its buttons and the triangle menu (BagsInput, BagsMenu)
-	local pad, holdBindings = WC.BagsInput.Build(f)
-	f.pad = pad
-	local menu = WC.BagsMenu.Build(f)
-	-- the pad taken or let go: the menu's bindings went with it
-	function f:Held(on)
-		menu:Hide()
-		holdBindings()
-		if not on then hl:Hide() tip:Hide() end
-	end
-	-- closed (the pad's handler hid): what the window showed is done with
-	function f:Closed()
-		-- seen now: the New section empties, as Blizzard's bags clear it on close
-		if C_NewItems and C_NewItems.RemoveNewItem then
-			for _, b in ipairs(f.order) do
-				local m = meta[b]
-				if C_NewItems.IsNewItem(m.bag, m.slot) then C_NewItems.RemoveNewItem(m.bag, m.slot) end
-			end
-		end
-		menu:Hide()
-		if CursorHasItem() then ClearCursor() end
-		hl:Hide()
-		tip:Hide()
-	end
-
-	-- Opening and closing from plain code: through the pad's handler, which is
-	-- protected, so only out of combat; in a fight the secure toggle, circle and
-	-- Blizzard's bag frame (BagsStandIn.lua) open and close it.
-	function f:Open()
-		if InCombatLockdown() then return end
-		if not pad:IsShown() then pad:Show() end
-	end
-	function f:Shut()
-		if InCombatLockdown() then return end
-		if pad:IsShown() then pad:Hide() end
-	end
-	-- the mouse's close button (the pad's is circle)
-	local x = CreateFrame("Button", "WCBagsCloseX", f, "UIPanelCloseButton")
-	x:SetPoint("TOPRIGHT", -6, -6)
-	WC.MarkIgnored(x)
-	x:SetScript("OnClick", function()
-		if CursorHasItem() then ClearCursor() f:Paint() return end
-		f:Shut()
-	end)
-
-	-- the item viewers and the sort
-	local sort = CreateFrame("Button", "WCBagsSort", UIParent)
-	sort:RegisterForClicks("AnyDown")
-	sort:SetScript("OnClick", function()
-		if InCombatLockdown() then return end
-		C_Container.SortBags()
-	end)
 
 	f:RegisterEvent("BAG_UPDATE_DELAYED")
 	f:RegisterEvent("ITEM_LOCK_CHANGED")
 	f:RegisterEvent("BAG_UPDATE_COOLDOWN")
 	f:RegisterEvent("PLAYER_REGEN_ENABLED")
 	pcall(f.RegisterEvent, f, "CURSOR_CHANGED")
+	f:RegisterEvent("MERCHANT_SHOW")
+	f:RegisterEvent("MERCHANT_CLOSED")
+	-- square sells while a vendor is open, so the legend says so
+	local function sellPrompt(selling)
+		local pr = f.usePrompt
+		if not (pr and pr.SetPromptText) then return end
+		pcall(pr.SetPromptText, pr, selling and (SELL or "Sell") or (USE or "Use"))
+		if pr.RefreshInputPromptSize then pcall(pr.RefreshInputPromptSize, pr) end
+	end
 	f:SetScript("OnEvent", function(self, event)
 		if event == "BAG_UPDATE_DELAYED" or event == "PLAYER_REGEN_ENABLED" then
 			local n = 0
 			for bag = STARTING_BAG_INDEX, ENDING_BAG_INDEX do n = n + bagSlots(bag) end
 			if (n ~= #self.order or self.layoutOwed
-				or (self:View() == "sections" and not InCombatLockdown())) then self:Layout() return end
-			if event == "PLAYER_REGEN_ENABLED" and self.layoutOwed and WC.BagsInput.Publish then WC.BagsInput.Publish(self) end
+				or (self:View() == "sections" and not InCombatLockdown())) then self.layoutOwed = nil self:Layout() return end
 		end
-		if event == "CURSOR_CHANGED" then holdBindings() if self:IsShown() then self:Paint() end return end
+		if event == "MERCHANT_SHOW" or event == "MERCHANT_CLOSED" then sellPrompt(event == "MERCHANT_SHOW") return end
 		if self:IsShown() or event == "BAG_UPDATE_DELAYED" then self:Paint() end
 	end)
 	f:HookScript("OnShow", function(self) self:Paint() end)
 
-	-- the keyboard's own bag keys open ours through the secure toggle
-	local keys = CreateFrame("Frame", "WCBagsKeys")
-	for _, cmd in ipairs({ "TOGGLEBACKPACK", "OPENALLBAGS" }) do
-		for _, key in ipairs({ GetBindingKey(cmd) }) do
-			SetOverrideBindingClick(keys, false, key, "WCBagsKey")
-		end
-	end
-
 	f:Layout()
 	f.ready = true
-	print(("bags: ready, %d slots"):format(#f.order))
+	WC.BagsSkin() -- Blizzard's frame wears it (BagsSkin.lua)
 end
 
 if InCombatLockdown() then
 	local w = CreateFrame("Frame")
 	w:RegisterEvent("PLAYER_REGEN_ENABLED")
 	w:SetScript("OnEvent", function(self) self:UnregisterAllEvents() build() end)
-	print("bags: will build when this fight ends")
+	WC.Say("bags: will build when this fight ends")
 else
 	build()
 end

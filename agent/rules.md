@@ -156,12 +156,11 @@ Other game facts already worked out:
   They can also do it themselves: triangle on a conversation in the list.
 - Sorting bags when the player asks: a `lua` step calling `C_Container.SortBags()`
   (not protected; out of combat). Only on their word, never on your own.
-- Our bag window: `WCBags` (addon/WowCompanion_Bags/), opened by the `Bags`
-  macro (`/click WCBagsToggle`) and the keyboard bag keys, in combat too. The pad's
-  own bag opener (Blizzard's radial) opens Blizzard's bags, which ours stands in for.
-  Buttons follow Blizzard's controller bags: square use, cross pick up and put down,
-  triangle more (out of combat: bar, split, equip a spare bag, destroy, sort),
-  circle back or close.
+- The bags: Blizzard's controller bags (opened their usual ways: the pad's bag
+  radial, the bag keys, a vendor), wearing our look (`WCBags`, sections and
+  verdicts; addon/WowCompanion_Bags/). The buttons and triangle menus are
+  Blizzard's own: on an item use, pick up, bar, split, destroy, share; on a bag
+  icon its filters, cleanup (sort) and unequip; square on a bag icon collapses it.
   Linking an item: `C_Container.GetContainerItemLink(bag, slot)` (find it by name in
   the bags), then a `send` step with the slash line; for a whisper resolve
   the name first.

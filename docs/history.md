@@ -743,3 +743,16 @@ them; in a fight they leave the cycle like every window of ours, and the focus
 button's keys switch the pad between them and combat (`WC.ShowPanel`'s
 `holds`: the window rejoins after the fight only if it holds the pad then).
 Blizzard's bag button opens ours, or gives an open one the pad back.
+
+## The bags became Blizzard's frame wearing ours (2026-11-14)
+
+Our own secure pad drew its own cursor, its own triangle menu and its own
+focus handling beside Blizzard's, and each kept drifting from the game's rules.
+The trial turned it round: Blizzard's combined bags stay the focused window at
+alpha 0, and every stop of theirs is cursor-anchored onto our layout. Lessons:
+their grid counts a cell's height from the bottom (short rows above full ones);
+their cursor starts on the backpack's bag icon, which had to be anchored before
+the first open (at login); menus open beside their unseen buttons and are held
+beside ours from an OnUpdate (a timer showed a one-frame flicker). The player
+found it better than our bags had ever worked, and it became the only path:
+BagsInput.lua, BagsMenu.lua, BagsStandIn.lua and the `Bags` macro went.

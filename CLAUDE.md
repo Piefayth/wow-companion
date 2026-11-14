@@ -141,9 +141,9 @@ extras a player may use, never required (the player, 2026-11-11).
     export, bag contents too), `FocusLog.lua`, `ItemView.lua`, `LinkCatcher.lua`
     (links caught for the agents), `Modules.lua` (generated). Saved:
     `WowCompanionAgentDB`.
-  - Extras, standalone (need Core only): `WowCompanion_Bags` (the bag window:
-    `BagsInput.lua` the secure pad, `BagsMenu.lua`, `Bags.lua`, `BagsStandIn.lua`
-    over Blizzard's, `BagsEvaluate.lua`, `BagSwap.lua`, `MakeRoom.lua`),
+  - Extras, standalone (need Core only): `WowCompanion_Bags` (the bags:
+    `BagsSkin.lua` Blizzard's frame wearing ours, `Bags.lua` what it looks like,
+    `BagsEvaluate.lua`, `BagSwap.lua`, `MakeRoom.lua`),
     `WowCompanion_Interact` (combat loot, an addon keybinding), `WowCompanion_Fonts`
     (live interface fonts, `Fonts/`), `WowCompanion_Wheel` (the wheels: the secure buttons on Core's ring),
     `WowCompanion_Pins` (minimap and map pins; the builtin pins and nav),
@@ -354,8 +354,8 @@ goes to a detached process.
   dispatch the manager still takes our calls) each open window leaves the
   controller's focus and stays to be read; one closed in a fight is stowed off
   screen and hidden when the fight ends.
-  **Standing in for a Blizzard window works** out of combat (the first bag
-  window, 2026-11-10; bags now use the secure child below): never close or set
+  **Standing in for a Blizzard window works** out of combat (the bags,
+  below): never close or set
   anything of theirs. React with
   `EventRegistry:RegisterCallback` (dispatched through secureexecuterange) and
   `hooksecurefunc` post-hooks (the caller stays secure); hide theirs with an alpha
@@ -363,29 +363,23 @@ goes to a detached process.
   drop it from the focus cycle with `GamepadMode.FrameControlsManager:FrameHidden`,
   the one manager call Blizzard wraps for insecure callers. Calling their
   `CloseAllBags` from our code, by contrast, tainted the next focus switch.
-- **A window usable in combat** (the bags, 2026-11-10; verified by the player).
-  A frame holding a secure button is protected, and a protected frame cannot
-  Show/Hide in a fight. So keep the window itself **unprotected** and put
-  bindings on a separate invisible `SecureHandlerShowHideTemplate` (`WCBagsPad`):
-  its shown state is open (`CallMethod` shows or hides the window), and its
-  snippets grab and release the pad with `SetBindingClick` by button name.
-  Out of a fight the window is a UI panel with no area (`ShowUIPanel` then only
-  shows it, a frame after the snippet: from `CallMethod` it tainted focus), and
-  the pad is held while the controller's focus is on it, so the triggers and the
-  focus button are the game's own. In a fight it is out of the cycle and the
-  focus button's keys (`TOGGLEUIFOCUS`, read as the fight starts) release and
-  grab. **Blizzard's bags open ours by a secure path, the same in a fight and
-  out**: a `SecureHandlerShowHide` of ours is a child of
-  `ContainerFrameCombinedBags`, so whatever shows theirs (radial, vendor, mail)
-  runs its `_onshow`, which opens ours (or gives it the pad back) and hides their
-  frame (`handle:Hide(true)`). Their frame counts as protected while it holds our
-  protected child, which is what lets restricted code hide it in combat. Our
-  toggles show or hide the pad; circle hides it. (Replaced the alpha-0 stand-in,
-  mirror mode and cursor anchors, 2026-11-10; joined the focus cycle 2026-11-14.) Item slots are
+- **The bags are Blizzard's frame wearing ours** (`BagsSkin.lua`, 2026-11-14;
+  the player: better than ours ever worked). `ContainerFrameCombinedBags` stays
+  the window, focused, walked and pressed natively, in a fight too; it is kept
+  at alpha 0 by an animation of ours, and each of its stops (item buttons, the
+  `GamepadBagBar` bag icons, the add-slots button) gets Blizzard's own
+  `SmartNavigation_SetCustomCursorAnchorPointForFrame` onto a proxy of ours laid
+  on our cell, so the pointer and the d-pad follow our layout. Blizzard's grid
+  (`GetButtonInDirectionGrid`) counts a cell's height from the bottom, so short
+  rows go above full ones. The cursor lands on the backpack icon as the bags
+  open, before any open callback: the icons are anchored at login. Menus opened
+  from their stops are held beside our cell (`MenuProxy.OnShow`, by
+  `OpenContextMenu`'s quadrant rule, from an OnUpdate so nothing flickers).
+  Our window is display only, unprotected, shown with theirs. Its slots are
   Blizzard's `ContainerFrameItemButtonTemplate` (bag from the parent's `GetID`,
-  slot from the button's), the Bagnon way. Never write Lua fields on those
-  buttons; keep our data in a side table. Attributes are written only out of
-  combat (owe the layout until the fight ends).
+  slot from the button's), the Bagnon way: never write Lua fields on those
+  buttons; keep our data in a side table. (Replaced our own secure pad,
+  triangle menu and stand-in, `WCBagsPad`, 2026-11-14.)
   **SmartNavigation's `SecureHelper` wraps `FrameHidden` and `MarkFrame*`**: an
   addon calling one in a fight gets "Interface action failed" with no
   `ADDON_ACTION_BLOCKED`. Use `WC.FrameHidden(frame)`, which waits for the fight's

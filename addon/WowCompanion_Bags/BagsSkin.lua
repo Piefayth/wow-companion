@@ -1,4 +1,4 @@
--- Bags trial (2026-11-14): Blizzard's bag frame is the one window, in a fight
+-- The bags (2026-11-14): Blizzard's bag frame is the one window, in a fight
 -- and out; ours is only what it looks like. The game's own focus cycle focuses
 -- their frame (natively, in combat too), the cursor walks their real item
 -- buttons, and each of those is anchored (Blizzard's own setter,
@@ -19,8 +19,7 @@
 -- so only out of one: a button first made in a fight (the first open since a
 -- reload) has none, and that fight shows their bags as they are.
 --
--- On while WowCompanionBagsDB.skin is true (a reload applies it), read at our
--- load, when the saved table is there.
+-- Run by Bags.lua once our window is built (WC.BagsSkin).
 
 local function start()
 local blizz = ContainerFrameCombinedBags
@@ -163,7 +162,6 @@ end, "WCBagsSkin")
 EventRegistry:RegisterCallback("ContainerFrame.CloseBag", function() C_Timer.After(0, closed) end, "WCBagsSkin")
 -- one tooltip, theirs (with what addons add to it), moved onto our slot each
 -- time they place it
-f.theirTooltip = true
 hooksecurefunc("ContainerFrameItemButton_CalculateItemTooltipAnchors", function(b, tooltip)
 	if not (f:IsShown() and anchored[b] and b.GetBagID) then return end
 	local ours = f:SlotFor(b:GetBagID(), b:GetID())
@@ -247,22 +245,18 @@ end
 hooksecurefunc(f, "Layout", function() if blizz:IsShown() then lay() end end)
 -- their bag icons exist from the start, and the cursor lands on the backpack's
 -- as the bags open, before our open callback runs: anchored and placed now
-local early = CreateFrame("Frame")
-early:RegisterEvent("PLAYER_ENTERING_WORLD")
-early:SetScript("OnEvent", function()
+local function icons()
 	if InCombatLockdown() or not (InputUtil and InputUtil.IsGamepadUIEnabled()) then return end
-	early:UnregisterAllEvents()
 	anchorNew()
 	lay()
-end)
-hide:Play()
-WC.Say("bags: trial on, Blizzard's frame wears ours")
+	return true
 end
-
-local loader = CreateFrame("Frame")
-loader:RegisterEvent("ADDON_LOADED")
-loader:SetScript("OnEvent", function(self, _, name)
-	if name ~= "WowCompanion_Bags" then return end
-	self:UnregisterAllEvents()
-	if WowCompanionBagsDB.skin then start() end
-end)
+if not (IsLoggedIn() and icons()) then
+	local early = CreateFrame("Frame")
+	early:RegisterEvent("PLAYER_ENTERING_WORLD")
+	early:RegisterEvent("PLAYER_REGEN_ENABLED")
+	early:SetScript("OnEvent", function(self) if icons() then self:UnregisterAllEvents() end end)
+end
+hide:Play()
+end
+WC.BagsSkin = start
