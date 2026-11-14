@@ -3,7 +3,8 @@
 -- their frame (natively, in combat too), the cursor walks their real item
 -- buttons, and each of those is anchored (Blizzard's own setter,
 -- SmartNavigation_SetCustomCursorAnchorPointForFrame) to a proxy frame of ours
--- laid on our slot for the bag and slot it holds: SmartNavigation measures a
+-- laid on our slot for the bag and slot it holds (their other stops: below).
+-- SmartNavigation measures a
 -- button where its anchor is (GetButtonPositionInfo), so the d-pad walks our
 -- layout and cross and square are their buttons. Their frame is kept at alpha 0
 -- (an animation of ours; no property of theirs is set). Ours opens and closes
@@ -37,45 +38,91 @@ local function alphaGroup(to)
 end
 local hide, show = alphaGroup(0), alphaGroup(1)
 
-local proxies = {} -- their button -> our proxy frame
-local function eachButton(fn)
-	local pool = blizz.itemButtonPool
-	if not pool then return end
-	for b in pool:EnumerateActive() do fn(b) end
+-- Every stop the cursor can land on in their frame (Blizzard's own test,
+-- SmartNavigation_CanFocusFrame and not ignored) is anchored to something of
+-- ours, or skipped: nothing of theirs is reachable unseen. What is there
+-- varies (the locked backpack slots and their add-slots button only on an
+-- account without an authenticator, the keyring with its setting, currency
+-- buttons when watched), so the stops are walked on every open.
+local anchored = {} -- their stop -> the frame of ours it is anchored to
+local skipped = {} -- their stops the cursor skips: ours has its own way
+local function anchor(b, p)
+	if pcall(SmartNavigation_SetCustomCursorAnchorPointForFrame, b, CreateAnchor("CENTER", p, "CENTER")) then
+		anchored[b] = p
+	end
+end
+local function skip(b, why)
+	if skipped[b] then return end
+	skipped[b] = why
+	WC.MarkIgnored(b)
+end
+-- their add-slots button, drawn on ours where they draw it: on the last
+-- locked slot (ContainerFrameExtendedSlotPack:LayoutAddSlots)
+local addSlots = CreateFrame("Frame", nil, f)
+addSlots:SetSize(28, 28)
+addSlots:SetFrameLevel(f:GetFrameLevel() + 20)
+addSlots:Hide()
+addSlots:CreateTexture(nil, "OVERLAY"):SetAtlas("Bags-icon-AddAuthenticator", true)
+addSlots:GetRegions():SetAllPoints()
+local function lastLocked()
+	local max, now = ContainerFrame_GetContainerNumSlots(Enum.BagIndex.Backpack)
+	if max > now then return f:SlotFor(Enum.BagIndex.Backpack, max) end
+end
+local pooled = {}
+local function eachStop(fn)
+	wipe(pooled)
+	if blizz.itemButtonPool then
+		for b in blizz.itemButtonPool:EnumerateActive() do pooled[b] = true fn(b, true) end
+	end
+	local function walk(frame)
+		for _, c in ipairs({ frame:GetChildren() }) do
+			if not pooled[c] and not skipped[c] and not SmartNavigation_IsFrameIgnored(c) then
+				if SmartNavigation_CanFocusFrame(c) then fn(c, false) end
+				walk(c)
+			end
+		end
+	end
+	walk(blizz)
 end
 local function anchorNew()
 	if InCombatLockdown() then return end
-	eachButton(function(b)
-		if proxies[b] then return end
-		local p = CreateFrame("Frame", nil, f)
-		p:SetSize(1, 1)
-		p:SetPoint("CENTER")
-		if pcall(SmartNavigation_SetCustomCursorAnchorPointForFrame, b, CreateAnchor("CENTER", p, "CENTER")) then
-			proxies[b] = p
+	eachStop(function(b, item)
+		if anchored[b] or skipped[b] then return end
+		if item then
+			local p = CreateFrame("Frame", nil, f)
+			p:SetSize(1, 1)
+			anchor(b, p)
+		elseif b == blizz.AddSlotsButton then
+			anchor(b, addSlots)
+		elseif GamepadBagBar and b:GetParent() == GamepadBagBar then
+			skip(b, "bag icon")
+		elseif b == blizz.CloseButton then
+			skip(b, "close (circle closes)")
+		elseif b == blizz.PortraitButton then
+			skip(b, "bag settings (our triangle menu has sort)")
+		else
+			skip(b, "unknown")
+			WC.Say(("bags: skipped a control of Blizzard's ours has no place for (%s)"):format(b:GetDebugName()))
 		end
 	end)
-	-- the bag icons Blizzard lays among the slots: the cursor skips them
-	if GamepadBagBar and GamepadBagBar.GetBagButton then
-		for bag = 0, NUM_TOTAL_BAG_FRAMES do
-			local ok, btn = pcall(GamepadBagBar.GetBagButton, GamepadBagBar, bag)
-			if ok and btn then WC.MarkIgnored(btn) end
-		end
-	end
 end
--- every shown button's proxy on our slot; false when one has none
+-- every shown stop on its place in ours; false when one has none
 local function lay()
 	local all = true
-	eachButton(function(b)
-		if not b:IsShown() then return end
-		local p = proxies[b]
-		local ours = f:SlotFor(b:GetBagID(), b:GetID())
-		if p and ours then
-			p:ClearAllPoints()
-			p:SetAllPoints(ours)
-		else
-			all = false
+	eachStop(function(b, item)
+		if not b:IsShown() or skipped[b] then return end
+		local p, ours = anchored[b], nil
+		if item then
+			ours = f:SlotFor(b:GetBagID(), b:GetID())
+		elseif p == addSlots then
+			ours = lastLocked()
 		end
+		if not (p and ours) then all = false return end
+		p:ClearAllPoints()
+		if item then p:SetAllPoints(ours) else p:SetPoint("LEFT", ours, "LEFT", -14, -2) end
 	end)
+	local a = blizz.AddSlotsButton
+	addSlots:SetShown(a and a:IsShown() and anchored[a] and lastLocked() and true or false)
 	return all
 end
 
