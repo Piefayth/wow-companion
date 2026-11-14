@@ -16,10 +16,10 @@
 -- so only out of one: a button first made in a fight (the first open since a
 -- reload) has none, and that fight shows their bags as they are.
 --
--- On while WowCompanionBagsDB.skin is true (a reload applies it).
+-- On while WowCompanionBagsDB.skin is true (a reload applies it), read at our
+-- load, when the saved table is there.
 
-if not (WowCompanionBagsDB and WowCompanionBagsDB.skin) then return end
-
+local function start()
 local blizz = ContainerFrameCombinedBags
 local f = WCBags
 if not (blizz and f and SmartNavigation_SetCustomCursorAnchorPointForFrame and CreateAnchor) then return end
@@ -104,3 +104,12 @@ end, "WCBagsSkin")
 hooksecurefunc(f, "Layout", function() if blizz:IsShown() then lay() end end)
 hide:Play()
 print("bags: trial on, Blizzard's frame wears ours")
+end
+
+local loader = CreateFrame("Frame")
+loader:RegisterEvent("ADDON_LOADED")
+loader:SetScript("OnEvent", function(self, _, name)
+	if name ~= "WowCompanion_Bags" then return end
+	self:UnregisterAllEvents()
+	if WowCompanionBagsDB.skin then start() end
+end)

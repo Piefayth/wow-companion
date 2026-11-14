@@ -39,11 +39,16 @@ do
 		w:SetScript("OnEvent", function() if WCBags then WCBags:Shut() end end)
 	end
 	end
-	setup()
-	-- the bag window builds after a fight when the UI loaded in one
+	-- at our load, once the saved table is there; else after a fight when the
+	-- UI loaded in one
 	local later = CreateFrame("Frame")
+	later:RegisterEvent("ADDON_LOADED")
 	later:RegisterEvent("PLAYER_REGEN_ENABLED")
-	later:SetScript("OnEvent", function(self) setup() if done then self:UnregisterAllEvents() end end)
+	later:SetScript("OnEvent", function(self, event, name)
+		if event == "ADDON_LOADED" and name ~= "WowCompanion_Bags" then return end
+		setup()
+		if done then self:UnregisterAllEvents() end
+	end)
 end
 
 -- square sells while a vendor is open, so the legend says so
