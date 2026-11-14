@@ -212,6 +212,29 @@ end
 hooksecurefunc("ContainerFrame_GenerateFrame", function(frame)
 	if frame == blizz then C_Timer.After(0, function() if blizz:IsShown() then f:Layout() anchorNew() lay() end end) end
 end)
+-- triangle's menu (their MoreActions, tagged MORE_CONTEXT_ACTIONS) opens beside
+-- its owner, their unseen button (MenuManagerMixin:OpenContextMenu): moved
+-- beside our cell for it, by the same rule, through the menu API addons are
+-- given (Menu.ModifyMenu, AddMenuAcquiredCallback). Their placing runs right
+-- after the acquired callback, so ours waits for the next frame.
+if Menu and Menu.ModifyMenu and FrameUtil and FrameUtil.GetScreenQuadrant then
+	Menu.ModifyMenu("MORE_CONTEXT_ACTIONS", function(owner, root)
+		local ours = owner and anchored[owner]
+		if not (ours and f:IsShown()) then return end
+		root:AddMenuAcquiredCallback(function(menu)
+			C_Timer.After(0, function()
+				if not menu:IsShown() then return end
+				local q = FrameUtil.GetScreenQuadrant(ours)
+				local Q = FrameUtilQuadrantEnum
+				menu:ClearAllPoints()
+				if q == Q.BottomRight then menu:SetPoint("BOTTOMRIGHT", ours, "BOTTOMLEFT")
+				elseif q == Q.BottomLeft then menu:SetPoint("BOTTOMLEFT", ours, "BOTTOMRIGHT")
+				elseif q == Q.TopRight then menu:SetPoint("TOPRIGHT", ours, "TOPLEFT")
+				else menu:SetPoint("TOPLEFT", ours, "TOPRIGHT") end
+			end)
+		end)
+	end)
+end
 -- our layout changed (a sort, a section moving): the proxies follow
 hooksecurefunc(f, "Layout", function() if blizz:IsShown() then lay() end end)
 hide:Play()
