@@ -1,7 +1,7 @@
 -- Radial wheels of the player's own, each opened by a bar slot whose macro is
 -- "/click WCWheel_<name> Macro" (WCWheel.Macro(name) gives the line).
 -- Right stick points and letting it go uses (the one way); the d-pad keeps its bar actions;
--- Circle closes; the left stick
+-- the wheel's own button again uses what it used last; Circle closes; the left stick
 -- still walks. Every button is secure, so a wheel works in combat; what is on
 -- it is rebuilt out of combat only.
 --
@@ -98,15 +98,42 @@ ring:SetAttribute("wc-forget", [[
     end
 ]])
 
+-- Loads a use onto `self` (type `t`, attribute `a` = `v`), remembered as the
+-- wheel's last, and closes the ring; the secure action then runs it.
+local LOAD = [[
+    ring:Hide()
+    for _, attribute in ipairs(newtable("spell", "item", "macro", "macrotext", "unit")) do
+        self:SetAttribute(attribute, nil)
+    end
+    self:SetAttribute(a, v)
+    self:SetAttribute("type", t)
+    ring:SetAttribute(key .. "-last-type", t)
+    ring:SetAttribute(key .. "-last-attr", a)
+    ring:SetAttribute(key .. "-last-value", v)
+]]
+
+-- The same wheel's button closes it, using what it used last (kept as values,
+-- so a rebuild of the wheel cannot turn it into another slot; gone at a
+-- /reload). Another wheel's switches to that one. The use runs on whichever
+-- edge the macro's /click brought, hence useOnKeyDown set to it.
 local OPEN_SNIPPET = [[
+    self:SetAttribute("type", nil)
     if button ~= "Macro" and not down then return false end
     local ring = self:GetFrameRef("ring")
     local key = self:GetAttribute("wc-wheel")
-    -- the same wheel's button closes it; another wheel's switches to that one
     if ring:IsShown() then
         local same = ring:GetAttribute("wc-active") == key
         ring:Hide()
-        if same then return false end
+        if not same then
+        elseif ring:GetAttribute(key .. "-last-type") then
+            local t, a, v = ring:GetAttribute(key .. "-last-type"), ring:GetAttribute(key .. "-last-attr"),
+                ring:GetAttribute(key .. "-last-value")
+            self:SetAttribute("useOnKeyDown", down and true or false)
+]] .. LOAD .. [[
+            return
+        else
+            return false
+        end
     end
     if (ring:GetAttribute(key .. "-count") or 0) < 1 then return false end
     ring:SetAttribute("wc-sticky", nil)
@@ -125,17 +152,6 @@ local function OpenButton(name)
     SecureHandlerWrapScript(button, "OnClick", button, OPEN_SNIPPET)
     return button
 end
-
--- Loads slot `pick` of the open wheel onto `self` and closes the ring; the
--- secure action then runs it.
-local LOAD_PICK = [[
-    ring:Hide()
-    for _, attribute in ipairs(newtable("spell", "item", "macro", "macrotext", "unit")) do
-        self:SetAttribute(attribute, nil)
-    end
-    self:SetAttribute(ring:GetAttribute(key .. "-attr-" .. pick), ring:GetAttribute(key .. "-value-" .. pick))
-    self:SetAttribute("type", ring:GetAttribute(key .. "-type-" .. pick))
-]]
 
 -- Right stick directions (as keys): move the sticky pick, and use it when the
 -- stick is let go. Only a key going down moves the pick: a diagonal let go
@@ -182,7 +198,9 @@ local AIM = [[
     pick = ring:GetAttribute("wc-sticky")
     if not pick then return false end
     local key = ring:GetAttribute("wc-active")
-]] .. LOAD_PICK
+    local t, a, v = ring:GetAttribute(key .. "-type-" .. pick), ring:GetAttribute(key .. "-attr-" .. pick),
+        ring:GetAttribute(key .. "-value-" .. pick)
+]] .. LOAD
 local aims = {}
 for _, key in ipairs(STICK_KEYS) do
     local aim = SecureButton("WCWheelAim" .. key)
