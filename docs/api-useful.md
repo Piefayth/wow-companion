@@ -152,8 +152,10 @@ Not done yet: world map pins, labels, clearing a pin automatically on arrival.
 - Secure snippets read the stick only at a click (`GetGamePadState()`); on the
   rim the stick keys change only at 30 and 60 degrees (`tools/wheel_sim.py`).
 - A pad profile (`C_GamePad.SetConfig` with right-stick `buttonThreshold`) makes
-  the stick keys fire always, which closes Blizzard's flyout wheel (forms) on
-  every push, and the game drops the profile at a /reload. Not usable.
+  the stick keys fire always (measured: down 1358 of 3543 frames with
+  `GamePadStickAxisButtons` 0 and no wheel open; the camera stick still read),
+  which closes Blizzard's flyout wheel (forms) on every push, and the game drops
+  the profile at a /reload. Not usable.
 - `C_GamePad.GetDeviceMappedState()` is not secret in a fight.
 - `SetCursorPosition(x, y)` takes the same pixels `GetCursorPosition()` gives.
   It moves nothing while the camera holds the cursor (`IsMouselooking()`), and
