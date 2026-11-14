@@ -124,6 +124,8 @@ function E.Of(bag, slot)
 		end
 		if v then return v, why end
 	end
+	-- the game's own Quest type: kept for a quest not in the log yet (the Lost Pages)
+	if class == 12 then return "quest" end
 	if class == 0 then return "use" end
 	if class == 7 or class == 9 then return "mats" end
 	return "keep"
