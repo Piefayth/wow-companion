@@ -723,3 +723,12 @@ work. So there every open window of ours leaves the controller's focus, and a
 window closed in a fight is stowed off screen until the fight ends
 (`WC.ShowPanel`, `WC.HidePanel`, Engine.lua). The Companion window, the
 settings page and the item view all share it.
+
+## False rings came in bursts (2026-11-14)
+
+The first session on the one inbox spent 39 slots on 14 writes in six minutes:
+false rings in runs of up to nine in a second, at quest givers and gossip. After
+every ring the poll asked the next bell at once, which the old channel needed to
+drain a burst one slot at a time; with one inbox a take reads every newer write,
+so the at-once ask only asked the same empty bell again inside the same busy
+moment. It went: the next ask waits for the poll's 0.1 s.

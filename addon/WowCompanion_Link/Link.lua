@@ -267,10 +267,13 @@ end
 -- the session is in the inbox, a set per session (loads % 3), each empty until
 -- then and never emptied while its session runs. Every 0.1 s the bell after the
 -- last write handled is played and asked 20 ms later (the short bell plays
--- within 2 ms); a ring takes the next slot, and the next bell is asked at once.
+-- within 2 ms); a ring takes the next slot, which reads every newer write.
 -- The game opens a sound file in the background, and an empty bell reads as
 -- playing until its open has failed: within a frame at most moments, for a few
--- frames at a busy one; such a ring finds nothing newer (receive).
+-- frames at a busy one; such a ring finds nothing newer (receive) and spends a
+-- slot. So the next bell waits for the next 0.1 s like any other: asked at
+-- once, the same empty bell read as playing again, up to nine slots in a second
+-- at a quest giver's (2026-11-14).
 -- Asked every frame, the game holds its sound files open; at 0.1 s it does
 -- not. While the heartbeat is stale (Status.lua), which is what
 -- held files look like, it asks every 0.5 s. Polled from
@@ -295,7 +298,6 @@ local function check(elapsed)
 		if playing then
 			channel.taken = channel.taken + 1
 			safely("a message from the companion", receive, bell)
-			clock = every -- the next slot at once
 		end
 	end
 	if clock < every then return end

@@ -239,8 +239,9 @@ reaches the game with two tricks, and the game reaches the PC only at a reload.
   runs; the first send of a session empties any of its set left rung, and each
   send rings every bell up to its own. The addon plays the bell after the last
   write it handled every 0.1 s and asks `C_Sound.IsPlaying` 20 ms later; a ring
-  loads the next slot, which handles every write of the session newer than that,
-  and the next bell is asked at once. While the heartbeat is stale it asks every
+  loads the next slot, which handles every write of the session newer than that;
+  the next bell waits for the next 0.1 s (asked at once, a busy moment's false
+  ring repeated, nine slots in a second). While the heartbeat is stale it asks every
   0.5 s. **An empty bell reads as playing until the game's background open of it
   fails**, several frames at a busy moment, up to five in a row: such a ring
   finds nothing newer and spends a slot, nothing else. **All bell files go
