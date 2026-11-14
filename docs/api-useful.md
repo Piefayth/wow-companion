@@ -161,6 +161,10 @@ Not done yet: world map pins, labels, clearing a pin automatically on arrival.
   on a fresh push, digital). Setting the CVar drops a pad profile set with
   `C_GamePad.SetConfig` (a left-stick threshold of 1.5 was gone as the wheel
   opened), so no profile can keep the left stick analog. Measured 2026-11-14.
+- A frame with `EnableGamePadStick(true)` takes **both** sticks whatever its
+  handler returns (Improved Forever's note); ConsolePort takes only the camera
+  by showing a blocker between the Movement and Camera events (WC.Ring.Take,
+  Ring.lua). On trial 2026-11-14 as the fix for walking stopping in a wheel.
 - `C_GamePad.GetDeviceMappedState()` is not secret in a fight.
 - `SetMacroSpell(index, spell)` / `SetMacroItem` set what a macro's bar button
   shows, in a fight too, for a macro opening with a bare `#showtooltip` and the
