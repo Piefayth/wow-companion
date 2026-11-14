@@ -133,7 +133,7 @@ local LOAD_PICK = [[
 -- Right stick directions (as keys): move the sticky pick, and use it when the
 -- stick is let go. Only a key going down moves the pick: a diagonal let go
 -- loses its keys one at a time, and the first must not turn it into its
--- neighbour. Each direction has its own button, because the game gives a
+-- neighbour; a key let go with the stick still out is a move, and does. Each direction has its own button, because the game gives a
 -- button one up edge however many keys hold it: on one shared button a
 -- diagonal's second key never came up, and the wheel waited on it with the
 -- spell unused (measured 2026-11-13). So a release is simply the last key up.
@@ -149,8 +149,18 @@ local AIM = [[
         ring:SetAttribute("wc-sticky", pick)
         return false
     end
-    -- a key still held is the stick on its way
-    if pick then return false end
+    -- An up edge with a key still held: the stick still out is a move to the
+    -- neighbour (diagonal to cardinal), which the pick follows; back at the
+    -- centre it is a diagonal let go a key at a time, and the pick stays. The
+    -- trace measured both: a move's stick at 0.85-1.0, a release's at 0.0-0.1.
+    if pick then
+        local state = GetGamePadState()
+        local stick = state and state.sticks and state.sticks[2]
+        if stick and stick.x and (stick.x * stick.x + stick.y * stick.y) >= 0.25 then
+            ring:SetAttribute("wc-sticky", pick)
+        end
+        return false
+    end
     pick = ring:GetAttribute("wc-sticky")
     if not pick then return false end
     local key = ring:GetAttribute("wc-active")
