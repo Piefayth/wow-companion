@@ -227,13 +227,20 @@ do
 		end)
 	end
 	-- The controller's focus leaves the game window it is on, which stays open
-	-- (out of the focus cycle until it is opened again), so the bars work:
-	-- FrameHidden, the manager call Blizzard wraps for insecure callers.
-	-- Out of combat only, where it is refused.
+	-- and out of the focus cycle, so the bars work; WC.ReturnFocus(frame) puts
+	-- it back and focuses it. FrameHidden and FrameShown, the manager calls
+	-- Blizzard wraps for insecure callers. Out of combat only, where they are
+	-- refused. Returns the window left, or nil.
 	function WC.LeaveFocus()
 		local m = manager()
-		if not (m and m.isUIFocused and m.focusedFrame) or InCombatLockdown() then return end
-		pcall(m.FrameHidden, m, m.focusedFrame)
+		local frame = m and m.isUIFocused and m.focusedFrame
+		if not frame or InCombatLockdown() then return end
+		if pcall(m.FrameHidden, m, frame) then return frame end
+	end
+	function WC.ReturnFocus(frame)
+		local m = manager()
+		if not (m and frame and frame:IsShown()) or InCombatLockdown() then return end
+		pcall(m.FrameShown, m, frame, false, true)
 	end
 	-- read only: whether the controller's focus is on frame now
 	function WC.IsFocused(frame)

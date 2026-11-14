@@ -467,14 +467,17 @@ end
 -- after a minute.
 local PLACE_FOR = 60
 local function EndPlacing()
+    local placing = W.placing
     W.placing = nil
     W.Rebuild(true)
+    if placing and placing.onEnd then pcall(placing.onEnd) end
 end
 function W.Placing() return W.placing end
-function W.Place(slot, label)
+-- onEnd runs as placing ends, however it ends
+function W.Place(slot, label, onEnd)
     if InCombatLockdown() then return Print("not in combat") end
     if not next(WowCompanionWheelDB.wheels) then return Print("there is no wheel yet to put " .. label .. " on") end
-    local placing = { slot = slot, label = label }
+    local placing = { slot = slot, label = label, onEnd = onEnd }
     W.placing = placing
     W.Rebuild(true)
     Print("placing " .. label .. ": open a wheel and flick to a slot (Circle cancels)")

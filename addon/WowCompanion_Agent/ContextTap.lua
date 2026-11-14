@@ -3,7 +3,7 @@
 -- (SmartNavigation's current button, only read: measured clean, 2026-11-14),
 -- a tap places that thing on a wheel (WCWheel.Place: open a wheel and flick);
 -- the controller's focus leaves the window, which stays open, so the wheel's
--- chord works at once.
+-- chord works at once, and comes back to it when placing ends.
 -- Anything else, and a tap while placing stops it; otherwise the tap opens
 -- the Companion window (Agent.lua).
 
@@ -44,7 +44,8 @@ function WC.Companion.ContextTap()
     if button and button:IsVisible() then
         local ok, slot, name = pcall(Thing, button)
         if ok and slot then
-            if WCWheel.Place(slot, name) then WC.LeaveFocus() end
+            local left
+            if WCWheel.Place(slot, name, function() WC.ReturnFocus(left) end) then left = WC.LeaveFocus() end
             return true
         elseif ok and name then
             WC.Say("Wheel: " .. name .. ", so it cannot go on a wheel")
