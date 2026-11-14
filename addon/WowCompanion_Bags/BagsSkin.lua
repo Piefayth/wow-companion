@@ -85,14 +85,26 @@ local function eachStop(fn)
 	end
 	walk(blizz)
 end
+-- a bag icon their bags lay out (GamepadBagBar:GetBagButton over the bags shown)
+local function shownBag(b)
+	if not (GamepadBagBar and b:GetParent() == GamepadBagBar) then return false end
+	for bag = STARTING_BAG_INDEX, ENDING_BAG_INDEX do
+		if GamepadBagBar:GetBagButton(bag) == b then return true end
+	end
+	return false
+end
 local function anchorNew()
 	if InCombatLockdown() then return end
 	eachStop(function(b, item)
 		if anchored[b] or skipped[b] then return end
-		if item or (GamepadBagBar and b:GetParent() == GamepadBagBar) then
+		if item or shownBag(b) then
 			local p = CreateFrame("Frame", nil, f)
 			p:SetSize(1, 1)
 			anchor(b, p)
+		elseif GamepadBagBar and b:GetParent() == GamepadBagBar then
+			-- the keyring's icon, while the keyring is not shown (GetBagButton
+			-- leaves it out): not in their layout either
+			skip(b, "a bag icon theirs does not lay out")
 		elseif b == blizz.AddSlotsButton then
 			anchor(b, addSlots)
 		elseif b == blizz.CloseButton then
