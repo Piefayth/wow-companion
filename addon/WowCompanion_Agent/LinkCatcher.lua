@@ -39,13 +39,20 @@ end
 
 function WCShowLink(n)
   if WowCompanion_ShowItem then return WowCompanion_ShowItem(n or 1) end
-  print('item viewer not loaded yet: reload')
+  WC.Say('item viewer not loaded yet: reload')
 end
 
 -- opens a caught profession link as a chat click would; pressed by the player.
 -- n: 1 = newest, or a name to match against who linked it or the profession
 -- ("Mira", "Enchanting"), newest match first, so one press needs no lookup;
 -- or a function(entry) returning true for the one wanted.
+-- the caught links, one line each, for a notice
+local function caught(list)
+  local out = {}
+  for i, e in ipairs(list) do out[i] = ('\n  %d: %s from %s'):format(i, e.label, e.from) end
+  return table.concat(out)
+end
+
 function WCOpenTradeLink(n)
   local list = WowCompanionAgentDB.tradeLinks or {}
   local t
@@ -57,9 +64,7 @@ function WCOpenTradeLink(n)
       if ok and yes then t = e break end
     end
     if not t then
-      print(('no caught profession link fits (have %d):'):format(#list))
-      for i, e in ipairs(list) do print(('  %d: %s from %s'):format(i, e.label, e.from)) end
-      return
+      return WC.Say(('no caught profession link fits (have %d):'):format(#list) .. caught(list))
     end
   elseif type(n) == 'string' then
     local want = n:lower()
@@ -77,17 +82,15 @@ function WCOpenTradeLink(n)
       if i then t = owner[i] end
     end
     if not t then
-      print(('no profession link from or for "%s" caught (have %d): ask them to link it again'):format(n, #list))
-      for i, e in ipairs(list) do print(('  %d: %s from %s'):format(i, e.label, e.from)) end
-      return
+      return WC.Say(('no profession link from or for "%s" caught (have %d): ask them to link it again'):format(n, #list) .. caught(list))
     end
   else
     t = list[n or 1]
   end
-  if not t then print('no profession link caught yet: ask them to link it again') return end
-  print(('opening %s from %s (%s)'):format(t.label, t.from, t.where))
+  if not t then return WC.Say('no profession link caught yet: ask them to link it again') end
+  WC.Say(('opening %s from %s (%s)'):format(t.label, t.from, t.where))
   local ok, err = pcall(SetItemRef, t.data, t.full, 'LeftButton', ChatFrame1)
-  if not ok then print('could not open it: ' .. tostring(err)) end
+  if not ok then WC.Say('could not open it: ' .. tostring(err)) end
 end
 
 -- recent chat and the caught profession links as text; the companion's

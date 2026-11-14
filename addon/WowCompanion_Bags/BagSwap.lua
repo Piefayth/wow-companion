@@ -12,8 +12,7 @@
 local M = WC.Module('BagSwap')
 
 local function say(text)
-  print('|cff7fbfffbags:|r ' .. text)
-  if WC.Board and WC.Board.Post then pcall(WC.Board.Post, '', text) end
+  WC.Say('bags: ' .. text)
 end
 
 -- the slot count of a bag in the bags, from its tooltip ("10 Slot Bag")

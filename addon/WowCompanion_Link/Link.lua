@@ -42,7 +42,7 @@ local channel = { plays = 0, taken = 0, slowed = 0, empty = 0 }
 local enteredAt = 0
 
 local function say(message)
-	print("|cff66ccffCompanion|r " .. message)
+	WC.Say("Companion: " .. message)
 end
 
 -- a message that could not be handled, said in chat

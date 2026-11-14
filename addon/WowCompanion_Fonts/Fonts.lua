@@ -133,7 +133,7 @@ set = function(name)
 		if still == 0 then
 			WC.Send("FONT_CHANGED")
 		elseif GetTime() - started > LOADING_LIMIT then
-			print(refuse(entry))
+			WC.Say(refuse(entry))
 		else
 			C_Timer.After(0.25, retry)
 		end
@@ -168,7 +168,7 @@ WC.SettingsPage.Add({ kind = "dropdown", section = "Interface text", order = 20,
 	get = Fonts.Current,
 	set = function(name)
 		local said = Fonts.Set(name)
-		if said:find("refused") or said:find("failed") then print(said) end
+		if said:find("refused") or said:find("failed") then WC.Say(said) end
 	end })
 WC.SettingsPage.Add({ kind = "slider", section = "Interface text", order = 30, label = "Text size",
 	text = "All interface text, with any font.",

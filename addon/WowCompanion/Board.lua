@@ -206,6 +206,9 @@ WC.Board = WC.Board or {}
 WC.Board.toast = toast
 WC.Board.toastBoard = toastBoard
 WC.Board.toastIdleShown = toastIdleShown
+-- A notice from one of our addons, on the toast. Never print(): it writes
+-- Blizzard's chat frame (its fading-line fields) from our code, tainting it.
+function WC.Say(text) toast(text, 0.9, 0.9, 0.9, 8) end
 -- poster(slot, text, opts): set by WowCompanion_Agent (its conversation rows)
 function WC.Board.Post(slot, text, opts)
 	if WC.Board.poster then return WC.Board.poster(slot, text, opts) end

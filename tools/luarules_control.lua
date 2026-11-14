@@ -8,12 +8,15 @@ function f:FocusGamepad() end                            -- custom-nav
 EventRegistry:TriggerEvent("UIParentPanelManager.ShowUIPanel", f) -- panel-event
 local b = CreateFrame("Button", "WCControlButton", UIParent, "SecureActionButtonTemplate")
 b:RegisterForClicks("AnyUp")                             -- click-edge
+print("hello")                                           -- chat-print
+DEFAULT_CHAT_FRAME:AddMessage("hello")                   -- chat-print
 local function onShow()
 	if InCombatLockdown() then return end
 	SmartNavigation_MarkFrameFocusable(f)                -- engine-only (a guard here does not make it fine)
 end
 local function fine()
-	WC.MarkFocusable(f)                                  -- Engine's helper: not reported
+	WC.Say("hello")                                      -- our toast: not reported
+	WC.MarkFocusable(f)                                 -- Engine's helper: not reported
 	WCControl:SetPoint("CENTER")                         -- our own frame: not reported
 	WowCompanionDB.control = true                        -- our saved table: not reported
 	GameTooltip:Show()                                   -- shared tooltip: not reported

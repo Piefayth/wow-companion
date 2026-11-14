@@ -105,7 +105,8 @@ extras a player may use, never required (the player, 2026-11-11).
     `SettingsPage.lua` (the one settings page, `WC.SettingsPage.Add` for each
     addon's rows; its own window, the minimap mark and Blizzard's AddOns settings
     open it), `Board.lua` (the toast
-    and board; `WC.Board.Post`), `Providers/` (price, nav, gear, itemSource,
+    and board; `WC.Board.Post`; `WC.Say`, our addons' notices, since `print` writes
+    Blizzard's chat frame from our code and taints it), `Providers/` (price, nav, gear, itemSource,
     guide, Polestar's pins). Saved: `WowCompanionDB` (module settings).
   - `WowCompanion_Link` (needs Core): the PC bridge. `Link.lua` the channel
     (slots, bells, polling, the mailbox, dispatch to handlers registered with

@@ -77,5 +77,5 @@ function WowCompanion_WatchBuffs(list)
 	end
 	db().spells = spells
 	if WC.Send then WC.Send("BUFF_WATCH_CHANGED") end
-	print(#spells > 0 and ("watching for: " .. table.concat(spells, ", ")) or "watching for no buffs")
+	WC.Say(#spells > 0 and ("watching for: " .. table.concat(spells, ", ")) or "watching for no buffs")
 end

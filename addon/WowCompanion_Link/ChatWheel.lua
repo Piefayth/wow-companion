@@ -48,7 +48,7 @@ do
 		WowCompanionLinkDB = WowCompanionLinkDB or {}
 		WowCompanionLinkDB.chatChannel = slash
 		showTag()
-		print("|cffffd100Chat:|r speaking to " .. NAMES[slash])
+		WC.Say("Chat: speaking to " .. NAMES[slash])
 	end
 
 	-- the ring's order, for turning the channel a step at a time
@@ -138,7 +138,7 @@ do
 			waiting:Show()
 		elseif ENDED[inbox.state] and waiting.jobs[id] then
 			waiting.jobs[id] = nil
-			if inbox.state == "failed" then print("|cffffd100Chat:|r " .. tostring(inbox.text or "nothing was sent")) end
+			if inbox.state == "failed" then WC.Say("Chat: " .. tostring(inbox.text or "nothing was sent")) end
 			if not next(waiting.jobs) then
 				waiting:Hide()
 				showTag()

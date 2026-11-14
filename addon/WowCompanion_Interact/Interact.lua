@@ -25,7 +25,7 @@
 WC.Saved("WowCompanion_Interact", "WowCompanionInteractDB")
 do
 	local function say(text)
-		print("|cffffd100combat interact:|r " .. text)
+		WC.Say("combat interact: " .. text)
 	end
 
 	local tap = _G["WCCombatInteractTap"] or CreateFrame("Button", "WCCombatInteractTap", UIParent, "SecureActionButtonTemplate")
