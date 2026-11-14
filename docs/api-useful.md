@@ -152,7 +152,7 @@ Not done yet: world map pins, labels, clearing a pin automatically on arrival.
 - Secure snippets read the stick (`GetGamePadState()`) in a click or a state
   driver's `_onstate-`; with `SecureStateDriverManager`'s `updatetime` 0 and the
   driver's state cleared after each tick, every frame (Forever Tweaks; the
-  wheel's sampler, on trial 2026-11-14). The stick keys alone change only at 30
+  the wheel's sampler, the player measured it working in combat 2026-11-14). The stick keys alone change only at 30
   and 60 degrees on the rim.
 - A pad profile (`C_GamePad.SetConfig` with right-stick `buttonThreshold`) makes
   the stick keys fire always (measured: down 1358 of 3543 frames with
