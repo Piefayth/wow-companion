@@ -229,13 +229,6 @@ SecureHandlerWrapScript(ring, "OnShow", ring, [[
         for _, key in ipairs(newtable("PADRSTICKUP", "PADRSTICKDOWN", "PADRSTICKLEFT", "PADRSTICKRIGHT")) do
             self:SetBindingClick(true, modifier .. key, "WCWheelAim" .. key, key)
         end
-        -- the axis CVar turns the left stick into keys too, and walking stops
-        -- (measured 2026-11-14: speed 9.1 to 0 as a wheel opened, PADLSTICKUP
-        -- down and bound to nothing): while the ring is up its keys walk
-        self:SetBinding(true, modifier .. "PADLSTICKUP", "MOVEFORWARD")
-        self:SetBinding(true, modifier .. "PADLSTICKDOWN", "MOVEBACKWARD")
-        self:SetBinding(true, modifier .. "PADLSTICKLEFT", "STRAFELEFT")
-        self:SetBinding(true, modifier .. "PADLSTICKRIGHT", "STRAFERIGHT")
     end
 ]])
 SecureHandlerWrapScript(ring, "OnHide", ring, [[
