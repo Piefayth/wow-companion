@@ -37,14 +37,12 @@ local function buildActionButton()
 			return "could not build the button: " .. tostring(button)
 		end
 		actionButton = button
-		-- across the conversation list's own cell for it, above the list's foot
+		-- the conversation list's own cell for it, above the list's foot
 		local function place(b)
 			local slot = frame.convOfferSlot
 			b:SetParent(frame)
 			b:ClearAllPoints()
-			b:SetPoint("LEFT", slot)
-			b:SetPoint("RIGHT", slot)
-			b:SetHeight(28)
+			b:SetAllPoints(slot)
 			b:SetFrameLevel(slot:GetFrameLevel() + 4)
 		end
 		place(actionButton)

@@ -169,5 +169,5 @@ function C.Lay(H, offered, open)
 			name = NAME_RIGHT - INSET, chord = CHORD_RIGHT - INSET }
 	end
 	local o = L.offer
-	return { pieces = t, rows = rows, offer = o and { INSET + 6, o.y + 6, W - 2 * INSET - 12, o.h - 12 } }
+	return { pieces = t, rows = rows, offer = o and { INSET + 4, o.y + 4, W - 2 * INSET - 8, o.h - 8 } } -- the button, as far in from each side as from above
 end
