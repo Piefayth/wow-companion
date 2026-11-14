@@ -99,17 +99,18 @@ ring:SetAttribute("wc-forget", [[
 ]])
 
 -- Loads a use onto `self` (type `t`, attribute `a` = `v`), remembered as the
--- wheel's last, and closes the ring; the secure action then runs it.
+-- wheel's last (before the ring closes, whose OnHide shows it on the macro),
+-- and closes the ring; the secure action then runs it.
 local LOAD = [[
+    ring:SetAttribute(key .. "-last-type", t)
+    ring:SetAttribute(key .. "-last-attr", a)
+    ring:SetAttribute(key .. "-last-value", v)
     ring:Hide()
     for _, attribute in ipairs(newtable("spell", "item", "macro", "macrotext", "unit")) do
         self:SetAttribute(attribute, nil)
     end
     self:SetAttribute(a, v)
     self:SetAttribute("type", t)
-    ring:SetAttribute(key .. "-last-type", t)
-    ring:SetAttribute(key .. "-last-attr", a)
-    ring:SetAttribute(key .. "-last-value", v)
 ]]
 
 -- The same wheel's button closes it, using what it used last (kept as values,
@@ -362,6 +363,40 @@ local function Expand(slots)
     return out
 end
 
+-- A wheel's bar macros show what a tap of them uses again: SetMacroSpell /
+-- SetMacroItem, the game's feedback for a macro that opens with a bare
+-- #showtooltip (measured out of combat 2026-11-14: the Buffs macro took Mark of
+-- the Wild's icon). Every macro holding the wheel's line counts.
+local function WheelMacros(key, fn)
+    local line = W.Macro(key)
+    local global, character = GetNumMacros()
+    local base = Constants.MacroConsts.MAX_ACCOUNT_MACROS
+    for index = 1, base + character do
+        if index <= global or index > base then
+            local body = select(3, GetMacroInfo(index))
+            if body and body:find(line, 1, true) then fn(index, body) end
+        end
+    end
+end
+
+local function ShowLast(key)
+    local attr, value = ring:GetAttribute(key .. "-last-attr"), ring:GetAttribute(key .. "-last-value")
+    local set = (attr == "spell" and SetMacroSpell) or (attr == "item" and SetMacroItem)
+    if set then WheelMacros(key, function(index) pcall(set, index, value) end) end
+end
+ring:HookScript("OnHide", function()
+    local key = ring:GetAttribute("wc-active")
+    if key then ShowLast(key) end
+end)
+
+-- the macro text change is out of combat only, so it is made at each rebuild:
+-- a bare #showtooltip on top, the question-mark icon, which lets the feedback show
+local function PrepareMacros(key)
+    WheelMacros(key, function(index, body)
+        if not body:find("^#showtooltip") then EditMacro(index, nil, 134400, "#showtooltip\n" .. body) end
+    end)
+end
+
 function W.Rebuild(quiet)
     if InCombatLockdown() then
         pending = true
@@ -391,6 +426,7 @@ function W.Rebuild(quiet)
         end
         ring:SetAttribute(key .. "-count", #entries)
         ringData[key] = entries
+        PrepareMacros(key)
     end
     return true
 end
