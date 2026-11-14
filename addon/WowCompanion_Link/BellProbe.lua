@@ -15,12 +15,18 @@
 -- seconds nothing rewrites, and asks it at once and at the same times: what a
 -- real sound answers. `PlaySoundFile` says it will play an empty bell every time
 -- (measured: 2,952 of 2,952), so only IsPlaying tells a ring.
+-- It runs in blocks of BLOCK seconds, on then off, so the channel's own false
+-- takes (Link.lua's take audit) can be counted with the probe asking and
+-- without: none came in the first 11 minutes it ran, after a burst every couple
+-- of minutes for an hour and a half before it. And it records every change in
+-- the game's list of sound output devices (SOUND_DEVICE_UPDATE), with the list:
+-- a headset coming and going changes the device the game plays through.
 -- Counts and false rings, with frame times, combat and the time since the last
 -- loading screen, go to WowCompanionLinkDB.bellProbe (saved at reload, the last
 -- few sessions kept) and are read live through the data strip.
 
 local SIGNALS = "Interface\\AddOns\\WowCompanion_Link\\Signals\\"
-local EVERY, ASK, REFERENCE_EVERY, RUN = 0.1, 0.02, 5, 10
+local EVERY, ASK, REFERENCE_EVERY, RUN, BLOCK = 0.1, 0.02, 5, 10, 600
 local LATER = { 0.02, 0.1, 0.3, 0.6, 1.0 }
 local KEPT_SESSIONS, KEPT_RINGS = 6, 400
 
@@ -35,6 +41,7 @@ local control, clock, run = 1, 0, 0
 local asking -- the control being asked: { name, handle, playedAt, frame }
 local follow = {} -- open follow-ups: { handle, playedAt, step, record }
 local nextReference = 0
+local on, blockEnds = true, 0
 
 local function count(key)
 	session.counts[key] = (session.counts[key] or 0) + 1
@@ -60,9 +67,26 @@ local function tickFollowUps(now)
 	end
 end
 
+-- the game's sound output devices, by name ("System Default" first)
+local function devices()
+	local names = {}
+	for index = 0, Sound_GameSystem_GetNumOutputDrivers() - 1 do
+		names[#names + 1] = Sound_GameSystem_GetOutputDriverNameByIndex(index)
+	end
+	return table.concat(names, " | ")
+end
+
 local function step(elapsed)
 	local now = GetTime()
 	tickFollowUps(now)
+	if now >= blockEnds then
+		blockEnds = now + BLOCK
+		on = not on
+		if asking and asking.handle then StopSound(asking.handle) end
+		asking, clock, run = nil, 0, 0
+		session.blocks[#session.blocks + 1] = { time = time(), on = on }
+	end
+	if not on then return end
 	-- the reference: a real sound, asked the same way
 	if now >= nextReference then
 		nextReference = now + REFERENCE_EVERY
@@ -128,10 +152,12 @@ local function start()
 	db.bellProbe.sessions = sessions
 	while #sessions >= KEPT_SESSIONS do table.remove(sessions, 1) end
 	session = { loads = db.loads, started = time(), asks = 0, ringCount = 0, counts = {}, runs = {},
-		rings = {}, references = {} }
+		rings = {}, references = {}, blocks = {}, devices = { { time = time(), list = devices() } } }
 	sessions[#sessions + 1] = session
 	enteredAt = GetTime()
 	nextReference = enteredAt + 1
+	-- the first block is on (step turns it on at once)
+	on, blockEnds = false, 0
 	probeFrame:SetScript("OnUpdate", function(_, elapsed)
 		local ok, err = pcall(step, elapsed)
 		if not ok then stop("error: " .. tostring(err)) end
@@ -144,7 +170,12 @@ WC.BellProbe = { Start = start, Stop = function() stop("stopped") end }
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:RegisterEvent("LOADING_SCREEN_DISABLED")
+events:RegisterEvent("SOUND_DEVICE_UPDATE")
 events:SetScript("OnEvent", function(_, event)
+	if event == "SOUND_DEVICE_UPDATE" then
+		if session then session.devices[#session.devices + 1] = { time = time(), list = devices() } end
+		return
+	end
 	loadedAt = GetTime()
 	if event == "PLAYER_ENTERING_WORLD" and not session then start() end
 end)
