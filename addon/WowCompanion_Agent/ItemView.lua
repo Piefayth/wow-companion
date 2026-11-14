@@ -31,7 +31,7 @@ local function buildViewer()
 
 	local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", -6, -6)
-	close:SetScript("OnClick", function() frame:Hide() end)
+	close:SetScript("OnClick", function() WC.HidePanel(frame) end)
 	frame.CloseButton = close -- circle clicks this (SmartNavigation:AttemptClose)
 
 	local function button(label, width)
@@ -43,7 +43,7 @@ local function buildViewer()
 	end
 	frame.closeButton = button("Close", 90)
 	frame.closeButton:SetPoint("BOTTOMRIGHT", -20, 16)
-	frame.closeButton:SetScript("OnClick", function() frame:Hide() end)
+	frame.closeButton:SetScript("OnClick", function() WC.HidePanel(frame) end)
 	frame.nextButton = button("Older", 80)
 	frame.nextButton:SetPoint("RIGHT", frame.closeButton, "LEFT", -8, 0)
 	frame.nextButton:SetScript("OnClick", function() WowCompanion_ShowItem((frame.index or 1) + 1) end)

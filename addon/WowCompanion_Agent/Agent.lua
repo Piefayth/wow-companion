@@ -147,12 +147,12 @@ renderPending = function()
 		frame.boardFollowsTabs = true
 		hooksecurefunc(frame, "SelectTab", function() renderPending() end)
 	end
-	local chatInView = frame:IsShown() and (frame.currentTab or 1) == 1
+	local chatInView = WC.PanelShown(frame) and (frame.currentTab or 1) == 1
 	if #lines > 0 then
 		if not chatInView then
 			-- the hint says how to open the window; with it open there is none
 			local key = WC.Link.TalkKey()
-			local hint = not frame:IsShown()
+			local hint = not WC.PanelShown(frame)
 				and (key and ("tap %s to read"):format(WowCompanion_Glyph(key)) or "open the Companion window to read")
 			toastBoard(lines, hint or nil)
 		elseif toastIdleShown() then
@@ -287,7 +287,7 @@ local function remember(who, text, continued, slot, job, quiet)
 	-- news nobody has seen yet: a reply in another conversation, or in this one
 	-- while the window is closed; the minimap button shows it (Status.lua)
 	if not continued and not quiet and (who == "claude" or who == "error")
-		and (slot ~= viewSlot or not (logWindow and logWindow:IsShown())) then
+		and (slot ~= viewSlot or not (logWindow and WC.PanelShown(logWindow))) then
 		setUnread(slot, true)
 		paintConversations()
 	end
@@ -351,7 +351,7 @@ function handlers.log(inbox)
 	-- window toggle cannot reach it until it is closed and opened again
 	-- never opens the window: a reply's first line shows as a toast, errors in
 	-- red, and step results and code output only go in the log
-	if not (logWindow and logWindow:IsShown()) then
+	if not (logWindow and WC.PanelShown(logWindow)) then
 		local first = text:match("^%s*([^\n]+)") or ""
 		first = first:gsub("%*%*", ""):gsub("`", "")
 		if #first > 110 then first = first:sub(1, 107) .. "..." end
@@ -366,15 +366,13 @@ function handlers.log(inbox)
 	return ("logged %d line(s)"):format(lines)
 end
 
--- A plain Hide, which works in combat too (the window holds no secure button
--- in a fight, Stow.lua)
+-- Closed as every window of ours is (WC.HidePanel: in a fight it is stowed
+-- until the fight ends), never by HideUIPanel from our code (docs/history.md)
 function WowCompanion_HideWindow()
-	local frame = logWindow
-	if not frame then return end
-	frame:Hide() -- plain Hide; see the /wc log note on HideUIPanel
+	if logWindow then WC.HidePanel(logWindow) end
 end
 local function windowOpen()
-	return logWindow and logWindow:IsShown()
+	return logWindow and WC.PanelShown(logWindow)
 end
 local function toggleWindow()
 	local frame = logFrame()
@@ -538,7 +536,6 @@ for kind, fn in pairs(handlers) do WC.Link.Handle(kind, fn) end
 -- /wc's agent commands (WowCompanion_Link owns /wc and its quiet, listen)
 local slash = WC.Link.Slash
 slash("context", function() say(("context: %d lines; /reload to write it to disk"):format(WC.Export.Context())) end)
--- plain Hide, not HideUIPanel (WowCompanion_HideWindow)
 slash("log", function() toggleWindow() end)
 -- One conversation's lines out of the window (the agent remembers it all);
 -- the others' stay

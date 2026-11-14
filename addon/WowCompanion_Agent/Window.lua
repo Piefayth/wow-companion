@@ -519,9 +519,7 @@ local function buildLog()
 		close:SetPushedTexture(ART:format("Close", "Pushed"))
 		close:SetDisabledTexture(ART:format("Close", "Disabled"))
 		close:SetHighlightTexture(ART:format("Close", "Highlight"), "ADD")
-		close:SetScript("OnClick", function()
-			if WowCompanion_HideWindow then WowCompanion_HideWindow() else frame:Hide() end
-		end)
+		close:SetScript("OnClick", function() WC.HidePanel(frame) end)
 	end
 	-- the title bar is the drag handle, so a drag inside the transcript stays free
 	frame:SetMovable(true)

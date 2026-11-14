@@ -577,7 +577,7 @@ local function buildWindow()
 	f:Hide()
 	WC.Style.NoPortrait(f)
 	if f.SetTitle then f:SetTitle("WoW Companion settings") end
-	if f.CloseButton then f.CloseButton:SetScript("OnClick", function() f:Hide() end) end
+	if f.CloseButton then f.CloseButton:SetScript("OnClick", function() WC.HidePanel(f) end) end
 	-- the light stone on the inset's floor, the page inside it, as in the
 	-- Companion window's page well
 	local inset = f.Inset or f

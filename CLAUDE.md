@@ -344,6 +344,15 @@ goes to a detached process.
   tainted. And a window the controller manages must live in the addon's own files,
   never in a module (modules run ForceTaint_Strong). Both measured on the bag
   window, 2026-11-10; it now cycles focus cleanly.
+  **Our windows open and close with `WC.ShowPanel` / `WC.HidePanel` and are
+  asked open with `WC.PanelShown`, never a Hide of ours in a fight**:
+  SmartNavigation hooks the hide of every window it has focused, and that hook
+  is a wrapped call, refused in a fight (the window closed, "Interface action
+  failed", and the pad stayed on it until the fight ended, 2026-11-14). As a
+  fight begins (`ADDON_RESTRICTION_STATE_CHANGED`, Combat, Activating: during its
+  dispatch the manager still takes our calls) each open window leaves the
+  controller's focus and stays to be read; one closed in a fight is stowed off
+  screen and hidden when the fight ends.
   **Standing in for a Blizzard window works** out of combat (the first bag
   window, 2026-11-10; bags now use the secure child below): never close or set
   anything of theirs. React with

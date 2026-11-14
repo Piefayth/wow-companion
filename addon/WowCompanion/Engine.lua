@@ -17,7 +17,8 @@
 --   WC.AfterCombat(fn)               -- now, or when the fight ends
 --   WC.MarkFocusable(f), WC.MarkIgnored(f), WC.MarkTextScroll(s),
 --   WC.SetFocusButton(f, b), WC.SetVerticalNav(b, up, down), WC.ShowPanel(f),
---   WC.FrameHidden(f), WC.IsFocused(f): the controller's focus API, safe in a fight
+--   WC.HidePanel(f), WC.PanelShown(f), WC.FrameHidden(f), WC.IsFocused(f): the
+--   controller's focus API, safe in a fight
 --
 -- Re-registering a name (a module step replacing its code) disables the old
 -- one first, so its listeners and events go away instead of doubling up.
@@ -125,10 +126,64 @@ do
 			if down then SmartNavigation_AddJumpNavigationOverride(button, D.DOWN, down) end
 		end)
 	end
+	-- Our windows in a fight. SmartNavigation hooks the hide of every window it
+	-- has focused, and that hook is one of the wrapped calls: a window of ours
+	-- hidden in a fight said "Interface action failed" and left the pad on it,
+	-- the bars dead, until the fight ended (2026-11-14). So as a fight begins,
+	-- every window WC.ShowPanel opened leaves the controller's focus cycle and
+	-- stays to be read; one closed in a fight is stowed off screen, not hidden,
+	-- until the fight ends. The moment a fight begins is
+	-- ADDON_RESTRICTION_STATE_CHANGED (Combat, Activating), during whose dispatch
+	-- the restriction is not yet enforced, so the manager still takes the call.
+	-- A window that had the controller then gets it back when the fight ends; one
+	-- only open stays out of the cycle until it is opened again, since rejoining
+	-- takes the controller (FrameShown) and only Blizzard may give it back.
+	local panels = {} -- every window WC.ShowPanel opened
+	local stowed = {} -- frame -> its points and clamping, while stowed
+	local function owe(k, fn)
+		if not owed[k] then owedOrder[#owedOrder + 1] = k end
+		owed[k] = fn
+	end
+	local function unstow(frame)
+		local was = stowed[frame]
+		if not was then return end
+		stowed[frame] = nil
+		owed[key("stowed", frame)] = nil
+		frame:ClearAllPoints()
+		for _, point in ipairs(was.points) do frame:SetPoint(unpack(point)) end
+		frame:SetClampedToScreen(was.clamped)
+	end
+	-- the window back in the controller's focus cycle, if it is open
+	local function rejoin(frame)
+		return function()
+			if frame:IsShown() and not stowed[frame] then
+				frame:Hide()
+				ShowUIPanel(frame)
+			end
+		end
+	end
+	local fight = CreateFrame("Frame")
+	if Enum.AddOnRestrictionType and Enum.AddOnRestrictionState
+		and pcall(fight.RegisterEvent, fight, "ADDON_RESTRICTION_STATE_CHANGED") then
+		fight:SetScript("OnEvent", function(_, _, kind, state)
+			if kind ~= Enum.AddOnRestrictionType.Combat or state ~= Enum.AddOnRestrictionState.Activating then return end
+			local m = manager()
+			if not m then return end
+			for frame in pairs(panels) do
+				if frame:IsShown() and not stowed[frame] then
+					local held = m.isUIFocused and m.focusedFrame == frame
+					pcall(m.FrameHidden, m, frame)
+					if held then owe(key("panel", frame), rejoin(frame)) end
+				end
+			end
+		end)
+	end
 	-- Show a window of ours as a UI panel, so the controller's focus cycle
-	-- reaches it. In a fight it is shown plainly and joins the cycle when the
-	-- fight ends, if still shown.
+	-- reaches it. In a fight it is shown plainly (or brought back, if it was
+	-- closed in this fight) and joins the cycle when the fight ends.
 	function WC.ShowPanel(frame)
+		panels[frame] = true
+		if stowed[frame] then return unstow(frame) end
 		local name = frame:GetName()
 		local panel = name and UIPanelWindows and UIPanelWindows[name]
 		if panel and not InCombatLockdown() then
@@ -136,14 +191,27 @@ do
 		end
 		if frame:IsShown() then return end
 		frame:Show()
-		if panel then
-			later(key("panel", frame), function()
-				if frame:IsShown() then
-					frame:Hide()
-					ShowUIPanel(frame)
-				end
-			end)
-		end
+		if panel then later(key("panel", frame), rejoin(frame)) end
+	end
+	-- Close a window WC.ShowPanel opened: hidden, or in a fight stowed off
+	-- screen and hidden when the fight ends.
+	function WC.HidePanel(frame)
+		if not InCombatLockdown() then return frame:Hide() end
+		if not frame:IsShown() or stowed[frame] then return end
+		local points = {}
+		for i = 1, frame:GetNumPoints() do points[i] = { frame:GetPoint(i) } end
+		stowed[frame] = { points = points, clamped = frame:IsClampedToScreen() }
+		frame:SetClampedToScreen(false)
+		frame:ClearAllPoints()
+		frame:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", -64, -64)
+		owe(key("stowed", frame), function()
+			unstow(frame)
+			frame:Hide()
+		end)
+	end
+	-- whether a window WC.ShowPanel opened is open: shown, and not stowed
+	function WC.PanelShown(frame)
+		return frame:IsShown() and not stowed[frame]
 	end
 	-- Tell the controller's manager a window of ours closed; in a fight, when
 	-- the fight ends, if it is still hidden.

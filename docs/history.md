@@ -705,3 +705,21 @@ run of five in one second among them, and the player's request with them; the
 trial, reading the same writes through its own slots, lost none, and its false
 rings cost a slot each. The mailbox became the one inbox, and the slots' own
 inboxes, the PC's slot cursor and the session stamp check went.
+
+## The Companion window would not close in a fight (2026-11-14)
+
+The player: "CLOSING WINDOWS SHOULD WORK IN COMBAT". With the window holding
+the controller as a fight began, closing it said "Interface action failed" and
+left the pad on the closed window, the bars dead, until the fight ended; the
+same block was in the record four times the day before. Blizzard's
+SmartNavigation hooks the hide of every window it has focused, and the hook
+calls a SecureHelper-wrapped function, which refuses addon code in a fight: our
+close button and the talk tap hide the window from addon code. Restricted
+secure code cannot help (no clock to tell a tap, and no handle on an
+unprotected frame in a fight), and the manager's focus switch is not ours to
+call. Blizzard's documented way in is `ADDON_RESTRICTION_STATE_CHANGED`: during
+its dispatch, as the combat restriction activates, the wrapped calls still
+work. So there every open window of ours leaves the controller's focus, and a
+window closed in a fight is stowed off screen until the fight ends
+(`WC.ShowPanel`, `WC.HidePanel`, Engine.lua). The Companion window, the
+settings page and the item view all share it.

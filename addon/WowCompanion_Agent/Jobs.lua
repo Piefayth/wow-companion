@@ -473,7 +473,7 @@ keyOwner:SetScript("OnUpdate", function(_, dt)
 	-- a tab change redraws at once, in step with the tab; otherwise five times
 	-- a second
 	local frame = WC.Companion.window()
-	local tab = frame and frame:IsShown() and frame.currentTab or 0
+	local tab = frame and WC.PanelShown(frame) and frame.currentTab or 0
 	if elapsed < 0.2 and tab == lastTab then return end
 	lastTab = tab
 	elapsed = 0

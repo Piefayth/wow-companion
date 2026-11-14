@@ -8,9 +8,9 @@
 -- window's secure buttons (the offered press, Reload) are stowed in a hidden
 -- holder of their own as combat begins (PLAYER_REGEN_DISABLED runs just before
 -- the lockdown, the last moment protected frames can move), which leaves the
--- window an ordinary frame: a tap opens and closes it all fight long. They go
--- back when the fight ends, and a window opened mid-fight becomes a panel again
--- so the controller's focus cycle reaches it.
+-- window an ordinary frame: a tap opens and closes it all fight long (out of
+-- the controller's focus, and stowed when closed, until the fight ends:
+-- WC.ShowPanel, WC.HidePanel). They go back when the fight ends.
 local stowed = {}
 local extraStowed = {}
 local stash = CreateFrame("Frame", "WowCompanionStash", UIParent)
