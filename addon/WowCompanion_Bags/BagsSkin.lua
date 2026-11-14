@@ -131,6 +131,10 @@ local function opened()
 	if lay() then
 		hide:Play()
 		if not f:IsShown() then f:Show() end
+		-- the slot their cursor chose as the bags opened (its EnterButton came
+		-- before ours were laid)
+		local b = SmartNavigation and SmartNavigation.currentButton
+		if b and anchored[b] and b.GetBagID then f:FocusOn(b:GetBagID(), b:GetID()) end
 	else
 		show:Play()
 		if f:IsShown() then f:Hide() end
@@ -140,7 +144,12 @@ local function closed()
 	if blizz:IsShown() then return end
 	if f:IsShown() then f:Hide() end
 end
-EventRegistry:RegisterCallback("ContainerFrame.OpenBag", function() C_Timer.After(0, opened) end, "WCBagsSkin")
+-- anchored at once, so a button new this session carries its anchor when their
+-- cursor first lands on it; placed a frame later, once theirs are laid out
+EventRegistry:RegisterCallback("ContainerFrame.OpenBag", function()
+	if blizz:IsShown() then anchorNew() lay() end
+	C_Timer.After(0, opened)
+end, "WCBagsSkin")
 EventRegistry:RegisterCallback("ContainerFrame.CloseBag", function() C_Timer.After(0, closed) end, "WCBagsSkin")
 -- one tooltip, theirs (with what addons add to it), moved onto our slot each
 -- time they place it
@@ -184,7 +193,7 @@ end, "WCBagsSkin")
 -- our layout changed (a sort, a section moving): the proxies follow
 hooksecurefunc(f, "Layout", function() if blizz:IsShown() then lay() end end)
 hide:Play()
-print("bags: trial on, Blizzard's frame wears ours")
+WC.Say("bags: trial on, Blizzard's frame wears ours")
 end
 
 local loader = CreateFrame("Frame")
