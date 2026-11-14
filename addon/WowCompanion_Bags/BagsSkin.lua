@@ -187,8 +187,9 @@ do
 		marks[key] = CreateFrame("Frame", nil, f, template)
 	end
 	for _, m in pairs(marks) do m:Hide() end
-	-- and our highlight sits on whatever of ours their cursor is on (read each
-	-- frame: it lands on a bag icon as the bags open, which no event reports)
+	-- and our highlight sits on the frame their cursor is anchored to, so the two
+	-- cannot part (read each frame: it lands on a bag icon as the bags open,
+	-- which no event reports)
 	local mirror, cur = CreateFrame("Frame", nil, f), nil
 	mirror:SetScript("OnHide", function() cur = nil end)
 	mirror:SetScript("OnUpdate", function()
@@ -196,9 +197,8 @@ do
 		if b ~= cur then
 			cur = b
 			local p = b and anchored[b]
-			if p == addSlots then f:Mark(p)
-			elseif p and b:GetParent() == GamepadBagBar then f:Mark(f:BagIconFor(b))
-			elseif p then f:FocusOn(b:GetBagID(), b:GetID()) end
+			if p and b.GetBagID and b:GetParent() ~= GamepadBagBar then f:Mark(p, b:GetBagID(), b:GetID())
+			else f:Mark(p) end
 		end
 		for key, m in pairs(marks) do
 			local theirs = blizz[key]

@@ -497,17 +497,16 @@ local function build()
 		self:Carry()
 	end
 	-- the highlight alone on a cell that is not a slot (a bag icon, the add cell)
-	function f:Mark(frame)
-		if not frame then return end
-		self.focusIndex = nil
+	-- the skin's highlight, on the frame Blizzard's cursor is anchored to (none:
+	-- hidden); a slot's bag and slot keep focusIndex for the carried icon
+	function f:Mark(frame, bag, slot)
+		local b = bag and buttons[bag * 100 + slot]
+		self.focusIndex = b and meta[b].index or nil
 		tip:Hide()
 		hl:ClearAllPoints()
+		if not frame then hl:Hide() return end
 		hl:SetPoint("CENTER", frame, "CENTER")
 		hl:Show()
-	end
-	function f:FocusOn(bag, slot)
-		local b = buttons[bag * 100 + slot]
-		if b and meta[b].index then self:Focus(meta[b].index) end
 	end
 
 	-- the pad's handler, its buttons and the triangle menu (BagsInput, BagsMenu)
