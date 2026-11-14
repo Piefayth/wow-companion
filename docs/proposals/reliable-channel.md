@@ -50,36 +50,70 @@ reads as playing. The PC, the bells' names and their history play no part.
 `bells.rs` said an empty file "fails to play at once"; that is what let one
 early answer count as a ring.
 
-A later ask would not fix it. The false ring lasts frames, and a frame can be
-longer than any fixed wait. A control can fix it.
+## What does not fix it
 
-## The fix
+- **Asking again later** (a real bell is half a second of sound): a delay on
+  every message and a guessed threshold. The player turned it down.
+- **A control bell** (`never.wav`, empty, played in the same frame): on the next
+  five false takes (2026-11-13, 22:28-22:31) it read playing on four and quiet
+  on one, slot 5, whose bell had been empty since 18:13. It was removed.
+- The game tells a sound only by `C_Sound.IsPlaying`, so nothing else read from
+  a bell can tell a false ring from a true one.
 
-1. **A control** (Link.lua `check`): each slot bell is played with `never.wav`,
-   which is empty and written by nothing, in the same frame and after the bell.
-   Both are asked at the same moment. If the control still reads as playing,
-   the game has not decided yet, and the slot bell's answer says nothing.
-   - The measurement: 26 of 26 same-frame pairs agreed.
-   - The order: the control is opened after the bell. If the control's open
-     has failed, the bell's open, queued first, has been decided too.
-   - It costs one more empty play every 0.1 s. The probe did the same for four
-     hours. The heartbeat went stale twice in that session (`channel.slowed`),
-     which is what held files look like; the count step shows whether that
-     comes from the extra play.
-2. **A stale slot is dropped** (Link.lua `receive`): a slot stamped for an
-   earlier session is counted and not handled. The PC takes the stamp and the
-   bell set from one number (session.rs), so a message written for this
-   session always carries this session's stamp.
+So a false ring has to cost nothing.
 
-## Rollout (CLAUDE.md, "Changing the channel")
+## Why a false ring costs a message now
 
-1. **Count** (2026-11-13): every take's audit line says `control=playing` or
-   `control=quiet`, and `channel.undecided` counts the asks made while the
-   control played. Nothing is obeyed yet. After one played session, every fresh
-   take should read quiet and every stale take playing. A fresh take that reads
-   playing would mean a real open delays the control's open, and the next step
-   would then hold real messages.
-2. **Obey**: while the control plays, the slot is asked again at the next tick
-   instead of being taken. The heartbeat (Status.lua) asks its pulse bells the
-   same way at 0.15 s, so it can misread a quiet bell in the same race. It gets
-   the control in this step too.
+A slot is one message: the PC writes message k into slot k, and the game takes
+slot k when bell k rings. Both sides count slots. A false take moves the game's
+count ahead, and the PC cannot learn it. Every message the PC writes after that
+lands in a slot the game has passed, until a reload. That is what the player saw
+at 22:30: an L1 question and its start went to slots 5 and 6, which the game had
+passed, and showed only after the reload.
+
+## Proposed: one inbox that every slot reads
+
+- **One file, 512 names.** Every slot's `Inbox.lua` is a hard link to one file,
+  the inbox. Whichever slot the game loads, it reads what the PC wrote last. A
+  slot is then one chance to read the inbox, and any ring spends one.
+- **The inbox carries everything the game may not have applied.** Each message
+  is numbered in its session (`seq`):
+  - lines, until a save confirms them (what the mailbox holds now);
+  - the latest of each "now" message (progress per job, context per
+    conversation, status);
+  - the session's one-off messages (`lua`, `read`, `chat`, `stopped`).
+
+  The game keeps the highest number it has applied and applies only what is
+  newer. A message applies once, steps included, however often it is read.
+- **Bells count messages, not slots.** The PC writes the inbox, then rings bell
+  `seq`. The game asks the bell after the last message it applied, and a ring
+  loads the next unused slot.
+- **A false ring** loads a slot, finds nothing newer, and stops: one slot spent,
+  nothing lost, nothing late. The game asks the same bell again.
+- **A read during a write** does not parse and applies nothing. The next ring
+  reads the inbox whole.
+- **The mailbox becomes this file.** The game reads it at load as now, and
+  every slot reads it during the session. One file holds everything the game
+  has not applied, before a reload and after.
+- **The game counts its own slots**, true takes and false, so it offers the
+  Reload at 16 left from the real count. The PC stops keeping a slot cursor in
+  step with the game: the cursor, its stamp and the PC's "slots spent" reckoning
+  go.
+
+Costs:
+- Every take parses the whole inbox: the lines since the last save (at most
+  10.4 KB in a session, measured) and the session's one-off messages.
+- False takes still spend slots, about 80 an hour at the worst seen
+  (16:27-18:00). A session has 512, and the Reload offer comes at 16 left.
+- It needs hard links, which NTFS has. Windows game drives are NTFS (this one
+  is); install refuses any other file system and says why.
+
+To test first, beside the channel, on slots 509-512 (no session reaches them):
+1. The game reads a hard-linked `Inbox.lua` fresh at each load. Link the four
+   to one test file, load two of them from game Lua with the file changed in
+   between, and check that each read what was there at that moment.
+2. Writing the file in place keeps every link. (`fs::write` truncates in place;
+   a rename would cut the links.)
+
+Then a trial beside the channel, on slots and bells it never reaches, and the
+switch after a whole session of counts (CLAUDE.md, "Changing the channel").

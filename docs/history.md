@@ -682,8 +682,8 @@ never misread.
 The cause is in the game's sound system, not in the names or the PC. The game
 opens a sound file in the background, and an empty one reads as playing until
 that open fails. That is usually within a frame, and several frames at a busy
-moment. bells.rs had said an empty file fails "at once". Each bell is now played
-with a control, `never.wav` (empty, written by nothing), in the same frame. A
-control still playing means the game has not decided. This is counted for a
-session before the poll obeys it (docs/proposals/reliable-channel.md). A slot
-stamped for an earlier session is now dropped, not handled.
+moment. bells.rs had said an empty file fails "at once". A control bell played
+in the same frame was tried and read quiet on one of the next five false takes,
+so it went; asking again later was turned down (a delay, and a guessed
+threshold). A slot stamped for an earlier session is now dropped, not handled
+(docs/proposals/reliable-channel.md).

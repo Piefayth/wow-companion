@@ -57,10 +57,6 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
             bells::empty(&path)?;
         }
     }
-    // the slot bells' control (Link.lua, check): empty, and written by nothing
-    if missing(&signals.join("never.wav")) {
-        bells::empty(&signals.join("never.wav"))?;
-    }
     for slot in 1..=SLOTS {
         let dir = addons.join(slot_name(slot));
         note_fresh(&dir);

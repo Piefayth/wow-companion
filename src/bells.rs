@@ -18,8 +18,8 @@
 //!    holds nothing, which is why idle slot bells are empty. But it fails to play
 //!    only when the game's background open of it fails, and until then it reads
 //!    as playing: within a frame at most moments, for a few frames at a busy one
-//!    (0.15 s and more, 2026-11-13). So the addon asks every bell beside a control
-//!    played in the same frame, `never.wav`, empty and written by nothing.
+//!    (0.15 s and more, 2026-11-13). No other file read in the same frame tells
+//!    the two apart (docs/proposals/reliable-channel.md).
 //! 4. **Every write and delete is retried and checked**, and a failure names the
 //!    file: a retry that gives up quietly makes a stuck bell look like nothing.
 //! 5. **A long sound is streamed, and not playing a frame after it starts**; the

@@ -230,10 +230,9 @@ reaches the game with two tricks, and the game reaches the PC only at a reload.
   `C_Sound.IsPlaying` 20 ms later; a ring takes the slot, and the next is asked at
   once. While the heartbeat is stale it asks every 0.5 s. **An empty bell reads as
   playing until the game's background open of it fails**, several frames at a
-  busy moment, so each bell is played with a control in the same frame
-  (`never.wav`, empty, written by nothing); a control still playing marks an
-  undecided reading (counted, not yet obeyed: docs/proposals/reliable-channel.md).
-  A slot stamped for an earlier session is dropped. **All bell files go
+  busy moment, and the game then takes a slot the PC has not written
+  (docs/proposals/reliable-channel.md). A slot stamped for an earlier session is
+  dropped. **All bell files go
   through `src/bells.rs`, which holds the rules the game forced on us** (a bell
   over 174,762 bytes, a long sound streamed, never a missing file, every write
   retried and reported). Never write a sound file the game reads any other way.
