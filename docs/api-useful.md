@@ -156,6 +156,11 @@ Not done yet: world map pins, labels, clearing a pin automatically on arrival.
   `GamePadStickAxisButtons` 0 and no wheel open; the camera stick still read),
   which closes Blizzard's flyout wheel (forms) on every push, and the game drops
   the profile at a /reload. Not usable.
+- `GamePadStickAxisButtons` 1 makes the left stick keys too and stops analog
+  walking (speed 9.1 to 0 as a wheel opened; bound to MOVEFORWARD it walks only
+  on a fresh push, digital). Setting the CVar drops a pad profile set with
+  `C_GamePad.SetConfig` (a left-stick threshold of 1.5 was gone as the wheel
+  opened), so no profile can keep the left stick analog. Measured 2026-11-14.
 - `C_GamePad.GetDeviceMappedState()` is not secret in a fight.
 - `SetMacroSpell(index, spell)` / `SetMacroItem` set what a macro's bar button
   shows, in a fight too, for a macro opening with a bare `#showtooltip` and the
