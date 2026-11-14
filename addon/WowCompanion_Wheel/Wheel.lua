@@ -365,8 +365,8 @@ end
 
 -- A wheel's bar macros show what a tap of them uses again: SetMacroSpell /
 -- SetMacroItem, the game's feedback for a macro that opens with a bare
--- #showtooltip (measured out of combat 2026-11-14: the Buffs macro took Mark of
--- the Wild's icon). Every macro holding the wheel's line counts.
+-- #showtooltip (measured 2026-11-14, in combat too: the Buffs macro took Mark
+-- of the Wild's icon). Every macro holding the wheel's line counts.
 local function WheelMacros(key, fn)
     local line = W.Macro(key)
     local global, character = GetNumMacros()

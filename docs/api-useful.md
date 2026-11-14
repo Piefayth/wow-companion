@@ -157,6 +157,9 @@ Not done yet: world map pins, labels, clearing a pin automatically on arrival.
   which closes Blizzard's flyout wheel (forms) on every push, and the game drops
   the profile at a /reload. Not usable.
 - `C_GamePad.GetDeviceMappedState()` is not secret in a fight.
+- `SetMacroSpell(index, spell)` / `SetMacroItem` set what a macro's bar button
+  shows, in a fight too, for a macro opening with a bare `#showtooltip` and the
+  question-mark icon (134400); `EditMacro` is out of combat only.
 - `SetCursorPosition(x, y)` takes the same pixels `GetCursorPosition()` gives.
   It moves nothing while the camera holds the cursor (`IsMouselooking()`), and
   `pcall` reports it failing in a fight. `MouselookStop()` / `MouselookStart()`
