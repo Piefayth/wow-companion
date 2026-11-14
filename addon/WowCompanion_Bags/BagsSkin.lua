@@ -223,7 +223,8 @@ if Menu and Menu.ModifyMenu and FrameUtil and FrameUtil.GetScreenQuadrant then
 		if not (ours and f:IsShown()) then return end
 		root:AddMenuAcquiredCallback(function(menu)
 			C_Timer.After(0, function()
-				if not menu:IsShown() then return end
+				-- (not asked shown: the first menu made fades in, hidden until then)
+				if Menu.GetManager():GetOpenMenu() ~= menu then return end
 				local q = FrameUtil.GetScreenQuadrant(ours)
 				local Q = FrameUtilQuadrantEnum
 				menu:ClearAllPoints()
