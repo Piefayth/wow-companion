@@ -1,7 +1,9 @@
 -- Minus tap is the companion's one contextual button: with the controller's
 -- cursor on a spell, a bag item, a worn item or a macro in a game window
 -- (SmartNavigation's current button, only read: measured clean, 2026-11-14),
--- a tap places that thing on a wheel (WCWheel.Place: open a wheel and flick).
+-- a tap places that thing on a wheel (WCWheel.Place: open a wheel and flick);
+-- the controller's focus leaves the window, which stays open, so the wheel's
+-- chord works at once.
 -- Anything else, and a tap while placing stops it; otherwise the tap opens
 -- the Companion window (Agent.lua).
 
@@ -42,7 +44,7 @@ function WC.Companion.ContextTap()
     if button and button:IsVisible() then
         local ok, slot, name = pcall(Thing, button)
         if ok and slot then
-            WCWheel.Place(slot, name)
+            if WCWheel.Place(slot, name) then WC.LeaveFocus() end
             return true
         elseif ok and name then
             WC.Say("Wheel: " .. name .. ", so it cannot go on a wheel")

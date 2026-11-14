@@ -233,7 +233,7 @@ function R:Open(title, entries)
 			slot.label:SetText(entry.label)
 			slot.count:SetText(entry.count or "")
 		end
-		for _, part in ipairs({ slot.icon, slot.shadow, slot.border, slot.label, slot.count }) do part:SetShown(entry ~= nil) end
+		for _, part in ipairs({ slot.icon, slot.shadow, slot.border, slot.label, slot.count }) do part:SetShown(entry ~= nil and not entry.empty) end
 		slot.cooldown:Clear()
 	end
 	self.entries = entries

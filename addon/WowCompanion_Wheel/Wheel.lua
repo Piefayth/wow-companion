@@ -323,8 +323,11 @@ local function Resolve(slot)
             icon = slot.icon or 134400 }
     elseif slot.rule then
         return nil, "unknown rule " .. tostring(slot.rule)
+    elseif not next(slot) then
+        -- a gap, kept so the slots after it stay where they are
+        return { empty = true, label = "" }
     end
-    return nil, "empty slot"
+    return nil, "not a slot"
 end
 
 -- Rules fill themselves, out of combat, each time the wheel is rebuilt. Each
@@ -435,10 +438,13 @@ function W.Rebuild(quiet)
                 Print(key .. ": skipped a slot, " .. (why or "the wheel is full"))
             end
         end
-        -- while placing, a wheel with room shows where an added slot goes
-        if W.placing and #entries < MAX_SLOTS then
-            entries[#entries + 1] = { type = "macro", attr = "macrotext", value = "", label = "Add here",
-                icon = 134400, add = true }
+        -- while placing, every free position shows itself: the gaps and all
+        -- past the last slot
+        if W.placing then
+            for _, entry in ipairs(entries) do
+                if entry.empty then entry.label, entry.icon = "Add here", 134400 end
+            end
+            for _ = #entries + 1, MAX_SLOTS do entries[#entries + 1] = { label = "Add here", icon = 134400, add = true } end
         end
         for index, entry in ipairs(entries) do
             entry.dx, entry.dy, entry.angle = WC.Ring.Direction(index)
@@ -475,6 +481,7 @@ function W.Place(slot, label)
     C_Timer.After(PLACE_FOR, function()
         if W.placing == placing then EndPlacing() Print("stopped placing " .. label) end
     end)
+    return true
 end
 function W.CancelPlacing()
     if not W.placing then return end
@@ -491,13 +498,16 @@ function ring:WCPlace(key, index)
         return Print("that slot is filled from the bags (the " .. entry.from.rule .. " rule): flick to another")
     end
     wheel.slots = wheel.slots or {}
-    local said
+    local said = placing.label .. " added to " .. (wheel.label or key)
     if entry.add then
+        -- past the last slot: gaps up to the position flicked
+        local last = 0
+        for i, each in ipairs(ringData[key]) do if not each.add then last = i end end
+        for _ = last + 1, index - 1 do wheel.slots[#wheel.slots + 1] = {} end
         wheel.slots[#wheel.slots + 1] = placing.slot
-        said = placing.label .. " added to " .. (wheel.label or key)
     else
+        if not entry.empty then said = placing.label .. " is on " .. (wheel.label or key) .. " in place of " .. tostring(entry.label) end
         wheel.slots[entry.from.index] = placing.slot
-        said = placing.label .. " is on " .. (wheel.label or key) .. " in place of " .. tostring(entry.label)
     end
     EndPlacing()
     Print(said)
