@@ -10,5 +10,6 @@ BagsInput.lua
 BagsMenu.lua
 Bags.lua
 BagsStandIn.lua
+BagsSkin.lua
 BagSwap.lua
 MakeRoom.lua

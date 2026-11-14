@@ -23,7 +23,10 @@ do
 		trigger:SetFrameRef("bags", blizz)
 		-- never closes: a vendor opening their bags while ours is up must not
 		-- close ours (circle closes)
+		-- the trial (BagsSkin.lua): their frame is the window, so nothing here
+		trigger:SetAttribute("skin", WowCompanionBagsDB.skin and true or nil)
 		trigger:SetAttribute("_onshow", [[
+			if self:GetAttribute("skin") then return end
 			self:GetFrameRef("pad"):RunAttribute("open")
 			self:GetFrameRef("bags"):Hide(true)
 		]])
