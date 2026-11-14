@@ -72,6 +72,8 @@ none of this. When the player states a new preference or changes one, write it h
 - **API first; screenshots only to read our own displays** (2026-11-10): reading
   anything else on their screen needs their explicit ask; never input to the game
   window.
+- **No dead stops** (2026-11-14): the cursor never rests on a cell that
+  cannot hold anything (BagPad's filler slots turned down).
 - **Clean up freely** (2026-11-11: "I love cleaning up"): remove what is dead,
   done or replaced without asking first.
 - **Combat bars are for combat** (2026-11-10): no agent puts a non-combat entry
