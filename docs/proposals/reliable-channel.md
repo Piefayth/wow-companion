@@ -73,9 +73,10 @@ passed, and showed only after the reload.
 
 ## Proposed: one inbox that every slot reads
 
-- **One file, 512 names.** Every slot's `Inbox.lua` is a hard link to one file,
-  the inbox. Whichever slot the game loads, it reads what the PC wrote last. A
-  slot is then one chance to read the inbox, and any ring spends one.
+- **One file, read by every slot.** Every slot's `Slot.xml` names the one inbox
+  outside its folder (`..\WowCompanion_Mailbox\Mail.lua`). Whichever slot the
+  game loads, it reads what the PC wrote last. A slot is then one chance to read
+  the inbox, and any ring spends one. The slots' own `Inbox.lua` files go.
 - **The inbox carries everything the game may not have applied.** Each message
   is numbered in its session (`seq`):
   - lines, until a save confirms them (what the mailbox holds now);
@@ -93,9 +94,11 @@ passed, and showed only after the reload.
 - **A read during a write must never happen.** The game reports an empty or
   unparsable Lua file as a Lua error and opens its error window, which takes
   the controller's focus (measured 2026-11-14: an empty `Inbox.lua` loaded gave
-  "File ... Inbox.lua is empty."). So the inbox is never empty, and the PC's
-  write is atomic to the game: see "Still to test".
-- **The mailbox becomes this file.** The game reads it at load as now, and
+  "File ... Inbox.lua is empty."). So the inbox is never empty, and the PC
+  replaces it whole: it writes a new file beside it and renames it over the
+  inbox, and the game opens either the old file or the new one, never half of
+  one. A rename the game's open is in the way of is retried, as bells are.
+- **The mailbox is this file.** The Mailbox addon reads it at load as now, and
   every slot reads it during the session. One file holds everything the game
   has not applied, before a reload and after.
 - **The game counts its own slots**, true takes and false, so it offers the
@@ -110,25 +113,18 @@ Costs:
   (2026-11-14): the load itself costs that, and the size did not show.
 - False takes still spend slots, about 80 an hour at the worst seen
   (16:27-18:00). A session has 512, and the Reload offer comes at 16 left.
-- It needs hard links, which NTFS has. Windows game drives are NTFS (this one
-  is); install refuses any other file system and says why.
 
-Tested 2026-11-14, on slots 509-512 (no session reaches them):
-1. **The game reads a hard-linked `Inbox.lua` fresh at each load.** With S510-S512's
-   inboxes linked to S509's, each load read what the file held at that moment:
-   A at S510; B, the same size, written through S512's name, at S511; a longer C
-   at S512 and S509. `...` in an inbox is its slot's addon name.
-2. **Writing in place keeps every link**: Python's and Rust's `fs::write`
-   (truncate in place) both did. A rename would cut the links.
-
-Still to test: a write the game never sees half done. Either
-- `Slot.xml` naming one file outside the slot's folder
-  (`..\WowCompanion_Link\Inbox.lua`), which the PC replaces whole by a rename:
-  no hard links, no NTFS; whether the game follows a `..` path is unknown (no
-  addon here or in Blizzard's source uses one); or
-- the hard links, with the PC holding the file shut to readers while it writes:
-  the game's open then fails, and whether it reports that as a Lua error is
-  unknown.
+Tested 2026-11-14, on slots no session reaches (500-512), with the game running:
+1. **A slot reads a file outside its folder**: `Slot.xml` naming
+   `..\WowCompanion_S504\Inbox.lua` (or `../`) loaded that file. A path from the
+   game's root (`Interface\AddOns\...`) is taken inside the slot's folder, fails
+   ("Error loading" in `Logs\FrameXML.log`), and the load still says done. The
+   file has to exist when the game starts: the client only knows those.
+2. **Each load reads the file as it is then**, after it was replaced by a
+   rename (a new file under the old name) three times, through any slot,
+   whatever its size. `...` in the file is the loading slot's addon name.
+3. Hard links, tried first, also read fresh through every name, and
+   `fs::write` kept them; the rename needs none, and so no NTFS.
 
 Then a trial beside the channel, on slots and bells it never reaches, and the
 switch after a whole session of counts (CLAUDE.md, "Changing the channel").
