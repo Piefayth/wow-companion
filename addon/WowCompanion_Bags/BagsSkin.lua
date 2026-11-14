@@ -212,14 +212,12 @@ end
 hooksecurefunc("ContainerFrame_GenerateFrame", function(frame)
 	if frame == blizz then C_Timer.After(0, function() if blizz:IsShown() then f:Layout() anchorNew() lay() end end) end
 end)
--- triangle's menu (their MoreActions, tagged MORE_CONTEXT_ACTIONS) opens beside
--- its owner, their unseen button (MenuManagerMixin:OpenContextMenu): held
--- beside our cell for it, by the same rule, through the menu API addons are
--- given (Menu.ModifyMenu, the acquired and released callbacks). Their placing
--- runs right after the acquired callback, so ours is an OnUpdate, which runs
--- after the press in the same frame, before it is drawn, and holds it there
--- while it is open (the first menu made is placed again as it fades in).
-if Menu and Menu.ModifyMenu and FrameUtil and FrameUtil.GetScreenQuadrant then
+-- a menu opened from one of their stops (triangle's MoreActions, a bag icon's
+-- dropdown, BagDropdownButton) opens beside their unseen button: held beside
+-- our cell for it, by OpenContextMenu's own rule. Their placing runs as the
+-- menu opens, so ours is an OnUpdate, which runs before the frame is drawn,
+-- and holds it there while it is open.
+if FrameUtil and FrameUtil.GetScreenQuadrant then
 	local holder, held, ours = CreateFrame("Frame"), nil, nil
 	holder:Hide()
 	local function place()
@@ -234,17 +232,29 @@ if Menu and Menu.ModifyMenu and FrameUtil and FrameUtil.GetScreenQuadrant then
 		held:SetPoint(p, ours, rp)
 	end
 	holder:SetScript("OnUpdate", function() if held then place() end end)
-	Menu.ModifyMenu("MORE_CONTEXT_ACTIONS", function(owner, root)
-		local cell = owner and anchored[owner]
-		if not (cell and f:IsShown()) then return end
-		root:AddMenuAcquiredCallback(function(menu) held, ours = menu, cell holder:Show() end)
-		root:AddMenuReleasedCallback(function(menu)
-			if held == menu then held = nil holder:Hide() end
-		end)
-	end)
+	EventRegistry:RegisterCallback("MenuProxy.OnShow", function(_, menu)
+		local owner = f:IsShown() and menu.GetOwnerRegion and menu:GetOwnerRegion()
+		local cell = owner and (anchored[owner] or (owner.GetParent and anchored[owner:GetParent()]))
+		if not cell then return end
+		held, ours = menu, cell
+		holder:Show()
+	end, "WCBagsSkin")
+	EventRegistry:RegisterCallback("MenuProxy.OnHide", function(_, menu)
+		if held == menu then held = nil holder:Hide() end
+	end, "WCBagsSkin")
 end
 -- our layout changed (a sort, a section moving): the proxies follow
 hooksecurefunc(f, "Layout", function() if blizz:IsShown() then lay() end end)
+-- their bag icons exist from the start, and the cursor lands on the backpack's
+-- as the bags open, before our open callback runs: anchored and placed now
+local early = CreateFrame("Frame")
+early:RegisterEvent("PLAYER_ENTERING_WORLD")
+early:SetScript("OnEvent", function()
+	if InCombatLockdown() or not (InputUtil and InputUtil.IsGamepadUIEnabled()) then return end
+	early:UnregisterAllEvents()
+	anchorNew()
+	lay()
+end)
 hide:Play()
 WC.Say("bags: trial on, Blizzard's frame wears ours")
 end
