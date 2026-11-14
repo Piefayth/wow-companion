@@ -110,6 +110,11 @@ none of this. When the player states a new preference or changes one, write it h
 
 ## Their setup
 
+- **Pad profile in the game** (2026-11-14, their yes, on trial): a
+  `C_GamePad.SetConfig` profile "WoW Companion wheel" for `054c:0df2` (the id
+  the game sees: "DualSense Edge") sets only RStickX/RStickY `buttonThreshold`
+  0.38, so the wheel's stick keys split 45-degree slices. Undo:
+  `/run C_GamePad.DeleteConfig({vendorID=0x054c,productID=0x0df2}) C_GamePad.ApplyConfigs()`.
 - Controller: a Switch pad through a switch2connect adapter in DS5 mode
   (`054c:0ce6`); DS5 mode stays ("ds5 ride or die"). Talk button: minus.
 - Headset: AirPods Max (8 kHz hands-free link, hisses when audio plays), so
