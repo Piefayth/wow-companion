@@ -83,6 +83,10 @@ none of this. When the player states a new preference or changes one, write it h
   feature should feel before building it, and never add pad bindings (d-pad,
   face buttons) to a window or feature unasked. Chat mode lasts one minus hold,
   never longer.
+- **Never bind the sticks** (2026-11-14): moving and the camera always stay
+  the player's, whatever of ours is open or focused. A window that takes the
+  pad takes what Blizzard's focused windows take (d-pad, face buttons), no more,
+  and only while it has focus; a window that is only open takes nothing.
 - **No paging through lists** (2026-11-11): never propose a design where a key
   steps through items one by one (cycling offers, conversations). Pick things
   directly, e.g. by the conversation's own trigger chord.
@@ -108,4 +112,8 @@ none of this. When the player states a new preference or changes one, write it h
 - GPU: RTX 4090, Whisper large-v3-turbo on CUDA (`CUDAARCHS=89`).
 - Speech (2026-11-11): keeps both engines. Whisper is "much higher quality",
   streaming's speed "way too good to give up"; on streaming for now.
+- **Polestar fork** (2026-11-14): they keep their own fork (Piefayth/polestar),
+  one branch per change off upstream main, and contribute back the ones that
+  hold up. Before any Polestar change, read upstream's open issues and pull
+  requests on it (and why choices were made): the addon changes daily.
 - Installed addons the agent may use: see the request's `== integrations ==`.
