@@ -28,10 +28,10 @@
 //! 6. **Asked every frame, any bell makes the game hold its sound files**, an
 //!    empty one too, for seconds. At 10 asks a second it does not.
 //!
-//! What this means in practice: the slot bells (docs/proposals/slot-bells.md)
-//! and the inbox trial's use `ring` / `empty`; the heartbeat's pulse bells
-//! `ring` / `silence`. See
-//! CLAUDE.md, "Changing the channel", before touching either.
+//! What this means in practice: the channel's bells
+//! (docs/proposals/reliable-channel.md) use `ring` / `empty`; the heartbeat's
+//! pulse bells `ring` / `silence`. See CLAUDE.md, "Changing the channel", before
+//! touching either.
 
 use std::{
     fs, io,

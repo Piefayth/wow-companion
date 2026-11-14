@@ -1,12 +1,11 @@
 //! The game's UI session, read once (docs/reviews/2026-11-11.md, finding 3).
 //!
-//! The slot cursor starts again with each session, and its slot bells are its
-//! set's. The cursor, the set and the slot count all come from one reading of
-//! Link's save (`Session`): its load count, how many slots it saw, and when it
-//! was written, with when the game started. Read from different files they came
-//! apart in the middle of a save (docs/history.md, 2026-11-12): the cursor began
-//! a session in one set and went on in the next, and the game waited a whole
-//! session on a first slot that never rang.
+//! The inbox's writes start again with each session (src/inbox.rs), and their
+//! bells are its set's. Both come from one reading of Link's save (`Session`):
+//! its load count and when it was written, with when the game started. Read
+//! from different files they came apart in the middle of a save
+//! (docs/history.md, 2026-11-12): sends began a session in one set and went on
+//! in the next, and the game waited a whole session on a bell that never rang.
 
 use super::*;
 use crate::savedvars::{self, Lua};
@@ -16,9 +15,6 @@ pub(crate) struct Session {
     /// Link's count of its loads in the save: the session before this one (the
     /// addon adds its one at load, in memory)
     pub(crate) loads: u64,
-    /// how many slot folders the game saw at its last load; None before Link has
-    /// recorded it
-    pub(crate) slots: Option<u32>,
     /// when the save was written, which a reload does before it loads again: when
     /// this session began (0 before the game has ever saved)
     pub(crate) began: u128,
@@ -33,17 +29,12 @@ impl Session {
     pub(crate) fn read(addons: &Path) -> Option<Session> {
         let game = channel::game();
         let Some(path) = saved_variables(addons, LINK) else {
-            return Some(Session { loads: 0, slots: None, began: 0, game });
+            return Some(Session { loads: 0, began: 0, game });
         };
         let began = modified_millis(&path)?;
         let db = savedvars::global(&savedvars::read(&path).ok()?, "WowCompanionLinkDB")?;
-        let count = |key: &str| db.get(key).and_then(Lua::number).filter(|n| *n >= 0.0 && n.fract() == 0.0);
-        Some(Session {
-            loads: count("loads").unwrap_or(0.0) as u64,
-            slots: count("slotCount").map(|n| (n as u32).min(SLOTS)),
-            began,
-            game,
-        })
+        let loads = db.get("loads").and_then(Lua::number).filter(|n| *n >= 0.0 && n.fract() == 0.0);
+        Some(Session { loads: loads.unwrap_or(0.0) as u64, began, game })
     }
 
     /// The session now, read again until the save parses: the game writes it in
@@ -62,8 +53,8 @@ impl Session {
     }
 
     /// This session's number: the game's own load count while it runs (the save
-    /// holds the one before), which every slot carries so the game can tell a
-    /// message written for it from one left by an earlier session.
+    /// holds the one before), which the inbox carries so the game can tell writes
+    /// made for it from those of an earlier session.
     pub(crate) fn number(&self) -> u64 {
         self.loads + 1
     }
@@ -73,17 +64,45 @@ impl Session {
         self.number() % SETS
     }
 
-    /// How many slots the running game knows. The game only sees addon folders
-    /// that existed when it launched, so slots installed since are invisible to
-    /// it until a full restart, and a message sent to one would be lost. Link
-    /// records the count it sees; until it has, the old 64.
-    pub(crate) fn known_slots(&self) -> u32 {
-        self.slots.unwrap_or(64).min(SLOTS)
-    }
-
     /// What tells one session from the next: a reload changes the count, a
     /// relaunch (after a crash, the count unchanged) the game's start.
     pub(crate) fn key(&self) -> String {
         format!("{}|{}", self.loads, self.game.map(|at| at.to_string()).unwrap_or_default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    fn save(link: &Path, loads: u64) {
+        fs::write(link, format!("WowCompanionLinkDB = {{ [\"loads\"] = {loads}, }}")).unwrap();
+    }
+
+    #[test]
+    fn a_session_starts_with_a_save_of_link_and_no_other() {
+        let root = env::temp_dir().join(format!("wc-session-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let addons = root.join("Interface").join("AddOns");
+        fs::create_dir_all(addons.join(LINK)).unwrap();
+        let saved = root.join("WTF").join("Account").join("A").join("SavedVariables");
+        fs::create_dir_all(&saved).unwrap();
+        let core = saved.join(format!("{ADDON}.lua"));
+        fs::write(&core, "WowCompanionDB = { }").unwrap();
+        let link = saved.join(format!("{LINK}.lua"));
+        save(&link, 7);
+        let first = Session::read(&addons).unwrap();
+        assert_eq!((first.number(), first.set()), (8, 8 % SETS));
+        // another addon's save landing first is no new session (2026-11-12: read
+        // from Core's save, sends started over a set early)
+        fs::File::options().write(true).open(&core).unwrap().set_modified(SystemTime::now() + Duration::from_secs(5)).unwrap();
+        assert_eq!(Session::read(&addons).unwrap().key(), first.key());
+        // a /reload's save of Link: the next session, in the next set
+        save(&link, 8);
+        let next = Session::read(&addons).unwrap();
+        assert_ne!(next.key(), first.key());
+        assert_eq!((next.number(), next.set()), (9, 9 % SETS));
+        let _ = fs::remove_dir_all(&root);
     }
 }

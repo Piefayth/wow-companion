@@ -8,13 +8,14 @@
 //!   survive the companion; a job not ended when the companion starts, and not
 //!   carried on by a run or a queue it left (src/runs.rs), ended with the
 //!   companion, and says so.
-//! - The mailbox, `WowCompanion_Mailbox/Mail.lua`, an addon the game loads at
-//!   every login and reload, holds every unconfirmed line and every job's state:
-//!   lines made while the game was closed are in the window when it opens.
+//! - The inbox (src/inbox.rs), the mailbox addon's `Mail.lua`, which the game
+//!   reads at every login and reload, carries every unconfirmed line and every
+//!   job's state: lines made while the game was closed are in the window when it
+//!   opens.
 //!
-//! Both files are written whole (a temporary file, then a rename) at every
-//! change, so neither is ever half written. A failure is reported (the window,
-//! `doctor`, the tray), never retried in the dark.
+//! Both are rewritten whole (a temporary file, then a rename) at every change,
+//! so neither is ever half written. A failure is reported (the window, `doctor`,
+//! the tray), never retried in the dark.
 
 use std::collections::BTreeMap;
 
@@ -23,9 +24,6 @@ use crate::jobs::State;
 use crate::message::{job_entry, Line, Msg};
 use crate::savedvars::{self, Lua};
 use serde_json::{json, Value};
-
-/// The folder of the mailbox addon in AddOns.
-pub(crate) const MAILBOX: &str = "WowCompanion_Mailbox";
 
 /// What the ledger holds; pure, so its rules are tested without files.
 #[derive(Default, Debug, PartialEq)]
@@ -129,16 +127,12 @@ impl Book {
         self.lines.len()
     }
 
-    /// `WowCompanion_Mail = {...}`: what the game takes at its next load.
-    pub(crate) fn mailbox_lua(&self) -> String {
-        let written = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
-        let mail = Msg::table()
-            .int("written", written as i128)
-            .list("lines", self.lines.iter().map(|line| line.msg(false)).collect())
-            .list("jobs", self.jobs.iter().map(|(id, slot, state)| job_entry(*id, slot, *state)).collect());
-        format!(
-            "-- Written by the companion (src/ledger.rs) at every change: every conversation\n-- line the game has not saved yet, and every request's state. Do not edit.\nWowCompanion_Mail = {}\n",
-            mail.lua()
+    /// What the inbox carries for the ledger: every unconfirmed line, without
+    /// its steps, and every job's state.
+    pub(crate) fn mail(&self) -> (Vec<Msg>, Vec<Msg>) {
+        (
+            self.lines.iter().map(|line| line.msg(false)).collect(),
+            self.jobs.iter().map(|(id, slot, state)| job_entry(*id, slot, *state)).collect(),
         )
     }
 
@@ -238,7 +232,7 @@ pub(crate) fn held_in(save: &str) -> Result<Held, String> {
 struct Store {
     book: Book,
     ledger: PathBuf,
-    mailbox: PathBuf,
+    addons: PathBuf,
 }
 
 static LEDGER: Mutex<Option<Store>> = Mutex::new(None);
@@ -285,34 +279,46 @@ fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
     fs::rename(&part, path)
 }
 
-/// Write both files from the book; report what fails. Returns a problem new
+/// Write the ledger from the book; report what fails. Returns a problem new
 /// since the last write, to say in the window (the caller does, outside the lock).
 fn save(store: &Store) -> Vec<String> {
-    let mut news = Vec::new();
     let ledger = serde_json::to_vec_pretty(&store.book.to_json()).map_err(io::Error::other).and_then(|bytes| write_whole(&store.ledger, &bytes));
-    news.extend(problem(
+    problem(
         "ledger",
         ledger.err().map(|err| format!("the ledger ({}) could not be written: {err}. Lines are not safe while the game is closed.", store.ledger.display())),
-    ));
-    let mailbox = if store.mailbox.parent().is_some_and(Path::is_dir) {
-        write_whole(&store.mailbox, store.book.mailbox_lua().as_bytes())
-    } else {
-        Err(io::Error::other(format!("the {MAILBOX} addon is not installed (`wow-companion install`)")))
-    };
-    news.extend(problem(
+    )
+    .into_iter()
+    .collect()
+}
+
+/// The ledger as the running companion holds it, for the inbox: nothing when
+/// there is none (the agents are off, or this is not the running companion).
+pub(crate) fn running_mail() -> (Vec<Msg>, Vec<Msg>) {
+    LEDGER.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).as_ref().map(|store| store.book.mail()).unwrap_or_default()
+}
+
+/// The inbox rewritten with the ledger as it stands then: called after each
+/// change, with the ledger's lock let go (the inbox takes its own first).
+/// Returns a problem new since the last write, to say in the window.
+fn publish(addons: &Path) -> Vec<String> {
+    let written = crate::inbox::rewrite(addons, running_mail);
+    problem(
         "mailbox",
-        mailbox.err().map(|err| {
-            let mut held: BTreeMap<&str, (u64, u64)> = BTreeMap::new();
-            for line in &store.book.lines {
-                let range = held.entry(&line.slot).or_insert((line.n, line.n));
-                range.0 = range.0.min(line.n);
-                range.1 = range.1.max(line.n);
+        written.err().map(|err| {
+            let mut held: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+            if let Some(store) = LEDGER.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).as_ref() {
+                for line in &store.book.lines {
+                    let range = held.entry(line.slot.clone()).or_insert((line.n, line.n));
+                    range.0 = range.0.min(line.n);
+                    range.1 = range.1.max(line.n);
+                }
             }
             let named: Vec<String> = held.iter().map(|(slot, (a, b))| format!("{} {a}-{b}", conversation(slot))).collect();
             format!("the mailbox could not be written: {err}. It should hold lines {}.", if named.is_empty() { "(none yet)".into() } else { named.join(", ") })
         }),
-    ));
-    news
+    )
+    .into_iter()
+    .collect()
 }
 
 fn conversation(slot: &str) -> String {
@@ -369,9 +375,10 @@ pub(crate) fn open(addons: &Path, agents: bool, runs: &[u64], queued: &[u64]) ->
     }
     let recovered = book.recover(runs, queued);
     jobs::restore(book.jobs());
-    let store = Store { book, ledger: ledger_path, mailbox: addons.join(MAILBOX).join("Mail.lua") };
+    let store = Store { book, ledger: ledger_path, addons: addons.to_path_buf() };
     news.extend(save(&store));
     *LEDGER.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(store);
+    news.extend(publish(addons));
     say(addons, news);
     recovered
 }
@@ -383,8 +390,9 @@ pub(crate) fn number(addons: &Path, line: Line) -> Result<Line, Line> {
     let mut guard = LEDGER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let Some(store) = guard.as_mut() else { return Err(line) };
     let line = store.book.number(line);
-    let news = save(store);
+    let mut news = save(store);
     drop(guard);
+    news.extend(publish(addons));
     say(addons, news);
     Ok(line)
 }
@@ -395,6 +403,9 @@ pub(crate) fn mirror(jobs: Vec<(u64, String, State)>) {
     let Some(store) = guard.as_mut() else { return };
     store.book.mirror(jobs);
     let _ = save(store);
+    let addons = store.addons.clone();
+    drop(guard);
+    let _ = publish(&addons);
 }
 
 /// A save landed (a reload, a logout) or the companion started: drop what the
@@ -422,8 +433,9 @@ pub(crate) fn confirm(addons: &Path) {
     let mut guard = LEDGER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let Some(store) = guard.as_mut() else { return };
     let forget = store.book.confirm(&held);
-    let news = save(store);
+    let mut news = save(store);
     drop(guard);
+    news.extend(publish(addons));
     say(addons, news);
     // after the ledger's lock is let go: the jobs table calls back into it
     jobs::forget(&forget);
@@ -438,12 +450,6 @@ pub(crate) fn on_disk() -> io::Result<Book> {
             .and_then(|value| Book::from_json(&value).map_err(io::Error::other)),
         Err(_) => Ok(Book::default()),
     }
-}
-
-/// `install`: the mailbox from the ledger on disk, so a fresh install has it
-/// before the game's next launch (the running companion rewrites it anyway).
-pub(crate) fn write_mailbox(addons: &Path) -> io::Result<()> {
-    write_whole(&addons.join(MAILBOX).join("Mail.lua"), on_disk()?.mailbox_lua().as_bytes())
 }
 
 #[cfg(test)]
@@ -479,18 +485,16 @@ mod tests {
     }
 
     #[test]
-    fn every_unconfirmed_line_is_in_the_mailbox_without_its_steps() {
+    fn every_unconfirmed_line_is_in_the_mail_without_its_steps() {
         let mut book = Book::default();
         let sent = book.number(Line::new("l1", "claude", "Done \"it\"\nC:\\x").steps(Some(Msg::new("reload"))));
         assert!(sent.steps.is_some(), "the live line keeps its steps");
         book.number(Line::new("", "you", "second"));
-        let mail = book.mailbox_lua();
-        assert!(mail.contains(r#"{ kind = "log", slot = "l1", n = 1, who = "claude", text = "Done \"it\"\nC:\\x" }"#), "{mail}");
-        assert!(mail.contains(r#"slot = "", n = 1, who = "you", text = "second""#), "{mail}");
-        assert!(!mail.contains("andThen"), "{mail}");
-        assert!(mail.contains("WowCompanion_Mail = { written = "), "{mail}");
+        let lines: Vec<String> = book.mail().0.iter().map(Msg::lua).collect();
+        assert_eq!(lines[0], r#"{ kind = "log", slot = "l1", n = 1, who = "claude", text = "Done \"it\"\nC:\\x" }"#);
+        assert_eq!(lines[1], r#"{ kind = "log", slot = "", n = 1, who = "you", text = "second" }"#);
         book.confirm(&held(&[("l1", 1), ("", 1)], &[]));
-        assert!(!book.mailbox_lua().contains("kind = \"log\""), "confirmed lines leave the mailbox");
+        assert!(book.mail().0.is_empty(), "confirmed lines leave the mail");
     }
 
     #[test]

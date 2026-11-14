@@ -45,19 +45,20 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     let signals = addons.join(LINK).join("Signals");
     fs::create_dir_all(&signals)?;
     // Install runs while the game plays (the agent installs its own changes), so it
-    // only creates what is missing: emptying an inbox or bell here would wipe a
-    // message the addon has not read yet. Bells and inboxes belong to the sender
+    // only creates what is missing: emptying a bell or rewriting the inbox here
+    // would wipe a message the addon has not read yet. They belong to the sender
     // alone.
     let missing = |path: &Path| !path.exists();
     // every bell exists before the game can ask for it: one it asked for while
     // missing is never heard (bells.rs, rule 3)
-    let trial_bells = (0..SETS).flat_map(|set| (1..=inbox::TRIAL_SLOTS).map(move |n| inbox::trial_bell_name(set, n)));
-    for bell in (0..SETS).flat_map(|set| (1..=SLOTS).map(move |slot| slot_bell_name(set, slot))).chain(trial_bells) {
+    for bell in (0..SETS).flat_map(|set| (1..=SLOTS).map(move |n| bell_name(set, n))) {
         let path = signals.join(bell);
         if missing(&path) {
             bells::empty(&path)?;
         }
     }
+    // a slot is its .toc and its Slot.xml, which loads the inbox; nothing else
+    let slot_files = |slot: u32| [format!("{}.toc", slot_name(slot)), "Slot.xml".to_string()];
     for slot in 1..=SLOTS {
         let dir = addons.join(slot_name(slot));
         note_fresh(&dir);
@@ -65,33 +66,27 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
         written.push(dir.clone());
         fs::write(dir.join(format!("{}.toc", slot_name(slot))), slot_toc(slot))?;
         fs::write(dir.join("Slot.xml"), SLOT_XML)?;
-        // the client only knows files that exist at launch
-        if missing(&dir.join("Inbox.lua")) {
-            fs::write(dir.join("Inbox.lua"), "")?;
+        for entry in fs::read_dir(&dir)?.flatten() {
+            if !slot_files(slot).iter().any(|kept| entry.file_name() == kept.as_str()) {
+                if let Err(err) = fs::remove_file(entry.path()) {
+                    println!("could not remove {} (the game may hold it): {err}", entry.path().display());
+                }
+            }
         }
     }
-    // the inbox on trial (src/inbox.rs): its slots, which read Link's one inbox,
-    // and the inbox, which the client must find at launch
-    for slot in 1..=inbox::TRIAL_SLOTS {
-        let dir = addons.join(inbox::trial_slot_name(slot));
-        note_fresh(&dir);
-        fs::create_dir_all(&dir)?;
-        written.push(dir.clone());
-        fs::write(dir.join(format!("{}.toc", inbox::trial_slot_name(slot))), inbox::trial_toc(slot))?;
-        fs::write(dir.join("Slot.xml"), inbox::TRIAL_XML)?;
-    }
-    if missing(&addons.join(LINK).join(inbox::FILE)) {
-        fs::write(addons.join(LINK).join(inbox::FILE), inbox::UNWRITTEN)?;
-    }
-    // the mailbox the game takes at every load (src/ledger.rs), from the ledger
-    // on disk; never the repo's (it has none: an install must not wipe lines)
-    if let Err(err) = crate::ledger::write_mailbox(addons) {
-        println!("warning: the mailbox could not be written: {err}");
+    // the inbox (src/inbox.rs), which the client must find at launch and never
+    // empty: from the ledger and the session's writes on disk, never the repo's
+    let inbox = inbox::path(addons);
+    if missing(&inbox) {
+        let book = crate::ledger::on_disk()?;
+        if let Err(err) = inbox::rewrite(addons, || book.mail()) {
+            println!("warning: the inbox ({}) could not be written: {err}", inbox.display());
+        }
     }
     if let Err(err) = wow_companion_settings::changes::record_folders(&written) {
         println!("warning: could not record what was installed, for uninstall: {err}");
     }
-    println!("installed {ADDON}, {SLOTS} slots and {} trial slots into {}", inbox::TRIAL_SLOTS, addons.display());
+    println!("installed {ADDON} and {SLOTS} slots into {}", addons.display());
     match fresh.len() {
         0 => println!("no new folders: a /reload loads the changes"),
         n => println!(
@@ -103,8 +98,6 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// What the PC writes into an installed addon folder, which the repo's copy
-/// never has: kept when the folder is brought in line with the repo.
 /// Whether the addon `name` (a folder in `suite`, the repo's addon folder) is
 /// the agent's or needs it, by the `## Dependencies:` of the .toc files.
 fn needs_agent(suite: &Path, name: &str) -> bool {
@@ -118,10 +111,12 @@ fn needs_agent(suite: &Path, name: &str) -> bool {
             .any(|dep| !dep.is_empty() && dep != name && needs_agent(suite, dep))
 }
 
+/// What the PC writes into an installed addon folder, which the repo's copy
+/// never has: kept when the folder is brought in line with the repo.
 fn generated(addon: &str) -> &'static [&'static str] {
     match addon {
-        LINK => &["Signals", "helper-state.txt", crate::inbox::FILE],
-        "WowCompanion_Mailbox" => &["Mail.lua"],
+        LINK => &["Signals"],
+        crate::inbox::MAILBOX => &["Mail.lua"],
         _ => &[],
     }
 }

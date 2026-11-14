@@ -1,5 +1,9 @@
 # Slot bells: a bell per slot, a set per session
 
+**Replaced 2026-11-14** by the one inbox (reliable-channel.md): the bells and
+their sets stay, and bell n now says write n of the session is in the inbox, not
+that slot n is written.
+
 **The channel since 2026-11-11** (the player's yes, after a clean trial: 66 of 66
 messages rang their slot bell before the old message path took them, 288 ms
 sooner on average; none taken without a ring, none heard ahead; ten minutes at

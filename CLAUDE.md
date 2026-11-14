@@ -63,19 +63,20 @@ extras a player may use, never required (the player, 2026-11-11).
   Files: `lib.rs` (the push-to-talk loop), `mic.rs`, `transcribe.rs`, `stream.rs`,
   `cue.rs`, `bluetooth.rs` (the hands-free reconnect).
 - `src/`: the helper, one job per file: `main.rs` (command dispatch, `run`'s
-  wiring of the voice loop), `channel.rs` (slots, the cursor, bells; one sender
-  thread takes everything pending into one slot and one bell, a `list`),
-  `inbox.rs` (the one inbox on trial beside the channel),
+  wiring of the voice loop), `channel.rs` (the sender, the slots, the bells; one
+  sender thread takes everything pending into one write and one bell),
+  `inbox.rs` (the one inbox every slot reads, the mailbox's Mail.lua: the
+  session's writes, numbered, and the ledger's lines and jobs),
   `message.rs` (every message to the game as a value, written as Lua in one place;
   a conversation `Line` is numbered), `ledger.rs` (every line until the game has
-  saved it, and every job's state, on disk and in the mailbox addon the game reads
-  at every load; docs/proposals/ledger.md), `savedvars.rs` (the save file read as
+  saved it, and every job's state, on disk and carried by the inbox, which the
+  game reads at every load; docs/proposals/ledger.md), `savedvars.rs` (the save file read as
   values), `requests.rs` (asking the agent, progress, auto-continue, cancels, `tell`),
   `jobs.rs` (each request's one state, forward only; a conversation's running
   jobs are its one run's and end together; cancels and replies race there; a
   clip's job is named to the game by `heard` when it is let go),
   `context.rs` (the export, Lua errors and integrations the agent reads),
-  `session.rs` (the game's UI session, read once from Link's save: the cursor, the bell set and the slot count all come from it), `runs.rs` (an
+  `session.rs` (the game's UI session, read once from Link's save: the inbox's writes and their bell set come from it), `runs.rs` (an
   agent's run on disk, any copy follows it), `settings_page.rs`
   (the settings page's half here: `status` with the settings and the mics
   Windows lists, its `bind`/`set` commands; a change is written to settings.toml and the voice loop takes it between
@@ -148,7 +149,7 @@ extras a player may use, never required (the player, 2026-11-11).
     `WowCompanion_Pins` (minimap and map pins; the builtin pins and nav),
     `WowCompanion_Buffs` (watched buffs per character, the glow). And
     `WowCompanion_Errands` (needs the Agent: agents add errands).
-    `WowCompanion_Mailbox` (needs Link) is the ledger's, written by the PC.
+    `WowCompanion_Mailbox` (needs Link) holds the inbox, `Mail.lua`, written by the PC.
 - `modules/`: the agent's modules, one `<Name>.lua` each, in git. A `module` step
   writes the file (`src/modules.rs`), which regenerates the addon's `Modules.lua`
   (gitignored, reread at every /reload) and also runs it at once. The save file's
@@ -218,26 +219,31 @@ Tests: `cargo test --workspace`.
 There is no way for the game to send the PC anything while it runs; the PC
 reaches the game with two tricks, and the game reaches the PC only at a reload.
 
-- **Slots**: 512 load-on-demand addons, `WowCompanion_S001…`. The helper writes Lua
-  into a slot's `Inbox.lua` and the addon loads it. Each loads once per UI session;
-  a `/reload` refills them all. New slot folders need a full game restart, so the
-  helper sends only as far as the addon says it can see (`slotCount`, recorded at
-  every reload). About 4 slots per request; at 16 left the Reload button is
-  offered once, and with none left the pad buzzes three times.
-- **Slot bells** say "this slot is written" (docs/proposals/slot-bells.md): a bell
-  per slot, `Signals\g<set>-<slot>.wav`, a set per session (`loads % 3`), each
-  empty until the PC writes that slot and rings it, never emptied while its
-  session runs; the first send of a session empties any of its set left rung. The addon plays the next slot's bell every 0.1 s and asks
-  `C_Sound.IsPlaying` 20 ms later; a ring takes the slot, and the next is asked at
-  once. While the heartbeat is stale it asks every 0.5 s. **An empty bell reads as
-  playing until the game's background open of it fails**, several frames at a
-  busy moment, and the game then takes a slot the PC has not written
-  (docs/proposals/reliable-channel.md). A slot stamped for an earlier session is
-  dropped. **On trial beside it, the one inbox** (`src/inbox.rs`, `Trial.lua`):
-  every batch also goes as write n of the session into `WowCompanion_Link\Inbox.lua`,
-  replaced whole by a rename, and rings `t<set>-<n>`; 256 trial slots
-  (`WowCompanion_T001…`) whose Slot.xml names that file. The game counts what it
-  sees and applies nothing; `python -I tools/inbox_trial.py` compares. **All bell files go
+- **One inbox** (docs/proposals/reliable-channel.md, `src/inbox.rs`): the
+  mailbox's `Mail.lua`, which the game reads at every load. It holds every batch
+  sent this session as a numbered write (with its steps; a progress line only
+  until a newer one), and the ledger's unsaved lines and jobs. The PC replaces it
+  whole at every send and ledger change (written beside, renamed over): the game
+  reports an empty or half-written Lua file as a Lua error, which opens its error
+  window. The session's writes are kept in `inbox.json`, so a companion that
+  takes over goes on numbering.
+- **Slots**: 512 load-on-demand addons, `WowCompanion_S001…`, each its .toc and
+  a Slot.xml naming `..\WowCompanion_Mailbox\Mail.lua` (a path from the game's
+  root is taken inside the slot's folder and fails). Each loads once per UI
+  session and reads the inbox as it stands; a `/reload` refills them all. New
+  slot folders need a full game restart. The game counts its own slots and
+  offers the Reload button once at 16 left (of slots or bells); with all 512
+  bells rung the PC buzzes the pad three times.
+- **Bells** say "write n is in the inbox": `Signals\g<set>-<n>.wav`, a set per
+  session (`loads % 3`), each empty until rung, never emptied while its session
+  runs; the first send of a session empties any of its set left rung, and each
+  send rings every bell up to its own. The addon plays the bell after the last
+  write it handled every 0.1 s and asks `C_Sound.IsPlaying` 20 ms later; a ring
+  loads the next slot, which handles every write of the session newer than that,
+  and the next bell is asked at once. While the heartbeat is stale it asks every
+  0.5 s. **An empty bell reads as playing until the game's background open of it
+  fails**, several frames at a busy moment, up to five in a row: such a ring
+  finds nothing newer and spends a slot, nothing else. **All bell files go
   through `src/bells.rs`, which holds the rules the game forced on us** (a bell
   over 174,762 bytes, a long sound streamed, never a missing file, every write
   retried and reported). Never write a sound file the game reads any other way.
@@ -263,12 +269,14 @@ replies, and three sets of bell files had to be abandoned under new names
 because the game held them open. A replacement runs **beside** the channel, on
 its own files, and switches over only after its counts show it delivering for a
 whole session. **Beside is not isolation**: a trial shares the game's sound
-system, and one that takes slots shares the channel's cursor, so a trial watches
-and counts and never takes a slot (the frame bells broke delivery for an evening
-by taking them, 2026-11-11, docs/history.md). Asking a sound every frame made the
-game hold its sound files. The slot bells were proven this way and became the
-channel on 2026-11-11, replacing the message bells (`m1`..`m8`, polled every
-0.5 s) and the catch-up bells. Renaming files to escape a wedged one
+system, and slots it took would be the channel's, so a trial watches and counts
+and never takes the channel's slots (the frame bells broke delivery
+for an evening by taking them, 2026-11-11, docs/history.md); one that needs slots
+brings its own. Asking a sound every frame made the game hold its sound files.
+The slot bells were proven this way and became the channel on 2026-11-11,
+replacing the message bells (`m1`..`m8`, polled every 0.5 s) and the catch-up
+bells; the one inbox, on 256 slots of its own, replaced the slots' own inboxes
+on 2026-11-14. Renaming files to escape a wedged one
 is a sign the change should not have shipped, not a fix.
 
 ## The agent

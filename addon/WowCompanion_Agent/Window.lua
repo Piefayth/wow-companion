@@ -204,9 +204,9 @@ local function buildTabs(frame, messages)
 		local up = WowCompanion_IsUp and WowCompanion_IsUp()
 		add("Companion app", up and good .. "connected|r"
 			or bad .. "not heard from|r " .. grey .. "(is it running on the PC?)|r")
-		local sent = WC.Link and WC.Link.MessagesSent and WC.Link.MessagesSent() or 0
-		local slots = WowCompanionLinkDB and WowCompanionLinkDB.slotCount or 0
-		add("Messages", ("%d of %d %s(a reload resets it)|r"):format(sent, slots, grey))
+		local taken, slots = 0, 0
+		if WC.Link and WC.Link.Slots then taken, slots = WC.Link.Slots() end
+		add("Messages", ("%d of %d %s(a reload resets it)|r"):format(taken, slots, grey))
 		local pins = WCPins and #WCPins.List() or 0
 		add("Map pins", pins == 0 and grey .. "none|r" or tostring(pins))
 		local wheels = {}

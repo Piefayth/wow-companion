@@ -3,8 +3,8 @@
 
 use super::*;
 
-/// The PC bridge's addon: its Signals (bells), the slot cursor, and its saved
-/// table (`WowCompanionLinkDB`: slotCount, channel, loads).
+/// The PC bridge's addon: its Signals (bells) and its saved table
+/// (`WowCompanionLinkDB`: channel, loads).
 pub(crate) const LINK: &str = "WowCompanion_Link";
 /// The agent's addon: its saved table (`WowCompanionAgentDB`: the export,
 /// lines, jobModel, links) and the generated Modules.lua.

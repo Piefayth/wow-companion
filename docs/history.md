@@ -699,3 +699,9 @@ empty inbox opened the game's error window ("File ... Inbox.lua is empty."): the
 game reports an empty Lua file as a Lua error, so the one inbox is never empty
 and never half written. A slot load costs 2.6-6.5 ms whatever its size up to 50
 KB. The inbox went on trial beside the channel (docs/proposals/reliable-channel.md).
+
+In the trial's first session the channel lost six messages to false takes, a
+run of five in one second among them, and the player's request with them; the
+trial, reading the same writes through its own slots, lost none, and its false
+rings cost a slot each. The mailbox became the one inbox, and the slots' own
+inboxes, the PC's slot cursor and the session stamp check went.

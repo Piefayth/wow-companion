@@ -389,10 +389,10 @@ fn run(addons: &Path, model: &Path, options: &[String]) -> io::Result<()> {
                 let (addons, find_session) = (addons.clone(), find_session.clone());
                 thread::spawn(move || watch_commands(&addons, move |slot: &str| find_session(slot)));
             }
-            // the slot bells of the sets no session uses, emptied (docs/proposals/slot-bells.md)
+            // the bells of the sets no session uses, emptied (docs/proposals/reliable-channel.md)
             {
                 let addons = addons.clone();
-                thread::spawn(move || tend_slot_bells(&addons));
+                thread::spawn(move || tend_bells(&addons));
             }
             // other processes' asks to read the game (an agent's `strip --chat`)
             strip::serve_asks(&addons);

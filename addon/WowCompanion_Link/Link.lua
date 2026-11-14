@@ -1,13 +1,15 @@
--- WowCompanion_Link: the bridge to the companion on the PC. The helper writes Lua
--- into load-on-demand slot addons (WowCompanion_S001...) and "rings" a bell
--- sound file; we hear the bell and load the next slot. Every message is handed
--- to the handler registered for its kind (WC.Link.Handle): this file handles the
+-- WowCompanion_Link: the bridge to the companion on the PC. The companion writes
+-- everything it sends into one inbox, the mailbox's Mail.lua (src/inbox.rs), and
+-- "rings" a bell sound file; we hear the bell and load the next slot addon
+-- (WowCompanion_S001...), which reads the inbox. Every message is handed to the
+-- handler registered for its kind (WC.Link.Handle): this file handles the
 -- channel's own and the chat box's (Chat.lua); WowCompanion_Agent registers the
 -- agents'. With the agents off, Core and Link are the dictation product.
 --   WC.Link.Handle(kind, fn)    fn(inbox) -> outcome string
 --   WC.Link.Run(step)           a step through its handler: ok, outcome
 --   WC.Link.Current()           the conversation slot of the message being handled
 --   WC.Link.Slash(word, fn)     a /wc subcommand
+--   WC.Link.Slots()             slots taken this session, and how many there are
 --   WC.Link.Settings()          the companion's settings as its last status said
 --                               (talk, and the chords l1, l2, r1, r2, quick, say,
 --                               as WoW names joined with +; feedback, speech, mic,
@@ -26,8 +28,17 @@ local SIGNALS = "Interface\\AddOns\\WowCompanion_Link\\Signals\\"
 WC.Saved("WowCompanion_Link", "WowCompanionLinkDB")
 
 local nextSlot = 1
--- the poll's counts, saved at every reload; and when this session's polling began
-local channel = { plays = 0, taken = 0, slowed = 0, stale = 0 }
+-- the slots the client found at launch (folders made since are invisible to it
+-- until a full restart), counted as polling begins
+local slotCount = 0
+-- the last of this session's writes handled; its bells go up to BELLS
+local applied = 0
+local BELLS = 512
+-- at this many left (slots or bells), the Reload button is offered once
+local RELOAD_AT = 16
+-- the poll's counts, saved at every reload (empty: rings that found nothing
+-- newer); and when this session's polling began
+local channel = { plays = 0, taken = 0, slowed = 0, empty = 0 }
 local enteredAt = 0
 
 local function say(message)
@@ -144,7 +155,7 @@ function handlers.notice(inbox)
 	return "notice shown"
 end
 
--- One message, as if it had come alone (from a slot's list or the mailbox).
+-- One message, as if it had come alone (from a write or the mailbox's lines).
 -- A handler returning WC.Link.HELD (a line held already) ends it there: its
 -- steps ran when it first came.
 local HELD = "held already"
@@ -186,35 +197,53 @@ local function dispatch(inbox, label)
 	current = nil
 end
 
--- The next slot, loaded, and its messages handled when it was written for this
--- session. `bell` is what the poll saw when it took the slot (check); every take
--- is audited with it. A slot stamped for an earlier session was taken before the
--- companion wrote it: its messages were handled in their own session, so it is
--- counted and dropped. (Handled again, they reran old `lua` and showed old
--- progress, 2026-11-13.)
+-- Running low on slots or bells (a reload refills both): the Reload button,
+-- offered once, while some remain for what is on its way.
+local offered = false
+local function offerReload()
+	if offered or math.min(slotCount - (nextSlot - 1), BELLS - applied) > RELOAD_AT then return end
+	offered = true
+	if handlers.reload then
+		pcall(handlers.reload, { kind = "reload" })
+	else
+		say("Messages from the companion are running low for this session: reload soon.")
+	end
+end
+
+-- The inbox, read through the next slot: every write of this session newer than
+-- the last handled is handled, in order. A ring that finds none newer was
+-- false (the game reads an empty bell as playing at a busy moment,
+-- docs/proposals/reliable-channel.md): a slot spent, nothing lost. Writes of an
+-- earlier session are never handled again. `bell` is what the poll saw when it
+-- took the slot (check); every take is audited with it.
 local function receive(bell)
 	local slot = nextSlot
 	nextSlot = nextSlot + 1
+	WowCompanion_Mail = nil
 	local loaded, reason = C_AddOns.LoadAddOn(slotName(slot))
-	local inbox = WowCompanion_Inbox
-	WowCompanion_Inbox = nil
-	local ours = type(inbox) == "table" and inbox.session == WowCompanionLinkDB.loads
-	audit("take", "", ("slot=%d %s %s"):format(slot, ours and "fresh" or ("STALE session=" .. tostring(type(inbox) == "table" and inbox.session)), bell))
-	if not loaded or not inbox then
+	local inbox = WowCompanion_Mail
+	WowCompanion_Mail = nil
+	if not loaded or type(inbox) ~= "table" then
 		report("slot " .. slot, "failed: " .. tostring(reason))
 		return
 	end
-	if not ours then
-		channel.stale = channel.stale + 1
-		return
+	local last = inbox.session == WowCompanionLinkDB.loads and tonumber(inbox.bell) or 0
+	if last <= applied then
+		channel.empty = channel.empty + 1
+		audit("take", "", ("slot=%d nothing newer than %d %s"):format(slot, applied, bell))
+		return offerReload()
 	end
-	if inbox.kind ~= "list" or type(inbox.messages) ~= "table" then
-		report("slot " .. slot, "not a list: " .. tostring(inbox.kind))
-		return
+	audit("take", "", ("slot=%d writes %d-%d %s"):format(slot, applied + 1, last, bell))
+	local from = applied
+	applied = last
+	for _, write in ipairs(type(inbox.writes) == "table" and inbox.writes or {}) do
+		if type(write) == "table" and type(write.n) == "number" and write.n > from and write.n <= last then
+			for _, message in ipairs(type(write.messages) == "table" and write.messages or {}) do
+				if type(message) == "table" then dispatch(message, "write " .. write.n) end
+			end
+		end
 	end
-	for _, message in ipairs(inbox.messages) do
-		if type(message) == "table" then dispatch(message, "slot " .. slot) end
-	end
+	offerReload()
 end
 
 -- An error anywhere in polling or handling a message is caught, said once, and
@@ -234,15 +263,14 @@ local function safely(label, fn, ...)
 	end
 end
 
--- The slot bells (docs/proposals/slot-bells.md): a bell per slot, a set per
--- session (loads % 3), each empty until the PC writes that slot, never emptied
--- while its session runs. Every 0.1 s the next slot's bell is played and asked
--- 20 ms later (the short bell plays within 2 ms); a ring takes the slot, and the
--- slot after it is asked at once, so a burst drains a message per check.
+-- The bells (docs/proposals/reliable-channel.md): bell n rings when write n of
+-- the session is in the inbox, a set per session (loads % 3), each empty until
+-- then and never emptied while its session runs. Every 0.1 s the bell after the
+-- last write handled is played and asked 20 ms later (the short bell plays
+-- within 2 ms); a ring takes the next slot, and the next bell is asked at once.
 -- The game opens a sound file in the background, and an empty bell reads as
 -- playing until its open has failed: within a frame at most moments, for a few
--- frames at a busy one, and the poll then took slots the PC had not written
--- (docs/proposals/reliable-channel.md).
+-- frames at a busy one; such a ring finds nothing newer (receive).
 -- Asked every frame, the game holds its sound files open; at 0.1 s it does
 -- not. While the heartbeat is stale (Status.lua), which is what
 -- held files look like, it asks every 0.5 s. Polled from
@@ -272,8 +300,10 @@ local function check(elapsed)
 	end
 	if clock < every then return end
 	clock = 0
+	-- every slot or every bell spent: nothing more can arrive until a reload
+	if nextSlot > slotCount or applied >= BELLS then return end
 	channel.plays = channel.plays + 1
-	willPlay, handle = PlaySoundFile(bellPath(nextSlot), "Master")
+	willPlay, handle = PlaySoundFile(bellPath(applied + 1), "Master")
 	playedAt = GetTime()
 end
 local function heartbeat(fresh)
@@ -327,11 +357,11 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		-- save was lost and the addon loaded empty (read by src/backups.rs)
 		db.loads = (db.loads or 0) + 1
 		set = db.loads % 3
-		db.previous, db.probe = nil, nil
+		db.previous, db.probe, db.slotCount, db.trial = nil, nil, nil, nil
 	elseif event == "PLAYER_ENTERING_WORLD" and not polling then
 		-- after every addon's PLAYER_LOGIN (the Agent's window is built and
-		-- refilled by then): the mailbox (WowCompanion_Mailbox, src/ledger.rs),
-		-- every line the game has not saved yet, applied as a slot's would be;
+		-- refilled by then): the inbox (the mailbox's Mail.lua, src/inbox.rs),
+		-- its lines (every one the game has not saved yet) applied as a write's;
 		-- then the bells
 		local mail = WowCompanion_Mail
 		WowCompanion_Mail = nil
@@ -341,21 +371,13 @@ frame:SetScript("OnEvent", function(_, event, ...)
 			end
 			WC.Send("MAILBOX_JOBS", mail.jobs)
 		end
+		for index = 1, C_AddOns.GetNumAddOns() do
+			local name = C_AddOns.GetAddOnInfo(index)
+			if name and name:find("^" .. SLOTS_PREFIX .. "_S%d+$") then slotCount = slotCount + 1 end
+		end
 		enteredAt = GetTime()
 		setPolling(true)
 	elseif event == "PLAYER_LOGOUT" then
-		-- how many slots this game session can see (folders made after launch
-		-- are invisible until a restart): the companion sends no further than this
-		pcall(function()
-			local seen = 0
-			for index = 1, C_AddOns.GetNumAddOns() do
-				local name = C_AddOns.GetAddOnInfo(index)
-				if name and name:find("^" .. SLOTS_PREFIX .. "_S%d+$") then
-					seen = seen + 1
-				end
-			end
-			WowCompanionLinkDB.slotCount = seen
-		end)
 		WowCompanionLinkDB.channel = channel
 	end
 end)
@@ -381,9 +403,7 @@ WC.Link = {
 	end,
 	Slash = function(word, fn) slash[word] = fn end,
 	say = say,
-	MessagesSent = function() return nextSlot - 1 end,
-	-- how often the bells are asked now (check), for the inbox trial (Trial.lua)
-	Every = function() return every end,
+	Slots = function() return nextSlot - 1, slotCount end,
 	Audit = audit,
 	-- the talk button by WoW's name, for prompts that name it, or nil while the
 	-- companion has reported none

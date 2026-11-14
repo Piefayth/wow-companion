@@ -71,48 +71,47 @@ lands in a slot the game has passed, until a reload. That is what the player saw
 at 22:30: an L1 question and its start went to slots 5 and 6, which the game had
 passed, and showed only after the reload.
 
-## Proposed: one inbox that every slot reads
+## The design: one inbox that every slot reads
 
-- **One file, read by every slot.** Every slot's `Slot.xml` names the one inbox
+Built 2026-11-14 (`src/inbox.rs`, Link.lua `receive`), after the trial below.
+
+- **One file, read by every slot.** Every slot's `Slot.xml` names the inbox
   outside its folder (`..\WowCompanion_Mailbox\Mail.lua`). Whichever slot the
-  game loads, it reads what the PC wrote last. A slot is then one chance to read
-  the inbox, and any ring spends one. The slots' own `Inbox.lua` files go.
-- **The inbox carries everything the game may not have applied.** Each message
-  is numbered in its session (`seq`):
-  - lines, until a save confirms them (what the mailbox holds now);
-  - the latest of each "now" message (progress per job, context per
-    conversation, status);
-  - the session's one-off messages (`lua`, `read`, `chat`, `stopped`).
-
-  The game keeps the highest number it has applied and applies only what is
-  newer. A message applies once, steps included, however often it is read.
-- **Bells count messages, not slots.** The PC writes the inbox, then rings bell
-  `seq`. The game asks the bell after the last message it applied, and a ring
-  loads the next unused slot.
+  game loads, it reads what the PC wrote last. A slot is one chance to read the
+  inbox, and any ring spends one. The slots' own `Inbox.lua` files are gone.
+- **The inbox carries everything the game may not have applied**: every batch
+  sent this session as write n, steps included (a progress line only until a
+  newer one for its request; a write left with nothing still says its number),
+  and the ledger's unsaved lines and every job's state, which the game takes at
+  every load. The game keeps the last write it applied and applies only newer
+  ones, each once, however often it reads them. Writes of an earlier session are
+  never applied.
+- **Bells count writes, not slots.** The PC replaces the inbox, then rings bell
+  n of the session's set (and any bell below it that could not be rung at its
+  own send). The game asks the bell after the last write it applied, and a ring
+  loads its next slot.
 - **A false ring** loads a slot, finds nothing newer, and stops: one slot spent,
   nothing lost, nothing late. The game asks the same bell again.
-- **A read during a write must never happen.** The game reports an empty or
-  unparsable Lua file as a Lua error and opens its error window, which takes
-  the controller's focus (measured 2026-11-14: an empty `Inbox.lua` loaded gave
-  "File ... Inbox.lua is empty."). So the inbox is never empty, and the PC
-  replaces it whole: it writes a new file beside it and renames it over the
-  inbox, and the game opens either the old file or the new one, never half of
-  one. A rename the game's open is in the way of is retried, as bells are.
-- **The mailbox is this file.** The Mailbox addon reads it at load as now, and
-  every slot reads it during the session. One file holds everything the game
-  has not applied, before a reload and after.
-- **The game counts its own slots**, true takes and false, so it offers the
-  Reload at 16 left from the real count. The PC stops keeping a slot cursor in
-  step with the game: the cursor, its stamp and the PC's "slots spent" reckoning
-  go.
+- **The inbox is never half written or empty.** The game reports an empty or
+  unparsable Lua file as a Lua error and opens its error window, which takes the
+  controller's focus (measured 2026-11-14: an empty `Inbox.lua` loaded gave
+  "File ... Inbox.lua is empty."). The PC writes a new file beside it and renames
+  it over the inbox, so the game opens the old file or the new one; a rename the
+  game's read is in the way of is retried, as bells are. A write that could not
+  replace the inbox is taken back out of `inbox.json`, so its number is never
+  rung for a write the game cannot read.
+- **The game counts its own slots**, true takes and false, and offers the Reload
+  once at 16 left, of slots or bells. The PC's slot cursor, its stamp and its
+  "slots spent" reckoning are gone; it stops progress lines 14 bells before the
+  last, and with all 512 rung it buzzes the pad.
 
 Costs:
 - Every take parses the whole inbox: the lines since the last save (at most
-  10.4 KB in a session, measured) and the session's one-off messages. A
-  `LoadAddOn` of a slot took 2.6-6.5 ms with an inbox of 0, 1, 10 or 50 KB
-  (2026-11-14): the load itself costs that, and the size did not show.
-- False takes still spend slots, about 80 an hour at the worst seen
-  (16:27-18:00). A session has 512, and the Reload offer comes at 16 left.
+  10.4 KB in a session, measured) and the session's writes. A `LoadAddOn` of a
+  slot took 2.6-6.5 ms with an inbox of 0, 1, 10 or 50 KB (2026-11-14): the load
+  itself costs that, and the size did not show.
+- False takes spend slots, about 80 an hour at the worst seen (16:27-18:00) and
+  five in one second at a busy moment (2026-11-14). A session has 512.
 
 Tested 2026-11-14, on slots no session reaches (500-512), with the game running:
 1. **A slot reads a file outside its folder**: `Slot.xml` naming
@@ -126,20 +125,20 @@ Tested 2026-11-14, on slots no session reaches (500-512), with the game running:
 3. Hard links, tried first, also read fresh through every name, and
    `fs::write` kept them; the rename needs none, and so no NTFS.
 
-## The trial (built 2026-11-14)
+## The trial (2026-11-14)
 
-Beside the channel, on files the channel never touches (CLAUDE.md, "Changing
-the channel"): every batch the channel sends also goes, after the channel's
-bell has rung, as write n of the session into `WowCompanion_Link\Inbox.lua`
-(`src/inbox.rs`), and rings trial bell `t<set>-<n>`. In game `Trial.lua` asks
-those bells as the channel asks its own and loads its own 256 slots
-(`WowCompanion_T001...`, whose Slot.xml names that inbox). It counts every write
-it sees, every false ring, every gap, and applies nothing. Its counts go in
-Link's audit; `python -I tools/inbox_trial.py` sets them against the PC's
-writes, session by session. The folders are new, so it starts at the first
-full game start after the install.
+Beside the channel, on 256 slots and bells of its own: every batch the channel
+sent also went, after the channel's bell, as write n into a trial inbox, and
+`Trial.lua` in game asked its bells as the channel asks its own, counted what it
+read and applied nothing. In its first session (326):
 
-It carries only the session's writes; the lines and jobs the mailbox holds
-join the inbox at the switch, which also takes out the slot cursor, the slots'
-own inboxes, the session stamp check, the trial's slots and bells, and this
-trial.
+- 4 s after entering the world, the channel took slot 2 before the PC wrote
+  it; the trial's false ring in the same frame found nothing newer. The PC's
+  next message, written into slot 2, was lost; the trial read it.
+- At 12:42:44 the channel had five false takes in one second (slots 4-8). The
+  player's next request went into those slots: its `heard`, the player's line,
+  two progress lines and a read were all lost, until the PC's count passed the
+  game's. The trial's three false rings there cost nothing, and it read all five
+  writes, each within a second of the PC writing it.
+
+The trial's slots, bells, inbox and tool went at the switch.

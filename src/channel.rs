@@ -1,29 +1,32 @@
-//! The message channel to the game: slots, the cursor, bells, sending.
+//! The message channel to the game: the sender, the slots and the bells. What
+//! is sent goes into the one inbox (src/inbox.rs), which every slot reads.
 
 use super::*;
 use crate::message::{Line, Msg, Out};
 use crate::session::Session;
 use wow_companion_settings::platform::Process;
 
+/// Progress lines stop this many bells before the session's last: those are
+/// for replies.
 pub(crate) const PROGRESS_STOP: u32 = 14;
-// 512, not 64: one session can spend 64 (progress lines nearly half), and a reply
-// past the last slot is lost. New folders need one full game restart to be seen.
+/// Slots, and bells per set: a session has sent up to 100 batches
+/// (2026-11-11..13), and a false ring spends a slot too. New folders need one
+/// full game restart to be seen.
 pub(crate) const SLOTS: u32 = 512;
 /// A slot's .toc. Each slot is its own group in a category of its own, so the
 /// AddOns list folds all of them under one collapsible line (Blizzard_AddOnList:
 /// only categories collapse, and the game remembers which; a group's children
-/// always show). Slot.xml pulls in Inbox.lua.
+/// always show). Slot.xml loads the inbox.
 pub(crate) fn slot_toc(slot: u32) -> String {
     format!(
         "## Interface: 16001\n## Title: WoW Companion message slot\n## LoadOnDemand: 1\n## Group: {}\n## Category: WoW Companion: message slots\n\nSlot.xml\n",
         slot_name(slot)
     )
 }
-pub(crate) const SLOT_XML: &str = "<Ui xmlns=\"http://www.blizzard.com/wow/ui/\">\n\t<Script file=\"Inbox.lua\"></Script>\n</Ui>\n";
-
-// where the helper remembers the addon's slot cursor; inert to the game, which only
-// loads files a toc or xml points at
-pub(crate) const STATE: &str = "helper-state.txt";
+/// Every slot loads the one inbox, outside its folder (a path from the game's
+/// root is taken inside the slot's folder and fails).
+pub(crate) const SLOT_XML: &str =
+    "<Ui xmlns=\"http://www.blizzard.com/wow/ui/\">\n\t<Script file=\"..\\WowCompanion_Mailbox\\Mail.lua\"></Script>\n</Ui>\n";
 
 /// The game, held while it runs: asking the held process costs microseconds,
 /// where finding it walks every process (about 50 ms), so the walk happens only
@@ -44,7 +47,7 @@ pub(crate) fn game_running() -> bool {
 }
 
 
-/// What waits for the next slot, in the order it was posted: lines (numbered
+/// What waits for the next write, in the order it was posted: lines (numbered
 /// and kept by the ledger first) and messages about now.
 enum Pending {
     Line(Line),
@@ -92,7 +95,7 @@ fn queue() -> std::sync::MutexGuard<'static, Queue> {
 }
 
 /// Everything goes through one sender thread (one per process), which takes
-/// all that is waiting when it is free: one slot and one bell per batch, not
+/// all that is waiting when it is free: one write and one bell per batch, not
 /// per message.
 fn enqueue(addons: &Path, item: Pending) {
     let mut queue = queue();
@@ -110,8 +113,8 @@ fn enqueue(addons: &Path, item: Pending) {
 }
 
 /// A conversation line: numbered and kept by the ledger (src/ledger.rs), then
-/// queued. A line that cannot go out live (the game closed, the slots spent)
-/// is in the mailbox, which the game takes at its next load. With no ledger
+/// queued. A line that cannot go out live (the game closed, the bells spent)
+/// is in the inbox, which the game takes at its next load. With no ledger
 /// there is no conversation (the agents are off): the line is a notice, which
 /// the Link addon shows on its own.
 pub(crate) fn post(addons: &Path, line: Line) -> io::Result<()> {
@@ -207,41 +210,26 @@ fn deliver_batch(addons: &Path, batch: Vec<Pending>) {
     if !game_running() {
         return set_aside(addons, batch, "the game is closed");
     }
-    // the last slots are for replies: what a request is doing can go unsaid
-    if slots_used(addons).is_some_and(|(used, known)| used + PROGRESS_STOP >= known) {
+    // the last bells are for replies: what a request is doing can go unsaid
+    if crate::inbox::sent(addons).is_some_and(|sent| sent + PROGRESS_STOP >= SLOTS) {
         batch.retain(|item| item.progress_of().is_none());
     }
     if batch.is_empty() {
         return;
     }
+    // every message of the batch in order: the game applies each as if it came alone
     let messages: Vec<Msg> = batch.iter().map(Pending::msg).collect();
-    let sent = ring(addons, slot_message(messages.clone()));
-    // the inbox on trial gets the batch once the channel's bell has rung
-    crate::inbox::trial(addons, &messages, sent.as_ref().ok().copied());
-    if let Err(err) = sent {
-        set_aside(addons, batch, &err.to_string());
-    }
-}
-
-/// What one slot holds: `{ kind = "list", messages = { ... }, session = n }`,
-/// every message of the batch in order (the game applies each as if it came
-/// alone), and the session it was written for (`ring`).
-fn slot_message(messages: Vec<Msg>) -> Msg {
     for msg in &messages {
         crate::audit::note("send", "", &msg.lua().chars().take(200).collect::<String>());
     }
-    Msg::new("list").list("messages", messages)
-}
-
-/// The next slot, and its bell. Returns the slot.
-fn ring(addons: &Path, msg: Msg) -> io::Result<u32> {
     voice::mark("send has the channel");
-    let (slot, set, session) = next_slot(addons)?;
-    let msg = msg.int("session", session);
-    deliver(addons, slot, set, &msg)?;
-    println!("sent in slot {slot}: {}", msg.lua());
-    voice::mark(&format!("bell rung, slot {slot}"));
-    Ok(slot)
+    match crate::inbox::send(addons, &messages) {
+        Ok(n) => {
+            println!("sent as write {n}: {}", messages.iter().map(Msg::lua).collect::<Vec<_>>().join(", "));
+            voice::mark(&format!("bell rung, write {n}"));
+        }
+        Err(err) => set_aside(addons, batch, &err.to_string()),
+    }
 }
 
 /// How many game clients are open (multiboxing: each reads every message).
@@ -249,66 +237,7 @@ pub(crate) fn game_clients() -> usize {
     wow_companion_settings::platform::windowed_count("Wow.exe")
 }
 
-fn deliver(addons: &Path, slot: u32, set: u64, msg: &Msg) -> io::Result<()> {
-    // the inbox lands first: the bell is what tells the addon to go read it
-    write_reporting(&addons.join(slot_name(slot)).join("Inbox.lua"), format!("WowCompanion_Inbox = {}\n", msg.lua()).as_bytes())?;
-    let bell = slot_bell_name(set, slot);
-    crate::audit::note("bell", "", &format!("ring {bell}"));
-    bells::ring(&addons.join(LINK).join("Signals").join(bell))
-}
-
-// Slots load once per UI session, so the helper has to know where the addon's cursor
-// is. It resets when the UI session does (session.rs), and the slot, its set and
-// the session's number come from that one reading. No game → PC channel needed.
-fn next_slot(addons: &Path) -> io::Result<(u32, u64, u64)> {
-    let state = addons.join(LINK).join(STATE);
-    let session = Session::now(addons)?;
-    let stamp = session.key();
-    let (mut cursor, seen) = fs::read_to_string(&state)
-        .ok()
-        .and_then(|text| {
-            let mut lines = text.lines();
-            let cursor = lines.next()?.trim().parse().ok()?;
-            Some((cursor, lines.next().unwrap_or_default().trim().to_string()))
-        })
-        .unwrap_or((1, String::new()));
-    if stamp != seen {
-        cursor = 1;
-        // A new UI session, and nothing sent in it yet: its set starts silent.
-        // The other sets are emptied as they go idle (tend_slot_bells), but a
-        // ring that reached this set while it was idle (a send across a
-        // reload) would be taken as a message before it was written, the old
-        // inbox read in its place and the real one never read.
-        let set = session.set();
-        empty_rung(&addons.join(LINK).join("Signals"), (1..=SLOTS).map(|slot| slot_bell_name(set, slot)), "left rung at the session's start")?;
-    }
-    if cursor > session.known_slots() {
-        // every slot spent: nothing can reach the game to say so; the pad can
-        voice::ALERT.store(true, Ordering::SeqCst);
-        return Err(io::Error::other(format!(
-            "all {} slots are spent this UI session: `send reload`, or /reload in game",
-            session.known_slots()
-        )));
-    }
-    fs::write(&state, format!("{}\n{}\n", cursor + 1, stamp))?;
-    Ok((cursor, session.set(), session.number()))
-}
-
-/// Slots spent in the running UI session (0 after a reload), without spending
-/// one, and how many it has (`Session::known_slots`); None while its save does
-/// not read, when neither is known (a save that did not read once counted as
-/// every slot spent, and the pad buzzed at every send, 2026-11-13).
-pub(crate) fn slots_used(addons: &Path) -> Option<(u32, u32)> {
-    let session = Session::now(addons).ok()?;
-    let text = fs::read_to_string(addons.join(LINK).join(STATE)).unwrap_or_default();
-    let mut lines = text.lines();
-    let cursor: u32 = lines.next().and_then(|line| line.trim().parse().ok()).unwrap_or(1);
-    let used = if lines.next().unwrap_or_default().trim() == session.key() { cursor.saturating_sub(1) } else { 0 };
-    Some((used, session.known_slots()))
-}
-
-/// The game's UI session, as the slot cursor knows it (`Session::key`); None
-/// while its save does not parse.
+/// The game's UI session (`Session::key`); None while its save does not parse.
 pub(crate) fn session_key(addons: &Path) -> Option<String> {
     Session::now(addons).ok().map(|session| session.key())
 }
@@ -347,47 +276,19 @@ pub(crate) fn lua_string(text: &str) -> String {
     quoted
 }
 
-// the game may hold a bell open while it plays, which Windows can refuse to overwrite;
-// retry so we learn how long that lasts instead of failing
-pub(crate) fn write_reporting(path: &Path, contents: &[u8]) -> io::Result<()> {
-    let start = Instant::now();
-    let mut attempts = 0;
-    loop {
-        attempts += 1;
-        match fs::write(path, contents) {
-            Ok(()) => {
-                if attempts > 1 {
-                    println!(
-                        "  {} was locked; wrote it after {attempts} tries ({:?})",
-                        path.display(),
-                        start.elapsed()
-                    );
-                }
-                return Ok(());
-            }
-            Err(err) if start.elapsed() < Duration::from_secs(2) => {
-                if attempts == 1 {
-                    println!("  {} write failed ({err}), retrying", path.display());
-                }
-                thread::sleep(Duration::from_millis(50));
-            }
-            Err(err) => return Err(err),
-        }
-    }
-}
-
 pub(crate) fn slot_name(slot: u32) -> String {
     format!("{ADDON}_S{slot:03}")
 }
 
-// The slot bells (docs/proposals/slot-bells.md), the channel's bells: a bell per
-// slot, never emptied while its session runs, so a ring means that slot and
-// nothing has to change while the game holds it; a set per session, so a ring
-// never outlives its session. The game asks the next slot's every 0.1 s.
+// The bells (docs/proposals/reliable-channel.md): bell n of a set rings when
+// write n of its session is in the inbox, and is never emptied while that
+// session runs, so nothing has to change while the game holds it; a set per
+// session, so a ring never outlives its session. The game asks the bell after
+// the last write it applied every 0.1 s.
 pub(crate) const SETS: u64 = 3;
 
-pub(crate) fn slot_bell_name(set: u64, slot: u32) -> String {
-    format!("g{set}-{slot:03}.wav")
+pub(crate) fn bell_name(set: u64, n: u32) -> String {
+    format!("g{set}-{n:03}.wav")
 }
 
 /// Empty each of the bells `names` in `signals` that is rung, saying `why`.
@@ -402,12 +303,11 @@ pub(crate) fn empty_rung(signals: &Path, names: impl IntoIterator<Item = String>
     Ok(())
 }
 
-/// Empty the rung bells of every set but `keep` (none while the game is closed),
-/// the slot bells and the inbox trial's: nothing polls those, so nothing holds them.
+/// Empty the rung bells of every set but `keep` (none while the game is closed):
+/// nothing polls those, so nothing holds them.
 fn empty_idle_sets(signals: &Path, keep: Option<u64>) -> io::Result<()> {
     for set in (0..SETS).filter(|set| Some(*set) != keep) {
-        let trial = (1..=crate::inbox::TRIAL_SLOTS).map(move |n| crate::inbox::trial_bell_name(set, n));
-        empty_rung(signals, (1..=SLOTS).map(|slot| slot_bell_name(set, slot)).chain(trial), "idle set")?;
+        empty_rung(signals, (1..=SLOTS).map(|n| bell_name(set, n)), "idle set")?;
     }
     Ok(())
 }
@@ -415,7 +315,7 @@ fn empty_idle_sets(signals: &Path, keep: Option<u64>) -> io::Result<()> {
 /// For the running companion: four times a second, which set the game uses; at
 /// every change (a reload, the game closing or starting, the companion
 /// starting) the others are emptied, until that has worked.
-pub(crate) fn tend_slot_bells(addons: &Path) {
+pub(crate) fn tend_bells(addons: &Path) {
     let signals = addons.join(LINK).join("Signals");
     let mut tended: Option<Option<u64>> = None;
     loop {
@@ -442,64 +342,13 @@ pub(crate) fn tend_slot_bells(addons: &Path) {
 mod tests {
     use super::*;
     use crate::jobs::State;
-    use std::time::{Duration, SystemTime};
-
-    /// A throwaway game folder: <root>/Interface/AddOns/WowCompanion and the
-    /// account's SavedVariables, with Link's save as the game wrote it after
-    /// `loads` loads (session.rs reads the session from it).
-    fn game(name: &str, slot_count: u32) -> (PathBuf, PathBuf) {
-        let root = env::temp_dir().join(format!("wc-test-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        let addons = root.join("Interface").join("AddOns");
-        fs::create_dir_all(addons.join(ADDON)).unwrap();
-        fs::create_dir_all(addons.join(LINK)).unwrap();
-        let saved_dir = root.join("WTF").join("Account").join("A").join("SavedVariables");
-        fs::create_dir_all(&saved_dir).unwrap();
-        fs::write(saved_dir.join(format!("{ADDON}.lua")), "WowCompanionDB = { }").unwrap();
-        let link = saved_dir.join(format!("{LINK}.lua"));
-        save(&link, 7, slot_count);
-        (addons, link)
-    }
-
-    fn save(link: &Path, loads: u64, slot_count: u32) {
-        fs::write(link, format!("WowCompanionLinkDB = {{ [\"loads\"] = {loads}, [\"slotCount\"] = {slot_count}, }}")).unwrap();
-    }
 
     #[test]
-    fn slots_count_up_and_start_over_in_the_next_set_when_the_game_saves() {
-        let (addons, link) = game("cursor", 100);
-        assert_eq!(slots_used(&addons), Some((0, 100)));
-        assert_eq!(next_slot(&addons).unwrap(), (1, 8 % SETS, 8));
-        assert_eq!(next_slot(&addons).unwrap(), (2, 8 % SETS, 8));
-        assert_eq!(slots_used(&addons), Some((2, 100)));
-        // another addon's save landing first is no new session (2026-11-12: read
-        // from Core's save, the cursor started over a set early)
-        let core = link.with_file_name(format!("{ADDON}.lua"));
-        let later = SystemTime::now() + Duration::from_secs(5);
-        fs::File::options().write(true).open(&core).unwrap().set_modified(later).unwrap();
-        assert_eq!(next_slot(&addons).unwrap(), (3, 8 % SETS, 8));
-        // a /reload's save of Link: the cursor back at slot 1, in the next set
-        save(&link, 8, 100);
-        assert_eq!(slots_used(&addons), Some((0, 100)));
-        assert_eq!(next_slot(&addons).unwrap(), (1, 9 % SETS, 9));
-    }
-
-    #[test]
-    fn sends_stop_at_the_slots_the_game_can_see() {
-        let (addons, _) = game("limit", 2);
-        assert_eq!(slots_used(&addons), Some((0, 2)));
-        next_slot(&addons).unwrap();
-        next_slot(&addons).unwrap();
-        let err = next_slot(&addons).unwrap_err().to_string();
-        assert!(err.contains("slots are spent"), "{err}");
-    }
-
-    #[test]
-    fn every_slot_has_its_own_bell_in_each_set() {
-        assert_eq!(slot_bell_name(0, 1), "g0-001.wav");
-        assert_eq!(slot_bell_name(2, 512), "g2-512.wav");
+    fn every_write_has_its_own_bell_in_each_set() {
+        assert_eq!(bell_name(0, 1), "g0-001.wav");
+        assert_eq!(bell_name(2, 512), "g2-512.wav");
         let names: std::collections::HashSet<String> =
-            (0..SETS).flat_map(|set| (1..=SLOTS).map(move |slot| slot_bell_name(set, slot))).collect();
+            (0..SETS).flat_map(|set| (1..=SLOTS).map(move |n| bell_name(set, n))).collect();
         assert_eq!(names.len(), (SETS * SLOTS as u64) as usize);
     }
 
@@ -511,22 +360,20 @@ mod tests {
     }
 
     #[test]
-    fn only_the_idle_sets_slot_bells_are_emptied() {
-        let signals = std::env::temp_dir().join(format!("wc-slot-bells-{}", std::process::id()));
+    fn only_the_idle_sets_bells_are_emptied() {
+        let signals = std::env::temp_dir().join(format!("wc-bells-{}", std::process::id()));
         fs::create_dir_all(&signals).unwrap();
-        let rung = |set, slot| signals.join(slot_bell_name(set, slot));
-        let trial = |set| signals.join(crate::inbox::trial_bell_name(set, 3));
+        let rung = |set, n| signals.join(bell_name(set, n));
         for set in 0..SETS {
             fs::write(rung(set, 7), bells::bell()).unwrap();
-            fs::write(trial(set), bells::bell()).unwrap();
         }
         empty_idle_sets(&signals, Some(1)).unwrap();
-        let size = |path: PathBuf| fs::metadata(path).unwrap().len();
-        assert_eq!((size(rung(0, 7)), size(rung(2, 7)), size(trial(0)), size(trial(2))), (0, 0, 0, 0));
-        assert!(size(rung(1, 7)) > 0 && size(trial(1)) > 0, "the running session's rings stay");
+        let size = |set| fs::metadata(rung(set, 7)).unwrap().len();
+        assert_eq!((size(0), size(2)), (0, 0));
+        assert!(size(1) > 0, "the running session's ring stays");
         // the game closed: every set
         empty_idle_sets(&signals, None).unwrap();
-        assert_eq!((size(rung(1, 7)), size(trial(1))), (0, 0));
+        assert_eq!(size(1), 0);
         fs::remove_dir_all(&signals).unwrap();
     }
 
@@ -554,16 +401,5 @@ mod tests {
         assert!(kept[4].contains("writing"), "job 2's newest only: {kept:#?}");
         assert!(kept[5].contains("stopped"));
         assert!(!kept.iter().any(|lua| lua.contains("reading a") || lua.contains("\"thinking\", job = 2")));
-    }
-
-    #[test]
-    fn one_slot_holds_the_whole_batch_as_a_list_in_order() {
-        let mut line = Line::new("", "claude", "done").steps(Some(Msg::new("reload")));
-        line.n = 4;
-        let batch = vec![Pending::Now(Msg::new("heard").int("job", 9).text("slot", "r1").text("state", "hearing")), Pending::Line(line)];
-        assert_eq!(
-            slot_message(batch.iter().map(Pending::msg).collect()).lua(),
-            r#"{ kind = "list", messages = { { kind = "heard", job = 9, slot = "r1", state = "hearing" }, { kind = "log", slot = "", n = 4, who = "claude", text = "done", andThen = { kind = "reload" } } } }"#
-        );
     }
 }

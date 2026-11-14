@@ -5,18 +5,12 @@ use super::*;
 use crate::message::{job_entry, Line, Msg};
 
 // how often the window hears what the agent is doing, and how many times per
-// request at most: every update spends one of the session's 512 slots
+// request at most: every update spends one of the session's 512 bells, and the
+// game's slot that reads it
 pub(crate) const PROGRESS_EVERY: Duration = Duration::from_secs(15);
 pub(crate) const PROGRESS_LIMIT: u32 = 16;
 // how many times a request that ran out of steps carries on by itself
 pub(crate) const CONTINUES: u32 = 3;
-// at this many slots used, offer the Reload button once, while slots remain
-// Margins below the slots the game knows (see slots_used): offer Reload at 16
-// left, stop progress lines at 14 left, and from 8 left every reply says so.
-pub(crate) const SLOTS_OFFER_RELOAD: u32 = 16;
-pub(crate) const SLOTS_LOW: u32 = 8;
-// the UI session in which the Reload button was last offered for low slots
-pub(crate) static RELOAD_OFFERED: Mutex<String> = Mutex::new(String::new());
 /// Request threads alive, from the words arriving (or typed) to the reply sent:
 /// an exit waits for none (lifecycle::idle). A thread, not a job: a job ends
 /// before its reply goes out, so the race with a cancel is decided once.
@@ -168,7 +162,7 @@ pub(crate) fn watch_for_looks(addons: &Path, session: &Mutex<agent::Session>) {
         }
         stop_looking();
         // sent at once: a message made before the new UI polls waits on its rung
-        // bell for it (docs/proposals/slot-bells.md)
+        // bell for it (docs/proposals/reliable-channel.md)
         let note = "(I reloaded so you can look. Your steps' results are in <character>, \
                     under code runs and the slots; carry on with what I asked.)";
         let _in_flight = InFlight::start();
@@ -534,26 +528,6 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, lead: u64, run
     let Some(_delivering) = Delivering::begin() else { return Ok(false) };
     voice::mark("agent answered");
     println!("claude: {}", answer.say);
-    // One message, not two: the reply and the action it describes arrive together,
-    // so there is no second bell and no two-second gap between reading the answer
-    // and being offered the button. This one carries no `pending`, which stops the
-    // spinner.
-    // running low: offer the cure once per UI session, while a slot remains for it
-    let slots = slots_used(addons);
-    if slots.is_some_and(|(used, known)| used + SLOTS_OFFER_RELOAD >= known) {
-        let stamp = session_key(addons).unwrap_or_default();
-        let mut offered = RELOAD_OFFERED.lock().unwrap();
-        if *offered != stamp {
-            *offered = stamp;
-            let _ = send(addons, &Msg::new("reload"));
-        }
-    }
-    // near the end of the session's slots, say so while a reply can still arrive
-    let say = if slots.is_some_and(|(used, known)| used + SLOTS_LOW >= known) {
-        format!("{}\n(Messages are running low for this session: press Reload soon.)", answer.say)
-    } else {
-        answer.say.clone()
-    };
     // modules go into git before they go into the game (src/modules.rs)
     for (name, code) in &answer.modules {
         if let Err(err) = modules::save(addons, name, code.as_deref()) {
@@ -568,7 +542,11 @@ pub(crate) fn follow(addons: &Path, session: &mut agent::Session, lead: u64, run
         println!("  cancelled while answering: reply dropped");
         return Ok(false);
     }
-    let reply = Line::new(&session.slot, "claude", &say)
+    // One message, not two: the reply and the action it describes arrive together,
+    // so there is no second bell and no two-second gap between reading the answer
+    // and being offered the button. This one carries no `pending`, which stops the
+    // spinner.
+    let reply = Line::new(&session.slot, "claude", &answer.say)
         .job(lead, jobs::State::Answered)
         .ended(ended)
         .steps(answer.inbox.clone());
