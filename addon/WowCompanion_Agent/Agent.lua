@@ -494,9 +494,12 @@ end)
 
 -- what WowCompanion_Link and the other addons say on the bus
 local bus = WC.Module("Agent")
--- a short tap of the talk button opens or closes the window (the game alone
+-- a short tap of the talk button closes the window, is for the thing under the
+-- controller's cursor (ContextTap.lua), or opens the window (the game alone
 -- decides a tap: the PC sends nothing for one)
-bus:On("TALK_TAP", function() toggleWindow() end)
+bus:On("TALK_TAP", function()
+	if windowOpen() or not WC.Companion.ContextTap() then toggleWindow() end
+end)
 -- a hold is talking: the board's talking row and, with the window open, the
 -- conversation's tab (renderPending) follow the pick each frame (the
 -- companion's rule, Pad.lua's latch), and go when the key is let go

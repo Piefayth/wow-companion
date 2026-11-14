@@ -117,6 +117,10 @@ none of this. When the player states a new preference or changes one, write it h
   game drops it at a /reload; removed. Even slices must come from our wheel alone.
 - Controller: a Switch pad through a switch2connect adapter in DS5 mode
   (`054c:0ce6`); DS5 mode stays ("ds5 ride or die"). Talk button: minus.
+- **Minus tap is the universal contextual companion button** (2026-11-14):
+  on something under the controller's cursor it opens our menu for that
+  thing, else the Companion window. Spend as few bindings as possible; this
+  player has extra buttons, most players don't.
 - Headset: AirPods Max (8 kHz hands-free link, hisses when audio plays), so
   push-to-talk feedback is rumble and beeps are off.
 - GPU: RTX 4090, Whisper large-v3-turbo on CUDA (`CUDAARCHS=89`).
