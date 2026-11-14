@@ -37,15 +37,14 @@ local function buildActionButton()
 			return "could not build the button: " .. tostring(button)
 		end
 		actionButton = button
-		-- centred in the conversation list's own cell for it, above the list's
-		-- foot: the art's cut ends and glow reach 16 past each side, so the
-		-- button is the well's width less those
+		-- across the conversation list's own cell for it, above the list's foot
 		local function place(b)
 			local slot = frame.convOfferSlot
 			b:SetParent(frame)
 			b:ClearAllPoints()
-			b:SetPoint("CENTER", slot)
-			b:SetSize(88, 28)
+			b:SetPoint("LEFT", slot)
+			b:SetPoint("RIGHT", slot)
+			b:SetHeight(28)
 			b:SetFrameLevel(slot:GetFrameLevel() + 4)
 		end
 		place(actionButton)
