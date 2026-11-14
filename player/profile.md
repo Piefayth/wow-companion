@@ -87,6 +87,11 @@ none of this. When the player states a new preference or changes one, write it h
   the player's, whatever of ours is open or focused. A window that takes the
   pad takes what Blizzard's focused windows take (d-pad, face buttons), no more,
   and only while it has focus; a window that is only open takes nothing.
+- **Blizzard's focus cycle is sacred** (2026-11-14): the focus button switches
+  between the character and the menus, the shoulders (triggers) between menus,
+  the same everywhere, all the time. Nothing of ours replaces or imitates it to
+  gain a feature; an addon worth publishing respects Blizzard's controller rules.
+  (Turned down: a Companion window pad in combat on the focus button.)
 - **No paging through lists** (2026-11-11): never propose a design where a key
   steps through items one by one (cycling offers, conversations). Pick things
   directly, e.g. by the conversation's own trigger chord.
