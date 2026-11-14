@@ -167,7 +167,8 @@ EventRegistry:RegisterCallback("ContainerFrame.CloseBag", function() C_Timer.Aft
 -- rule, the moment they place it (their placer, a tooltip's data set) and each
 -- frame for what neither reports (the backpack's title-only tooltip)
 local function holdTip()
-	local owner = GameTooltip:IsShown() and GameTooltip:GetOwner()
+	-- not asked shown: their placer runs before the tooltip is filled and shown
+	local owner = GameTooltip:GetOwner()
 	local p = owner and f:IsShown() and anchored[owner]
 	local ours = p and (p == addSlots and p or (owner:GetParent() == GamepadBagBar and f:BagIconFor(owner))
 		or (owner.GetBagID and f:SlotFor(owner:GetBagID(), owner:GetID())))
