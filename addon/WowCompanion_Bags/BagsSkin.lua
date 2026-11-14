@@ -213,26 +213,33 @@ hooksecurefunc("ContainerFrame_GenerateFrame", function(frame)
 	if frame == blizz then C_Timer.After(0, function() if blizz:IsShown() then f:Layout() anchorNew() lay() end end) end
 end)
 -- triangle's menu (their MoreActions, tagged MORE_CONTEXT_ACTIONS) opens beside
--- its owner, their unseen button (MenuManagerMixin:OpenContextMenu): moved
+-- its owner, their unseen button (MenuManagerMixin:OpenContextMenu): held
 -- beside our cell for it, by the same rule, through the menu API addons are
--- given (Menu.ModifyMenu, AddMenuAcquiredCallback). Their placing runs right
--- after the acquired callback, so ours waits for the next frame.
+-- given (Menu.ModifyMenu, the acquired and released callbacks). Their placing
+-- runs right after the acquired callback, so ours is an OnUpdate, which runs
+-- after the press in the same frame, before it is drawn, and holds it there
+-- while it is open (the first menu made is placed again as it fades in).
 if Menu and Menu.ModifyMenu and FrameUtil and FrameUtil.GetScreenQuadrant then
+	local holder, held, ours = CreateFrame("Frame"), nil, nil
+	holder:Hide()
+	local function place()
+		local q, Q = FrameUtil.GetScreenQuadrant(ours), FrameUtilQuadrantEnum
+		local p, rp = "TOPLEFT", "TOPRIGHT"
+		if q == Q.BottomRight then p, rp = "BOTTOMRIGHT", "BOTTOMLEFT"
+		elseif q == Q.BottomLeft then p, rp = "BOTTOMLEFT", "BOTTOMRIGHT"
+		elseif q == Q.TopRight then p, rp = "TOPRIGHT", "TOPLEFT" end
+		local hp, hrel, hrp = held:GetPoint(1)
+		if held:GetNumPoints() == 1 and hp == p and hrel == ours and hrp == rp then return end
+		held:ClearAllPoints()
+		held:SetPoint(p, ours, rp)
+	end
+	holder:SetScript("OnUpdate", function() if held then place() end end)
 	Menu.ModifyMenu("MORE_CONTEXT_ACTIONS", function(owner, root)
-		local ours = owner and anchored[owner]
-		if not (ours and f:IsShown()) then return end
-		root:AddMenuAcquiredCallback(function(menu)
-			C_Timer.After(0, function()
-				-- (moved shown or not: the first menu made is hidden as it fades
-				-- in; a menu closed by then is placed afresh when next opened)
-				local q = FrameUtil.GetScreenQuadrant(ours)
-				local Q = FrameUtilQuadrantEnum
-				menu:ClearAllPoints()
-				if q == Q.BottomRight then menu:SetPoint("BOTTOMRIGHT", ours, "BOTTOMLEFT")
-				elseif q == Q.BottomLeft then menu:SetPoint("BOTTOMLEFT", ours, "BOTTOMRIGHT")
-				elseif q == Q.TopRight then menu:SetPoint("TOPRIGHT", ours, "TOPLEFT")
-				else menu:SetPoint("TOPLEFT", ours, "TOPRIGHT") end
-			end)
+		local cell = owner and anchored[owner]
+		if not (cell and f:IsShown()) then return end
+		root:AddMenuAcquiredCallback(function(menu) held, ours = menu, cell holder:Show() end)
+		root:AddMenuReleasedCallback(function(menu)
+			if held == menu then held = nil holder:Hide() end
 		end)
 	end)
 end
