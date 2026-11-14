@@ -200,26 +200,24 @@ function R:Open(title, entries)
 	self:Light(nil, entries)
 end
 
--- Each slot's cooldown as its bar button would show it. In a fight the game
--- may hand addons cooldowns as secret values, which a call of ours cannot pass
--- on: then that slot shows none (pcall), and the first refusal is noted.
-local function SpellCooldown(id)
-	local info = C_Spell.GetSpellCooldown(id)
-	if info then return info.startTime, info.duration, info.isEnabled, info.modRate end
-end
-local function ItemCooldown(id)
-	local start, duration, enabled = C_Item.GetItemCooldown(id)
-	return start, duration, enabled, 1
-end
-local function Apply(cooldown, start, duration, enabled, modRate)
-	if enabled and duration and duration > 0 then cooldown:SetCooldown(start, duration, modRate or 1) else cooldown:Clear() end
+-- Each slot's cooldown as its bar button would show it. In a fight a spell's
+-- cooldown times are secret, which our code may not compare or pass to
+-- SetCooldown (measured 2026-11-14); the game's duration object carries them
+-- unread into the swipe, which clears itself when there is none. Item
+-- cooldowns are not secret.
+local function Apply(slot, entry)
+	if entry.spellID then
+		slot.cooldown:SetCooldownFromDurationObject(C_Spell.GetSpellCooldownDuration(entry.spellID, false), true)
+	else
+		local start, duration, enabled = C_Item.GetItemCooldown(entry.itemID)
+		if enabled and duration and duration > 0 then slot.cooldown:SetCooldown(start, duration) else slot.cooldown:Clear() end
+	end
 end
 function R:Cooldowns()
 	for index, slot in ipairs(self.slots) do
 		local entry = self.entries and self.entries[index]
-		local read = entry and ((entry.spellID and SpellCooldown) or (entry.itemID and ItemCooldown))
-		if read then
-			local ok, err = pcall(function() Apply(slot.cooldown, read(entry.spellID or entry.itemID)) end)
+		if entry and (entry.spellID or entry.itemID) then
+			local ok, err = pcall(Apply, slot, entry)
 			if not ok and not Ring.cooldownRefused then
 				Ring.cooldownRefused = tostring(err)
 				if WC.Say then WC.Say("Wheel: the game kept a cooldown from the wheel (" .. Ring.cooldownRefused .. ")") end
