@@ -31,16 +31,17 @@ second's font by the clock (`f<t % BANK>.ttf`), with no doorbell.
 
 ## The load test (one question): is a slot folder free?
 
-3,584 load-on-demand folders like the slots' (`tools/loadtest.py`), so the launch
-saw 4,096. Launch to login took 4.56 s (4.72 with 512), addons loading 1.88 s
-(1.87): the launch pays nothing. The old UI's closing at a reload took 0.86 s,
-against 0.43 s before, with the font trial running too. On 2026-11-14, without
-the trial and with 4,352 folders (the inbox trial's 256 too): launch 4.46 s,
-addons loading 1.95 s, the reload's closing 0.79 s; but the addons and their
-saves had grown since the baseline, and saving is part of that closing
-(`%LOCALAPPDATA%\wow-companion\loadtimes\with-4352`). The test folders were removed
-that day: the next launch's reloads, with 512 again, against 0.79 s, say what
-3,840 folders cost a reload (`tools/loadtimes.py`).
+3,584 load-on-demand folders like the slots' (`tools/loadtest.py`, in b6dee66;
+removed with the folders), so the launch saw 4,096. Launch to login took 4.56 s
+(4.72 with 512), addons loading 1.88 s (1.87): the launch pays nothing. The old
+UI's closing at a reload took 0.86 s, against 0.43 s before, with the font trial
+running too. On 2026-11-14, without the trial and with 4,352 folders (the inbox
+trial's 256 too): launch 4.46 s, addons loading 1.95 s, the reload's closing
+0.79 s; but the addons and their saves had grown since the baseline, and saving
+is part of that closing (`%LOCALAPPDATA%\wow-companion\loadtimes\with-4352`).
+The test folders were removed that day: the next launch's reloads, with 512
+again, against 0.79 s, say what 3,840 folders cost a reload
+(`tools/loadtimes.py`).
 
 Also seen once (12:48): the running client loaded a new addon folder at a
 /reload, where CLAUDE.md says a new folder needs a restart. Worth repeating when
