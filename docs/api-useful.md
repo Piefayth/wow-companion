@@ -147,3 +147,16 @@ Not done yet: world map pins, labels, clearing a pin automatically on arrival.
   - Down: focus the enemy, target yourself, press Blizzard's button down.
   - Up: release it, then target the focus again.
   - The player measured it working.
+
+## The right stick and the cursor, for wheels (measured 2026-11-14)
+- Secure snippets read the stick only at a click (`GetGamePadState()`); on the
+  rim the stick keys change only at 30 and 60 degrees (`tools/wheel_sim.py`).
+- A pad profile (`C_GamePad.SetConfig` with right-stick `buttonThreshold`) makes
+  the stick keys fire always, which closes Blizzard's flyout wheel (forms) on
+  every push, and the game drops the profile at a /reload. Not usable.
+- `C_GamePad.GetDeviceMappedState()` is not secret in a fight.
+- `SetCursorPosition(x, y)` takes the same pixels `GetCursorPosition()` gives.
+  It moves nothing while the camera holds the cursor (`IsMouselooking()`), and
+  `pcall` reports it failing in a fight. `MouselookStop()` / `MouselookStart()`
+  free and return the cursor, out of combat and in, without error. So a cursor
+  cannot carry the stick's angle to secure code in a fight.
