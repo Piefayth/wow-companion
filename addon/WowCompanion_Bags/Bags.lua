@@ -23,7 +23,7 @@ do
 -- Blizzard's bag frame (BagsStandIn.lua), in combat or out, and from plain code
 -- out of combat.
 local COLS, SIZE, GAP = 8, 37, 5
-local MAXBAG = 4
+local MAXBAG = NUM_TOTAL_BAG_FRAMES -- the backpack, four bags and the reagent bag, as Blizzard's combined bags
 local EDGE, TITLE_H, LEGEND_H, GAP_V = 18, 20, 24, 8
 
 WC.Saved("WowCompanion_Bags", "WowCompanionBagsDB")

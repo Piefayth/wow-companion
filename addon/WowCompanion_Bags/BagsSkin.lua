@@ -56,7 +56,7 @@ local function anchorNew()
 	end)
 	-- the bag icons Blizzard lays among the slots: the cursor skips them
 	if GamepadBagBar and GamepadBagBar.GetBagButton then
-		for bag = 0, 4 do
+		for bag = 0, NUM_TOTAL_BAG_FRAMES do
 			local ok, btn = pcall(GamepadBagBar.GetBagButton, GamepadBagBar, bag)
 			if ok and btn then WC.MarkIgnored(btn) end
 		end
