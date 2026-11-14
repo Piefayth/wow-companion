@@ -169,5 +169,7 @@ function C.Lay(H, offered, open)
 			name = NAME_RIGHT - INSET, chord = CHORD_RIGHT - INSET }
 	end
 	local o = L.offer
-	return { pieces = t, rows = rows, offer = o and { INSET + 4, o.y + 4, W - 2 * INSET - 8, o.h - 8 } } -- the button, as far in from each side as from above
+	return { pieces = t, rows = rows, offer = o and { INSET, o.y + 4, W - 2 * INSET, o.h - 8 } }
+	-- the button's rim, as far in from the sides as from the rules above and below
+	-- (measured on screen: the rim sits inside the button's edge)
 end
