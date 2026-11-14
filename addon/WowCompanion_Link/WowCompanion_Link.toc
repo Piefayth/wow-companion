@@ -15,4 +15,3 @@ Chat.lua
 ChatWheel.lua
 Status.lua
 CompanionSettings.lua
-BellProbe.lua

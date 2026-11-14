@@ -665,3 +665,25 @@ every slot spent, which is the alarm. Saves are now read as the bytes the game
 wrote (a cut character reads as U+FFFD), all through `savedvars::read`; the slot
 count is unknown, not 0, when the save does not read; and the alarm rings where
 the cursor finds every slot spent, not from a second reading after a failure.
+
+## The game took slots the companion had not written (2026-11-13)
+
+Dictated lines and replies went missing. The take audit showed the game taking
+slots before the PC wrote them, in runs of 2-3, at random moments. Each one read
+an earlier session's inbox, so the message the PC wrote there later was never
+read, and the old inbox was handled again. A design that carried every
+unconfirmed line in every slot was drawn up. The player asked whether it patched
+around a bug nobody had found, so the bug was looked for first. A probe beside
+the channel ran the channel's own procedure on empty bells nothing writes. From
+18:15 to 22:05 the probe played in the same frame as the channel's bell, and it
+had the same false rings at the same frames: 26 of 26, run for run. A real sound
+never misread.
+
+The cause is in the game's sound system, not in the names or the PC. The game
+opens a sound file in the background, and an empty one reads as playing until
+that open fails. That is usually within a frame, and several frames at a busy
+moment. bells.rs had said an empty file fails "at once". Each bell is now played
+with a control, `never.wav` (empty, written by nothing), in the same frame. A
+control still playing means the game has not decided. This is counted for a
+session before the poll obeys it (docs/proposals/reliable-channel.md). A slot
+stamped for an earlier session is now dropped, not handled.

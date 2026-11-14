@@ -27,7 +27,7 @@ WC.Saved("WowCompanion_Link", "WowCompanionLinkDB")
 
 local nextSlot = 1
 -- the poll's counts, saved at every reload; and when this session's polling began
-local channel = { plays = 0, taken = 0, slowed = 0, stale = 0 }
+local channel = { plays = 0, taken = 0, slowed = 0, stale = 0, undecided = 0 }
 local enteredAt = 0
 
 local function say(message)
@@ -186,12 +186,12 @@ local function dispatch(inbox, label)
 	current = nil
 end
 
--- The next slot, loaded and its messages handled.
--- `bell` is what the poll saw when it took the slot (check). Every take is
--- audited with it, and with whether the inbox was written for this session: a
--- slot taken before the companion wrote it holds an earlier session's message,
--- which is how dictated lines were lost (2026-11-13). Counted, not refused, until
--- the evidence says which bell readings to trust.
+-- The next slot, loaded, and its messages handled when it was written for this
+-- session. `bell` is what the poll saw when it took the slot (check); every take
+-- is audited with it. A slot stamped for an earlier session was taken before the
+-- companion wrote it: its messages were handled in their own session, so it is
+-- counted and dropped. (Handled again, they reran old `lua` and showed old
+-- progress, 2026-11-13.)
 local function receive(bell)
 	local slot = nextSlot
 	nextSlot = nextSlot + 1
@@ -199,10 +199,13 @@ local function receive(bell)
 	local inbox = WowCompanion_Inbox
 	WowCompanion_Inbox = nil
 	local ours = type(inbox) == "table" and inbox.session == WowCompanionLinkDB.loads
-	if not ours then channel.stale = channel.stale + 1 end
 	audit("take", "", ("slot=%d %s %s"):format(slot, ours and "fresh" or ("STALE session=" .. tostring(type(inbox) == "table" and inbox.session)), bell))
 	if not loaded or not inbox then
 		report("slot " .. slot, "failed: " .. tostring(reason))
+		return
+	end
+	if not ours then
+		channel.stale = channel.stale + 1
 		return
 	end
 	if inbox.kind ~= "list" or type(inbox.messages) ~= "table" then
@@ -236,15 +239,23 @@ end
 -- while its session runs. Every 0.1 s the next slot's bell is played and asked
 -- 20 ms later (the short bell plays within 2 ms); a ring takes the slot, and the
 -- slot after it is asked at once, so a burst drains a message per check.
+-- The game opens a sound file in the background, and an empty bell reads as
+-- playing until its open has failed: within a frame at most moments, for a few
+-- frames at a busy one, and the poll then took slots the PC had not written
+-- (docs/proposals/reliable-channel.md). So each bell is played with a control,
+-- never.wav (empty, written by nothing), in the same frame and after it: a
+-- control still playing at the ask marks a reading the game had not decided.
+-- Counted with each take, not yet obeyed (CLAUDE.md, "Changing the channel").
 -- Asked every frame, the game holds its sound files open; at 0.1 s it does
 -- not. While the heartbeat is stale (Status.lua), which is what
 -- held files look like, it asks every 0.5 s. Polled from
 -- OnUpdate, which WoW keeps calling whatever happened the frame before, rather
 -- than a C_Timer ticker, which a callback error may cancel for good.
 local EVERY, SLOW, ASK = 0.1, 0.5, 0.02
+local CONTROL = SIGNALS .. "never.wav"
 local set -- this session's set, from ADDON_LOADED
 local every = EVERY
-local clock, handle, willPlay, playedAt = 0, nil, nil, 0
+local clock, handle, control, willPlay, playedAt = 0, nil, nil, nil, 0
 local function bellPath(n)
 	return SIGNALS .. ("g%d-%03d.wav"):format(set, n)
 end
@@ -253,10 +264,13 @@ local function check(elapsed)
 	if handle then
 		if clock < ASK then return end
 		local playing = C_Sound.IsPlaying(handle)
+		local undecided = control ~= nil and C_Sound.IsPlaying(control)
 		StopSound(handle)
-		local bell = ("will=%s handle=%s asked=%.3f frame=%.3f up=%.1f"):format(tostring(willPlay), tostring(handle),
-			GetTime() - playedAt, elapsed, GetTime() - enteredAt)
-		handle = nil
+		if control then StopSound(control) end
+		if undecided then channel.undecided = channel.undecided + 1 end
+		local bell = ("will=%s handle=%s control=%s asked=%.3f frame=%.3f up=%.1f"):format(tostring(willPlay),
+			tostring(handle), undecided and "playing" or "quiet", GetTime() - playedAt, elapsed, GetTime() - enteredAt)
+		handle, control = nil, nil
 		if playing then
 			channel.taken = channel.taken + 1
 			safely("a message from the companion", receive, bell)
@@ -267,6 +281,7 @@ local function check(elapsed)
 	clock = 0
 	channel.plays = channel.plays + 1
 	willPlay, handle = PlaySoundFile(bellPath(nextSlot), "Master")
+	control = select(2, PlaySoundFile(CONTROL, "Master"))
 	playedAt = GetTime()
 end
 local function heartbeat(fresh)

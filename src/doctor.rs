@@ -86,7 +86,7 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
     // how the game once ran ahead of the PC); the other sets are all empty.
     let set = if crate::game_running() { crate::session::Session::now(addons).ok().map(|session| session.set()) } else { None };
     let (mut small, mut ahead, mut idle_rung, mut rung) = (Vec::new(), Vec::new(), Vec::new(), 0);
-    let mut leftover = Vec::new();
+    let (mut leftover, mut written_control) = (Vec::new(), false);
     if let Ok(entries) = fs::read_dir(&signals) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -97,13 +97,18 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
                 leftover.push(name);
                 continue;
             }
-            // always.wav is the probe's control; the pulse bells are the heartbeat's
-            if name == "always.wav" || name.starts_with("pulse-") {
+            // the pulse bells are the heartbeat's
+            if name.starts_with("pulse-") {
                 continue;
             }
             match entry.metadata().map(|meta| meta.len()) {
-                // idle: slot bells and never.wav are empty by design (bells.rs)
+                // idle: slot bells and the control are empty by design (bells.rs)
                 Ok(0) => continue,
+                // the control must never play (Link.lua, check)
+                Ok(_) if name == "never.wav" => {
+                    written_control = true;
+                    continue;
+                }
                 Ok(len) if len < 174_763 => small.push(name.clone()),
                 _ => {}
             }
@@ -126,6 +131,11 @@ pub fn run(addons: &Path) -> std::io::Result<()> {
         "none".to_string()
     } else {
         format!("{} (a small or empty bell gets cached and locked; reinstall, then /reload)", small.join(", "))
+    });
+    line(!written_control, "control bell", if written_control {
+        "never.wav is not empty: the slot bells' control must never play (empty it, then restart the game)"
+    } else {
+        "empty"
     });
     line(ahead.is_empty() && idle_rung.is_empty(), "slot bells", &match (ahead.is_empty(), idle_rung.is_empty()) {
         (true, true) => format!("{rung} rung this session, none past the {used} slot(s) sent, the other sets empty"),
@@ -202,7 +212,7 @@ fn rings(path: &std::path::Path) -> bool {
 /// The bell names in use (bells.rs, main.rs, heartbeat.rs, Status.lua). Anything
 /// else in Signals was left by an earlier design.
 fn current_bell(name: &str) -> bool {
-    slot_bell(name).is_some() || matches!(name.trim_end_matches(".wav"), "always" | "never" | "doctor" | "pulse-a" | "pulse-b")
+    slot_bell(name).is_some() || matches!(name.trim_end_matches(".wav"), "never" | "doctor" | "pulse-a" | "pulse-b")
 }
 
 /// The set and slot a slot bell's name stands for.
@@ -235,10 +245,10 @@ mod tests {
 
     #[test]
     fn only_todays_bell_names_are_current() {
-        for name in ["g0-001.wav", "g2-512.wav", "pulse-a.wav", "always.wav", "never.wav", "doctor.wav"] {
+        for name in ["g0-001.wav", "g2-512.wav", "pulse-a.wav", "never.wav", "doctor.wav"] {
             assert!(current_bell(name), "{name}");
         }
-        for name in ["1.wav", "m1.wav", "c3.wav", "f5.wav", "g3-001.wav", "g0-513.wav", "g0-1.wav", "alive-a.wav", "show.wav"] {
+        for name in ["1.wav", "m1.wav", "c3.wav", "f5.wav", "g3-001.wav", "g0-513.wav", "g0-1.wav", "alive-a.wav", "show.wav", "always.wav"] {
             assert!(!current_bell(name), "{name}");
         }
     }

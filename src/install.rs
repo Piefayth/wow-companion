@@ -57,10 +57,7 @@ pub(crate) fn install(addons: &Path) -> io::Result<()> {
             bells::empty(&path)?;
         }
     }
-    // the sound probe's controls: one that must play, one that must not
-    if missing(&signals.join("always.wav")) {
-        bells::ring(&signals.join("always.wav"))?;
-    }
+    // the slot bells' control (Link.lua, check): empty, and written by nothing
     if missing(&signals.join("never.wav")) {
         bells::empty(&signals.join("never.wav"))?;
     }
