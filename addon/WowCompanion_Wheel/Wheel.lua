@@ -105,11 +105,30 @@ ring:SetAttribute("wc-forget", [[
     end
 ]])
 
+-- open wheel `key` (nothing when it has no slots)
+ring:SetAttribute("wc-show", [[
+    local key = ...
+    if (self:GetAttribute(key .. "-count") or 0) < 1 then return end
+    self:SetAttribute("wc-sticky", nil)
+    self:RunAttribute("wc-forget")
+    self:SetAttribute("wc-active", key)
+    self:Show()
+]])
+
 local sampler = CreateFrame("Frame", "WCWheelSampler", UIParent, "SecureHandlerStateTemplate")
 SecureHandlerSetFrameRef(sampler, "ring", ring)
+-- Its tick also opens a wheel asked for by our own code (wc-open, then the
+-- state cleared so the next tick fires): a snippet run from addon code cannot
+-- reach a button it has never seen securely ("Invalid 'header' frame handle",
+-- a new wheel's button clicked, 2026-11-14); the driver's tick is secure.
 sampler:SetAttribute("_onstate-aim", [[
     if newstate ~= "sample" then return end
     local ring = self:GetFrameRef("ring")
+    local open = self:GetAttribute("wc-open")
+    if open then
+        self:SetAttribute("wc-open", nil)
+        if not ring:IsShown() then ring:RunAttribute("wc-show", open) end
+    end
     if not ring:IsShown() then return end -- left set, so the driver stops firing
     ring:RunAttribute("wc-sample")
     self:SetAttribute("state-aim", nil)
@@ -156,11 +175,7 @@ local OPEN_SNIPPET = [[
             return false
         end
     end
-    if (ring:GetAttribute(key .. "-count") or 0) < 1 then return false end
-    ring:SetAttribute("wc-sticky", nil)
-    ring:RunAttribute("wc-forget")
-    ring:SetAttribute("wc-active", key)
-    ring:Show()
+    ring:RunAttribute("wc-show", key)
     return false
 ]]
 
@@ -519,8 +534,8 @@ function W.Place(slot, label, onEnd)
 end
 -- A new wheel from placing: an empty bar slot pressed while placing (a post-hook
 -- on UseAction, which every bar button's press calls, the empty ones too) gets
--- a new, empty wheel and that wheel's macro, and the wheel opens at once (its
--- button clicked out of combat, as the macro would) to flick where the thing
+-- a new, empty wheel and that wheel's macro, and the wheel opens at once (on
+-- the sampler's next tick) to flick where the thing
 -- goes; placing ended with nothing on it takes it all away again (Unmake).
 local function NewWheelAt(action)
     local n = 1
@@ -539,7 +554,8 @@ local function NewWheelAt(action)
     PlaceAction(action)
     ClearCursor()
     W.placing.made = { key = key, name = label, action = action }
-    _G["WCWheel_" .. key]:Click("Macro", true)
+    sampler:SetAttribute("wc-open", key)
+    sampler:SetAttribute("state-aim", nil)
     Print(label .. " is on the slot: flick where " .. W.placing.label .. " goes")
 end
 hooksecurefunc("UseAction", function(action)
