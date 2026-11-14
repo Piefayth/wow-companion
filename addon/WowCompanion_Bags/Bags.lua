@@ -34,7 +34,7 @@ WC.Saved("WowCompanion_Bags", "WowCompanionBagsDB")
 local function build()
 	if WCBags and WCBags.ready then return end
 	local f = CreateFrame("Frame", "WCBags", UIParent, "BackdropTemplate")
-	f:SetFrameStrata("DIALOG")
+	f:SetFrameStrata("MEDIUM") -- Blizzard's bags' own: the controller's pointer and focus hints draw above it
 	f:SetToplevel(true)
 	f:SetClampedToScreen(true)
 	-- where Blizzard's bags sit (UpdateContainerFrameAnchors): bottom right, 85 up

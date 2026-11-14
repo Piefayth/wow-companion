@@ -46,8 +46,11 @@ local hide, show = alphaGroup(0), alphaGroup(1)
 -- buttons when watched), so the stops are walked on every open.
 local anchored = {} -- their stop -> the frame of ours it is anchored to
 local skipped = {} -- their stops the cursor skips: ours has its own way
+-- the pointer sits where SmartNavigation puts it on any button, at its left
+-- (UpdateCursorPosition: RIGHT on LEFT, cursorOffsetX); every stop is measured
+-- from that same point, so the d-pad's steps are unchanged
 local function anchor(b, p)
-	if pcall(SmartNavigation_SetCustomCursorAnchorPointForFrame, b, CreateAnchor("CENTER", p, "CENTER")) then
+	if pcall(SmartNavigation_SetCustomCursorAnchorPointForFrame, b, CreateAnchor("RIGHT", p, "LEFT", SmartNavigation and SmartNavigation.cursorOffsetX or 10, 0)) then
 		anchored[b] = p
 	end
 end
@@ -154,8 +157,8 @@ end)
 local marks = {}
 do
 	local glow = CreateFrame("Frame", nil, f, "FrameGlowTemplate")
-	glow.layoutType = "ButtonFrameTemplateNoPortrait"
-	glow:OnLoad() -- again, under that layout: the frame's rim, not a portrait's
+	glow.layoutType = "Dialog" -- our rim is the dialog border: Blizzard's glow for it
+	glow:OnLoad() -- again, under that layout
 	glow:SetFrameLevel(f:GetFrameLevel() + 50) -- over the slots, as Blizzard lays it (505)
 	marks.FrameGlow = glow
 	for key, template in pairs({ LeftJumpHint = "FrameLeftJumpHintTemplate",
