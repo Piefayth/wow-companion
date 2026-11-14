@@ -26,24 +26,26 @@ local function toast(...) return WC.Board.toast(...) end
 -- so the gamepad cursor has a normal piece of UI to land on, and because it costs no
 -- bar slot.
 --
--- SecureActionButtonTemplate for the secure path, UIPanelButtonTemplate so it looks
--- like the game's own. Macro text is the limit of what it can do, which is also the
+-- SecureActionButtonTemplate for the secure path, worn as our button (WC.Style.Button).
+-- Macro text is the limit of what it can do, which is also the
 -- limit of what the player could type -- it grants no power they lacked.
 local function buildActionButton()
 	local frame = logFrame()
 	if not actionButton then
-		local made, button = pcall(CreateFrame, "Button", BUTTON, frame,
-			"SecureActionButtonTemplate, UIPanelButtonTemplate")
+		local made, button = pcall(WC.Style.Button, frame, BUTTON, "SecureActionButtonTemplate")
 		if not made or not button then
 			return "could not build the button: " .. tostring(button)
 		end
 		actionButton = button
-		-- in the conversation list's own cell for it, above the list's foot
+		-- centred in the conversation list's own cell for it, above the list's
+		-- foot: the art's cut ends and glow reach 16 past each side, so the
+		-- button is the well's width less those
 		local function place(b)
 			local slot = frame.convOfferSlot
 			b:SetParent(frame)
 			b:ClearAllPoints()
-			b:SetAllPoints(slot)
+			b:SetPoint("CENTER", slot)
+			b:SetSize(88, 28)
 			b:SetFrameLevel(slot:GetFrameLevel() + 4)
 		end
 		place(actionButton)
@@ -87,7 +89,7 @@ showOffer = function()
 	if InCombatLockdown() then
 		if actionButton and actionButton.slot and offers[actionButton.slot] then
 			local held = offers[actionButton.slot]
-			actionButton:SetText(actionButton.slot == view and labelOf(held)
+			actionButton:SetFitted(actionButton.slot == view and labelOf(held)
 				or (WC.Conversations.Label(actionButton.slot) .. ": " .. labelOf(held)))
 		end
 		return "in combat"
@@ -111,7 +113,7 @@ showOffer = function()
 	if not actionButton then return "nothing" end
 	actionButton.slot = view
 	actionButton:SetAttribute("macrotext", held.macro)
-	actionButton:SetText(labelOf(held))
+	actionButton:SetFitted(labelOf(held))
 	actionButton:Show()
 	if frame and frame.ConvLayout then frame.ConvLayout(true) end
 	return "shown"

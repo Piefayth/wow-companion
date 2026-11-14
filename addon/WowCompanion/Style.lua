@@ -147,9 +147,8 @@ function WowCompanion_ConfirmDestroy(bag, slot, onClose)
 		f.text:SetPoint("TOPLEFT", 60, -20)
 		f.text:SetPoint("TOPRIGHT", -20, -20)
 		f.text:SetJustifyH("CENTER")
-		local yes = CreateFrame("Button", "WowCompanionDestroyYes", f, "UIPanelButtonTemplate")
-		yes:SetSize(128, 22)
-		yes:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -6, 44)
+		local yes = WowCompanion_Style.Button(f, "WowCompanionDestroyYes")
+		yes:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -22, 44)
 		yes:SetText(YES or "Yes")
 		yes:RegisterForClicks("AnyDown")
 		yes:SetScript("OnClick", function()
@@ -169,9 +168,8 @@ function WowCompanion_ConfirmDestroy(bag, slot, onClose)
 			end
 			f:Hide()
 		end)
-		local no = CreateFrame("Button", "WowCompanionDestroyNo", f, "UIPanelButtonTemplate")
-		no:SetSize(128, 22)
-		no:SetPoint("BOTTOMLEFT", f, "BOTTOM", 6, 44)
+		local no = WowCompanion_Style.Button(f, "WowCompanionDestroyNo")
+		no:SetPoint("BOTTOMLEFT", f, "BOTTOM", 22, 44)
 		no:SetText(NO or "No")
 		no:RegisterForClicks("AnyDown")
 		no:SetScript("OnClick", function() f:Hide() end)
@@ -681,6 +679,9 @@ local function controlFont(name, colour)
 end
 local BUTTON_FONT = controlFont("WowCompanionButtonFont", WowCompanion_Style.BRONZE)
 local BUTTON_FONT_OFF = controlFont("WowCompanionButtonFontOff", WowCompanion_Style.DIM)
+local BUTTON_FONT_SMALL = CreateFont("WowCompanionButtonFontSmall")
+BUTTON_FONT_SMALL:CopyFontObject(GameFontHighlightSmall)
+BUTTON_FONT_SMALL:SetTextColor(unpack(WowCompanion_Style.BRONZE))
 -- A button of ours (tools/make_button_art.py, the player's pick, 2026-11-12):
 -- a slab of the dark stone with cut corners and a faceted bevel in a bark rim,
 -- its word in bronze, as wide as its word (button:SetLabel(text)). Under the
@@ -688,11 +689,13 @@ local BUTTON_FONT_OFF = controlFont("WowCompanionButtonFontOff", WowCompanion_St
 -- and the word a brighter bronze (button:SetLit(on) for a row that holds the
 -- cursor for it); pressed, its face sinks; unavailable, greyed. The art is
 -- 160 x 36 with the 128 x 28 body in its middle, cut in three so the ends keep
--- their cuts and the middle stretches.
+-- their cuts and the middle stretches. A name and template make it from those
+-- (the offered button is secure); button:SetFitted(text) keeps a fixed width
+-- and takes the small font for a word that would not fit.
 local BUTTON_VERSION = 1 -- make_button_art.py's VERSION
 local BUTTON_SLICES = { { 0, 28 }, { 28, 132 }, { 132, 160 } }
-function WowCompanion_Style.Button(parent)
-	local b = CreateFrame("Button", nil, parent)
+function WowCompanion_Style.Button(parent, name, template)
+	local b = CreateFrame("Button", name, parent, template)
 	b:SetSize(128, 28)
 	local parts = {}
 	for i, cut in ipairs(BUTTON_SLICES) do
@@ -737,6 +740,12 @@ function WowCompanion_Style.Button(parent)
 	function b:SetLabel(text)
 		self:SetText(text)
 		self:SetWidth(word:GetStringWidth() + 2 * 16 + 16)
+	end
+	function b:SetFitted(text)
+		self:SetNormalFontObject(BUTTON_FONT)
+		self:SetText(text)
+		if word:GetStringWidth() > self:GetWidth() - 12 then self:SetNormalFontObject(BUTTON_FONT_SMALL) end
+		paint()
 	end
 	paint()
 	return b
