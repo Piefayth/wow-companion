@@ -6,4 +6,3 @@
 ## Group: WowCompanion
 
 Wheel.lua
-Slices.lua
