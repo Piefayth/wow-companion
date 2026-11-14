@@ -307,11 +307,12 @@ local function build()
 		end
 		-- place, in rows. Blizzard's grid navigation (SmartNavPanelInfoAdded)
 		-- takes columns by X and keeps a cell's height counted from the bottom, so
-		-- it moves the way the cells look only when every row is full but the top
-		-- one, as in theirs. So each section's last row is finished with empty
-		-- slots, and the rest (the bag icons, a section's row the empty slots ran
-		-- out on, the empty slots left, the locked ones, Blizzard's add-slots
-		-- button) is one block at the top of the bag, its short row first.
+		-- it moves the way the cells look only when every short row is above every
+		-- full one, the shorter higher (right from a short row's end then drops to
+		-- the row below, as from the top row of theirs). So each section's last
+		-- row is finished with empty slots; the bag icons are a row of their own;
+		-- the empty slots left, the locked ones and Blizzard's add-slots button
+		-- are one block, its short row first; and the short rows rise to the top.
 		local max, now = ContainerFrame_GetContainerNumSlots(Enum.BagIndex.Backpack)
 		-- Blizzard's add-slots button (shown while the account has no
 		-- authenticator, ContainerFrameExtendedSlotPack) is the last cell
@@ -338,22 +339,18 @@ local function build()
 					sec[#sec + 1] = e
 				end
 			end
-			-- the top block: the bag icons, any section's row free slots could not
-			-- finish, the free slots left, the locked ones, the add-slots button
-			local top = bagIcons
 			for _, sec in ipairs(secs) do
 				while #sec % COLS ~= 0 and #free > 0 do
 					local e = table.remove(free)
 					e.label = sec[1].key
 					sec[#sec + 1] = e
 				end
-				for k = #sec - #sec % COLS + 1, #sec do top[#top + 1] = sec[k] end
-				for k = #sec, #sec - #sec % COLS + 1, -1 do sec[k] = nil end
 			end
-			for _, e in ipairs(free) do top[#top + 1] = e end
-			for _, e in ipairs(locked) do top[#top + 1] = e end
-			if add then top[#top + 1] = { add = true, label = LOCKED or "Locked" } end
-			run(top, true)
+			run(bagIcons)
+			local rest = free
+			for _, e in ipairs(locked) do rest[#rest + 1] = e end
+			if add then rest[#rest + 1] = { add = true, label = LOCKED or "Locked" } end
+			run(rest, true)
 			for _, sec in ipairs(secs) do run(sec) end
 		else
 			-- each bag's icon before its slots, as theirs
@@ -366,6 +363,13 @@ local function build()
 			if add then list[#list + 1] = { add = true } end
 			run(list, true)
 		end
+		-- every short row above every full one, the shorter higher
+		for k, r in ipairs(rows) do r.k = k end
+		table.sort(rows, function(a, b)
+			local sa, sb = math.min(#a, COLS), math.min(#b, COLS)
+			if sa ~= sb then return sa < sb end
+			return a.k < b.k
+		end)
 		-- titles where the label changes; room above each titled row
 		local titles, prev = {}, nil
 		for ri, r in ipairs(rows) do
