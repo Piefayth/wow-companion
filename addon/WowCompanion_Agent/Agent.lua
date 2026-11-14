@@ -495,7 +495,7 @@ end)
 -- what WowCompanion_Link and the other addons say on the bus
 local bus = WC.Module("Agent")
 -- a short tap of the talk button closes the window, is for the thing under the
--- controller's cursor (ContextTap.lua), or opens the window (the game alone
+-- controller's cursor (ContextTap.lua: placing it on a wheel), or opens the window (the game alone
 -- decides a tap: the PC sends nothing for one)
 bus:On("TALK_TAP", function()
 	if windowOpen() or not WC.Companion.ContextTap() then toggleWindow() end

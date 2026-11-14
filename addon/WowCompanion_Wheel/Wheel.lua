@@ -22,6 +22,9 @@
 -- from what that character has.
 -- A slot may carry `label` and `icon` to override what is looked up.
 -- A slot { rule = "items" } or { rule = "quest" } fills itself from the bags.
+-- The player places things too, with no agent: W.Place(slot, label) (the
+-- companion button's tap on a spell, item or macro, ContextTap.lua) and then a
+-- wheel opened and flicked puts it in that slot, or in the "Add here" one.
 
 WCWheel = WCWheel or {}
 WC.Wheel = WCWheel
@@ -142,7 +145,7 @@ local OPEN_SNIPPET = [[
     if ring:IsShown() then
         local same = ring:GetAttribute("wc-active") == key
         ring:Hide()
-        if not same then
+        if not same or ring:GetAttribute("wc-placing") then
         elseif ring:GetAttribute(key .. "-last-type") then
             local t, a, v = ring:GetAttribute(key .. "-last-type"), ring:GetAttribute(key .. "-last-attr"),
                 ring:GetAttribute(key .. "-last-value")
@@ -189,6 +192,11 @@ local AIM = [[
     local pick = ring:GetAttribute("wc-sticky")
     if not pick then return false end
     local key = ring:GetAttribute("wc-active")
+    if ring:GetAttribute("wc-placing") and not PlayerInCombat() then
+        ring:Hide()
+        ring:CallMethod("WCPlace", key, pick)
+        return false
+    end
     local t, a, v = ring:GetAttribute(key .. "-type-" .. pick), ring:GetAttribute(key .. "-attr-" .. pick),
         ring:GetAttribute(key .. "-value-" .. pick)
 ]] .. LOAD
@@ -205,7 +213,9 @@ end
 local close = SecureButton("WCWheelClose")
 close:RegisterForClicks("AnyDown")
 SecureHandlerWrapScript(close, "OnClick", close, [[
-    self:GetFrameRef("ring"):Hide()
+    local ring = self:GetFrameRef("ring")
+    ring:Hide()
+    if ring:GetAttribute("wc-placing") then ring:CallMethod("WCCancel") end
     return false
 ]])
 
@@ -279,7 +289,7 @@ ring:HookScript("OnShow", function()
     local key = ring:GetAttribute("wc-active")
     Counts(ringData[key] or {})
     local wheel = WowCompanionWheelDB.wheels[key]
-    look:Open(wheel and wheel.label or key, ringData[key] or {})
+    look:Open(W.placing and ("Place " .. W.placing.label) or (wheel and wheel.label or key), ringData[key] or {})
 end)
 
 ---------------------------------------------------------------------------
@@ -351,19 +361,22 @@ end
 function RULES.items() return BagUsable(function(isQuest, classID) return not isQuest and classID ~= 2 and classID ~= 4 end) end
 function RULES.quest() return BagUsable(function(isQuest) return isQuest end) end
 
--- a wheel's slots with every rule replaced by what it finds now
+-- a wheel's slots with every rule replaced by what it finds now, and for each
+-- the definition it came from ({ index, rule })
 local function Expand(slots)
-    local out = {}
-    for _, slot in ipairs(slots or {}) do
+    local out, from = {}, {}
+    for index, slot in ipairs(slots or {}) do
         local rule = slot.rule and RULES[slot.rule]
         if rule then
             local ok, found = pcall(rule)
-            for _, each in ipairs(ok and found or {}) do out[#out + 1] = each end
+            for _, each in ipairs(ok and found or {}) do
+                out[#out + 1], from[#out + 1] = each, { index = index, rule = slot.rule }
+            end
         else
-            out[#out + 1] = slot
+            out[#out + 1], from[#out + 1] = slot, { index = index }
         end
     end
-    return out
+    return out, from
 end
 
 -- A wheel's bar macros show what a tap of them uses again: SetMacroSpell /
@@ -406,18 +419,26 @@ function W.Rebuild(quiet)
         return false
     end
     pending = false
+    ring:SetAttribute("wc-placing", W.placing and true or nil)
     for key in pairs(ringData) do ring:SetAttribute(key .. "-count", 0) end
     wipe(ringData)
     for key, wheel in pairs(WowCompanionWheelDB.wheels) do
         OpenButton(key)
         local entries = {}
-        for _, slot in ipairs(Expand(wheel.slots)) do
+        local slots, from = Expand(wheel.slots)
+        for index, slot in ipairs(slots) do
             local entry, why = Resolve(slot)
             if entry and #entries < MAX_SLOTS then
+                entry.from = from[index]
                 entries[#entries + 1] = entry
             elseif not quiet then
                 Print(key .. ": skipped a slot, " .. (why or "the wheel is full"))
             end
+        end
+        -- while placing, a wheel with room shows where an added slot goes
+        if W.placing and #entries < MAX_SLOTS then
+            entries[#entries + 1] = { type = "macro", attr = "macrotext", value = "", label = "Add here",
+                icon = 134400, add = true }
         end
         for index, entry in ipairs(entries) do
             entry.dx, entry.dy, entry.angle = WC.Ring.Direction(index)
@@ -432,6 +453,54 @@ function W.Rebuild(quiet)
         PrepareMacros(key)
     end
     return true
+end
+
+-- Placing: what the companion button picked waits for a wheel's flick (the
+-- secure release calls WCPlace instead of using the slot, never in a fight).
+-- It ends with the placement, Circle on the wheel, a fight, another tap, or
+-- after a minute.
+local PLACE_FOR = 60
+local function EndPlacing()
+    W.placing = nil
+    W.Rebuild(true)
+end
+function W.Placing() return W.placing end
+function W.Place(slot, label)
+    if InCombatLockdown() then return Print("not in combat") end
+    if not next(WowCompanionWheelDB.wheels) then return Print("there is no wheel yet to put " .. label .. " on") end
+    local placing = { slot = slot, label = label }
+    W.placing = placing
+    W.Rebuild(true)
+    Print("placing " .. label .. ": open a wheel and flick to a slot (Circle cancels)")
+    C_Timer.After(PLACE_FOR, function()
+        if W.placing == placing then EndPlacing() Print("stopped placing " .. label) end
+    end)
+end
+function W.CancelPlacing()
+    if not W.placing then return end
+    local label = W.placing.label
+    EndPlacing()
+    Print("stopped placing " .. label)
+end
+function ring:WCCancel() W.CancelPlacing() end
+function ring:WCPlace(key, index)
+    local placing, wheel = W.placing, WowCompanionWheelDB.wheels[key]
+    local entry = ringData[key] and ringData[key][index]
+    if not (placing and wheel and entry) then return end
+    if entry.from and entry.from.rule then
+        return Print("that slot is filled from the bags (the " .. entry.from.rule .. " rule): flick to another")
+    end
+    wheel.slots = wheel.slots or {}
+    local said
+    if entry.add then
+        wheel.slots[#wheel.slots + 1] = placing.slot
+        said = placing.label .. " added to " .. (wheel.label or key)
+    else
+        wheel.slots[entry.from.index] = placing.slot
+        said = placing.label .. " is on " .. (wheel.label or key) .. " in place of " .. tostring(entry.label)
+    end
+    EndPlacing()
+    Print(said)
 end
 
 local function ValidName(name)
@@ -474,6 +543,7 @@ end
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
+events:RegisterEvent("PLAYER_REGEN_DISABLED")
 events:RegisterEvent("SPELLS_CHANGED")
 events:RegisterEvent("UPDATE_MACROS")
 events:RegisterEvent("CVAR_UPDATE")
@@ -487,6 +557,8 @@ events:SetScript("OnEvent", function(_, event, name)
         W.Rebuild()
     elseif not WowCompanionWheelDB then
         return
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        W.CancelPlacing() -- the secure release already refuses in a fight
     elseif event == "PLAYER_REGEN_ENABLED" then
         if pending then W.Rebuild(true) end
     elseif event == "CVAR_UPDATE" then

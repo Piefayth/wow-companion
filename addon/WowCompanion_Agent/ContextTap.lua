@@ -1,43 +1,57 @@
--- TRIAL (2026-11-14): minus tap as the one contextual companion button. With the
--- controller's cursor on something in a game window (SmartNavigation's current
--- button, only read), a tap is for that thing instead of opening the Companion
--- window. For now it only says what it saw, to learn what each window's
--- buttons tell us and that reading them keeps A and B clean; our own menu
--- (Put on wheel) comes after.
+-- Minus tap is the companion's one contextual button: with the controller's
+-- cursor on a spell, a bag item, a worn item or a macro in a game window
+-- (SmartNavigation's current button, only read: measured clean, 2026-11-14),
+-- a tap places that thing on a wheel (WCWheel.Place: open a wheel and flick).
+-- Anything else, and a tap while placing stops it; otherwise the tap opens
+-- the Companion window (Agent.lua).
 
-local function Seen(button)
-    local context = tostring(button.buttonContext)
-    if button.GetBagID and button.GetID then
-        local bag, slot = button:GetBagID(), button:GetID()
-        local link = bag and slot and C_Container.GetContainerItemLink(bag, slot)
-        if link then return ("%s: bag %d slot %d, %s"):format(context, bag, slot, link) end
+-- the slot for a wheel and its name, or nil and why (nil, nil: not a thing)
+local function Thing(button)
+    local context = button.buttonContext
+    if context == "ButtonContext_SpellButton" then
+        local item = button:GetParent()
+        local info = item and item.slotIndex and C_SpellBook.GetSpellBookItemInfo(item.slotIndex, item.spellBank)
+        if not (info and info.spellID) then return nil, nil end
+        if info.isPassive then return nil, info.name .. " is passive" end
+        return { spell = info.spellID }, info.name
+    elseif context == "ButtonContext_MacroButton" then
+        local index = MacroFrame:GetMacroDataIndex(button:GetElementData())
+        local name = index and GetMacroInfo(index)
+        if not name then return nil, nil end
+        return { macro = name }, name
     end
-    local parent = button.GetParent and button:GetParent()
-    if parent and parent.slotIndex and parent.spellBank then
-        local info = C_SpellBook.GetSpellBookItemInfo(parent.slotIndex, parent.spellBank)
-        if info then return ("%s: %s (%s)"):format(context, tostring(info.name), tostring(info.spellID)) end
+    local id
+    if context == "ButtonContext_ContainerFrameItemButton" then
+        local info = C_Container.GetContainerItemInfo(button:GetBagID(), button:GetID())
+        id = info and info.itemID
+    elseif context == "ButtonContext_PaperDollItemSlotButton" then
+        id = GetInventoryItemID("player", button:GetID())
+    else
+        return nil, nil
     end
-    local id = button.GetID and button:GetID()
-    local gear = id and id >= 1 and id <= 19 and GetInventoryItemLink("player", id)
-    if gear then return ("%s: worn slot %d, %s"):format(context, id, gear) end
-    return ("%s: %s id=%s parent=%s bag=%s"):format(context, tostring(button:GetDebugName()), tostring(id),
-        tostring(parent and parent:GetDebugName()), tostring(button.GetBagID and button:GetBagID()))
+    if not id then return nil, nil end
+    local name = C_Item.GetItemNameByID(id) or ("item " .. id)
+    if not C_Item.GetItemSpell(id) then return nil, name .. " has no use" end
+    return { item = id }, name
 end
 
--- every sighting, newest last, for the agent to read live (the strip)
-WCContextSeen = {}
-
--- true when the tap was for the thing under the cursor
+-- true when the tap was the companion button's (a thing placed, or placing stopped)
 function WC.Companion.ContextTap()
-    if InCombatLockdown() then return false end
+    if InCombatLockdown() or not WCWheel then return false end
     local button = SmartNavigation and SmartNavigation:GetCurrentButton()
-    if not (button and button:IsVisible()) then
-        WCContextSeen[#WCContextSeen + 1] = "no button: " .. tostring(button and button:GetDebugName())
-        return false
+    if button and button:IsVisible() then
+        local ok, slot, name = pcall(Thing, button)
+        if ok and slot then
+            WCWheel.Place(slot, name)
+            return true
+        elseif ok and name then
+            WC.Say("Wheel: " .. name .. ", so it cannot go on a wheel")
+            return true
+        end
     end
-    local ok, seen = pcall(Seen, button)
-    seen = ok and seen or ("unreadable: " .. tostring(seen))
-    WCContextSeen[#WCContextSeen + 1] = seen
-    WC.Say("The companion button saw " .. seen)
-    return true
+    if WCWheel.Placing() then
+        WCWheel.CancelPlacing()
+        return true
+    end
+    return false
 end
