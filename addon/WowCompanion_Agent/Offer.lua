@@ -47,10 +47,14 @@ local function buildActionButton()
 		end
 		place(actionButton)
 		WC.Companion.stow(actionButton, place)
-		-- "AnyDown" alone runs the macro once ("AnyUp" fires PreClick and
-		-- PostClick but not the macro; both edges run it twice).
+		-- it acts as it is let go, and looks pressed while held: both edges
+		-- come in, and with useOnKeyDown off a key's macro runs on the up edge
+		-- alone (SecureActionButton_OnClick; the ActionButtonUseKeyDown setting
+		-- would run it going down)
 		actionButton:SetAttribute("type", "macro")
-		actionButton:RegisterForClicks("AnyDown")
+		actionButton:SetAttribute("useOnKeyDown", false)
+		actionButton:RegisterForClicks("AnyDown", "AnyUp")
+		actionButton:SetScript("PreClick", function(self, _, down) self:SetHeld(down) end)
 
 		-- the cursor can land on it, and goes to it when the window takes focus
 		WC.MarkFocusable(actionButton)
@@ -76,7 +80,8 @@ local function buildActionButton()
 		cross:SetScript("OnEvent", unbind)
 		-- a press uses one of the offer's presses; the last one ends it (left
 		-- 0: it lasts until the next offer replaces it)
-		actionButton:SetScript("PostClick", function(self)
+		actionButton:SetScript("PostClick", function(self, _, down)
+			if down then return end
 			local held = self.slot and offers[self.slot]
 			if held and held.left ~= 0 then
 				held.left = (held.left or 1) - 1

@@ -329,7 +329,9 @@ goes to a detached process.
   own override bindings while the row has the cursor, never by hooking
   SmartNavigation or its prompted binding footer.
 - **Protected things are a button the player presses**: a `SecureActionButtonTemplate`
-  with `macrotext`, registered for `"AnyDown"` (other edges misfire). The
+  with `macrotext`, registered for `"AnyDown"` (other edges misfire, unless
+  `useOnKeyDown` is false: then a key's macro runs on the up edge, which the
+  offered button uses to act on release and look pressed while held). The
   cursor's cross presses from Lua, which runs PostClick but never the macro
   (measured 2026-11-14); a key bound to the button runs it, so cross is bound
   to the button while the cursor is on it (Offer.lua). `ReloadUI()`

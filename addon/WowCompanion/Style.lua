@@ -687,7 +687,8 @@ BUTTON_FONT_SMALL:SetTextColor(unpack(WowCompanion_Style.BRONZE))
 -- its word in bronze, as wide as its word (button:SetLabel(text)). Under the
 -- cursor it stays dark and lights round it: the focus glow outside, the rim
 -- and the word a brighter bronze (button:SetLit(on) for a row that holds the
--- cursor for it); pressed, its face sinks; unavailable, greyed. The art is
+-- cursor for it); pressed, its face and word sink (button:SetHeld(on) for a
+-- key bound to it, which no mouse event tells); unavailable, greyed. The art is
 -- 160 x 36 with the 128 x 28 body in its middle, cut in three so the ends keep
 -- their cuts and the middle stretches. A name and template make it from those
 -- (the offered button is secure); button:SetFitted(text) keeps a fixed width
@@ -715,8 +716,6 @@ function WowCompanion_Style.Button(parent, name, template)
 	b:SetFontString(word)
 	b:SetNormalFontObject(BUTTON_FONT)
 	b:SetDisabledFontObject(BUTTON_FONT_OFF)
-	word:SetPoint("CENTER", 0, 1)
-	b:SetPushedTextOffset(0, -1)
 	local over, held, lit = false, false, false
 	local function paint()
 		local on = b:IsEnabled()
@@ -725,6 +724,7 @@ function WowCompanion_Style.Button(parent, name, template)
 			t:SetTexture(ART .. "Button-" .. state .. "-" .. BUTTON_VERSION)
 			t:SetDesaturated(not on)
 		end
+		word:SetPoint("CENTER", 0, held and 0 or 1)
 		if on then word:SetTextColor(unpack((over or lit) and WowCompanion_Style.BRONZE_LIT or WowCompanion_Style.BRONZE)) end
 	end
 	b:HookScript("OnEnter", function() over = true paint() end)
@@ -733,6 +733,10 @@ function WowCompanion_Style.Button(parent, name, template)
 	b:HookScript("OnMouseUp", function() held = false paint() end)
 	b:HookScript("OnEnable", paint)
 	b:HookScript("OnDisable", paint)
+	function b:SetHeld(on)
+		held = on
+		paint()
+	end
 	function b:SetLit(on)
 		lit = on
 		paint()
