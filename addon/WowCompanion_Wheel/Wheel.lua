@@ -213,9 +213,7 @@ end
 local close = SecureButton("WCWheelClose")
 close:RegisterForClicks("AnyDown")
 SecureHandlerWrapScript(close, "OnClick", close, [[
-    local ring = self:GetFrameRef("ring")
-    ring:Hide()
-    if ring:GetAttribute("wc-placing") then ring:CallMethod("WCCancel") end
+    self:GetFrameRef("ring"):Hide()
     return false
 ]])
 
@@ -463,8 +461,8 @@ end
 
 -- Placing: what the companion button picked waits for a wheel's flick (the
 -- secure release calls WCPlace instead of using the slot, never in a fight).
--- It ends with the placement, Circle on the wheel, a fight, another tap, or
--- after a minute.
+-- It ends with the placement, a fight, a tap on nothing, or after a minute;
+-- Circle only closes the wheel, so another can be opened.
 local PLACE_FOR = 60
 local function EndPlacing()
     local placing = W.placing
@@ -480,7 +478,7 @@ function W.Place(slot, label, onEnd)
     local placing = { slot = slot, label = label, onEnd = onEnd }
     W.placing = placing
     W.Rebuild(true)
-    Print("placing " .. label .. ": open a wheel and flick to a slot (Circle cancels)")
+    Print("placing " .. label .. ": open a wheel and flick to a slot (minus cancels)")
     C_Timer.After(PLACE_FOR, function()
         if W.placing == placing then EndPlacing() Print("stopped placing " .. label) end
     end)
@@ -492,7 +490,6 @@ function W.CancelPlacing()
     EndPlacing()
     Print("stopped placing " .. label)
 end
-function ring:WCCancel() W.CancelPlacing() end
 function ring:WCPlace(key, index)
     local placing, wheel = W.placing, WowCompanionWheelDB.wheels[key]
     local entry = ringData[key] and ringData[key][index]
