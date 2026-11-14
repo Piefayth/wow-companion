@@ -2,7 +2,7 @@
 -- "/click WCWheel_<name> Macro" (WCWheel.Macro(name) gives the line).
 -- Right stick points and letting it go uses (the one way); the d-pad keeps its bar actions;
 -- the wheel's own button again uses what it used last; Circle closes; the left stick
--- still walks. Every button is secure, so a wheel works in combat; what is on
+-- stops walking while a wheel is up (the axis CVar makes it keys; open work). Every button is secure, so a wheel works in combat; what is on
 -- it is rebuilt out of combat only.
 --
 -- The ring's look, layout, aim and stick capture are Core's (Ring.lua, shared
