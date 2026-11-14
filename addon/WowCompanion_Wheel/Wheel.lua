@@ -63,19 +63,9 @@ local function SecureButton(name)
     return button
 end
 
--- The pick is the right stick's direction keys held (PADRSTICKUP and the rest,
--- each a click on its own WCWheelAim<key>): their sum points at the nearest slot, so up and
--- right held together is the up-right slot. The game's own key thresholds draw
--- the borders, and every key edge is seen, so the highlight (wc-sticky, which
--- the look shows) is always what a release uses. Returns the slot, or nil
--- with no key held.
-ring:SetAttribute("wc-pick", [[
-    local dx, dy = 0, 0
-    if self:GetAttribute("wc-held-PADRSTICKUP") then dy = dy + 1 end
-    if self:GetAttribute("wc-held-PADRSTICKDOWN") then dy = dy - 1 end
-    if self:GetAttribute("wc-held-PADRSTICKLEFT") then dx = dx - 1 end
-    if self:GetAttribute("wc-held-PADRSTICKRIGHT") then dx = dx + 1 end
-    if dx == 0 and dy == 0 then return nil end
+-- The slot nearest a direction (x, y), by the slots' own directions.
+ring:SetAttribute("wc-aim", [[
+    local dx, dy = ...
     local key = self:GetAttribute("wc-active")
     local best, bestDot
     for index = 1, self:GetAttribute(key .. "-count") or 0 do
@@ -83,6 +73,23 @@ ring:SetAttribute("wc-pick", [[
         if not bestDot or dot > bestDot then best, bestDot = index, dot end
     end
     return best
+]])
+-- The pick is the right stick's direction keys held (PADRSTICKUP and the rest,
+-- each a click on its own WCWheelAim<key>): their sum points at the nearest slot, so up and
+-- right held together is the up-right slot. The game's own key thresholds draw
+-- those borders: on the stick's rim a key changes only at 30 and 60 degrees,
+-- so there a straight direction takes 60 and a diagonal 30 (no reading between
+-- edges can do better; tools/wheel_sim.py). Every key edge is seen, so the
+-- highlight (wc-sticky, which the look shows) is always what a release uses.
+-- Returns the slot, or nil with no key held.
+ring:SetAttribute("wc-pick", [[
+    local dx, dy = 0, 0
+    if self:GetAttribute("wc-held-PADRSTICKUP") then dy = dy + 1 end
+    if self:GetAttribute("wc-held-PADRSTICKDOWN") then dy = dy - 1 end
+    if self:GetAttribute("wc-held-PADRSTICKLEFT") then dx = dx - 1 end
+    if self:GetAttribute("wc-held-PADRSTICKRIGHT") then dx = dx + 1 end
+    if dx == 0 and dy == 0 then return nil end
+    return self:RunAttribute("wc-aim", dx, dy)
 ]])
 -- forget the keys held (the ring opening or closing)
 ring:SetAttribute("wc-forget", [[
@@ -137,14 +144,25 @@ local LOAD_PICK = [[
 -- button one up edge however many keys hold it: on one shared button a
 -- diagonal's second key never came up, and the wheel waited on it with the
 -- spell unused (measured 2026-11-13). So a release is simply the last key up.
--- The action runs on the up edge, hence useOnKeyDown false.
+-- A flick out of the centre takes the stick's own angle instead: the first key
+-- on reads the stick a few milliseconds on, still on the line of the flick, so
+-- a flick picks from equal slices (99% in tools/wheel_sim.py, against 80% by
+-- keys). The action runs on the up edge, hence useOnKeyDown false.
 local STICK_KEYS = { "PADRSTICKUP", "PADRSTICKDOWN", "PADRSTICKLEFT", "PADRSTICKRIGHT" }
 local AIM = [[
     self:SetAttribute("type", nil)
     local ring = self:GetFrameRef("ring")
     if not ring:IsShown() then return false end
+    local flick = down and not ring:RunAttribute("wc-pick")
     ring:SetAttribute("wc-held-" .. button, down or nil)
     local pick = ring:RunAttribute("wc-pick")
+    if flick then
+        local state = GetGamePadState()
+        local stick = state and state.sticks and state.sticks[2]
+        if stick and stick.x and (stick.x * stick.x + stick.y * stick.y) >= 0.09 then
+            pick = ring:RunAttribute("wc-aim", stick.x, stick.y)
+        end
+    end
     if down then
         ring:SetAttribute("wc-sticky", pick)
         return false
