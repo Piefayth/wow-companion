@@ -20,8 +20,9 @@
 -- it. A secure button acts on one edge only (SecureTemplates.lua), so a wrapper
 -- picks the down or up macro for each press.
 --
--- The key is an addon keybinding in WoW's own Keybindings screen
--- (Bindings.xml, "Combat loot"): the binding clicks the secure button below.
+-- The key is an addon keybinding (Bindings.xml, "Combat loot"): the binding
+-- clicks the secure button below. It is set on our settings page by pressing
+-- (the row at the end), or in WoW's own Keybindings screen.
 WC.Saved("WowCompanion_Interact", "WowCompanionInteractDB")
 do
 	local function say(text)
@@ -63,3 +64,75 @@ do
 		if not setup() then WC.AfterCombat(setup) end
 	end)
 end
+
+-- The settings row: press it, then the button. The press is taken as Blizzard's
+-- key settings take one (KeybindListener: the button with the modifiers held,
+-- CreateKeyChordStringUsingMetaKeyState; whatever the button did before is
+-- unbound), and saved to the character's bindings. The button it already has
+-- clears it, so the feature is off with no button.
+do
+	local ACTION = "CLICK WCCombatInteractTap:LeftButton"
+	local SECONDS = 15
+	-- the game keeps these to itself: Focus UI and the game menu
+	local REFUSED = { PADBACK = true, PADFORWARD = true }
+	local listening, note
+	local listen = _G["WCLootBindCapture"] or CreateFrame("Frame", "WCLootBindCapture", UIParent)
+	listen:Hide()
+	local function refresh() if WC.SettingsPage.Refresh then WC.SettingsPage.Refresh() end end
+	local function stop()
+		listening = nil
+		listen:EnableGamePadButton(false)
+		listen:SetScript("OnUpdate", nil)
+		listen:Hide()
+		refresh()
+	end
+	local function take(key)
+		if IsKeyPressIgnoredForBinding(key) then return end
+		if REFUSED[key] then
+			note = ("%s is the game's own; press another."):format(WowCompanion_Glyph(key))
+			refresh()
+			return
+		end
+		if InCombatLockdown() then note = "Set it out of combat." stop() return end
+		local chord = CreateKeyChordStringUsingMetaKeyState(key)
+		local had = GetBindingKey(ACTION)
+		for _, old in ipairs({ GetBindingKey(ACTION) }) do SetBinding(old) end
+		if had == chord then
+			note = "Cleared: combat loot has no button."
+		else
+			local before = GetBindingAction(chord)
+			SetBinding(chord, ACTION)
+			note = before ~= "" and ("It no longer does %s."):format(GetBindingName(before)) or nil
+		end
+		SaveBindings(GetCurrentBindingSet())
+		stop()
+	end
+	listen:SetScript("OnGamePadButtonDown", function(_, key) if listening then take(key) end end)
+	local function start()
+		if InCombatLockdown() then note = "Set it out of combat." refresh() return end
+		note, listening = nil, GetTime()
+		listen:Show()
+		-- from the next frame, so the press that opened it is not taken
+		listen:SetScript("OnUpdate", function()
+			if listening then listen:EnableGamePadButton(true) end
+			if listening and GetTime() - listening > SECONDS then stop() end
+		end)
+		refresh()
+	end
+	WC.SettingsPage.Add({
+		kind = "key", section = "Combat loot", order = 60, label = "Loot button",
+		text = function()
+			return note or "Loots the nearest corpse, else interacts, in combat too. Press the row, then the button; its own button again clears it."
+		end,
+		button = function()
+			if listening then return "Press a button" end
+			local key = GetBindingKey(ACTION)
+			if not key then return "Not set" end
+			local glyphs = {}
+			for part in key:gmatch("[^-]+") do glyphs[#glyphs + 1] = WowCompanion_Glyph(part) end
+			return table.concat(glyphs, " + ")
+		end,
+		onClick = function() if listening then stop() else start() end end,
+	})
+end
+
