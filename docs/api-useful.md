@@ -167,8 +167,12 @@ Not done yet: world map pins, labels, clearing a pin automatically on arrival.
 - A frame with `EnableGamePadStick(true)` takes **both** sticks whatever its
   handler returns (Improved Forever's note); ConsolePort takes only the camera
   by showing a blocker between the Movement and Camera events (WC.Ring.Take,
-  Ring.lua). On trial 2026-11-14 as the fix for walking stopping in a wheel.
+  Ring.lua). Measured working 2026-11-14: walking goes on, analog, in a wheel.
 - `C_GamePad.GetDeviceMappedState()` is not secret in a fight.
+- **Never `Menu.ModifyMenu("MORE_CONTEXT_ACTIONS", ...)`** (the tag of every
+  controller triangle menu, PromptedBinding.lua): one added entry, which only
+  read the owner, broke the bag menus and blamed the addon for
+  `SetPreferredGamepadInteractTarget` (x14), measured 2026-11-14.
 - `SetMacroSpell(index, spell)` / `SetMacroItem` set what a macro's bar button
   shows, in a fight too, for a macro opening with a bare `#showtooltip` and the
   question-mark icon (134400); `EditMacro` is out of combat only.
