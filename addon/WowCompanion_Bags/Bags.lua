@@ -23,7 +23,10 @@ do
 -- Blizzard's bag frame (BagsStandIn.lua), in combat or out, and from plain code
 -- out of combat.
 local COLS, SIZE, GAP = 8, 37, 5
-local MAXBAG = NUM_TOTAL_BAG_FRAMES -- the backpack, four bags and the reagent bag, as Blizzard's combined bags
+-- Blizzard's bags, slot for slot: the bags they show (the reagent bag, the
+-- keyring when shown) and every slot they draw, the backpack's locked ones too
+-- (ContainerFrame_GetContainerNumSlots), so each button of theirs has one of ours.
+local function bagSlots(bag) return (ContainerFrame_GetContainerNumSlots(bag)) or 0 end
 local EDGE, TITLE_H, LEGEND_H, GAP_V = 18, 20, 24, 8
 
 WC.Saved("WowCompanion_Bags", "WowCompanionBagsDB")
@@ -108,6 +111,7 @@ local function build()
 		if buttons[key] then return buttons[key] end
 		local b = CreateFrame("ItemButton", ("WCBagsSlot%d_%d"):format(bag, slot), holder(bag), "ContainerFrameItemButtonTemplate")
 		b:SetID(slot)
+		b:UpdateExtended() -- a locked backpack slot shows Blizzard's lock, as theirs does
 		b:SetSize(SIZE, SIZE)
 		b:Show()
 		meta[b] = { bag = bag, slot = slot }
@@ -197,7 +201,7 @@ local function build()
 			paint(b)
 			total = total + 1
 			local m = meta[b]
-			if not C_Container.GetContainerItemID(m.bag, m.slot) then free = free + 1 end
+			if not b:IsExtended() and not C_Container.GetContainerItemID(m.bag, m.slot) then free = free + 1 end
 		end
 		local held = ""
 		local kind, _, link = GetCursorInfo()
@@ -235,8 +239,8 @@ local function build()
 		local gridW = COLS * (SIZE + GAP) - GAP
 		self.gridX = EDGE + math.floor((math.max(gridW, self.legendW or 0) - gridW) / 2)
 		local all = {}
-		for bag = 0, MAXBAG do
-			for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
+		for bag = STARTING_BAG_INDEX, ENDING_BAG_INDEX do
+			for slot = 1, bagSlots(bag) do
 				all[#all + 1] = { b = slotButton(bag, slot), bag = bag, slot = slot }
 			end
 		end
@@ -246,8 +250,9 @@ local function build()
 			local rank = {}
 			for k, key in ipairs(WC.BagsEval.ORDER) do rank[key] = k end
 			for _, e in ipairs(all) do
-				e.key = WC.BagsEval.Of(e.bag, e.slot)
-				e.rank = rank[e.key] or 99
+				-- locked slots last, under their own title, as Blizzard sorts them
+				e.key = e.b:IsExtended() and (LOCKED or "Locked") or WC.BagsEval.Of(e.bag, e.slot)
+				e.rank = rank[e.key] or e.b:IsExtended() and 100 or 99
 				e.id = C_Container.GetContainerItemID(e.bag, e.slot) or 0
 			end
 			table.sort(all, function(a, b)
@@ -284,7 +289,6 @@ local function build()
 			b:ClearAllPoints()
 			b:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX + col * (SIZE + GAP), -y)
 			self.cells[i] = { col = col, row = y }
-			b:EnableMouse(true)
 			b:Show()
 			col = col + 1
 			if col == COLS and i < #all then col = 0 y = y + SIZE + GAP end
@@ -357,7 +361,7 @@ local function build()
 	-- the pad's handler, its buttons and the triangle menu (BagsInput, BagsMenu)
 	local pad, holdBindings = WC.BagsInput.Build(f)
 	f.pad = pad
-	local menu = WC.BagsMenu.Build(f, MAXBAG)
+	local menu = WC.BagsMenu.Build(f)
 	-- the pad taken or let go: the menu's bindings went with it
 	function f:Held(on)
 		menu:Hide()
@@ -415,7 +419,7 @@ local function build()
 	f:SetScript("OnEvent", function(self, event)
 		if event == "BAG_UPDATE_DELAYED" or event == "PLAYER_REGEN_ENABLED" then
 			local n = 0
-			for bag = 0, MAXBAG do n = n + (C_Container.GetContainerNumSlots(bag) or 0) end
+			for bag = STARTING_BAG_INDEX, ENDING_BAG_INDEX do n = n + bagSlots(bag) end
 			if (n ~= #self.order or self.layoutOwed
 				or (self:View() == "sections" and not InCombatLockdown())) then self:Layout() return end
 			if event == "PLAYER_REGEN_ENABLED" and self.layoutOwed and WC.BagsInput.Publish then WC.BagsInput.Publish(self) end

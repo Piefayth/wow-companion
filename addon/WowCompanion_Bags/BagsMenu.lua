@@ -1,9 +1,9 @@
 -- Bags: the triangle menu (put on a bar, split, destroy, sort). Loads before
--- Bags.lua, which calls WC.BagsMenu.Build(f, MAXBAG) and keeps the menu it returns.
+-- Bags.lua, which calls WC.BagsMenu.Build(f) and keeps the menu it returns.
 
 WC.BagsMenu = WC.BagsMenu or {}
 
-function WC.BagsMenu.Build(f, MAXBAG)
+function WC.BagsMenu.Build(f)
 	-- triangle: more actions, out of combat (Blizzard's list has bind to the
 	-- bar and split the stack; sorting is added here)
 	-- drawn as Blizzard's context menu (WowCompanion_Style, in the addon)
@@ -20,7 +20,7 @@ function WC.BagsMenu.Build(f, MAXBAG)
 		back:SetPoint("LEFT", pick, "RIGHT", 14, 0)
 	end
 	local function firstFree()
-		for bag = 0, MAXBAG do
+		for bag = 0, NUM_TOTAL_BAG_FRAMES do
 			for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
 				if not C_Container.GetContainerItemID(bag, slot) then return bag, slot end
 			end
