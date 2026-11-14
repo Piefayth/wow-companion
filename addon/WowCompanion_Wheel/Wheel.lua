@@ -461,12 +461,23 @@ end
 
 -- Placing: what the companion button picked waits for a wheel's flick (the
 -- secure release calls WCPlace instead of using the slot, never in a fight).
--- It ends with the placement, a fight, a tap on nothing, or after a minute;
--- Circle only closes the wheel, so another can be opened.
+-- It ends with the placement, Circle, a fight, a tap on nothing, or after a
+-- minute. Circle is placing's own while it lasts, as a window's is (out of a
+-- fight: a state driver drops it as one begins); with a wheel up it only
+-- closes the wheel, so another can be opened.
 local PLACE_FOR = 60
+local placer = CreateFrame("Frame", "WCWheelPlacer", UIParent, "SecureHandlerStateTemplate")
+placer:SetAttribute("_onstate-fight", [[ if newstate == "on" then self:ClearBindings() end ]])
+RegisterStateDriver(placer, "fight", "[combat] on; off")
+local placeCancel = CreateFrame("Button", "WCWheelPlaceCancel", UIParent)
+placeCancel:SetScript("OnClick", function()
+    if InCombatLockdown() then return end
+    if ring:IsShown() then ring:Hide() else W.CancelPlacing() end
+end)
 local function EndPlacing()
     local placing = W.placing
     W.placing = nil
+    if not InCombatLockdown() then ClearOverrideBindings(placer) end
     W.Rebuild(true)
     if placing and placing.onEnd then pcall(placing.onEnd) end
 end
@@ -478,7 +489,10 @@ function W.Place(slot, label, onEnd)
     local placing = { slot = slot, label = label, onEnd = onEnd }
     W.placing = placing
     W.Rebuild(true)
-    Print("placing " .. label .. ": open a wheel and flick to a slot (minus cancels)")
+    for _, modifier in ipairs({ "", "SHIFT-", "CTRL-", "ALT-", "CTRL-SHIFT-", "ALT-SHIFT-", "CTRL-ALT-", "CTRL-ALT-SHIFT-" }) do
+        SetOverrideBindingClick(placer, false, modifier .. "PAD2", "WCWheelPlaceCancel")
+    end
+    Print("placing " .. label .. ": open a wheel and flick to a slot (Circle cancels)")
     C_Timer.After(PLACE_FOR, function()
         if W.placing == placing then EndPlacing() Print("stopped placing " .. label) end
     end)
