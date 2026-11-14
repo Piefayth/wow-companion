@@ -60,11 +60,13 @@ local function skip(b, why)
 	WC.MarkIgnored(b)
 end
 -- their add-slots button, drawn in the cell our layout keeps for it (f.addCell)
+-- (the whole cell, so the stop lines up with the slots' column)
 local addSlots = CreateFrame("Frame", nil, f)
-addSlots:SetSize(28, 28)
 addSlots:Hide()
-addSlots:CreateTexture(nil, "OVERLAY"):SetAtlas("Bags-icon-AddAuthenticator", true)
-addSlots:GetRegions():SetAllPoints()
+local addIcon = addSlots:CreateTexture(nil, "OVERLAY")
+addIcon:SetAtlas("Bags-icon-AddAuthenticator")
+addIcon:SetSize(28, 28)
+addIcon:SetPoint("CENTER")
 local pooled = {}
 local function eachStop(fn)
 	wipe(pooled)
@@ -116,7 +118,7 @@ local function lay()
 		end
 		if not (p and ours) then all = false return end
 		p:ClearAllPoints()
-		if item then p:SetAllPoints(ours) else p:SetPoint("CENTER", ours, "CENTER") end
+		p:SetAllPoints(ours)
 	end)
 	local a = blizz.AddSlotsButton
 	addSlots:SetShown(a and a:IsShown() and anchored[a] and f.addCell and f.addCell:IsShown() and true or false)
