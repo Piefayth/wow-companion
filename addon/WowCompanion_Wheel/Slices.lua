@@ -5,13 +5,14 @@
 -- right-stick axes to sin 22.5 degrees (0.38), where four keys split the circle
 -- into eight equal slices (on trial with the player, 2026-11-14).
 --
--- The setting lives in the game's own pad profile for each pad the game reads
+-- The thresholds go in the game's own pad profile for each pad the game reads
 -- (C_GamePad.SetConfig, keyed by the pad's vendor and product id as the game
--- sees them, not Windows), so nothing of ours is saved: the row reads the
--- profile. Only the two thresholds are ours; a profile the player had is kept,
--- and "Game default" takes out only what we put in. Out of combat (the call
--- is restricted). The stick keys exist only while a wheel is open, so nothing
--- else in the game feels it.
+-- sees them, not Windows). The game did not keep it over a /reload (the
+-- player, 2026-11-14), so the choice is ours, saved account-wide, and put back
+-- at login and when a pad connects. Only the two thresholds are ours; a profile
+-- the player had is kept, and "Game default" takes out only what we put in.
+-- Out of combat (the call is restricted). The stick keys exist only while a
+-- wheel is open, so nothing else in the game feels it.
 
 local EQUAL = 0.38
 local NAME = "WoW Companion wheel"
@@ -30,21 +31,7 @@ local function pads()
 	return ids
 end
 
-local function equalOn(config)
-	for _, axis in ipairs(config and config.axisConfigs or {}) do
-		if AXES[axis.axis] and axis.buttonThreshold and math.abs(axis.buttonThreshold - EQUAL) < 0.005 then
-			return true
-		end
-	end
-	return false
-end
-
-local function current()
-	for _, id in ipairs(pads()) do
-		if equalOn(C_GamePad.GetConfig(id)) then return "Equal" end
-	end
-	return "Game default"
-end
+local function saved() return WC.Settings("WheelSlices", { equal = false }) end
 
 -- One pad's profile with our thresholds put in (equal) or taken out. An axis
 -- entry we made carries only the threshold and its keys, and goes with it.
@@ -80,21 +67,33 @@ local function apply(id, equal)
 	end
 end
 
-local function set(name)
-	if InCombatLockdown() then return WC.Say("Wheel slices: not in combat") end
-	local ids = pads()
-	if #ids == 0 then return WC.Say("Wheel slices: no controller found") end
-	for _, id in ipairs(ids) do
-		local ok, err = pcall(apply, id, name == "Equal")
+local function applyAll(equal)
+	for _, id in ipairs(pads()) do
+		local ok, err = pcall(apply, id, equal)
 		if not ok then return WC.Say("Wheel slices: the game refused (" .. tostring(err) .. ")") end
 	end
 	C_GamePad.ApplyConfigs()
 end
+
+local function set(name)
+	if InCombatLockdown() then return WC.Say("Wheel slices: not in combat") end
+	saved().equal = name == "Equal"
+	applyAll(saved().equal)
+end
+
+local function restore()
+	if saved().equal then WC.AfterCombat(function() applyAll(true) end) end
+end
+
+local events = CreateFrame("Frame")
+events:RegisterEvent("PLAYER_LOGIN")
+events:RegisterEvent("GAME_PAD_CONNECTED")
+events:SetScript("OnEvent", restore)
 
 WC.SettingsPage.Add({ kind = "dropdown", section = "Wheels", order = 40, label = "Wheel slices",
 	text = "Equal: the right stick picks eight equal slices, as the wheel is drawn. "
 		.. "Game default: straight directions take wider slices than diagonals. "
 		.. "Kept in the game's profile for your controller; changes out of combat.",
 	options = function() return { "Equal", "Game default" } end,
-	get = current,
+	get = function() return saved().equal and "Equal" or "Game default" end,
 	set = set })
