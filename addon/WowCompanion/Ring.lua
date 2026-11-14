@@ -12,8 +12,10 @@
 --
 --   local r = WC.Ring.Build(frame, { prompt = "..." })   frame: the owner's
 --   r:Open(title, entries)    entries: up to WC.Ring.PAGE of { label, icon,
---                             count }; each gets dx, dy, angle (its segment);
---                             count (text) shows on the icon as on a bar button
+--                             count, spellID, itemID }; each gets dx, dy, angle
+--                             (its segment); count (text) shows on the icon as
+--                             on a bar button, and a spell's or item's cooldown
+--                             (the global one too) sweeps it while the ring is up
 --   r:Aim(entries, sticky)    in the owner's OnUpdate: lights what the right
 --                             stick points at, else `sticky`; returns it
 --   r:Picked(entries)         the slot the right stick points at, or nil
@@ -25,6 +27,7 @@
 local Ring = {}
 WC.Ring = Ring
 Ring.PAGE = 8
+Ring.built = {} -- every ring built, for the cooldown events
 
 local WIDTH, HEIGHT = 540, 541 -- Forever's GamepadRadial, measured by Improved Forever
 local SLOT_RADIUS = 150
@@ -60,6 +63,7 @@ R.__index = R
 function Ring.Build(frame, opts)
 	opts = opts or {}
 	local r = setmetatable({ frame = frame, slots = {} }, R)
+	Ring.built[#Ring.built + 1] = r
 	frame:SetSize(WIDTH, HEIGHT)
 	frame:SetPoint("CENTER", UIParent, "CENTER", 312, 10) -- where the native radial sits
 	frame:SetFrameStrata("DIALOG")
@@ -142,6 +146,13 @@ function Ring.Build(frame, opts)
 		slot.shadow:SetPoint("TOPLEFT", slot.icon, "TOPLEFT", -4, 4)
 		slot.shadow:SetPoint("BOTTOMRIGHT", slot.icon, "BOTTOMRIGHT", 4, -4)
 		-- the bar button's own count: its font, bottom right of the icon
+		-- the bar's own round cooldown swipe (Blizzard's gamepad bar and forms
+		-- wheel), inside the round border
+		slot.cooldown = CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
+		slot.cooldown:SetAllPoints(mask)
+		slot.cooldown:SetSwipeTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+		slot.cooldown:SetSwipeColor(0, 0, 0)
+		slot.cooldown:SetDrawEdge(false)
 		slot.count = frame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
 		slot.count:SetDrawLayer("OVERLAY", 3) -- over the round border
 		slot.count:SetJustifyH("RIGHT")
@@ -181,10 +192,49 @@ function R:Open(title, entries)
 			slot.count:SetText(entry.count or "")
 		end
 		for _, part in ipairs({ slot.icon, slot.shadow, slot.border, slot.label, slot.count }) do part:SetShown(entry ~= nil) end
+		slot.cooldown:Clear()
 	end
+	self.entries = entries
+	self:Cooldowns()
 	self.lit = false
 	self:Light(nil, entries)
 end
+
+-- Each slot's cooldown as its bar button would show it. In a fight the game
+-- may hand addons cooldowns as secret values, which a call of ours cannot pass
+-- on: then that slot shows none (pcall), and the first refusal is noted.
+local function SpellCooldown(id)
+	local info = C_Spell.GetSpellCooldown(id)
+	if info then return info.startTime, info.duration, info.isEnabled, info.modRate end
+end
+local function ItemCooldown(id)
+	local start, duration, enabled = C_Item.GetItemCooldown(id)
+	return start, duration, enabled, 1
+end
+local function Apply(cooldown, start, duration, enabled, modRate)
+	if enabled and duration and duration > 0 then cooldown:SetCooldown(start, duration, modRate or 1) else cooldown:Clear() end
+end
+function R:Cooldowns()
+	for index, slot in ipairs(self.slots) do
+		local entry = self.entries and self.entries[index]
+		local read = entry and ((entry.spellID and SpellCooldown) or (entry.itemID and ItemCooldown))
+		if read then
+			local ok, err = pcall(function() Apply(slot.cooldown, read(entry.spellID or entry.itemID)) end)
+			if not ok and not Ring.cooldownRefused then
+				Ring.cooldownRefused = tostring(err)
+				if WC.Say then WC.Say("Wheel: the game kept a cooldown from the wheel (" .. Ring.cooldownRefused .. ")") end
+			end
+		end
+	end
+end
+local cooldownEvents = CreateFrame("Frame")
+cooldownEvents:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+cooldownEvents:RegisterEvent("BAG_UPDATE_COOLDOWN")
+cooldownEvents:SetScript("OnEvent", function()
+	for _, r in ipairs(Ring.built) do
+		if r.frame:IsVisible() then r:Cooldowns() end
+	end
+end)
 
 function R:Light(pick, entries)
 	self.lit = pick

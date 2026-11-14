@@ -290,7 +290,7 @@ local function Resolve(slot)
         local info = C_Spell.GetSpellInfo(slot.spell)
         if not info then return nil, "no spell " .. tostring(slot.spell) end
         return { type = "spell", attr = "spell", value = info.name, label = slot.label or info.name,
-            icon = slot.icon or info.iconID }
+            icon = slot.icon or info.iconID, spellID = info.spellID }
     elseif slot.item then
         local id = tonumber(slot.item) or (C_Item.GetItemInfoInstant(slot.item))
         if not id then return nil, "no item " .. tostring(slot.item) end
