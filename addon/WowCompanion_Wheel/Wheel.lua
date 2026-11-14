@@ -461,6 +461,7 @@ end
 
 -- Placing: what the companion button picked waits for a wheel's flick (the
 -- secure release calls WCPlace instead of using the slot, never in a fight).
+-- An empty bar slot pressed while placing makes a new wheel there (NewWheelAt).
 -- It ends with the placement, Circle, a fight, a tap on nothing, or after a
 -- minute. Circle is placing's own while it lasts, as a window's is (out of a
 -- fight: a state driver drops it as one begins); with a wheel up it only
@@ -498,6 +499,34 @@ function W.Place(slot, label, onEnd)
     end)
     return true
 end
+-- A new wheel from placing: an empty bar slot pressed while placing (a post-hook
+-- on UseAction, which every bar button's press calls, the empty ones too) gets
+-- a new wheel holding what is placed, and that wheel's macro on the slot.
+local function NewWheelAt(action)
+    local placing = W.placing
+    local n = 1
+    while WowCompanionWheelDB.wheels["w" .. n] or GetMacroIndexByName("Wheel " .. n) > 0 do n = n + 1 end
+    local _, character = GetNumMacros()
+    if character >= Constants.MacroConsts.MAX_CHARACTER_MACROS then
+        return Print("no room for another character macro, so no new wheel")
+    end
+    local key, label = "w" .. n, "Wheel " .. n
+    WowCompanionWheelDB.wheels[key] = { label = label, slots = { placing.slot } }
+    local index = CreateMacro(label, 134400, "#showtooltip\n" .. W.Macro(key), true)
+    EndPlacing()
+    if not index then return Print(label .. " made, but its macro could not be") end
+    ClearCursor()
+    PickupMacro(index)
+    PlaceAction(action)
+    ClearCursor()
+    Print(label .. " made with " .. placing.label .. ", on the slot you pressed")
+end
+hooksecurefunc("UseAction", function(action)
+    if W.placing and not InCombatLockdown() and not HasAction(action) then
+        C_Timer.After(0, function() if W.placing and not InCombatLockdown() then NewWheelAt(action) end end)
+    end
+end)
+
 function W.CancelPlacing()
     if not W.placing then return end
     local label = W.placing.label
