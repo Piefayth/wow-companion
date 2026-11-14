@@ -160,15 +160,6 @@ EventRegistry:RegisterCallback("ContainerFrame.OpenBag", function()
 	C_Timer.After(0, opened)
 end, "WCBagsSkin")
 EventRegistry:RegisterCallback("ContainerFrame.CloseBag", function() C_Timer.After(0, closed) end, "WCBagsSkin")
--- one tooltip, theirs (with what addons add to it), moved onto our slot each
--- time they place it
-hooksecurefunc("ContainerFrameItemButton_CalculateItemTooltipAnchors", function(b, tooltip)
-	if not (f:IsShown() and anchored[b] and b.GetBagID) then return end
-	local ours = f:SlotFor(b:GetBagID(), b:GetID())
-	if not ours then return end
-	tooltip:ClearAllPoints()
-	tooltip:SetPoint("TOPRIGHT", ours, "TOPLEFT", -6, 0)
-end)
 -- the controller's focus marks Blizzard gives a window (the glow while it has
 -- the focus, the trigger and focus-button hints at its foot while it is one
 -- step away; FrameControlsManager:RefreshJumpHints) land on their frame, so
@@ -197,6 +188,25 @@ do
 			local p = b and anchored[b]
 			if p and b.GetBagID and b:GetParent() ~= GamepadBagBar then f:Mark(p, b:GetBagID(), b:GetID())
 			else f:Mark(p) end
+		end
+		-- their tooltip (what addons add to it too) opens on their unseen
+		-- button, anchored to it (SetAnchorType re-places it as it grows): held
+		-- on the frame of ours their cursor shows, by their own rule
+		-- (ContainerFrameItemButton_CalculateItemTooltipAnchors)
+		local owner = GameTooltip:IsShown() and GameTooltip:GetOwner()
+		local p = owner and anchored[owner]
+		local ours = p and (p == addSlots and p or (owner:GetParent() == GamepadBagBar and f:BagIconFor(owner))
+			or (owner.GetBagID and f:SlotFor(owner:GetBagID(), owner:GetID())))
+		if ours then
+			local x = ours:GetRight()
+			local pt, rp = "BOTTOMRIGHT", "TOPLEFT"
+			if x and x < GetScreenWidth() / 2 then pt, rp = "BOTTOMLEFT", "TOPRIGHT" end
+			local hp, hrel, hrp = GameTooltip:GetPoint(1)
+			if not (GameTooltip:GetNumPoints() == 1 and hp == pt and hrel == ours and hrp == rp) then
+				GameTooltip:SetAnchorType("ANCHOR_NONE")
+				GameTooltip:ClearAllPoints()
+				GameTooltip:SetPoint(pt, ours, rp)
+			end
 		end
 		for key, m in pairs(marks) do
 			local theirs = blizz[key]
