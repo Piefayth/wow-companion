@@ -74,22 +74,26 @@ ring:SetAttribute("wc-aim", [[
     end
     return best
 ]])
--- The pick is the right stick's direction keys held (PADRSTICKUP and the rest,
--- each a click on its own WCWheelAim<key>): their sum points at the nearest slot, so up and
--- right held together is the up-right slot. The game's own key thresholds draw
--- those borders: on the stick's rim a key changes only at 30 and 60 degrees,
--- so there a straight direction takes 60 and a diagonal 30 (no reading between
--- edges can do better; tools/wheel_sim.py). Every key edge is seen, so the
--- highlight (wc-sticky, which the look shows) is always what a release uses.
--- Returns the slot, or nil with no key held.
-ring:SetAttribute("wc-pick", [[
-    local dx, dy = 0, 0
-    if self:GetAttribute("wc-held-PADRSTICKUP") then dy = dy + 1 end
-    if self:GetAttribute("wc-held-PADRSTICKDOWN") then dy = dy - 1 end
-    if self:GetAttribute("wc-held-PADRSTICKLEFT") then dx = dx - 1 end
-    if self:GetAttribute("wc-held-PADRSTICKRIGHT") then dx = dx + 1 end
-    if dx == 0 and dy == 0 then return nil end
-    return self:RunAttribute("wc-aim", dx, dy)
+-- The pick (wc-sticky, which the look shows) is the stick's own angle, read
+-- every frame the ring is up: the slot nearest it whenever the stick is out
+-- past 0.3, so every slot gets an equal slice and a release uses the last
+-- reading before the stick fell back. Secure code reads the stick only in a
+-- snippet, so the frame comes from Blizzard's state driver: while the ring is
+-- up its manager ticks every frame (updatetime 0) and the sampler's driver,
+-- cleared after each tick, fires on every one (Forever Tweaks' way,
+-- ivribalko/wow-forever-tweaks GamepadQuickMenu.lua).
+ring:SetAttribute("wc-sample", [[
+    local state = GetGamePadState()
+    local stick = state and state.sticks and state.sticks[2]
+    if stick and stick.x and (stick.x * stick.x + stick.y * stick.y) >= 0.09 then
+        self:SetAttribute("wc-sticky", self:RunAttribute("wc-aim", stick.x, stick.y))
+    end
+]])
+-- the stick's direction keys still down (a release is the last one up)
+ring:SetAttribute("wc-any-held", [[
+    for _, key in ipairs(newtable("PADRSTICKUP", "PADRSTICKDOWN", "PADRSTICKLEFT", "PADRSTICKRIGHT")) do
+        if self:GetAttribute("wc-held-" .. key) then return true end
+    end
 ]])
 -- forget the keys held (the ring opening or closing)
 ring:SetAttribute("wc-forget", [[
@@ -97,6 +101,19 @@ ring:SetAttribute("wc-forget", [[
         self:SetAttribute("wc-held-" .. key, nil)
     end
 ]])
+
+local sampler = CreateFrame("Frame", "WCWheelSampler", UIParent, "SecureHandlerStateTemplate")
+SecureHandlerSetFrameRef(sampler, "ring", ring)
+sampler:SetAttribute("_onstate-aim", [[
+    if newstate ~= "sample" then return end
+    local ring = self:GetFrameRef("ring")
+    if not ring:IsShown() then return end -- left set, so the driver stops firing
+    ring:RunAttribute("wc-sample")
+    self:SetAttribute("state-aim", nil)
+]])
+RegisterStateDriver(sampler, "aim", "sample")
+SecureHandlerSetFrameRef(ring, "sampler", sampler)
+SecureHandlerSetFrameRef(ring, "driver", SecureStateDriverManager)
 
 -- Loads a use onto `self` (type `t`, attribute `a` = `v`), remembered as the
 -- wheel's last (before the ring closes, whose OnHide shows it on the macro),
@@ -154,49 +171,22 @@ local function OpenButton(name)
     return button
 end
 
--- Right stick directions (as keys): move the sticky pick, and use it when the
--- stick is let go. Only a key going down moves the pick: a diagonal let go
--- loses its keys one at a time, and the first must not turn it into its
--- neighbour; a key let go with the stick still out is a move, and does. Each direction has its own button, because the game gives a
+-- Right stick directions (as keys): only the release, the last key up, uses
+-- the pick; every edge also reads the stick, in case the frame's tick has not
+-- run yet. Each direction has its own button, because the game gives a
 -- button one up edge however many keys hold it: on one shared button a
 -- diagonal's second key never came up, and the wheel waited on it with the
--- spell unused (measured 2026-11-13). So a release is simply the last key up.
--- A flick out of the centre takes the stick's own angle instead: the first key
--- on reads the stick a few milliseconds on, still on the line of the flick, so
--- a flick picks from equal slices (99% in tools/wheel_sim.py, against 80% by
--- keys). The action runs on the up edge, hence useOnKeyDown false.
+-- spell unused (measured 2026-11-13). The action runs on the up edge, hence
+-- useOnKeyDown false.
 local STICK_KEYS = { "PADRSTICKUP", "PADRSTICKDOWN", "PADRSTICKLEFT", "PADRSTICKRIGHT" }
 local AIM = [[
     self:SetAttribute("type", nil)
     local ring = self:GetFrameRef("ring")
     if not ring:IsShown() then return false end
-    local flick = down and not ring:RunAttribute("wc-pick")
     ring:SetAttribute("wc-held-" .. button, down or nil)
-    local pick = ring:RunAttribute("wc-pick")
-    if flick then
-        local state = GetGamePadState()
-        local stick = state and state.sticks and state.sticks[2]
-        if stick and stick.x and (stick.x * stick.x + stick.y * stick.y) >= 0.09 then
-            pick = ring:RunAttribute("wc-aim", stick.x, stick.y)
-        end
-    end
-    if down then
-        ring:SetAttribute("wc-sticky", pick)
-        return false
-    end
-    -- An up edge with a key still held: the stick still out is a move to the
-    -- neighbour (diagonal to cardinal), which the pick follows; back at the
-    -- centre it is a diagonal let go a key at a time, and the pick stays. The
-    -- trace measured both: a move's stick at 0.85-1.0, a release's at 0.0-0.1.
-    if pick then
-        local state = GetGamePadState()
-        local stick = state and state.sticks and state.sticks[2]
-        if stick and stick.x and (stick.x * stick.x + stick.y * stick.y) >= 0.25 then
-            ring:SetAttribute("wc-sticky", pick)
-        end
-        return false
-    end
-    pick = ring:GetAttribute("wc-sticky")
+    ring:RunAttribute("wc-sample")
+    if down or ring:RunAttribute("wc-any-held") then return false end
+    local pick = ring:GetAttribute("wc-sticky")
     if not pick then return false end
     local key = ring:GetAttribute("wc-active")
     local t, a, v = ring:GetAttribute(key .. "-type-" .. pick), ring:GetAttribute(key .. "-attr-" .. pick),
@@ -222,6 +212,14 @@ SecureHandlerWrapScript(close, "OnClick", close, [[
 -- While the ring is up it owns Circle and the right stick's directions, whatever
 -- modifier the held triggers emulate.
 SecureHandlerWrapScript(ring, "OnShow", ring, [[
+    -- the stick read every frame while up (the sampler above); the manager's
+    -- own pace (0.2 s unless another addon changed it) is put back on hide
+    local driver = self:GetFrameRef("driver")
+    if driver:GetAttribute("updatetime") ~= 0 then
+        self:SetAttribute("wc-pace", driver:GetAttribute("updatetime") or 0.2)
+        driver:SetAttribute("updatetime", 0)
+    end
+    self:GetFrameRef("sampler"):SetAttribute("state-aim", nil)
     for _, modifier in ipairs(]] .. MODIFIERS_LUA .. [[) do
         self:SetBindingClick(true, modifier .. "PAD2", "WCWheelClose", "LeftButton")
         -- the d-pad is left alone: it keeps its bar actions, so another
@@ -232,6 +230,11 @@ SecureHandlerWrapScript(ring, "OnShow", ring, [[
     end
 ]])
 SecureHandlerWrapScript(ring, "OnHide", ring, [[
+    local driver = self:GetFrameRef("driver")
+    if driver:GetAttribute("updatetime") == 0 and self:GetAttribute("wc-pace") then
+        driver:SetAttribute("updatetime", self:GetAttribute("wc-pace"))
+    end
+    self:SetAttribute("wc-pace", nil)
     self:ClearBindings()
     self:RunAttribute("wc-forget")
 ]])

@@ -149,8 +149,11 @@ Not done yet: world map pins, labels, clearing a pin automatically on arrival.
   - The player measured it working.
 
 ## The right stick and the cursor, for wheels (measured 2026-11-14)
-- Secure snippets read the stick only at a click (`GetGamePadState()`); on the
-  rim the stick keys change only at 30 and 60 degrees (`tools/wheel_sim.py`).
+- Secure snippets read the stick (`GetGamePadState()`) in a click or a state
+  driver's `_onstate-`; with `SecureStateDriverManager`'s `updatetime` 0 and the
+  driver's state cleared after each tick, every frame (Forever Tweaks; the
+  wheel's sampler, on trial 2026-11-14). The stick keys alone change only at 30
+  and 60 degrees on the rim.
 - A pad profile (`C_GamePad.SetConfig` with right-stick `buttonThreshold`) makes
   the stick keys fire always (measured: down 1358 of 3543 frames with
   `GamePadStickAxisButtons` 0 and no wheel open; the camera stick still read),
