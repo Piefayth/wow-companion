@@ -57,6 +57,55 @@ local function rightStick()
 	if stick and stick.x and stick.y then return stick.x, stick.y end
 end
 
+-- Taking the camera stick and not the walking one. A frame that takes stick
+-- events takes both sticks whatever its handler returns, and walking stopped
+-- while a wheel was up (measured 2026-11-14). ConsolePort's way (Controller/
+-- Radial.lua, Sebastian Lindfors, Artistic License 2.0): each frame the game
+-- delivers the raw sticks (Left, Right) and then the twins it acts on
+-- (Movement, Camera), in that order. A watcher that passes everything on sees
+-- the raw ones; when the right stick is pushed it shows a blocker that takes
+-- events, as soon as Movement has gone by, so the blocker eats only Camera,
+-- and the frame's end hides it again. Show and Hide of these plain frames are
+-- allowed in a fight; their propagation is set once, at load.
+local takers = {}
+local blocker = CreateFrame("Frame")
+blocker:SetFrameStrata("TOOLTIP")
+local watcher = CreateFrame("Frame")
+watcher:SetFrameStrata("BACKGROUND")
+if blocker.EnableGamePadStick then
+	blocker:SetPropagateKeyboardInput(false)
+	blocker:EnableGamePadStick(true)
+	blocker:SetScript("OnGamePadStick", function() end)
+	watcher:SetPropagateKeyboardInput(true)
+	watcher:EnableGamePadStick(true)
+end
+blocker:Hide()
+watcher:Hide()
+local leftSeen, armed = false, false
+watcher:SetScript("OnGamePadStick", function(_, stick, x, y)
+	if stick == "Left" then
+		leftSeen = true
+	elseif stick == "Right" then
+		if (x ~= 0 or y ~= 0) and not blocker:IsShown() then
+			-- the left stick's twin is still to come this frame: wait for it
+			if leftSeen then armed = true else blocker:Show() end
+		end
+	elseif stick == "Movement" and armed then
+		armed = false
+		blocker:Show()
+	end
+end)
+watcher:SetScript("OnUpdate", function()
+	leftSeen, armed = false, false
+	blocker:Hide()
+end)
+function Ring.Take(r, on)
+	takers[r] = on or nil
+	local any = next(takers) ~= nil
+	watcher:SetShown(any)
+	if not any then blocker:Hide() end
+end
+
 local R = {}
 R.__index = R
 
@@ -68,39 +117,32 @@ function Ring.Build(frame, opts)
 	frame:SetPoint("CENTER", UIParent, "CENTER", 312, 10) -- where the native radial sits
 	frame:SetFrameStrata("DIALOG")
 
-	-- While the ring is up this child takes the right stick, so it aims
-	-- without turning the camera. The left stick is passed on (true: not
-	-- handled, as Blizzard's radial does), so walking goes on untouched.
-	local function rightOnly(_, stick) return stick == "Left" or stick == "Movement" end
-	local capture = CreateFrame("Frame", nil, frame)
-	capture:SetAllPoints(frame)
-	if capture.EnableGamePadStick then
-		capture:EnableGamePadStick(true)
-		capture:SetScript("OnGamePadStick", rightOnly)
-	end
-	-- After the ring closes the right stick is often still pushed: it is kept
-	-- a moment so the camera does not swing round.
+	-- While the ring is up, and a moment after it closes if the right stick is
+	-- still pushed (so the camera does not swing round), the camera stick is
+	-- taken and the walking stick is not (Take, below).
 	local after = CreateFrame("Frame", nil, UIParent)
-	after:SetAllPoints(UIParent)
-	after:SetFrameStrata("DIALOG")
 	after:Hide()
-	if after.EnableGamePadStick then
-		after:EnableGamePadStick(true)
-		after:SetScript("OnGamePadStick", rightOnly)
-	end
 	after:SetScript("OnUpdate", function(self, elapsed)
 		self.held = (self.held or 0) + elapsed
 		local x, y = rightStick()
-		if self.held >= RELEASE_MAX or not x or x * x + y * y <= RELEASE_SQ then self:Hide() end
+		if self.held >= RELEASE_MAX or not x or x * x + y * y <= RELEASE_SQ then
+			self:Hide()
+			Ring.Take(r, false)
+		end
+	end)
+	frame:HookScript("OnShow", function()
+		after:Hide()
+		Ring.Take(r, true)
 	end)
 	frame:HookScript("OnHide", function()
 		local x, y = rightStick()
 		if x and x * x + y * y > RELEASE_SQ then
 			after.held = 0
 			after:Show()
+		else
+			Ring.Take(r, false)
 		end
 	end)
-	frame:HookScript("OnShow", function() after:Hide() end)
 
 	local bg = frame:CreateTexture(nil, "OVERLAY", nil, -3)
 	bg:SetPoint("CENTER")
