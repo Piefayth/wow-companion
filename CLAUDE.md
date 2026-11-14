@@ -329,7 +329,10 @@ goes to a detached process.
   own override bindings while the row has the cursor, never by hooking
   SmartNavigation or its prompted binding footer.
 - **Protected things are a button the player presses**: a `SecureActionButtonTemplate`
-  with `macrotext`, registered for `"AnyDown"` (other edges misfire). `ReloadUI()`
+  with `macrotext`. A key acts on its down edge (`ActionButtonUseKeyDown`), a
+  click (the mouse, or the cursor's cross: SmartNavigation sends a mouse down
+  and up) only on its up edge, so a button for both sets `useOnKeyDown` false
+  and registers `"AnyUp"` (`SecureActionButton_OnClick`). `ReloadUI()`
   is protected.
 - **A window of ours the controller can focus**: `SmartNavigation_MarkFrameFocusable`,
   an entry in `UIPanelWindows`, shown with `ShowUIPanel`, and `OnHide` calling

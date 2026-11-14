@@ -47,10 +47,13 @@ local function buildActionButton()
 		end
 		place(actionButton)
 		WC.Companion.stow(actionButton, place)
-		-- "AnyDown" alone runs the macro once ("AnyUp" fires PreClick and
-		-- PostClick but not the macro; both edges run it twice).
+		-- every press acts as it is let go: the cursor's cross is a mouse click,
+		-- which a secure button acts on only going up, and L3's key would act
+		-- going down by the ActionButtonUseKeyDown setting, so useOnKeyDown is
+		-- off and the up edge alone is registered (SecureActionButton_OnClick)
 		actionButton:SetAttribute("type", "macro")
-		actionButton:RegisterForClicks("AnyDown")
+		actionButton:SetAttribute("useOnKeyDown", false)
+		actionButton:RegisterForClicks("AnyUp")
 
 		-- the cursor can land on it, and goes to it when the window takes focus
 		WC.MarkFocusable(actionButton)
