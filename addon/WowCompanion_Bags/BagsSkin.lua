@@ -160,6 +160,35 @@ EventRegistry:RegisterCallback("ContainerFrame.OpenBag", function()
 	C_Timer.After(0, opened)
 end, "WCBagsSkin")
 EventRegistry:RegisterCallback("ContainerFrame.CloseBag", function() C_Timer.After(0, closed) end, "WCBagsSkin")
+-- their tooltip (what addons add to it too) opens on their unseen button,
+-- anchored to it, and is placed again as it updates
+-- (ContainerFrameItemButton_CalculateItemTooltipAnchors, ANCHOR_LEFT on a bag
+-- icon): moved onto the frame of ours their cursor shows, by their own side
+-- rule, the moment they place it (their placer, a tooltip's data set) and each
+-- frame for what neither reports (the backpack's title-only tooltip)
+local function holdTip()
+	local owner = GameTooltip:IsShown() and GameTooltip:GetOwner()
+	local p = owner and f:IsShown() and anchored[owner]
+	local ours = p and (p == addSlots and p or (owner:GetParent() == GamepadBagBar and f:BagIconFor(owner))
+		or (owner.GetBagID and f:SlotFor(owner:GetBagID(), owner:GetID())))
+	if not ours then return end
+	local x = ours:GetRight()
+	local pt, rp = "BOTTOMRIGHT", "TOPLEFT"
+	if x and x < GetScreenWidth() / 2 then pt, rp = "BOTTOMLEFT", "TOPRIGHT" end
+	local hp, hrel, hrp = GameTooltip:GetPoint(1)
+	if GameTooltip:GetNumPoints() == 1 and hp == pt and hrel == ours and hrp == rp then return end
+	GameTooltip:SetAnchorType("ANCHOR_NONE")
+	GameTooltip:ClearAllPoints()
+	GameTooltip:SetPoint(pt, ours, rp)
+end
+hooksecurefunc("ContainerFrameItemButton_CalculateItemTooltipAnchors", function(_, tooltip)
+	if tooltip == GameTooltip then holdTip() end
+end)
+if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall then
+	TooltipDataProcessor.AddTooltipPostCall(TooltipDataProcessor.AllTypes, function(tooltip)
+		if tooltip == GameTooltip then holdTip() end
+	end)
+end
 -- the controller's focus marks Blizzard gives a window (the glow while it has
 -- the focus, the trigger and focus-button hints at its foot while it is one
 -- step away; FrameControlsManager:RefreshJumpHints) land on their frame, so
@@ -189,25 +218,7 @@ do
 			if p and b.GetBagID and b:GetParent() ~= GamepadBagBar then f:Mark(p, b:GetBagID(), b:GetID())
 			else f:Mark(p) end
 		end
-		-- their tooltip (what addons add to it too) opens on their unseen
-		-- button, anchored to it (SetAnchorType re-places it as it grows): held
-		-- on the frame of ours their cursor shows, by their own rule
-		-- (ContainerFrameItemButton_CalculateItemTooltipAnchors)
-		local owner = GameTooltip:IsShown() and GameTooltip:GetOwner()
-		local p = owner and anchored[owner]
-		local ours = p and (p == addSlots and p or (owner:GetParent() == GamepadBagBar and f:BagIconFor(owner))
-			or (owner.GetBagID and f:SlotFor(owner:GetBagID(), owner:GetID())))
-		if ours then
-			local x = ours:GetRight()
-			local pt, rp = "BOTTOMRIGHT", "TOPLEFT"
-			if x and x < GetScreenWidth() / 2 then pt, rp = "BOTTOMLEFT", "TOPRIGHT" end
-			local hp, hrel, hrp = GameTooltip:GetPoint(1)
-			if not (GameTooltip:GetNumPoints() == 1 and hp == pt and hrel == ours and hrp == rp) then
-				GameTooltip:SetAnchorType("ANCHOR_NONE")
-				GameTooltip:ClearAllPoints()
-				GameTooltip:SetPoint(pt, ours, rp)
-			end
-		end
+		holdTip()
 		for key, m in pairs(marks) do
 			local theirs = blizz[key]
 			local on = theirs and theirs:IsShown() or false
