@@ -262,85 +262,129 @@ local function build()
 				return a.slot < b.slot
 			end)
 		end
-		-- place: one solid block, as Blizzard's bags: only the top row is short,
-		-- so a column's gaps are at its top. Blizzard's grid navigation (columns by
-		-- X, rows counted from the bottom, SmartNavPanelInfoAdded) then moves the
-		-- way the slots look. A section runs on from the last; its title is a
-		-- label over its first slot, in room left above that row.
+		-- place, in rows. Blizzard's grid navigation (SmartNavPanelInfoAdded)
+		-- takes columns by X and keeps a slot's height counted from the bottom, so
+		-- it moves the way the slots look only when every short row is above every
+		-- full one, the shorter higher. So each section's last row is finished with
+		-- empty slots, and whatever is left (the empty slots, the locked ones,
+		-- Blizzard's add-slots button) is one block with its short row on top, at
+		-- the top of the bag. A row free slots cannot finish rises to the top.
 		local max, now = ContainerFrame_GetContainerNumSlots(Enum.BagIndex.Backpack)
 		-- Blizzard's add-slots button (shown while the account has no
-		-- authenticator, ContainerFrameExtendedSlotPack) is the block's last cell
+		-- authenticator, ContainerFrameExtendedSlotPack) is the last cell
 		local add = max > now and not IsAccountSecured()
-		local n = #all + (add and 1 or 0)
-		local top = n % COLS
-		if top == 0 then top = COLS end
-		local function cell(k)
-			if k <= top then return 0, k - 1 end
-			return 1 + math.floor((k - top - 1) / COLS), (k - top - 1) % COLS
-		end
-		local starts, titled = {}, {}
-		for i, e in ipairs(all) do
-			if sections and (i == 1 or all[i - 1].key ~= e.key) then
-				starts[#starts + 1] = i
-				titled[(cell(i))] = true
-			elseif not sections and (i == 1 or all[i - 1].bag ~= e.bag) then
-				groups[#groups + 1] = i
+		local rows = {}
+		local function run(list, shortFirst)
+			local k, first = 1, shortFirst and #list % COLS or 0
+			while k <= #list do
+				local r = {}
+				for j = k, math.min(k + (first > 0 and first or COLS) - 1, #list) do r[#r + 1] = list[j] end
+				rows[#rows + 1] = r
+				k, first = k + #r, 0
 			end
 		end
-		local rowY, y = {}, EDGE + TITLE_H + GAP_V
-		local last = cell(n)
-		for r = 0, last do
-			if titled[r] then y = y + HDR end
-			rowY[r] = y
+		if sections then
+			local free, locked, secs = {}, {}, {}
+			for _, e in ipairs(all) do
+				e.label = e.key
+				if e.key == "empty" then free[#free + 1] = e
+				elseif e.b:IsExtended() then locked[#locked + 1] = e
+				else
+					local sec = secs[#secs]
+					if not sec or sec[1].key ~= e.key then sec = {} secs[#secs + 1] = sec end
+					sec[#sec + 1] = e
+				end
+			end
+			for _, sec in ipairs(secs) do
+				while #sec % COLS ~= 0 and #free > 0 do
+					local e = table.remove(free)
+					e.label = sec[1].key
+					sec[#sec + 1] = e
+				end
+			end
+			local rest = free
+			for _, e in ipairs(locked) do rest[#rest + 1] = e end
+			if add then rest[#rest + 1] = { add = true, label = LOCKED or "Locked" } end
+			run(rest, true)
+			for _, sec in ipairs(secs) do run(sec) end
+		else
+			local list = {}
+			for _, e in ipairs(all) do list[#list + 1] = e end
+			if add then list[#list + 1] = { add = true } end
+			run(list, true)
+		end
+		for k, r in ipairs(rows) do r.k = k end
+		table.sort(rows, function(a, b)
+			local sa, sb = #a < COLS and #a or COLS, #b < COLS and #b or COLS
+			if sa ~= sb then return sa < sb end
+			return a.k < b.k
+		end)
+		-- titles where the label changes; room above each titled row
+		local titles, prev = {}, nil
+		for ri, r in ipairs(rows) do
+			for c, e in ipairs(r) do
+				if sections and e.label ~= prev then titles[#titles + 1] = { ri = ri, c = c, e = e } r.titled = true end
+				prev = e.label
+			end
+		end
+		local y = EDGE + TITLE_H + GAP_V
+		for _, r in ipairs(rows) do
+			if r.titled then y = y + HDR end
+			r.y = y
 			y = y + SIZE + GAP
 		end
 		y = y - GAP
-		local function at(frame, k)
-			local r, c = cell(k)
-			frame:ClearAllPoints()
-			frame:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX + c * (SIZE + GAP), -rowY[r])
-			return r, c
-		end
 		self.cells = {}
-		for i, e in ipairs(all) do
-			local b = e.b
-			self.order[i] = b
-			b:SetParent(holder(e.bag))
-			local r, c = at(b, i)
-			self.cells[i] = { col = c, row = rowY[r] }
-			b:Show()
+		self.addCell = self.addCell or CreateFrame("Frame", nil, self)
+		self.addCell:SetSize(SIZE, SIZE)
+		self.addCell:Hide()
+		local i = 0
+		for _, r in ipairs(rows) do
+			for c, e in ipairs(r) do
+				local frame = e.add and self.addCell or e.b
+				frame:ClearAllPoints()
+				frame:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX + (c - 1) * (SIZE + GAP), -r.y)
+				frame:Show()
+				if not e.add then
+					i = i + 1
+					e.index = i
+					self.order[i] = e.b
+					e.b:SetParent(holder(e.bag))
+					self.cells[i] = { col = c - 1, row = r.y }
+					if not sections and (i == 1 or self.order[i - 1] and meta[self.order[i - 1]].bag ~= e.bag) then
+						groups[#groups + 1] = i
+					end
+				end
+			end
 		end
-		-- titles: as wide as the room to the next title in the row
-		for hn, i in ipairs(starts) do
-			local r, c = cell(i)
-			local nr, nc = COLS, COLS
-			if starts[hn + 1] then nr, nc = cell(starts[hn + 1]) end
-			local cells = (nr == r) and (nc - c) or (COLS - c)
+		-- each title as wide as the room to the next title in its row
+		for hn, t in ipairs(titles) do
+			local nxt = titles[hn + 1]
+			local upto = (nxt and nxt.ri == t.ri) and nxt.c or COLS + 1
 			local h = header(hn)
 			h:ClearAllPoints()
-			h:SetPoint("BOTTOMLEFT", self, "TOPLEFT", self.gridX + c * (SIZE + GAP), -(rowY[r] - 2))
-			h:SetWidth(cells * (SIZE + GAP) - GAP)
+			h:SetPoint("BOTTOMLEFT", self, "TOPLEFT", self.gridX + (t.c - 1) * (SIZE + GAP), -(rows[t.ri].y - 2))
+			h:SetWidth((upto - t.c) * (SIZE + GAP) - GAP)
 			h:SetWordWrap(false)
-			h:SetText(WC.BagsEval.TITLE[all[i].key] or all[i].key)
+			h:SetText(WC.BagsEval.TITLE[t.e.label] or t.e.label)
 			h:Show()
-			groups[#groups + 1] = i
+			-- the shoulders jump to a section's first slot (the add cell has none)
+			local first = t.e.index
+			if not first then
+				for ri = t.ri, #rows do for c, e in ipairs(rows[ri]) do
+					if e.index and (ri > t.ri or c > t.c) then first = e.index break end
+				end if first then break end end
+			end
+			if first and groups[#groups] ~= first then groups[#groups + 1] = first end
 		end
 		table.sort(groups)
 		local g = 0
-		for i, b in ipairs(self.order) do
-			if groups[g + 1] == i then g = g + 1 end
-			meta[b].index = i
-			meta[b].group = g
+		for k, b in ipairs(self.order) do
+			while groups[g + 1] and groups[g + 1] <= k do g = g + 1 end
+			meta[b].index = k
+			meta[b].group = math.max(g, 1)
 		end
 		self.groups = groups
-		self.addCell = self.addCell or CreateFrame("Frame", nil, self)
-		self.addCell:SetSize(SIZE, SIZE)
-		if add then
-			at(self.addCell, n)
-			self.addCell:Show()
-		else
-			self.addCell:Hide()
-		end
 		self:SetSize(EDGE * 2 + math.max(gridW, self.legendW or 0), y + GAP_V + LEGEND_H + EDGE)
 		if WC.BagsInput and WC.BagsInput.Publish then WC.BagsInput.Publish(self) end
 		-- focus stays on the same slot wherever it moved
