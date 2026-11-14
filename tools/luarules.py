@@ -15,9 +15,8 @@ files (it never runs in the game) and reports each place a rule is broken:
                          our frames: the focus manager reads them while
                          switching, so the switch runs tainted
   error  panel-event     firing the panel manager's or bags' events ourselves
-  error  click-edge      a SecureActionButtonTemplate on "AnyUp" alone without
-                         useOnKeyDown false: a key acts on its down edge, so
-                         the macro never runs
+  error  click-edge      a SecureActionButtonTemplate on "AnyUp" alone: the
+                         wrapper runs and the macro does not ("AnyDown")
   error  chat-print     print() or AddMessage on Blizzard's chat frame in an
                          addon file: its fields written from our code, tainted
                          (WC.Say instead; modules print into the sandbox)
@@ -164,14 +163,11 @@ def check(path, ours, locked):
         if re.search(r"TriggerEvent\s*\(", line) and re.search(r"TriggerEvent\s*\(\s*[\"'](UIParentPanelManager|ContainerFrame)\.", rawline):
             report(index, "error", "panel-event", "fires the panel manager's or bags' event from our code")
         # the measured trap (2026-11-09): a secure action button on "AnyUp" alone
-        # runs PreClick and PostClick but not its macro: a key acts going down
-        # (ActionButtonUseKeyDown) unless the button's useOnKeyDown is false.
-        # Two edges on purpose (a snippet reading down and up) and plain
-        # buttons are fine.
+        # runs PreClick and PostClick but not its macro. Two edges on purpose
+        # (a snippet reading down and up) and plain buttons are fine.
         click = re.search(r"\b([A-Za-z_]\w*)\s*:\s*RegisterForClicks\s*\(", line)
-        if click and click.group(1) in secure_buttons and re.search(r"RegisterForClicks\s*\(\s*[\"']AnyUp[\"']\s*\)", rawline) \
-                and not re.search(re.escape(click.group(1)) + r"\s*:\s*SetAttribute\s*\(\s*[\"']useOnKeyDown[\"']\s*,\s*false", code):
-            report(index, "error", "click-edge", "a secure action button on \"AnyUp\" alone: its macro never runs; set useOnKeyDown false")
+        if click and click.group(1) in secure_buttons and re.search(r"RegisterForClicks\s*\(\s*[\"']AnyUp[\"']\s*\)", rawline):
+            report(index, "error", "click-edge", "a secure action button on \"AnyUp\" alone: its macro never runs; register \"AnyDown\"")
         if not in_module and (re.search(r"(?<![\w.:])print\s*\(", line)
                               or re.search(r"\b(DEFAULT_CHAT_FRAME|SELECTED_CHAT_FRAME|ChatFrame\d+)\s*:\s*AddMessage\s*\(", line)):
             report(index, "error", "chat-print", "writes Blizzard's chat frame from our code (taints it): use WC.Say")

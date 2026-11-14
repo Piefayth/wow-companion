@@ -47,17 +47,33 @@ local function buildActionButton()
 		end
 		place(actionButton)
 		WC.Companion.stow(actionButton, place)
-		-- every press acts as it is let go: the cursor's cross is a mouse click,
-		-- which a secure button acts on only going up, and L3's key would act
-		-- going down by the ActionButtonUseKeyDown setting, so useOnKeyDown is
-		-- off and the up edge alone is registered (SecureActionButton_OnClick)
+		-- "AnyDown" alone runs the macro once ("AnyUp" fires PreClick and
+		-- PostClick but not the macro; both edges run it twice).
 		actionButton:SetAttribute("type", "macro")
-		actionButton:SetAttribute("useOnKeyDown", false)
-		actionButton:RegisterForClicks("AnyUp")
+		actionButton:RegisterForClicks("AnyDown")
 
 		-- the cursor can land on it, and goes to it when the window takes focus
 		WC.MarkFocusable(actionButton)
 		WC.SetFocusButton(frame, actionButton)
+		-- The cursor's cross presses a button from Lua (MouseDown, MouseUp), and
+		-- a secure macro does not run from that (measured 2026-11-14: PostClick
+		-- fired, no macro); a key bound to the button does, as L3 always has. So
+		-- while the cursor is on it, cross is bound to it, the way Blizzard's
+		-- InputButtonBinding binds a key to a button. Bindings change out of
+		-- combat only; the window leaves the controller's focus in a fight.
+		local cross = CreateFrame("Frame")
+		local function unbind()
+			if not InCombatLockdown() then ClearOverrideBindings(cross) end
+		end
+		actionButton:HookScript("OnEnter", function()
+			if not InCombatLockdown() then
+				SetOverrideBindingClick(cross, true, "PAD1", BUTTON, "LeftButton")
+			end
+		end)
+		actionButton:HookScript("OnLeave", unbind)
+		actionButton:HookScript("OnHide", unbind)
+		cross:RegisterEvent("PLAYER_REGEN_DISABLED")
+		cross:SetScript("OnEvent", unbind)
 		-- a press uses one of the offer's presses; the last one ends it (left
 		-- 0: it lasts until the next offer replaces it)
 		actionButton:SetScript("PostClick", function(self)

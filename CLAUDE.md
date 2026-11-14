@@ -329,10 +329,10 @@ goes to a detached process.
   own override bindings while the row has the cursor, never by hooking
   SmartNavigation or its prompted binding footer.
 - **Protected things are a button the player presses**: a `SecureActionButtonTemplate`
-  with `macrotext`. A key acts on its down edge (`ActionButtonUseKeyDown`), a
-  click (the mouse, or the cursor's cross: SmartNavigation sends a mouse down
-  and up) only on its up edge, so a button for both sets `useOnKeyDown` false
-  and registers `"AnyUp"` (`SecureActionButton_OnClick`). `ReloadUI()`
+  with `macrotext`, registered for `"AnyDown"` (other edges misfire). The
+  cursor's cross presses from Lua, which runs PostClick but never the macro
+  (measured 2026-11-14); a key bound to the button runs it, so cross is bound
+  to the button while the cursor is on it (Offer.lua). `ReloadUI()`
   is protected.
 - **A window of ours the controller can focus**: `SmartNavigation_MarkFrameFocusable`,
   an entry in `UIPanelWindows`, shown with `ShowUIPanel`, and `OnHide` calling
