@@ -147,6 +147,31 @@ hooksecurefunc("ContainerFrameItemButton_CalculateItemTooltipAnchors", function(
 	tooltip:ClearAllPoints()
 	tooltip:SetPoint("TOPRIGHT", ours, "TOPLEFT", -6, 0)
 end)
+-- the controller's focus marks Blizzard gives a window (the glow while it has
+-- the focus, the trigger and focus-button hints at its foot while it is one
+-- step away; FrameControlsManager:RefreshJumpHints) land on their frame, so
+-- ours carries the same, from Blizzard's own templates, shown as theirs are
+local marks = {}
+do
+	local glow = CreateFrame("Frame", nil, f, "FrameGlowTemplate")
+	glow.layoutType = "ButtonFrameTemplateNoPortrait"
+	glow:OnLoad() -- again, under that layout: the frame's rim, not a portrait's
+	glow:SetFrameLevel(f:GetFrameLevel() + 50) -- over the slots, as Blizzard lays it (505)
+	marks.FrameGlow = glow
+	for key, template in pairs({ LeftJumpHint = "FrameLeftJumpHintTemplate",
+		RightJumpHint = "FrameRightJumpHintTemplate", FocusJumpHint = "FrameFocusJumpHintTemplate" }) do
+		marks[key] = CreateFrame("Frame", nil, f, template)
+	end
+	for _, m in pairs(marks) do m:Hide() end
+	local mirror = CreateFrame("Frame", nil, f)
+	mirror:SetScript("OnUpdate", function()
+		for key, m in pairs(marks) do
+			local theirs = blizz[key]
+			local on = theirs and theirs:IsShown() or false
+			if m:IsShown() ~= on then m:SetShown(on) end
+		end
+	end)
+end
 -- our highlight follows their cursor over their (unseen) buttons
 EventRegistry:RegisterCallback("ContainerFrameItemButton.EnterButton", function(_, b)
 	if f:IsShown() and b and b.GetBagID then f:FocusOn(b:GetBagID(), b:GetID()) end
