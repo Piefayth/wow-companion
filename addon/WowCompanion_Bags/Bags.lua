@@ -195,6 +195,41 @@ local function build()
 		end
 	end
 
+	-- Blizzard's bag icons (GamepadBagBar, the controller's bags only), each a
+	-- cell of ours drawn from theirs; a bag collapsed on its icon shows no slots,
+	-- as in theirs (ContainerFrameMixin:UpdateItemLayout)
+	local icons = {}
+	local function theirIcon(bag) return GamepadBagBar and GamepadBagBar:GetBagButton(bag) end
+	local function bagIcon(bag)
+		local theirs = theirIcon(bag)
+		if not theirs then return end
+		local c = icons[theirs]
+		if not c then
+			c = CreateFrame("Frame", nil, f)
+			c:SetSize(SIZE, SIZE)
+			c.icon = c:CreateTexture(nil, "ARTWORK")
+			c.icon:SetAllPoints()
+			c.rim = c:CreateTexture(nil, "OVERLAY")
+			c.rim:SetPoint("TOPLEFT", -3, 3)
+			c.rim:SetPoint("BOTTOMRIGHT", 3, -3)
+			c.count = c:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+			c.count:SetPoint("BOTTOMRIGHT", -2, 2)
+			c.theirs = theirs
+			icons[theirs] = c
+		end
+		return c
+	end
+	function f:BagIconFor(theirs) local c = icons[theirs] return c and c:IsShown() and c end
+	local function paintIcon(c)
+		local t = c.theirs
+		local tex = t.icon and t.icon:GetTexture()
+		c.icon:SetTexture(tex)
+		c.icon:SetDesaturated(t.isCollapsed == true)
+		local n = t:GetNormalTexture()
+		local atlas = n and n:GetAtlas()
+		if atlas then c.rim:SetAtlas(atlas) c.rim:Show() else c.rim:Hide() end
+		c.count:SetText(t.Count and t.Count:IsShown() and t.Count:GetText() or "")
+	end
 	function f:Paint()
 		local free, total = 0, 0
 		for _, b in ipairs(self.order) do
@@ -206,6 +241,7 @@ local function build()
 		local held = ""
 		local kind, _, link = GetCursorInfo()
 		if kind == "item" and link then held = "   |cffffffffholding|r " .. link end
+		for _, c in pairs(icons) do if c:IsShown() then paintIcon(c) end end
 		self.title:SetText(("Bags   |cffffffff%d free of %d|r%s"):format(free, total, held))
 		self:Carry()
 		if self.focusIndex and self.order[self.focusIndex] and tip:IsShown() then self:Focus(self.focusIndex) end
@@ -235,13 +271,20 @@ local function build()
 		keep = keep and meta[keep]
 		for _, b in pairs(buttons) do b:Hide() end
 		for _, h in pairs(headers) do h:Hide() end
+		for _, c in pairs(icons) do c:Hide() end
 		wipe(self.order)
 		local gridW = COLS * (SIZE + GAP) - GAP
 		self.gridX = EDGE + math.floor((math.max(gridW, self.legendW or 0) - gridW) / 2)
-		local all = {}
+		local all, bagIcons = {}, {}
 		for bag = STARTING_BAG_INDEX, ENDING_BAG_INDEX do
-			for slot = 1, bagSlots(bag) do
-				all[#all + 1] = { b = slotButton(bag, slot), bag = bag, slot = slot }
+			local icon, theirs = bagIcon(bag), theirIcon(bag)
+			if icon and theirs:IsShown() then
+				bagIcons[#bagIcons + 1] = { icon = icon, bag = bag, label = "Bags" }
+			end
+			if not (theirs and theirs.isCollapsed == true) then
+				for slot = 1, bagSlots(bag) do
+					all[#all + 1] = { b = slotButton(bag, slot), bag = bag, slot = slot }
+				end
 			end
 		end
 		local sections = self:View() == "sections" and WC.BagsEval
@@ -263,12 +306,12 @@ local function build()
 			end)
 		end
 		-- place, in rows. Blizzard's grid navigation (SmartNavPanelInfoAdded)
-		-- takes columns by X and keeps a slot's height counted from the bottom, so
-		-- it moves the way the slots look only when every short row is above every
-		-- full one, the shorter higher. So each section's last row is finished with
-		-- empty slots, and whatever is left (the empty slots, the locked ones,
-		-- Blizzard's add-slots button) is one block with its short row on top, at
-		-- the top of the bag. A row free slots cannot finish rises to the top.
+		-- takes columns by X and keeps a cell's height counted from the bottom, so
+		-- it moves the way the cells look only when every row is full but the top
+		-- one, as in theirs. So each section's last row is finished with empty
+		-- slots, and the rest (the bag icons, a section's row the empty slots ran
+		-- out on, the empty slots left, the locked ones, Blizzard's add-slots
+		-- button) is one block at the top of the bag, its short row first.
 		local max, now = ContainerFrame_GetContainerNumSlots(Enum.BagIndex.Backpack)
 		-- Blizzard's add-slots button (shown while the account has no
 		-- authenticator, ContainerFrameExtendedSlotPack) is the last cell
@@ -295,30 +338,34 @@ local function build()
 					sec[#sec + 1] = e
 				end
 			end
+			-- the top block: the bag icons, any section's row free slots could not
+			-- finish, the free slots left, the locked ones, the add-slots button
+			local top = bagIcons
 			for _, sec in ipairs(secs) do
 				while #sec % COLS ~= 0 and #free > 0 do
 					local e = table.remove(free)
 					e.label = sec[1].key
 					sec[#sec + 1] = e
 				end
+				for k = #sec - #sec % COLS + 1, #sec do top[#top + 1] = sec[k] end
+				for k = #sec, #sec - #sec % COLS + 1, -1 do sec[k] = nil end
 			end
-			local rest = free
-			for _, e in ipairs(locked) do rest[#rest + 1] = e end
-			if add then rest[#rest + 1] = { add = true, label = LOCKED or "Locked" } end
-			run(rest, true)
+			for _, e in ipairs(free) do top[#top + 1] = e end
+			for _, e in ipairs(locked) do top[#top + 1] = e end
+			if add then top[#top + 1] = { add = true, label = LOCKED or "Locked" } end
+			run(top, true)
 			for _, sec in ipairs(secs) do run(sec) end
 		else
-			local list = {}
-			for _, e in ipairs(all) do list[#list + 1] = e end
+			-- each bag's icon before its slots, as theirs
+			local list, k = {}, 1
+			for _, ic in ipairs(bagIcons) do
+				while all[k] and all[k].bag < ic.bag do list[#list + 1] = all[k] k = k + 1 end
+				list[#list + 1] = ic
+			end
+			for j = k, #all do list[#list + 1] = all[j] end
 			if add then list[#list + 1] = { add = true } end
 			run(list, true)
 		end
-		for k, r in ipairs(rows) do r.k = k end
-		table.sort(rows, function(a, b)
-			local sa, sb = #a < COLS and #a or COLS, #b < COLS and #b or COLS
-			if sa ~= sb then return sa < sb end
-			return a.k < b.k
-		end)
 		-- titles where the label changes; room above each titled row
 		local titles, prev = {}, nil
 		for ri, r in ipairs(rows) do
@@ -341,11 +388,12 @@ local function build()
 		local i = 0
 		for _, r in ipairs(rows) do
 			for c, e in ipairs(r) do
-				local frame = e.add and self.addCell or e.b
+				local frame = e.add and self.addCell or e.icon or e.b
+				if e.icon then paintIcon(e.icon) end
 				frame:ClearAllPoints()
 				frame:SetPoint("TOPLEFT", self, "TOPLEFT", self.gridX + (c - 1) * (SIZE + GAP), -r.y)
 				frame:Show()
-				if not e.add then
+				if e.b then
 					i = i + 1
 					e.index = i
 					self.order[i] = e.b
@@ -443,6 +491,15 @@ local function build()
 			tip:Hide()
 		end
 		self:Carry()
+	end
+	-- the highlight alone on a cell that is not a slot (a bag icon, the add cell)
+	function f:Mark(frame)
+		if not frame then return end
+		self.focusIndex = nil
+		tip:Hide()
+		hl:ClearAllPoints()
+		hl:SetPoint("CENTER", frame, "CENTER")
+		hl:Show()
 	end
 	function f:FocusOn(bag, slot)
 		local b = buttons[bag * 100 + slot]

@@ -3,7 +3,9 @@
 -- their frame (natively, in combat too), the cursor walks their real item
 -- buttons, and each of those is anchored (Blizzard's own setter,
 -- SmartNavigation_SetCustomCursorAnchorPointForFrame) to a proxy frame of ours
--- laid on our slot for the bag and slot it holds (their other stops: below).
+-- laid on our slot for the bag and slot it holds, and each bag icon of theirs
+-- (GamepadBagBar: where their cursor starts, what the shoulders jump between,
+-- what collapses a bag) on our icon for it (their other stops: below).
 -- SmartNavigation measures a
 -- button where its anchor is (GetButtonPositionInfo), so the d-pad walks our
 -- layout and cross and square are their buttons. Their frame is kept at alpha 0
@@ -87,14 +89,12 @@ local function anchorNew()
 	if InCombatLockdown() then return end
 	eachStop(function(b, item)
 		if anchored[b] or skipped[b] then return end
-		if item then
+		if item or (GamepadBagBar and b:GetParent() == GamepadBagBar) then
 			local p = CreateFrame("Frame", nil, f)
 			p:SetSize(1, 1)
 			anchor(b, p)
 		elseif b == blizz.AddSlotsButton then
 			anchor(b, addSlots)
-		elseif GamepadBagBar and b:GetParent() == GamepadBagBar then
-			skip(b, "bag icon")
 		elseif b == blizz.CloseButton then
 			skip(b, "close (circle closes)")
 		elseif b == blizz.PortraitButton then
@@ -113,6 +113,8 @@ local function lay()
 		local p, ours = anchored[b], nil
 		if item then
 			ours = f:SlotFor(b:GetBagID(), b:GetID())
+		elseif b:GetParent() == GamepadBagBar then
+			ours = f:BagIconFor(b)
 		elseif p == addSlots then
 			ours = f.addCell and f.addCell:IsShown() and f.addCell
 		end
@@ -131,10 +133,6 @@ local function opened()
 	if lay() then
 		hide:Play()
 		if not f:IsShown() then f:Show() end
-		-- the slot their cursor chose as the bags opened (its EnterButton came
-		-- before ours were laid)
-		local b = SmartNavigation and SmartNavigation.currentButton
-		if b and anchored[b] and b.GetBagID then f:FocusOn(b:GetBagID(), b:GetID()) end
 	else
 		show:Play()
 		if f:IsShown() then f:Hide() end
@@ -177,8 +175,19 @@ do
 		marks[key] = CreateFrame("Frame", nil, f, template)
 	end
 	for _, m in pairs(marks) do m:Hide() end
-	local mirror = CreateFrame("Frame", nil, f)
+	-- and our highlight sits on whatever of ours their cursor is on (read each
+	-- frame: it lands on a bag icon as the bags open, which no event reports)
+	local mirror, cur = CreateFrame("Frame", nil, f), nil
+	mirror:SetScript("OnHide", function() cur = nil end)
 	mirror:SetScript("OnUpdate", function()
+		local b = SmartNavigation and SmartNavigation.currentButton
+		if b ~= cur then
+			cur = b
+			local p = b and anchored[b]
+			if p == addSlots then f:Mark(p)
+			elseif p and b:GetParent() == GamepadBagBar then f:Mark(f:BagIconFor(b))
+			elseif p then f:FocusOn(b:GetBagID(), b:GetID()) end
+		end
 		for key, m in pairs(marks) do
 			local theirs = blizz[key]
 			local on = theirs and theirs:IsShown() or false
@@ -186,10 +195,11 @@ do
 		end
 	end)
 end
--- our highlight follows their cursor over their (unseen) buttons
-EventRegistry:RegisterCallback("ContainerFrameItemButton.EnterButton", function(_, b)
-	if f:IsShown() and b and b.GetBagID then f:FocusOn(b:GetBagID(), b:GetID()) end
-end, "WCBagsSkin")
+-- a bag collapsed or opened on their bag icon (Gamepad_ToggleCollapseBag)
+-- deals their buttons out again: ours follows
+hooksecurefunc("ContainerFrame_GenerateFrame", function(frame)
+	if frame == blizz then C_Timer.After(0, function() if blizz:IsShown() then f:Layout() anchorNew() lay() end end) end
+end)
 -- our layout changed (a sort, a section moving): the proxies follow
 hooksecurefunc(f, "Layout", function() if blizz:IsShown() then lay() end end)
 hide:Play()
