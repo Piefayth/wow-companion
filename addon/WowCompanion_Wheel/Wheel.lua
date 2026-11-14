@@ -63,26 +63,23 @@ local function SecureButton(name)
     return button
 end
 
--- The pick is the right stick's direction keys held (PADRSTICKUP and the rest,
--- each a click on its own WCWheelAim<key>): their sum points at the nearest slot, so up and
--- right held together is the up-right slot. The game's own key thresholds draw
--- the borders, and every key edge is seen, so the highlight (wc-sticky, which
--- the look shows) is always what a release uses. Returns the slot, or nil
--- with no key held.
+-- The slot the right stick points at, the one nearest its angle as the
+-- ring's segments are drawn, and how far it is pushed (squared); nil when
+-- the stick cannot be read. Never the direction keys held: they are the axis
+-- on a square grid, so a stick 30 degrees off a cardinal (in the diagonal's
+-- segment, lit there) held only the cardinal's key, and the cardinal was
+-- used (2026-11-14 trace).
 ring:SetAttribute("wc-pick", [[
-    local dx, dy = 0, 0
-    if self:GetAttribute("wc-held-PADRSTICKUP") then dy = dy + 1 end
-    if self:GetAttribute("wc-held-PADRSTICKDOWN") then dy = dy - 1 end
-    if self:GetAttribute("wc-held-PADRSTICKLEFT") then dx = dx - 1 end
-    if self:GetAttribute("wc-held-PADRSTICKRIGHT") then dx = dx + 1 end
-    if dx == 0 and dy == 0 then return nil end
+    local state = GetGamePadState()
+    local stick = state and state.sticks and state.sticks[2]
+    if not (stick and stick.x and stick.y) then return nil end
     local key = self:GetAttribute("wc-active")
     local best, bestDot
     for index = 1, self:GetAttribute(key .. "-count") or 0 do
-        local dot = dx * self:GetAttribute(key .. "-dx-" .. index) + dy * self:GetAttribute(key .. "-dy-" .. index)
+        local dot = stick.x * self:GetAttribute(key .. "-dx-" .. index) + stick.y * self:GetAttribute(key .. "-dy-" .. index)
         if not bestDot or dot > bestDot then best, bestDot = index, dot end
     end
-    return best
+    return best, stick.x * stick.x + stick.y * stick.y
 ]])
 -- forget the keys held (the ring opening or closing)
 ring:SetAttribute("wc-forget", [[
@@ -130,13 +127,11 @@ local LOAD_PICK = [[
     self:SetAttribute("type", ring:GetAttribute(key .. "-type-" .. pick))
 ]]
 
--- Right stick directions (as keys): move the sticky pick, and use it when the
--- stick is let go. Only a key going down moves the pick: a diagonal let go
--- loses its keys one at a time, and the first must not turn it into its
--- neighbour; a key let go with the stick still out is a move, and does. Each direction has its own button, because the game gives a
--- button one up edge however many keys hold it: on one shared button a
--- diagonal's second key never came up, and the wheel waited on it with the
--- spell unused (measured 2026-11-13). So a release is simply the last key up.
+-- Right stick directions (as keys): each edge aims the sticky pick by the
+-- stick's angle (wc-pick), and the last key let go uses it. Each direction
+-- has its own button, because the game gives a button one up edge however
+-- many keys hold it: on one shared button a diagonal's second key never came
+-- up, and the wheel waited on it with the spell unused (measured 2026-11-13).
 -- The action runs on the up edge, hence useOnKeyDown false.
 local STICK_KEYS = { "PADRSTICKUP", "PADRSTICKDOWN", "PADRSTICKLEFT", "PADRSTICKRIGHT" }
 local AIM = [[
@@ -144,24 +139,18 @@ local AIM = [[
     local ring = self:GetFrameRef("ring")
     if not ring:IsShown() then return false end
     ring:SetAttribute("wc-held-" .. button, down or nil)
-    local pick = ring:RunAttribute("wc-pick")
-    if down then
-        ring:SetAttribute("wc-sticky", pick)
-        return false
-    end
-    -- An up edge with a key still held: the stick still out is a move to the
-    -- neighbour (diagonal to cardinal), which the pick follows; back at the
-    -- centre it is a diagonal let go a key at a time, and the pick stays. The
-    -- trace measured both: a move's stick at 0.85-1.0, a release's at 0.0-0.1.
-    if pick then
-        local state = GetGamePadState()
-        local stick = state and state.sticks and state.sticks[2]
-        if stick and stick.x and (stick.x * stick.x + stick.y * stick.y) >= 0.25 then
-            ring:SetAttribute("wc-sticky", pick)
+    -- A key still held: an up edge is a move while the stick is out, and a
+    -- diagonal let go a key at a time once it is back near the centre
+    -- (measured: a move at 0.85-1.0, a release at 0.0-0.1), where its angle
+    -- is noise and the pick stays.
+    for _, held in ipairs(newtable("PADRSTICKUP", "PADRSTICKDOWN", "PADRSTICKLEFT", "PADRSTICKRIGHT")) do
+        if ring:GetAttribute("wc-held-" .. held) then
+            local pick, push = ring:RunAttribute("wc-pick")
+            if pick and (down or push >= 0.25) then ring:SetAttribute("wc-sticky", pick) end
+            return false
         end
-        return false
     end
-    pick = ring:GetAttribute("wc-sticky")
+    local pick = ring:GetAttribute("wc-sticky")
     if not pick then return false end
     local key = ring:GetAttribute("wc-active")
 ]] .. LOAD_PICK
