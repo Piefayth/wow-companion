@@ -23,7 +23,7 @@
 -- A slot may carry `label` and `icon` to override what is looked up.
 -- A slot { rule = "items" } or { rule = "quest" } fills itself from the bags.
 -- The player places things too, with no agent: W.Place(slot, label) (the
--- companion button's tap on a spell, item or macro, ContextTap.lua) and then a
+-- Companion button's tap on a spell, item or macro, Tap.lua) and then a
 -- wheel opened and flicked puts it in that slot, or in the "Add here" one.
 
 WCWheel = WCWheel or {}

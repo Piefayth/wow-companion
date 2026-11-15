@@ -1,0 +1,3 @@
+<Bindings>
+	<Binding name="WCCOMPANION_TAP" category="WoW Companion">WC.Tap.Fire()</Binding>
+</Bindings>

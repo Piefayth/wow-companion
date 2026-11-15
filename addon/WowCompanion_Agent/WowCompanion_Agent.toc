@@ -6,7 +6,6 @@
 ## Group: WowCompanion
 
 Agent.lua
-ContextTap.lua
 Stow.lua
 Offer.lua
 Steps.lua

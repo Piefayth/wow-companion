@@ -1,11 +1,10 @@
--- Minus tap is the companion's one contextual button: with the controller's
--- cursor on a spell, a bag item, a worn item or a macro in a game window
--- (SmartNavigation's current button, only read: measured clean, 2026-11-14),
--- a tap places that thing on a wheel (WCWheel.Place: open a wheel and flick);
--- the controller's focus leaves the window, which stays open, so the wheel's
--- chord works at once, and comes back to it when placing ends.
--- Anything else, and a tap while placing stops it; otherwise the tap opens
--- the Companion window (Agent.lua).
+-- The Companion button's turn for the wheels (Core's Tap.lua, order 20): with
+-- the controller's cursor on a spell, a bag item, a worn item or a macro in a
+-- game window (SmartNavigation's current button, only read: measured clean,
+-- 2026-11-14), a tap places that thing on a wheel (WCWheel.Place: open a wheel
+-- and flick); the controller's focus leaves the window, which stays open, so
+-- the wheel's chord works at once, and comes back to it when placing ends.
+-- A tap on anything else while placing stops it.
 
 -- the slot for a wheel and its name, or nil and why (nil, nil: not a thing)
 local function Thing(button)
@@ -37,9 +36,9 @@ local function Thing(button)
     return { item = id }, name
 end
 
--- true when the tap was the companion button's (a thing placed, or placing stopped)
-function WC.Companion.ContextTap()
-    if InCombatLockdown() or not WCWheel then return false end
+-- true when the tap was ours (a thing placed, or placing stopped)
+WC.Tap.Answer(20, function()
+    if InCombatLockdown() then return false end
     local button = SmartNavigation and SmartNavigation:GetCurrentButton()
     if button and button:IsVisible() then
         local ok, slot, name = pcall(Thing, button)
@@ -57,4 +56,4 @@ function WC.Companion.ContextTap()
         return true
     end
     return false
-end
+end)

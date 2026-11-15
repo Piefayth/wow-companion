@@ -103,8 +103,12 @@ extras a player may use, never required (the player, 2026-11-11).
     `ScrollBar.lua` (our windows' scroll bar and the chat's dividers, `WC.ScrollBar`),
     `Rows.lua` (settings rows as controller stops, `WC.RowStop`, `WC.SliderStop`),
     `SettingsPage.lua` (the one settings page, `WC.SettingsPage.Add` for each
-    addon's rows; its own window, the minimap mark and Blizzard's AddOns settings
-    open it), `Board.lua` (the toast
+    addon's rows, `WC.SettingsPage.BindingRow` for a WoW binding set by pressing;
+    its own window, the minimap mark and Blizzard's AddOns settings open it),
+    `Tap.lua` (the Companion button, one binding for everything of ours:
+    `WC.Tap.Answer(order, fn)` in order, the Agent's window, the Wheel's placing,
+    else the settings window; the talk button's tap with the companion, else a
+    WoW binding), `Board.lua` (the toast
     and board; `WC.Board.Post`; `WC.Say`, our addons' notices, since `print` writes
     Blizzard's chat frame from our code and taints it), `Providers/` (price, nav, gear, itemSource,
     guide, Polestar's pins). Saved: `WowCompanionDB` (module settings).
@@ -112,7 +116,7 @@ extras a player may use, never required (the player, 2026-11-11).
     (slots, bells, polling, the mailbox, dispatch to handlers registered with
     `WC.Link.Handle`), the companion's `status` (`WC.Link.Settings()`), the talk
     button (WoW's binding of it written from the companion's `settings.talk`, never
-    in the Keybindings screen: a tap is TALK_TAP on the bus, a hold the PC's
+    in the Keybindings screen: a tap is the Companion button's, a hold the PC's
     push-to-talk, named by its `heard`), `/wc` (`WC.Link.Slash`). `Pad.lua` the pad's
     state and the one conversation-pick rule (`WowCompanion_PadSlot`, `WC.Pad.Latch`,
     on the chord names from `status`). `CompanionSettings.lua` the companion's
@@ -146,7 +150,7 @@ extras a player may use, never required (the player, 2026-11-11).
     `BagsSkin.lua` Blizzard's frame wearing ours, `Bags.lua` what it looks like,
     `BagsEvaluate.lua`, `BagSwap.lua`, `MakeRoom.lua`),
     `WowCompanion_Interact` (combat loot, an addon keybinding), `WowCompanion_Fonts`
-    (live interface fonts, `Fonts/`), `WowCompanion_Wheel` (the wheels: the secure buttons on Core's ring),
+    (live interface fonts, `Fonts/`), `WowCompanion_Wheel` (the wheels: the secure buttons on Core's ring; `Tap.lua` placing the thing under the cursor),
     `WowCompanion_Pins` (minimap and map pins; the builtin pins and nav),
     `WowCompanion_Buffs` (watched buffs per character, the glow). And
     `WowCompanion_Errands` (needs the Agent: agents add errands).

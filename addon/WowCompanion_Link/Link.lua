@@ -16,8 +16,7 @@
 --                               engines, mics: the inputs Windows lists now), or
 --                               nil while it has said none
 --   WC.Link.Status()            that last status message itself
--- Bus messages sent: TALK_TAP (a tap of the talk button), TALK_DOWN and
--- TALK_UP (its press and release), TALK_HOLD (the press outlasted a tap),
+-- Bus messages sent: TALK_DOWN and TALK_UP (the talk button's press and release), TALK_HOLD (the press outlasted a tap),
 -- JOB_MESSAGE(inbox) (a handled message that names a job or lists jobs: their
 -- states for whoever keeps them), LINK_STEP(step, ok, outcome) (a follow-up step
 -- ran), LINK_FAILED(text), MAILBOX_JOBS(jobs), COMPANION_STATUS(inbox).
@@ -77,8 +76,8 @@ local current
 -- docs/proposals/settings-in-game.md); WoW's binding of it to our button is a
 -- copy we write (writeTalkBinding below), never in WoW's Keybindings screen,
 -- where a change would come with no press for the companion to see. It runs on
--- press and release, so a tap is told from a hold: a tap sends TALK_TAP (the
--- Agent opens or closes its window), a hold does nothing here (the PC's
+-- press and release, so a tap is told from a hold: a tap is the Companion
+-- button's (WC.Tap.Fire, Core's Tap.lua), a hold does nothing here (the PC's
 -- push-to-talk, its clip named by the PC's `heard`). TALK_DOWN and TALK_UP go
 -- out on both edges (the chat wheel's ring), TALK_HOLD once a press has
 -- outlasted a tap (the PC's own line, crates/voice TAP: it is talking now).
@@ -97,7 +96,7 @@ local function talkEdge(keystate)
 	local held = downAt and GetTime() - downAt
 	downAt = nil
 	WC.Send("TALK_UP")
-	if held and held <= TAP_MAX then WC.Send("TALK_TAP") end
+	if held and held <= TAP_MAX then WC.Tap.Fire() end
 end
 local talkButton = _G["WCTalkKey"] or CreateFrame("Button", "WCTalkKey", UIParent)
 talkButton:RegisterForClicks("AnyDown", "AnyUp")

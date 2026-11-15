@@ -6,3 +6,4 @@
 ## Group: WowCompanion
 
 Wheel.lua
+Tap.lua

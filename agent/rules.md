@@ -62,8 +62,9 @@ Other things of ours agent code can call (all globals):
 - `WCPins.Set{...}`, `WCPins.Add{map=, x=, y=, r=}`, `WCPins.Clear()`: minimap and
   world map pins (docs/api-useful.md, Minimap pins).
 - `WCWheel.Set(name, {label=, slots={...}})`: the radial wheels. The player fills them
-  without us too: minus tap on a spell, bag or worn item, or macro, then a wheel
-  opened and flicked puts it there (`WCWheel.Place`, ContextTap.lua).
+  without us too: a tap of the Companion button (minus, or with no companion the
+  binding on the settings page) on a spell, bag or worn item, or macro, then a
+  wheel opened and flicked puts it there (`WCWheel.Place`, the Wheel's Tap.lua).
 - Errands, the player's to-do list (Errands.lua; shown as a tracker under the board
   and the Errands tab): only when they ask. `WC.Errands.Add{ text=, note=,
   place={map,x,y,f}, item=, done={...} }` returns id or nil and why; it refuses an

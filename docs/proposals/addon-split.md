@@ -27,7 +27,7 @@ fall to the top level (Link is itself a child of WowCompanion). The slots stay
 `## Group: WowCompanion` (src/channel.rs `SLOT_TOC`, unchanged).
 
 **How they talk**: upward only through the bus (`WC.Send` / `M:On`) or a guarded
-global. Link sends `TALK_TAP`, `TALK_HELD(slot)`, `LINK_STEP(step, ok, outcome)`,
+global. Link fires the Companion button (`WC.Tap.Fire`) and sends `TALK_HELD(slot)`, `LINK_STEP(step, ok, outcome)`,
 `LINK_FAILED(text)`, `MAILBOX_JOBS(jobs)`; Link's Status sends `TOGGLE_WINDOW`;
 Fonts sends `FONT_CHANGED`. Handlers register with `WC.Link.Handle(kind, fn)`;
 `/wc` words with `WC.Link.Slash(word, fn)`; the Agent sets `WC.Board.poster`.
